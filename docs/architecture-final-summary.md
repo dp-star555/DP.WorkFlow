@@ -444,6 +444,20 @@ git status   → fatal: not a git repository
 机器现状：系统环境变量 `ProgramData` / `APPDATA` / `ALLUSERSPROFILE` **在注册表里就不存在**；
 但 `HKLM\...\Explorer\Shell Folders\Common AppData` = `C:\ProgramData` 是有的——所以
 .NET Framework 能解析、.NET 9/10 不能。
+注意不对称：**用户级** NuGet 配置能正常解析（`C:\Users\25845\AppData\Roaming\NuGet\NuGet.Config`
+存在且可用），只有**机器级**（`CommonApplicationData`）这一个解析不出来。
+
+**⚠️ 由此产生的脆弱点（新记录）**：仓库 46 个 `obj/project.assets.json` 全部是
+**2026-09-10 一次性生成**的，且 `project.restore.SdkAnalysisLevel` 一律为 `10.0.300`
+（该值由 SDK 自己写入，SDK 9.0.316 写 `9.0.300`、SDK 10.0.302 写 `10.0.300`，
+与项目的 `TargetFramework` 无关——同一个文件里 `targets` / `project.frameworks` 仍是 `net8.0`）。
+既然本机 `restore` 在任何 SDK 上都失败，**这批资产不可能是在本机当前状态下生成的**，
+只能是从配置正常的开发机 / CI 带过来的冻结产物。而 `obj/` 被 `.gitignore` 排除、
+**不在版本控制里（被跟踪的 obj 文件数为 0）**。
+
+结论：**`obj/` 是本机唯一能构建的依托，一旦被删（如 `git clean -xdf`）就再也生成不出来。**
+这是当前最脆弱的一环。可选处置：① 修机器让 `restore` 恢复；② 把 assets 纳入版本控制
+（不常规，但能让任何人在此环境下构建）；③ 至少在 README/文档里显式警告不要清理 `obj/`。
 
 **决定性因素不是 SDK 版本，是 NuGet 版本**：
 
