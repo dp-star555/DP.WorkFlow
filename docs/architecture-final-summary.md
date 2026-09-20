@@ -435,10 +435,28 @@ git status   → fatal: not a git repository
 **未处理**：`../DP.Vision` 仍是跨仓源码引用（AR-16），纳入 VCS 后既不是子模块也不是包——
 本次未改变其引用方式，AR-16 仍需独立决策。
 
-**新发现（本机环境，与 AR-23 同族）**：`dotnet restore` 在本机必然失败，报
+**新发现（本机环境，与 AR-23 同族，2026-09-20 复核）**：`dotnet restore` 在本机必然失败，报
 `NuGet.targets: error : Value cannot be null. (Parameter 'path1')`。根因是
-`Environment.GetFolderPath(CommonApplicationData)` 返回 null，NuGet 随后 `Path.Combine(null, "NuGet")` 抛异常。
-只有 SDK 10 能绕过（.NET 10 CoreLib 才有 `%ProgramData%` 回退），而 `global.json` 固定 `9.0.308`。
+`Environment.GetFolderPath(CommonApplicationData)` 在本机解析不出来，NuGet 随后
+`Path.Combine(null, "NuGet")` 抛异常；该异常被静态 `Lazy` 缓存，**同进程内之后所有 NuGet 操作都会失败**，
+所以读 `project.assets.json` 也挂。
+
+机器现状：系统环境变量 `ProgramData` / `APPDATA` / `ALLUSERSPROFILE` **在注册表里就不存在**；
+但 `HKLM\...\Explorer\Shell Folders\Common AppData` = `C:\ProgramData` 是有的——所以
+.NET Framework 能解析、.NET 9/10 不能。
+
+**决定性因素不是 SDK 版本，是 NuGet 版本**：
+
+| SDK | 自带 NuGet | `restore` | `build --no-restore` |
+|---|---|---|---|
+| 9.0.316（仓库内，被 `global.json` 选中） | 6.14.3.1 | ❌ | ❌ `NETSDK1060` |
+| 10.0.302（仓库外） | 7.6.0 | ❌ | ✅ |
+
+即：**在仓库目录内连 `build --no-restore` 都做不了**；`restore` 在两个 SDK 上**都**失败。
+**因此提升 `global.json` 到 SDK 10 并不能修复 `restore`**，它只能让"在仓库目录内构建"变得可行。
+（早前记录的"SDK 10 的 CoreLib 有 `%ProgramData%` 回退、设环境变量即可绕过"**已证伪**：
+.NET 10 CoreLib 里确有该字符串，但设了变量 restore 仍失败。）
+
 这进一步支持 AR-23 的判断：**构建环境依赖开发机隐式状态**。详见 §10.4 第 6 问。
 
 ### AR-25 / P1：测试把缺陷写成了规范
@@ -734,9 +752,14 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 3. ~~`.git` 是漏初始化还是拷贝时丢失？（决定 AR-24 的处理方式）~~ **已关闭：漏初始化。** 已建立 `main` 分支与基线提交 `8fdd174`。
 4. 桌面样例的 `FrameScope` 双注册是权宜之计还是预期用法？（决定 AR-01 的 (c) 层修复面）
 5. 工作区上级目录的 9 个畸形日志与 `NUL` 文件是否需要清理？（本次未代为删除）
-6. **`global.json` 是否提升到 SDK 10？** 当前固定 `9.0.308`，但本机只有 SDK 10 能绕过 NuGet 的
-   `Value cannot be null (Parameter 'path1')` 失败，且仓库现有 `project.assets.json` 是 SDK 10.0.302 生成的
-   （内含 `SdkAnalysisLevel: 10.0.300`）。**在决定前，本机无法执行任何 `dotnet restore`。**
+6. **`global.json` 是否提升到 SDK 10？** 当前固定 `9.0.308`（+ `rollForward: latestPatch` → 实际选中 9.0.316）。
+   **先澄清一个误区**：提升到 SDK 10 **不能**修复 `dotnet restore`——`restore` 在 SDK 9 和 SDK 10 上**都**失败，
+   因为它本来就要读机器级 NuGet 配置。提升的真实收益只有一个：**让"在仓库目录内构建"变得可行**
+   （目前仓库内连 `build --no-restore` 都报 `NETSDK1060`）。
+   支持提升的两条事实：① 仓库现有 `project.assets.json` 的 `SdkAnalysisLevel` = `10.0.300`，
+   本来就是 SDK 10 生成的，与 pin 矛盾；② 不提升则所有构建都必须 `cd` 出仓库，容易忘、容易错。
+   **无论是否提升，本机都无法执行任何 `dotnet restore`；根治要修机器（补回 `ProgramData` 等系统环境变量
+   或修 Known Folder 注册项），而不是改仓库。** 详见 AR-24 一节的新发现。
 7. ~~阶段 1 的两条验收是否补测？~~ **已关闭：已补齐。** 生产路径端到端（`WorkflowVisionFrameScopeRecoveryEndToEndTests`）
    与"结束后租约按所有权恰好释放"（`WorkflowVisionFrameScopeLeaseOwnershipTests`）均已落地，并各自用故意改坏生产代码
    的方式证明了有效性。另补 `WorkflowRunPreparationScopeDeclarationTests` 锁定 AR-01 破坏点
