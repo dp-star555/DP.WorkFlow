@@ -1,13 +1,16 @@
 # DP.WorkFlow 架构评审最终总结
 
-状态：**合并结论，取代以下三份文档**
+状态：**合并结论，取代以下三份文档**（最后更新 2026-09-20，AR-24 已完成 / AR-01 阶段 1 已修复 / 新增 AR-27、AR-28）
 - `docs/architecture-smell-review.md`（依赖/内核/UI/构建异味）
 - `docs/architecture-review-and-roadmap.md`（AR-01..AR-12 + 阶段 A–D）
 - `docs/architecture-review-and-roadmap-critique.md`（对上一份的评审意见）
 
-编号约定：**沿用 AR-xx**，新增项续编 AR-13 起，不引入第三套编号。每条问题的来源（AR / S / C）见 §7 溯源表。
+编号约定：**沿用 AR-xx**，新增项续编 AR-13 起，不引入第三套编号。每条问题的来源（AR / S / C）见 §10.2 溯源表。
+本轮续编至 **AR-28**（AR-27 = AR-01 姊妹实例，AR-28 = UI.Windows 套件不确定）。
+**进展以各条目标题的【状态标签】与 §1.1 的进展块为准**；未标注即仍为待处理。
 
-本评审未修改任何生产代码、测试或构建脚本。所有代码引用已逐条核对（见 §7）。
+本文的原始评审未修改任何生产代码、测试或构建脚本。文中的「已实施 / 已完成」块记录的是
+**2026-09-20 另行执行**的修复结果（提交 `8fdd174` / `16f1c45` / `1164725`），与原始评审结论分开阅读。
 
 ---
 
@@ -31,22 +34,30 @@
 
 | 等级 | 含义 | 数量 |
 |---|---|---|
-| **P0** | 继续扩大生产使用前必须修复，或阻塞其他工作 | 5 |
-| **P1** | 节点、流程与团队规模扩大前应治理 | 13 |
+| **P0** | 继续扩大生产使用前必须修复，或阻塞其他工作 | 6 |
+| **P1** | 节点、流程与团队规模扩大前应治理 | 14 |
 | **P2** | 按实际部署与性能指标推进 | 8 |
+
+> **进展（2026-09-20）**
+> - **AR-24 已完成** → 阶段 0 关闭。`main` 分支，基线提交 `8fdd174`（768 文件）。
+> - **AR-01 阶段 1 已修复**（`16f1c45`）→ 阶段 2 待评估。
+> - 新增 **AR-27**（AR-01 的姊妹实例，同日已修复 `1164725`）。
+> - 新增 **AR-28**（UI.Windows 套件不可作为门禁，本轮实测发现）。
 
 ### 1.2 四件最该先做的事
 
-1. **AR-24 纳入版本控制** — 它是其他一切修复的安全网，且 AR-11 与阶段 D 的全部内容以它为前提。
+1. ~~**AR-24 纳入版本控制**~~ — **已完成**（`8fdd174`）。它是其他一切修复的安全网，且 AR-11 与阶段 D 的全部内容以它为前提。
 2. **AR-02 冻结语义** — 当前"校验失败"与"已冻结有效"在 API 上不可区分，且子目录冻结不可逆。
-3. **AR-01 准备与资源所有权** — 已复现的机制缺陷，影响根运行、子运行、联合恢复三条路径。
+3. ~~**AR-01 准备与资源所有权**~~ — **阶段 1 已完成**（`16f1c45`）；阶段 2 的接口拆分待评估。姊妹实例 AR-27 一并修复。
 4. **AR-17 快照热路径** — 无条件全量构造 + 与调度共用一把锁，是并发扩展的直接瓶颈。
+
+**下一个待办是 AR-02**（第 2 项）。注意 AR-25 已记录：修复 AR-02 必须同步修改 `WorkflowPluginLoaderTests.cs:53-60` 的测试期望，否则改完即红。
 
 ---
 
 ## 2. 运行契约与资源所有权
 
-### AR-01 / P0：运行准备与资源作用域混淆【机制已复现】
+### AR-01 / P0：运行准备与资源作用域混淆【阶段 1 已修复 · 阶段 2 待评估】
 
 **问题定位：不在实现里，在契约里。** `IWorkflowRunPreparationService` 的接口注释原文是：
 
@@ -100,6 +111,64 @@ Nodes.Process/Recovery/WorkflowWarningHandlerCoordinator.cs:55 ← 协调器兜�
 **建议**：建立 RunScope / 子 Scope 的资源所有权契约。设备能力实例、根运行资源、子任务资源不能统称为 Services。**父资源只由其所有者释放**；清理动作应由所有者在**运行结束时**执行，而不是由任意调用者在**运行开始时**执行。不能简单跳过全部子流程准备——能力检查与子任务自身准备仍然必要。
 
 **验收**：采图 → 主操作故障 → 执行处置 → 继续消费原图；父输出有效，子任务完成不清理父资源，结束后租约按所有权恰好释放。
+
+---
+
+**阶段 1 已实施（2026-09-20，commit `16f1c45`）**，方案与证据见 `docs/ar-01-fix-plan.md`。
+
+改法：给准备请求补上它一直缺的作用域维度——`WorkflowRunPreparationContext` 增加**必填**
+`WorkflowRunScopeKind ScopeKind`（`Root`/`Nested`）与 `ParentNodeId`，由编译器强制每个调用点表态。
+
+| 层 | 改动 |
+|---|---|
+| (b) 契约 | `ScopeKind` 必填，无默认值；修正接口注释为"根运行开始、以及任何嵌套运行开始时调用" |
+| (a) 内核 | `WorkflowRuntimeHost` → `Root`；`WorkflowEngine` → `Nested` + `parentNode.Id`；`WorkflowWarningHandlerCoordinator` → `Nested`；`WorkflowJointRecoveryGroup` → 暂 `Nested` |
+| (c) 装配 | `WorkflowVisionFrameScope.PrepareAsync` 校验与链式调用照常，**仅 `Root` 才 `Clear()`** |
+
+> 上表代码引用中的行号是**修复前**的快照，修复后已发生位移。
+
+**红→绿证据**：新增 4 个回归测试，修复前 `嵌套运行准备不得释放根运行已保留的帧` 失败于
+`ObjectDisposedException: ImageBuffer`（`ImageBuffer.Alive()` ← `ImageFrame.Retain()`），
+其余 3 个通过；修复后 4/4 通过。全量 729 测试通过，Debug/Release 构建 0 警告 0 错误。
+
+**未完成部分**：
+
+- 阶段 2（拆成 `IWorkflowRunPreparationService` 只校验 + `IWorkflowRunResourceOwner` 只释放）
+  尚未实施——这是把误用从"运行期 bug"变成"编译期错误"的关键一步。
+- `WorkflowJointRecoveryGroup` 的"一轮"语义仍未定义，当前按安全方向取 `Nested`。若确实需要干净起点，
+  应由联合组在"协作开始"单点显式触发一次，而不是每个参与者各触发一次。
+- 生产路径端到端复现（验收第 4 条）仍未做：现有测试是构造性的，未走 `LoadVisionFileNode` 全链路。
+- 验收第 5 条（结束后租约按所有权恰好释放）尚无对应测试。
+
+### AR-27 / P0：文件夹采集游标被嵌套运行重置【已修复 · AR-01 姊妹实例】
+
+`WorkflowVisionAcquisitionSession` 与帧仓**共用同一批调用点**，也把"新运行归零"无条件执行了：
+
+```csharp
+if (next is not null) await next.PrepareAsync(context, cancellationToken).ConfigureAwait(false);
+_sequences = prepared;      // ← 无条件替换：清单重新冻结 + 全部游标归零
+```
+
+AR-01 只修了帧仓，这条当时被列为"同源遗留"。本轮用确定性假读取器复现，确认它是**独立缺陷**：
+
+```text
+根运行准备 → 读 01.png → 读 02.png → 嵌套准备 → 再读
+修复前：得到 01.png     ← 游标被拨回起点，根运行重复消费已处理图像
+修复后：得到 03.png
+```
+
+两个后果都属生产性问题：
+
+1. **重复消费**：嵌套运行（恢复处置子流程）把根运行的文件夹游标拨回起点，根运行恢复后重新处理已经处理过的图像——在检测工位上就是重复判定同一张图。
+2. **清单中途变化**：重新冻结目录清单，会让正在运行的文件列表在运行中途改变，与"运行准备时冻结"的设计意图相矛盾。
+
+**修复**（`1164725`）：与 AR-01 阶段 1 同一模式——校验与 `next` 链式调用对所有作用域照常执行，
+**只有 `Root` 才冻结清单并归零游标**。新增 3 个回归测试（嵌套不重置 / 根仍然重置 / 嵌套仍然执行 ID 重复校验），
+修复前红灯 `Expected: 3, Actual: 1`。
+
+**归因**：这是 AR-01 同一根因的第二个表现面，说明"契约缺少作用域维度"的影响范围**不止帧仓一处**。
+排查结论：目前只有这两个类型实现了 `IWorkflowRunPreparationService`，均已修正；
+但**根因（接口不表达作用域）仍在**，阶段 2 的接口拆分才能从结构上封住。
 
 ### AR-02 / P0：插件冻结具有失败后的"成功外观"【已复现】
 
@@ -336,7 +405,7 @@ UI.Shared  →  Abstractions + Core + Runtime + Persistence.Json + ScriptEngine
 
 **建议**：改为显式属性 + CI 注入（或 `Directory.Build.user.props` 不入版本控制）；HALCON 边界收敛到 `DP.Vision` 仓。
 
-### AR-24 / P0（阻塞）：项目不在版本控制下
+### AR-24 / P0（阻塞）：项目不在版本控制下【已完成】
 
 ```text
 DP.WorkFlow/   无 .git（同级 Base/、Halcon_DP.../ 有）
@@ -351,6 +420,27 @@ git status   → fatal: not a git repository
 
 **建议**：新增**阶段 0**，并声明为阶段 A 的**前置条件**而非并列项。
 
+---
+
+**已完成（2026-09-20，commit `8fdd174`）**。
+
+| 项 | 结论 |
+|---|---|
+| 性质 | **漏初始化**，不是拷贝时丢失（§10.4 第 3 问已关闭） |
+| 分支 / 首次提交 | `main` / `8fdd174`，纳入 **768 个文件** |
+| `.gitignore` | 已确认覆盖 `bin/`、`obj/`、`.vs/`、`.tmp/`、`.pi-tmp/`、`artifacts/`、`TestResults/`、`*.log`、`.workbuddy-ai/`；新增 `.gitattributes` 统一换行并声明二进制类型 |
+| 洁净度核实 | 无厂商二进制、无敏感信息、无日志混入；最大文件 644KB（`docs/paddle-print-quality-workflow.html`） |
+| 仓库配置 | 仓库级 `user.name` / `user.email` / `core.autocrlf=false` |
+
+**未处理**：`../DP.Vision` 仍是跨仓源码引用（AR-16），纳入 VCS 后既不是子模块也不是包——
+本次未改变其引用方式，AR-16 仍需独立决策。
+
+**新发现（本机环境，与 AR-23 同族）**：`dotnet restore` 在本机必然失败，报
+`NuGet.targets: error : Value cannot be null. (Parameter 'path1')`。根因是
+`Environment.GetFolderPath(CommonApplicationData)` 返回 null，NuGet 随后 `Path.Combine(null, "NuGet")` 抛异常。
+只有 SDK 10 能绕过（.NET 10 CoreLib 才有 `%ProgramData%` 回退），而 `global.json` 固定 `9.0.308`。
+这进一步支持 AR-23 的判断：**构建环境依赖开发机隐式状态**。详见 §10.4 第 6 问。
+
 ### AR-25 / P1：测试把缺陷写成了规范
 
 `WorkflowPluginLoaderTests.cs:53-60`：
@@ -362,6 +452,41 @@ Assert.True(catalog.IsFrozen);     // ← 断言"失败后仍然是已冻结"
 ```
 
 测试锁定了 AR-02 的风险行为。这意味着**修复 AR-02 必须同步修改测试期望**，否则改完即红。这不是单个测试的问题，而是**测试把待修缺陷固化为契约**的治理问题——同类风险应系统性排查。
+
+### AR-28 / P1：UI.Windows 套件不确定，不能当作门禁【已复现·抖动】
+
+`DP.WorkFlow.UI.Windows.Tests` 是本仓库最大的测试套件（353 例），但**同一份二进制重复运行结果不同**：
+
+```text
+2026-09-20 同一次会话，改动前后各跑一次全量：
+  运行 1：353 通过 / 0 失败
+  运行 2：352 通过 / 1 失败
+  运行 3：350 通过 / 3 失败
+
+对其中 3 个用例连跑 3 次（代码与二进制完全未变）：
+  第 1 次：通过 3    第 2 次：通过 3    第 3 次：失败 1
+```
+
+已定位的抖动用例（均属 `ModernControlBehaviorTests`）：
+
+| 用例 | 断言内容 |
+|---|---|
+| `CheckedListBoxClickDoesNotEraseTheWholeBackgroundOrQueueASecondFullRepaint` | 重绘次数落在 0–1 |
+| `Select_KeyboardNavigation_HomeEndAndPageKeysUseVisibleRowCount` | 期望值 0，实际 3 |
+| `DatePickerManagedPopupStaysOnScreenAndClosesWhenOwnerMoves` | 弹窗位置布尔断言 |
+
+**为什么是治理问题而不是普通 flaky**：全量测试是阶段 A 的退出门槛（"失败目录不能运行"、"无订阅者时快照分配为 0"等都要靠它判定）。
+当最大的套件本身不确定时，**门禁给出的"红"无法区分"改动引入了缺陷"与"机器今天心情不好"**——
+本轮就实际发生过：一次全量出现 1 个失败，若直接采信会误判为 AR-27 修复引入回归，
+实际证明是抖动（同二进制连跑三次结果不同）。
+
+**建议**：
+
+1. 把绘制次数、弹窗坐标这类**依赖时序与渲染的断言**从硬断言改为带容差或改为可重放的事件序列断言；
+2. 抖动用例单独成组，与确定性套件分开报告，**不要混在同一个"全绿/非全绿"判定里**；
+3. 在引入阶段 A 的退出门槛前，先让门禁本身可信——否则门槛会变成噪音来源。
+
+这与 AR-25 是同一类问题的两个面：AR-25 是"把缺陷写成规范"，AR-28 是"把抖动写成通过"。
 
 ### AR-11 / P1：文档保真已有，插件与节点演进协议仍不足
 
@@ -458,12 +583,14 @@ Assert.True(catalog.IsFrozen);     // ← 断言"失败后仍然是已冻结"
 
 ## 8. 演进路线
 
-### 阶段 0：纳入版本控制（AR-24）
+### 阶段 0：纳入版本控制（AR-24）【已完成】
 
 **前置条件**，无退出门槛，立即执行。
 
-- 初始化仓库或确认丢失原因；确认 `.gitignore` 覆盖 `bin/`、`obj/`、`.tmp/`、`.pi-tmp/`、`artifacts/`；
+- ~~初始化仓库或确认丢失原因；确认 `.gitignore` 覆盖 `bin/`、`obj/`、`.tmp/`、`.pi-tmp/`、`artifacts/`；~~
+  **已完成**（`8fdd174`）。性质为漏初始化；`.gitignore` 已补齐 `.pi-tmp/`、`artifacts/`、`TestResults/`、`*.log`、`.workbuddy-ai/`。
 - 确认 `../DP.Vision` 的引用方式（AR-16）在纳入 VCS 后如何处理（子模块或包）。
+  **未处理**，仍为跨仓源码引用，需独立决策。
 
 ### 阶段 A：先修成立条件（AR-01/02/03/04/17/19/25）
 
@@ -572,8 +699,10 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 | AR-24 | C | 新增（阻塞） |
 | AR-25 | C | 新增 |
 | AR-26 | S4-4 + C | 合并文档治理与探针入库 |
+| AR-27 | 本轮实施 | AR-01 的姊妹实例：文件夹采集游标被嵌套运行重置（已修复 `1164725`） |
+| AR-28 | 本轮实施 | UI.Windows 套件不确定，不能当作门禁（实测抖动） |
 
-来源标记：`AR` = 你的 `architecture-review-and-roadmap.md`；`S` = `architecture-smell-review.md`；`C` = `architecture-review-and-roadmap-critique.md`。
+来源标记：`AR` = 你的 `architecture-review-and-roadmap.md`；`S` = `architecture-smell-review.md`；`C` = `architecture-review-and-roadmap-critique.md`；`本轮实施` = 2026-09-20 执行 AR-24 / AR-01 阶段 1 时发现。
 
 ### 10.3 已核对的代码引用
 
@@ -602,6 +731,11 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 
 1. `net48` 是业务硬需求还是历史兼容？（决定 AR-15 的范围）
 2. 现有节点配置中是否存在含引用型成员的 struct？（决定 AR-03 的等级）
-3. `.git` 是漏初始化还是拷贝时丢失？（决定 AR-24 的处理方式）
+3. ~~`.git` 是漏初始化还是拷贝时丢失？（决定 AR-24 的处理方式）~~ **已关闭：漏初始化。** 已建立 `main` 分支与基线提交 `8fdd174`。
 4. 桌面样例的 `FrameScope` 双注册是权宜之计还是预期用法？（决定 AR-01 的 (c) 层修复面）
 5. 工作区上级目录的 9 个畸形日志与 `NUL` 文件是否需要清理？（本次未代为删除）
+6. **`global.json` 是否提升到 SDK 10？** 当前固定 `9.0.308`，但本机只有 SDK 10 能绕过 NuGet 的
+   `Value cannot be null (Parameter 'path1')` 失败，且仓库现有 `project.assets.json` 是 SDK 10.0.302 生成的
+   （内含 `SdkAnalysisLevel: 10.0.300`）。**在决定前，本机无法执行任何 `dotnet restore`。**
+7. **阶段 1 的两条验收是否补测？** 生产路径端到端（采图 → 主操作故障 → 处置 → 继续消费原图）与
+   "结束后租约按所有权恰好释放"目前都只有构造性覆盖。
