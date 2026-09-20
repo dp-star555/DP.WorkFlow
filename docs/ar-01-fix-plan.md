@@ -400,10 +400,17 @@ Debug 与 Release 构建均 **0 警告 0 错误**。
 
 ### 环境前置（重要）
 
-本机 `dotnet restore` 因 `Environment.GetFolderPath(CommonApplicationData)` 返回 null 而必然失败。
-本次验证使用 `ProgramData` 环境变量 + SDK 10 + `--no-restore` / `--no-build` 完成，
-未修改 `global.json` 与 `tools/Test-DPWorkFlow.ps1`。`global.json` 当前固定 `9.0.308`，
-在本机无法完成任何还原，需用户决策是否提升到 `10.0.302`。
+> **2026-09-20 更正**：下列"必然失败"的结论已被推翻。真实根因是**系统环境变量缺失**
+> （NuGet 在 CoreCLR 下直接读 `ProgramFiles(x86)` / `ProgramFiles` / `APPDATA`，变量不存在则返回 null），
+> **与 SDK 版本、与仓库配置都无关**。补齐 `APPDATA` + `ProgramFiles(x86)` 后，
+> 在仓库目录内用 `global.json` 选中的 SDK 9.0.316 带还原完整构建 → **0 警告 0 错误**。
+> 详见 `architecture-final-summary.md` 的 AR-24 一节与 §10.4 第 6 问。
+
+本机 `dotnet restore` 曾因 `Environment.GetFolderPath(CommonApplicationData)` 返回 null 而失败
+（**该归因不正确**，实际是 NuGet 自己读环境变量）。当时验证使用
+`ProgramData` 环境变量 + SDK 10 + `--no-restore` / `--no-build` 完成，
+未修改 `global.json` 与 `tools/Test-DPWorkFlow.ps1`。
+**修复后 `global.json` 无需改动**，`9.0.308` 在仓库内可正常工作。
 
 ---
 

@@ -435,61 +435,97 @@ git status   → fatal: not a git repository
 **未处理**：`../DP.Vision` 仍是跨仓源码引用（AR-16），纳入 VCS 后既不是子模块也不是包——
 本次未改变其引用方式，AR-16 仍需独立决策。
 
-**新发现（本机环境，与 AR-23 同族，2026-09-20 复核）**：`dotnet restore` 在本机必然失败，报
-`NuGet.targets: error : Value cannot be null. (Parameter 'path1')`。根因是
-`Environment.GetFolderPath(CommonApplicationData)` 在本机解析不出来，NuGet 随后
-`Path.Combine(null, "NuGet")` 抛异常；该异常被静态 `Lazy` 缓存，**同进程内之后所有 NuGet 操作都会失败**，
-所以读 `project.assets.json` 也挂。
+**新发现（本机环境，与 AR-23 同族，2026-09-20 查清并已修复）**：`dotnet restore` 在本机报
+`NuGet.targets: error : Value cannot be null. (Parameter 'path1')`，**根因是系统环境变量缺失**，
+不是 SDK 版本问题，也不是仓库问题。
 
-机器现状：系统环境变量 `ProgramData` / `APPDATA` / `ALLUSERSPROFILE` **在注册表里就不存在**；
-但 `HKLM\...\Explorer\Shell Folders\Common AppData` = `C:\ProgramData` 是有的——所以
-.NET Framework 能解析、.NET 9/10 不能。
-注意不对称：**用户级** NuGet 配置能正常解析（`C:\Users\25845\AppData\Roaming\NuGet\NuGet.Config`
-存在且可用），只有**机器级**（`CommonApplicationData`）这一个解析不出来。
+### 真实根因（有完整堆栈）
 
-**为什么 `dotnet` CLI 崩、Visual Studio 不崩（2026-09-20 查清）**：
+用 `--verbosity diagnostic` 抓到（`-v:diag` 会被本机安全策略拦截）：
 
-| 运行时 | `GetFolderPath(CommonApplicationData)` | 结果 |
+```text
+System.ArgumentNullException: Value cannot be null. (Parameter 'path1')
+   at System.IO.Path.Combine(String path1, String path2)
+   at NuGet.Common.NuGetEnvironment.CalculateFolderPath(NuGetFolderPath folder)
+   at NuGet.Common.NuGetEnvironment.GetFolderPath(NuGetFolderPath folder)
+   at NuGet.Common.NuGetEnvironment.CalculateFolderPath(NuGetFolderPath folder)   ← 嵌套
+   at NuGet.Common.NuGetEnvironment.GetFolderPath(NuGetFolderPath folder)
+   at NuGet.Configuration.XPlatMachineWideSetting..ctor()
+   at NuGet.Build.Tasks.GetRestoreSettingsTask.<>c.<.cctor>b__87_0()
+```
+
+NuGet 源码（`NuGetEnvironment.CalculateFolderPath`）：
+
+```csharp
+case NuGetFolderPath.MachineWideSettingsBaseDirectory:
+    if (RuntimeEnvironmentHelper.IsWindows)
+    {
+        machineWideBaseDir = GetFolderPath(SpecialFolder.ProgramFilesX86);
+        if (string.IsNullOrEmpty(machineWideBaseDir))
+            machineWideBaseDir = GetFolderPath(SpecialFolder.ProgramFiles);
+    }
+    return Path.Combine(machineWideBaseDir, "NuGet");     // ← 这里拿到 null 就崩
+
+case NuGetFolderPath.UserSettingsDirectory:
+    return Path.Combine(GetFolderPath(SpecialFolder.ApplicationData), "NuGet");
+```
+
+关键点：**NuGet 在 CoreCLR 下的 `GetFolderPath(SpecialFolder …)` 是直接读环境变量**
+（`ProgramFiles(x86)` / `ProgramFiles` / `APPDATA` / `LOCALAPPDATA` / …），
+**不走** `Environment.GetFolderPath`，因此也**不经过**外壳文件夹注册表。
+变量不存在时返回 `null`，`Path.Combine(null, "NuGet")` 立刻抛异常。
+
+> ⚠️ 早前记录的"根因是 `Environment.GetFolderPath(CommonApplicationData)` 解析不出来"**是错的**。
+> 实测该 API 在这台机器上正常（`SHGetKnownFolderPath(FOLDERID_ProgramData)` → `C:\ProgramData`，
+> 用 ctypes 直接调用验证过）。**错的是"谁在读这个路径"——是 NuGet 自己读环境变量。**
+
+### 为什么 `dotnet` CLI 崩、Visual Studio 不崩
+
+| 谁 | 取路径的方式 | 结果 |
 |---|---|---|
-| .NET Framework 4.0.30319（`MSBuild.exe` / `devenv.exe` / Windows PowerShell 5.1） | `C:\ProgramData` | ✅ 走注册表外壳文件夹，正常 |
-| .NET 9 / 10（`dotnet` CLI） | 取不到 → `null` | ❌ `Path.Combine(null, "NuGet")` 崩 |
+| `dotnet` CLI（.NET 9 / 10 上的 NuGet） | 直接读环境变量 | ❌ 变量缺失 → `null` → 崩 |
+| Visual Studio（.NET Framework 上的 NuGet） | `Environment.GetFolderPath` → 外壳 API/注册表 | ✅ 正常 |
 
-实测（本机）：Windows PowerShell 5.1（CLR 4.0.30319）下 `GetFolderPath` 六个文件夹全部正常返回；
-而 `dotnet restore` 在 SDK 9.0.316 与 10.0.302 上**都**报同一个 `path1` 错误。
+### 机器现状：一组标准环境变量被删了
 
-**这解释了那批 assets 的来历——它是在本机生成的，由 Visual Studio / `MSBuild.exe` 完成还原，
-不是从别处拷来的。** 证据在 `project.assets.json` 自身：
+`HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment` 只剩 **15 个值**，
+`HKCU\Environment` 只剩 **9 个值**。以下全部缺失：
 
-- `project.restore.packagesPath` = `C:\Users\25845\.nuget\packages\`（本机用户目录）
-- `project.restore.outputPath` = 本仓库 `obj\` 路径
-- `project.restore.configFilePaths` 含本机用户级 `NuGet.Config`
-- `project.restore.fallbackFolders` 含 Visual Studio 的 `Shared\NuGetPackages`
-- 仓库根有 `.vs/`（2026-09-02 起），`Directory.Build.props` 同为 2026-09-02
+`ProgramFiles`、`ProgramFiles(x86)`、`CommonProgramFiles`、`CommonProgramFiles(x86)`、
+`ProgramData`、`ALLUSERSPROFILE`、`APPDATA`、`LOCALAPPDATA`、`USERPROFILE`
 
-且 `SdkAnalysisLevel` 一律 `10.0.300`（SDK 9.0.316 写 `9.0.300`、SDK 10.0.302 写 `10.0.300`；
-该值由 SDK 自己写入，与 `TargetFramework` 无关——同一文件里 `targets` / `project.frameworks` 仍是 `net8.0`），
-说明还原用的是 SDK 10——与 `global.json` 写的 9.0.308 不一致，间接说明 **`global.json` 是 2026-09-10 之后才加上的**。
+该注册表键的**最后写入时间是 2026-08-11 09:49:55**，早于仓库 2026-09-09/10 的首批构建。
 
-注册表佐证：`HKLM\SYSTEM\...\Session Manager\Environment` 的**最后写入时间是 2026-08-11 09:49:55**，
-即环境变量缺失这件事在 9 月 9–10 日那批构建之前就已存在——所以那批构建**只能**是 Visual Studio 干的。
+### 修复办法（已验证）
 
-**⚠️ 脆弱点（已修正）**：`obj/` 被 `.gitignore` 排除、**不在版本控制里（被跟踪的 obj 文件数为 0）**。
-但**它并非不可再生**——用 Visual Studio 打开解决方案即可重新还原/构建。
-只有 `dotnet` CLI 这条路不可再生。真正的风险是"**只有 VS 一条路能还原**"这一单点依赖。
-可选处置：① 修机器让 CLI 的 `restore` 恢复（首选）；② 文档显式写明"此仓库须用 Visual Studio 还原"；
-③ 把 assets 纳入版本控制（不常规）。
+**最小集：`APPDATA` + （`ProgramFiles(x86)` 或 `ProgramFiles`）**。逐项实测（探针工程）：
 
-**决定性因素不是 SDK 版本，是 NuGet 版本**：
+| 补哪些变量 | `dotnet restore` |
+|---|---|
+| 一个都不补（基线） | ❌ |
+| 只 `ProgramFiles` + `ProgramFiles(x86)` | ❌ |
+| 只 `APPDATA` / 只 `ProgramData` / 只 `ALLUSERSPROFILE` / 只 `USERPROFILE` / 只 `LOCALAPPDATA` | ❌ |
+| `ProgramFiles(x86)` + `APPDATA` | ✅ |
+| `ProgramFiles` + `APPDATA` | ✅ |
 
-| SDK | 自带 NuGet | `restore` | `build --no-restore` |
-|---|---|---|---|
-| 9.0.316（仓库内，被 `global.json` 选中） | 6.14.3.1 | ❌ | ❌ `NETSDK1060` |
-| 10.0.302（仓库外） | 7.6.0 | ❌ | ✅ |
+**端到端验证**：补齐变量后，在**仓库目录内**用 `global.json` 选中的 **SDK 9.0.316** 执行
+`dotnet build DP.WorkFlow.sln -c Debug`（**带还原、不 `cd` 出仓库、不 `--no-restore`**）：
+**已成功生成，0 个警告，0 个错误**（1 分 52 秒）。
 
-即：**在仓库目录内连 `build --no-restore` 都做不了**；`restore` 在两个 SDK 上**都**失败。
-**因此提升 `global.json` 到 SDK 10 并不能修复 `restore`**，它只能让"在仓库目录内构建"变得可行。
-（早前记录的"SDK 10 的 CoreLib 有 `%ProgramData%` 回退、设环境变量即可绕过"**已证伪**：
-.NET 10 CoreLib 里确有该字符串，但设了变量 restore 仍失败。）
+### 因此：`global.json` 不需要改
+
+之前的结论"仓库内连 `build --no-restore` 都做不了、必须 `cd` 出仓库"，
+以及"SDK 9 自带的 NuGet 6.14 读不了 assets"——**全部是环境变量缺失的连带后果，不是 NuGet 版本差异**。
+变量补齐后 SDK 9 与 SDK 10 都能正常工作。
+
+### 关于那批 assets
+
+2026-09-10 那批 assets 的 `packagesPath` / `outputPath` / `configFilePaths` / `fallbackFolders`
+**全部指向本机**，且其 `SdkAnalysisLevel` 为 `10.0.300`（与 `global.json` 的 9.0.308 不一致）——
+说明它们**由本机的 Visual Studio 生成**（只有 VS 那条路当时能用），且 `global.json` 是那之后才加的。
+
+修复后已在仓库内用 SDK 9.0.316 重新还原，`SdkAnalysisLevel` 现为 **`9.0.300`**，
+与 `global.json` 一致——**仓库恢复为可自洽复现的状态**，`obj/` 不再依赖"外部带入"。
 
 这进一步支持 AR-23 的判断：**构建环境依赖开发机隐式状态**。详见 §10.4 第 6 问。
 
@@ -786,7 +822,8 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 3. ~~`.git` 是漏初始化还是拷贝时丢失？（决定 AR-24 的处理方式）~~ **已关闭：漏初始化。** 已建立 `main` 分支与基线提交 `8fdd174`。
 4. 桌面样例的 `FrameScope` 双注册是权宜之计还是预期用法？（决定 AR-01 的 (c) 层修复面）
 5. 工作区上级目录的 9 个畸形日志与 `NUL` 文件是否需要清理？（本次未代为删除）
-6. **`global.json` 是否提升到 SDK 10？** 当前固定 `9.0.308`（+ `rollForward: latestPatch` → 实际选中 9.0.316）。
+6. ~~**`global.json` 是否提升到 SDK 10？**~~ **已关闭：不需要改。** 当前固定 `9.0.308`
+   （+ `rollForward: latestPatch` → 实际选中 9.0.316），**这是可用的**。
 
    **先澄清一个前提，避免误解**：本仓库**不存在"要不要支持 9.0 或 10.0"的问题**。这是两件不同的事：
 
@@ -806,13 +843,21 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
    | 项目本身（`TargetFramework=net8.0`） | SDK ≥ **8.0.100** | ✅ **唯一真实的需求** |
    | 仓库配置（`global.json`） | SDK = `9.0.308` | ❌ 手写的声明，无项目理由 |
    | 这台机器装了 | `9.0.316` / `10.0.302` | ❌ 环境事实 |
-   | 这台机器能用 | 只有 `10.0.302` | ❌ NuGet 版本差异所致 |
+   | ~~这台机器能用~~ | ~~只有 `10.0.302`~~ | ❌ **假象——已修复**：系统环境变量缺失所致，与 SDK 版本无关 |
 
-   即：**项目要 8，配置写着 9，机器只有 9 和 10，而机器只能用 10。** 没有任何一条是"项目需要 9 或 10"。
+   即：**项目要 8，配置写着 9，机器只有 9 和 10；而"只有 10 能用"是环境变量缺失造成的。**
+   没有任何一条是"项目需要 9 或 10"。
+
+   **修复后实测**（2026-09-20）：补齐 `APPDATA` + `ProgramFiles(x86)` 后，在**仓库目录内**用
+   `global.json` 选中的 **SDK 9.0.316** 执行 `dotnet build DP.WorkFlow.sln -c Debug`
+   （**带还原、不 `cd` 出仓库、不 `--no-restore`**）→ **0 个警告，0 个错误**。
+   所以 **SDK 9 完全够用，`global.json` 不需要动。** 详见 AR-24 一节。
+
    已验证：全部 45 个解决方案内工程均为 `net8.0` / `net48` / `netstandard2.0`；
    用 C# 12（SDK 8 的默认语言版本）编译整个解决方案 **0 警告 0 错误**——项目层面降到 8.0.100 无障碍。
    唯一真正的项目级约束是 `LangVersion=latest`（它约束的不是版本号，而是"必须固定"），
-   把它写死（如 `12`）即可解除 SDK 敏感性。
+   把它写死（如 `12`）即可解除 SDK 敏感性。**是否降到 `8.0.100` 是一个独立的、可选的整理动作，
+   前提是先装 SDK 8**（本机没装，直接改会连 VS 都打不开项目）。
 
    **`rollForward` 实测**（2026-09-20，本机已装 SDK `9.0.316` / `10.0.302`，在仓库目录内执行）：
 
@@ -825,33 +870,28 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 
    所以"降成 8 会砍掉可构建路径"这句话要拆开说：**砍掉的是"仓库内解析出 SDK"这件事**，
    而**仓库外（cwd = `C:\Data`）那条路完全不受 `global.json` 影响**——`global.json` 只在仓库目录树内生效。
-   现状是"仓库内解析出 9.0.316 但编不动（NuGet 6.14）"，降成 8 变成"仓库内根本解析不出 SDK"，
-   两者在仓库内都不可用；真正的差别只在于报错更早、更直白。
    `latestMajor` 能让它解析到 10.0.302，但那等于"写着 8、实际用 10"，声明就失去意义了。
+   **本机没装 SDK 8，所以 `8.0.100 + latestPatch/latestMinor` 是硬失败**——
+   要真降到 8，必须先装 SDK 8（可侧装到本地目录，不动系统）。
 
    **为什么需要 pin 一个 SDK 版本**：本仓库 `Directory.Build.props` 里
-   `LangVersion=latest`（**C# 语言版本跟着 SDK 走**：SDK 9 → C# 13，SDK 10 → C# 14）
+   `LangVersion=latest`（**C# 语言版本跟着 SDK 走**：SDK 8 → C# 12，SDK 9 → C# 13，SDK 10 → C# 14）
    且 `TreatWarningsAsErrors=true`（**多一条分析器警告就构建失败**）。
    同一份源码在不同 SDK 上可能一个绿一个红——pin 的用意就是让"我这儿能编过"在团队里成立。
+   **这是本仓库唯一真正的项目级约束**（约束的是"必须固定一个"，而不是某个具体版本号）。
 
-   **但本仓库的 pin 与事实不符**：`project.assets.json` 的 `SdkAnalysisLevel` = `10.0.300`，
-   是 SDK 10 生成的，说明实际开发中早已在用 SDK 10。所以真正的问题不是"要不要支持 10"，
-   而是"**这个 pin 还要不要留**"。
+   **关于"pin 与事实不符"**：那批 2026-09-10 的 assets 的 `SdkAnalysisLevel` 是 `10.0.300`
+   （由 SDK 10 生成），当时与 pin 的 9.0.308 不一致——但那是**因为 CLI 当时不可用、只能用 VS**，
+   并非有意选 SDK 10。**修复环境变量后已在仓库内用 SDK 9.0.316 重新还原，
+   `SdkAnalysisLevel` 现为 `9.0.300`，与 `global.json` 一致**，仓库已恢复为可自洽复现的状态。
 
-   **另一个误区**：提升到 SDK 10 **不能**修复 `dotnet restore`——`restore` 在 SDK 9 和 SDK 10 上**都**失败，
-   因为它本来就要读机器级 NuGet 配置。提升的真实收益只有一个：**让"在仓库目录内构建"变得可行**
-   （目前仓库内连 `build --no-restore` 都报 `NETSDK1060`）。
-   支持提升的两条事实：① 现有 assets 本来就是 SDK 10 生成的，与 pin 矛盾；
-   ② 不提升则所有构建都必须 `cd` 出仓库，容易忘、容易错。
-   **无论是否提升，本机都无法执行任何 `dotnet restore`；根治要修机器（补回 `ProgramData` 等系统环境变量
-   或修 Known Folder 注册项），而不是改仓库。** 详见 AR-24 一节的新发现。
+   **旧结论已作废**：此前记录的"提升到 SDK 10 才能让仓库内构建可行""SDK 9 自带的 NuGet 6.14 读不了 assets"
+   ——**全部是环境变量缺失的连带后果，不是 NuGet 版本差异**。变量补齐后 SDK 9 与 SDK 10 都能正常工作。
 
-   **关键补充（2026-09-20 查清）：本机真正可用的构建入口是 Visual Studio，不是 `dotnet` CLI。**
-   `devenv.exe` / `MSBuild.exe` 跑在 .NET Framework 上，`GetFolderPath(CommonApplicationData)`
-   走注册表外壳文件夹能正常返回 `C:\ProgramData`，所以它们的 NuGet **不崩**；
-   仓库里那 46 个 assets 正是 2026-09-10 由它们生成的（路径字段全部指向本机）。
-   因此"改 `global.json` 换 SDK"解决的是 **CLI 的便利问题**，不是"能不能构建"的问题——
-   能不能构建取决于是否用 Visual Studio。详见 AR-24 一节。
+   **根治办法（已验证有效）**：把缺失的系统环境变量补回去。
+   **最小集 = `APPDATA` + （`ProgramFiles(x86)` 或 `ProgramFiles`）**；
+   临时可用 `env "ProgramFiles(x86)=C:\Program Files (x86)" "APPDATA=C:\Users\<你>\AppData\Roaming" dotnet build ...`。
+   详见 AR-24 一节。
 
 7. ~~阶段 1 的两条验收是否补测？~~ **已关闭：已补齐。** 生产路径端到端（`WorkflowVisionFrameScopeRecoveryEndToEndTests`）
    与"结束后租约按所有权恰好释放"（`WorkflowVisionFrameScopeLeaseOwnershipTests`）均已落地，并各自用故意改坏生产代码
