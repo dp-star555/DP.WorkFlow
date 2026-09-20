@@ -281,7 +281,9 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
         WorkflowRuntimeCapabilityValidator.Validate(plan, context.Services);
         if (context.Services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowRunPreparationService preparation)
             await preparation.PrepareAsync(
-                new WorkflowRunPreparationContext(EnumerateNodes(plan.Plan).ToArray()),
+                new WorkflowRunPreparationContext(
+                    EnumerateNodes(plan.Plan).ToArray(),
+                    WorkflowRunScopeKind.Root),
                 cancellationToken).ConfigureAwait(false);
         var result = await engine.RunAsync(cancellationToken).ConfigureAwait(false);
         lock (_syncRoot)

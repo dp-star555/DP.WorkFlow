@@ -34,7 +34,7 @@ public sealed class WorkflowVisionPreview : IDisposable
     public void Dispose() => Frame.Dispose();
 }
 
-/// <summary>有界运行帧仓和最新预览源；作为准备服务时每次新运行释放上一轮仓内租约，UI已Retain的快照不受影响。</summary>
+/// <summary>有界运行帧仓和最新预览源。根运行开始时释放上一轮仓内租约，使结果查看窗口结束后自然回收；根运行内部的嵌套运行只校验、不清空。UI已Retain的快照不受影响。</summary>
 public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkflowVisionPreviewSource, IWorkflowRunPreparationService, IDisposable
 {
     private readonly object _gate = new();
@@ -126,6 +126,12 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
         if (duplicate is not null)
             throw new InvalidOperationException($"新版视觉预览节点ID跨子文档重复：{duplicate.Key}；不能把不同节点的图像合并到同一预览槽。");
         if (_next is not null) await _next.PrepareAsync(context, cancellationToken).ConfigureAwait(false);
+
+        // 释放上一轮资源只有根运行才做。嵌套运行属于本轮内部，仓内帧仍被根运行的节点输出引用，
+        // 此时清空会让父输出指向已释放的图像（ObjectDisposedException）。
+        if (context.ScopeKind != WorkflowRunScopeKind.Root)
+            return;
+
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);

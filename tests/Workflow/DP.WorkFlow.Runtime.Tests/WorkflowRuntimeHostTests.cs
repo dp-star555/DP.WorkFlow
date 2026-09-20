@@ -187,6 +187,8 @@ public sealed class WorkflowRuntimeHostTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Assert.NotEmpty(context.Nodes);
+            // AR-01：根宿主是唯一的"开新一轮"位置，必须声明 Root，否则上一轮资源永不释放。
+            Assert.Equal(WorkflowRunScopeKind.Root, context.ScopeKind);
             action(context);
             return ValueTask.CompletedTask;
         }

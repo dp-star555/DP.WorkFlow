@@ -52,7 +52,11 @@ public sealed class WorkflowWarningHandlerCoordinator : IWorkflowFaultRecoveryCo
         {
             WorkflowRuntimeCapabilityValidator.Validate(_boundPlan, context.Services);
             if (context.Services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowRunPreparationService preparation)
-                await preparation.PrepareAsync(new WorkflowRunPreparationContext(EnumerateNodes(_plan).ToArray()), cancellationToken).ConfigureAwait(false);
+                await preparation.PrepareAsync(
+                    new WorkflowRunPreparationContext(
+                        EnumerateNodes(_plan).ToArray(),
+                        WorkflowRunScopeKind.Nested),
+                    cancellationToken).ConfigureAwait(false);
             result = await new WorkflowEngine(_boundPlan, childContext, executionOptions).RunAsync(cancellationToken).ConfigureAwait(false);
         }
         cancellationToken.ThrowIfCancellationRequested();

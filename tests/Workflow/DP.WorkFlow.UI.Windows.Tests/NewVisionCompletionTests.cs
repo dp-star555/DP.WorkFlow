@@ -19,7 +19,7 @@ public sealed class NewVisionCompletionTests
         {
             WritePng(Path.Combine(directory, "b.png"), 200); WritePng(Path.Combine(directory, "a.png"), 50);
             var node = new LoadVisionFolderNodeModel { Id = "folder", FolderPath = directory };
-            var preparation = new WorkflowRunPreparationContext(new[] { node });
+            var preparation = new WorkflowRunPreparationContext(new[] { node }, WorkflowRunScopeKind.Root);
             var session = new WorkflowVisionAcquisitionSession(new OpenCvImageFileReader());
             await session.PrepareAsync(preparation, default);
             WritePng(Path.Combine(directory, "0.png"), 1); // 运行清单已经冻结。
@@ -43,7 +43,7 @@ public sealed class NewVisionCompletionTests
         using var scope = new WorkflowVisionFrameScope(maximumBytes: 1, maximumFrames: 1);
         var output = scope.Retain(frame); using var ui = output.Retain();
         Assert.Throws<InvalidOperationException>(() => scope.Retain(frame));
-        await scope.PrepareAsync(new WorkflowRunPreparationContext(Array.Empty<IWorkflowNodeModel>()), default);
+        await scope.PrepareAsync(new WorkflowRunPreparationContext(Array.Empty<IWorkflowNodeModel>(), WorkflowRunScopeKind.Root), default);
         Assert.Throws<ObjectDisposedException>(() => output.Retain());
         var bytes = new byte[1]; ui.Image.CopyTo(0, bytes, 0, 1); Assert.Equal(7, bytes[0]);
         Assert.NotNull(scope.Retain(frame));
@@ -218,7 +218,8 @@ public sealed class NewVisionCompletionTests
     {
         using var frames = new WorkflowVisionFrameScope();
         var context = new WorkflowRunPreparationContext(new IWorkflowNodeModel[]
-        { new LoadVisionFileNodeModel { Id = "same" }, new CaptureVisionFrameNodeModel { Id = "same" } });
+        { new LoadVisionFileNodeModel { Id = "same" }, new CaptureVisionFrameNodeModel { Id = "same" } },
+            WorkflowRunScopeKind.Root);
         await Assert.ThrowsAsync<InvalidOperationException>(() => frames.PrepareAsync(context, default).AsTask());
     }
 

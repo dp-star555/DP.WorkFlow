@@ -536,7 +536,12 @@ public sealed partial class WorkflowEngine
             {
                 WorkflowRuntimeCapabilityValidator.Validate(boundPlan, childContext.Services);
                 if (childContext.Services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowRunPreparationService preparation)
-                    await preparation.PrepareAsync(new WorkflowRunPreparationContext(EnumerateRecoveryNodes(boundPlan.Plan).ToArray()), cancellationToken).ConfigureAwait(false);
+                    await preparation.PrepareAsync(
+                        new WorkflowRunPreparationContext(
+                            EnumerateRecoveryNodes(boundPlan.Plan).ToArray(),
+                            WorkflowRunScopeKind.Nested,
+                            parentNode.Id),
+                        cancellationToken).ConfigureAwait(false);
             }
             var result = await childEngine.RunAsync(cancellationToken).ConfigureAwait(false);
             UpdateChildSnapshot(childEngine.GetRuntimeSnapshot(result.Message));

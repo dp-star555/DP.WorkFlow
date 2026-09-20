@@ -147,7 +147,13 @@ public sealed class WorkflowJointRecoveryGroup : IDisposable
                 WorkflowRuntimeCapabilityValidator.Validate(participant.Plan, participant.Context.Services);
             foreach (var participant in _participants.Values)
                 if (participant.Context.Services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowRunPreparationService preparation)
-                    await preparation.PrepareAsync(new WorkflowRunPreparationContext(participant.Plan.Plan.Nodes.Values.ToArray()), linked.Token).ConfigureAwait(false);
+                    // 暂按嵌套作用域：联合恢复的"一轮"语义尚未定义清楚，先取安全方向（不清空任何既有资源）。
+                    // 若确认需要干净起点，应由联合组在"协作开始"这一个点上显式触发一次，而不是每个参与者各触发一次。
+                    await preparation.PrepareAsync(
+                        new WorkflowRunPreparationContext(
+                            participant.Plan.Plan.Nodes.Values.ToArray(),
+                            WorkflowRunScopeKind.Nested),
+                        linked.Token).ConfigureAwait(false);
             linked.Token.ThrowIfCancellationRequested();
             var tasks = _participants.Values.Select(p => Task.Run(async () =>
             {
