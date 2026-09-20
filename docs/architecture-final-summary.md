@@ -753,13 +753,35 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 4. 桌面样例的 `FrameScope` 双注册是权宜之计还是预期用法？（决定 AR-01 的 (c) 层修复面）
 5. 工作区上级目录的 9 个畸形日志与 `NUL` 文件是否需要清理？（本次未代为删除）
 6. **`global.json` 是否提升到 SDK 10？** 当前固定 `9.0.308`（+ `rollForward: latestPatch` → 实际选中 9.0.316）。
-   **先澄清一个误区**：提升到 SDK 10 **不能**修复 `dotnet restore`——`restore` 在 SDK 9 和 SDK 10 上**都**失败，
+
+   **先澄清一个前提，避免误解**：本仓库**不存在"要不要支持 9.0 或 10.0"的问题**。这是两件不同的事：
+
+   | 层 | 是什么 | 本仓库现状 |
+   |---|---|---|
+   | **目标框架**（产品要"支持"的） | 程序跑在哪个运行时上 | 全部工程 `net8.0` / `net48` / `netstandard2.0`，**没有一个工程是 net9.0 或 net10.0** |
+   | **构建工具链**（`global.json` 管这层） | 用哪个 SDK 编译 | `9.0.308`（仓库内）／`10.0.302`（仓库外） |
+   | **运行时**（部署目标） | 产物在哪里跑 | .NET 8 |
+
+   SDK 版本**只影响怎么编译，不影响程序跑在哪**。所以提升 `global.json` 不是"升级产品到 .NET 10"，
+   只是"换一把编译器"。之所以这个选择会冒出来，纯粹是因为这台机器同时装了 SDK 9 和 SDK 10。
+
+   **为什么需要 pin 一个 SDK 版本**：本仓库 `Directory.Build.props` 里
+   `LangVersion=latest`（**C# 语言版本跟着 SDK 走**：SDK 9 → C# 13，SDK 10 → C# 14）
+   且 `TreatWarningsAsErrors=true`（**多一条分析器警告就构建失败**）。
+   同一份源码在不同 SDK 上可能一个绿一个红——pin 的用意就是让"我这儿能编过"在团队里成立。
+
+   **但本仓库的 pin 与事实不符**：`project.assets.json` 的 `SdkAnalysisLevel` = `10.0.300`，
+   是 SDK 10 生成的，说明实际开发中早已在用 SDK 10。所以真正的问题不是"要不要支持 10"，
+   而是"**这个 pin 还要不要留**"。
+
+   **另一个误区**：提升到 SDK 10 **不能**修复 `dotnet restore`——`restore` 在 SDK 9 和 SDK 10 上**都**失败，
    因为它本来就要读机器级 NuGet 配置。提升的真实收益只有一个：**让"在仓库目录内构建"变得可行**
    （目前仓库内连 `build --no-restore` 都报 `NETSDK1060`）。
-   支持提升的两条事实：① 仓库现有 `project.assets.json` 的 `SdkAnalysisLevel` = `10.0.300`，
-   本来就是 SDK 10 生成的，与 pin 矛盾；② 不提升则所有构建都必须 `cd` 出仓库，容易忘、容易错。
+   支持提升的两条事实：① 现有 assets 本来就是 SDK 10 生成的，与 pin 矛盾；
+   ② 不提升则所有构建都必须 `cd` 出仓库，容易忘、容易错。
    **无论是否提升，本机都无法执行任何 `dotnet restore`；根治要修机器（补回 `ProgramData` 等系统环境变量
    或修 Known Folder 注册项），而不是改仓库。** 详见 AR-24 一节的新发现。
+
 7. ~~阶段 1 的两条验收是否补测？~~ **已关闭：已补齐。** 生产路径端到端（`WorkflowVisionFrameScopeRecoveryEndToEndTests`）
    与"结束后租约按所有权恰好释放"（`WorkflowVisionFrameScopeLeaseOwnershipTests`）均已落地，并各自用故意改坏生产代码
    的方式证明了有效性。另补 `WorkflowRunPreparationScopeDeclarationTests` 锁定 AR-01 破坏点
