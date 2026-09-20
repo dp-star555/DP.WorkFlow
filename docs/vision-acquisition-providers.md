@@ -551,7 +551,7 @@ ResourceKey
 
 已实现的共享策略只有 `ExclusiveOperation` 与 `Serialized`；`ExclusiveRun` 与 `Broadcast` 在运行准备阶段被显式拒绝，不使用进程内锁冒充跨进程互斥。
 
-自动化实测（本机 Debug）：`DP.Vision.sln` **522 例 0 失败**（含 net48 与 net8.0 两套目标框架）；`DP.WorkFlow.sln` **811 例 0 失败**，构建 0 警告 0 错误。
+自动化实测（本机 Debug）：`DP.Vision.sln` **524 例 0 失败**（含 net48 与 net8.0 两套目标框架）；`DP.WorkFlow.sln` **811 例 0 失败**，构建 0 警告 0 错误。
 
 依赖关系：
 
@@ -778,6 +778,6 @@ Workflow     DP.WorkFlow.Nodes.Vision.Tests / VisionAcquisitionNodeTests、Workf
 | 5 Provider管理设备生命周期，Workflow只管理取得后的帧生命周期 | **已达成** |
 | 6 Kernel无Vision/厂商依赖，Provider无Workflow反向依赖 | **已达成**（有依赖边界回归用例） |
 | 7 HALCON不再由样例直接`new`成唯一Workflow采集能力 | **已达成**：示例只扫描插件目录，编译期不引用HALCON类型 |
-| 8 自动化矩阵通过，真实设备验收项单独签署 | **部分**：自动化矩阵通过（522 + 811 例）；真实设备、许可证、驱动与多进程独占仍需现场签署 |
+| 8 自动化矩阵通过，真实设备验收项单独签署 | **部分**：自动化矩阵通过（524 + 811 例）；真实设备、许可证、驱动与多进程独占仍需现场签署 |
 
 因此当前应表述为：**契约已建立、HALCON已插件化、Workflow已切换逻辑Source；第二个真实厂商Provider与RunScope高级模式未完成。**

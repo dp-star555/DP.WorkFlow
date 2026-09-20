@@ -57,9 +57,9 @@
 >   详见 `docs/vision-acquisition-providers.md` §13 状态表。阶段 E（第二个真实厂商Provider）与
 >   阶段 F（`ExclusiveRun`/`Broadcast`）受外部依赖阻塞，两者在运行准备阶段被显式拒绝。
 > - **新发现（AR-16 补充）**：`DP.Vision` 目录下没有 `.git`，其源码与本次新增的三个工程、
->   522 例测试全部不在版本控制之下。这比 AR-16 原本描述的"跨仓源码引用无版本锁定"更弱一层，
+>   524 例测试全部不在版本控制之下。这比 AR-16 原本描述的"跨仓源码引用无版本锁定"更弱一层，
 >   建议优先为 DP.Vision 建立仓库并做基线提交。
-> - 实测基线：`DP.Vision.sln` 522 例 0 失败；`DP.WorkFlow.sln` 811 例 0 失败、0 警告 0 错误。
+> - 实测基线：`DP.Vision.sln` 524 例 0 失败；`DP.WorkFlow.sln` 811 例 0 失败、0 警告 0 错误。
 
 ### 1.2 四件最该先做的事
 
@@ -416,7 +416,7 @@ UI.Shared  →  Abstractions + Core + Runtime + Persistence.Json + ScriptEngine
 同级 `C:\Data\PiProgects\WorkFlow` 也不是仓库——即 DP.Vision 当前**不在任何版本控制之下**。
 这比"有仓库但无版本锁定"更弱一层：本次采集Provider改造新增的三个工程
 （`DP.Vision.Acquisition.Abstractions` / `DP.Vision.Acquisition.Runtime` / `DP.Vision.Halcon` 插件化）
-与 522 例测试都没有可回退的历史。建议先给 DP.Vision 建立仓库并做一次基线提交，
+与 524 例测试都没有可回退的历史。建议先给 DP.Vision 建立仓库并做一次基线提交，
 再谈包引用或子模块。对比 AR-24（DP.WorkFlow 已纳入版本控制）。
 
 ---
