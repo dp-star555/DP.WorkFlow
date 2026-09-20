@@ -310,11 +310,13 @@ RunScope 层级 + 所有权令牌：子作用域拥有自己的资源容器，�
 
 ---
 
-## 7. 为什么现在不动代码
+## 7. 为什么当初不动代码（已完成，保留作历史记录）
 
-`DP.WorkFlow` **不在版本控制下**（无 `.git`，见 AR-24）。本次改动跨 4 个程序集（Abstractions / Runtime / Nodes.Vision / Nodes.Process），且 `ScopeKind` 必填会击穿所有调用点——**在没有版本控制、无法回退、无法 diff 的情况下实施结构性改动，风险不可接受**。
+> 本节记录的是实施**前置条件**的推理。该条件已由 AR-24 满足，阶段 1 随后实施完毕。
 
-建议顺序：
+`DP.WorkFlow` 当初**不在版本控制下**（无 `.git`，见 AR-24）。本次改动跨 4 个程序集（Abstractions / Runtime / Nodes.Vision / Nodes.Process），且 `ScopeKind` 必填会击穿所有调用点——**在没有版本控制、无法回退、无法 diff 的情况下实施结构性改动，风险不可接受**。
+
+建议顺序（已按此执行）：
 
 ```text
 AR-24 纳入版本控制  →  实施本文阶段 1  →  跑全量测试  →  再评估阶段 2
@@ -336,3 +338,64 @@ AR-24 纳入版本控制  →  实施本文阶段 1  →  跑全量测试  →  
 | 6 | 全量回归 | `tools/Test-DPWorkFlow.ps1` 全绿；新增测试在修复前**必须红**（否则测试没测到点上） |
 
 第 6 条是硬要求：**先在未修复的代码上跑，确认新增测试失败**，再实施修复。否则无法证明测试真的覆盖了这个缺陷。
+
+---
+
+## 9. 实施记录（2026-09-20）
+
+commit `16f1c45`。改动与 §3 逐条一致，另加 1 个测试。
+
+| 文件 | 改动 |
+|---|---|
+| `Abstractions/Execution/IWorkflowRunPreparationService.cs` | 新增 `WorkflowRunScopeKind`；`WorkflowRunPreparationContext` 增加必填 `ScopeKind` + `ParentNodeId = null`；修正接口注释 |
+| `Nodes.Vision/Acquisition/WorkflowVisionFrameScope.cs` | 校验与 `_next` 链式调用对所有作用域照常；**仅 `Root` 才 `Clear()`**；修正类注释 |
+| `Runtime/Hosting/WorkflowRuntimeHost.cs` | `Root` |
+| `Runtime/Execution/WorkflowEngine.cs` | `Nested` + `parentNode.Id` |
+| `Nodes.Process/Recovery/WorkflowWarningHandlerCoordinator.cs` | `Nested` |
+| `Runtime/Execution/WorkflowJointRecoveryGroup.cs` | 暂 `Nested`（附注释说明为何待定） |
+| `tests/.../DP.WorkFlow.Nodes.Vision.Tests/WorkflowVisionFrameScopeRunScopeTests.cs` | **新增** 4 个测试 |
+| `tests/.../DP.WorkFlow.Runtime.Tests/WorkflowRuntimeHostTests.cs` | `TestRunPreparation` 补断言 `ScopeKind == Root` |
+| `tests/.../DP.WorkFlow.UI.Windows.Tests/NewVisionCompletionTests.cs` | 3 处构造点显式声明 `Root` |
+
+测试比 §4 多 1 个：**嵌套准备同样链式调用后续准备服务**——锁住「嵌套只是不清资源，不是跳过准备」。
+
+### 红→绿证据（验收第 6 条）
+
+修复前运行新测试：
+
+```text
+[xUnit.net] DP.WorkFlow.Tests.WorkflowVisionFrameScopeRunScopeTests.嵌套运行准备不得释放根运行已保留的帧 [FAIL]
+  System.ObjectDisposedException : Cannot access a disposed object.
+  Object name: 'ImageBuffer'.
+     at DP.Vision.ImageBuffer.Alive() ... ImageBuffer.cs:line 62
+     at DP.Vision.ImageBuffer.Retain() ... ImageBuffer.cs:line 54
+     at DP.Vision.ImageFrame.Retain() ... ImageFrame.cs:line 27
+失败: 1，通过: 3，总计: 4
+```
+
+修复后：
+
+```text
+已通过! - 失败: 0，通过: 4，总计: 4
+```
+
+### 全量回归
+
+12 个测试目标 **729 个测试全部通过，0 失败**：
+Vision 8 / ScriptEngine net8.0 51 + net48 50 / Core 45 / Composite 7 / Motion 12 /
+Process 56 / Standard 48 / Persistence 10 / Runtime 26 / UI.Shared 63 / UI.Windows 353。
+
+Debug 与 Release 构建均 **0 警告 0 错误**。
+
+### 本次未处理的同源问题
+
+`WorkflowVisionAcquisitionSession.PrepareAsync` 与本次修复**同源**：它无条件用新冻结清单替换
+`_sequences`（游标归零）。嵌套运行时会让文件夹序列中途重头读。本方案 §2 未列该文件，故未动；
+建议在阶段 2 一并处理，或单独立一条 AR。
+
+### 环境前置（重要）
+
+本机 `dotnet restore` 因 `Environment.GetFolderPath(CommonApplicationData)` 返回 null 而必然失败。
+本次验证使用 `ProgramData` 环境变量 + SDK 10 + `--no-restore` / `--no-build` 完成，
+未修改 `global.json` 与 `tools/Test-DPWorkFlow.ps1`。`global.json` 当前固定 `9.0.308`，
+在本机无法完成任何还原，需用户决策是否提升到 `10.0.302`。
