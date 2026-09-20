@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\Kernel\DP.WorkFlow.Abstractions\DP.WorkFlow.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Kernel\DP.WorkFlow.Runtime\DP.WorkFlow.Runtime.csproj" />
+  </ItemGroup>
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>

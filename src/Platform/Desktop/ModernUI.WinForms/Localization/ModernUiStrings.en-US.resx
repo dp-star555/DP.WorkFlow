@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="InputPlaceholder" xml:space="preserve"><value>Enter a value</value></data>
+  <data name="SelectPlaceholder" xml:space="preserve"><value>Select</value></data>
+  <data name="NumberIncrease" xml:space="preserve"><value>Increase</value></data>
+  <data name="NumberDecrease" xml:space="preserve"><value>Decrease</value></data>
+  <data name="NumberValidationRange" xml:space="preserve"><value>Enter a valid number from {minimum} to {maximum}.</value></data>
+  <data name="Expand" xml:space="preserve"><value>Expand</value></data>
+  <data name="Collapse" xml:space="preserve"><value>Collapse</value></data>
+  <data name="RemoveItem" xml:space="preserve"><value>Remove {item}</value></data>
+  <data name="Validating" xml:space="preserve"><value>Validating…</value></data>
+  <data name="DateUnavailable" xml:space="preserve"><value>This date is unavailable.</value></data>
+  <data name="SelectDate" xml:space="preserve"><value>Select date</value></data>
+  <data name="StartDate" xml:space="preserve"><value>Start date</value></data>
+  <data name="EndDate" xml:space="preserve"><value>End date</value></data>
+  <data name="Pagination" xml:space="preserve"><value>Pagination</value></data>
+  <data name="FirstPage" xml:space="preserve"><value>First page</value></data>
+  <data name="PreviousPage" xml:space="preserve"><value>Previous page</value></data>
+  <data name="NextPage" xml:space="preserve"><value>Next page</value></data>
+  <data name="LastPage" xml:space="preserve"><value>Last page</value></data>
+  <data name="PaginationSummary" xml:space="preserve"><value>Page {page} of {pages}</value></data>
+  <data name="PaginationSummaryWithTotal" xml:space="preserve"><value>Page {page} of {pages}, total {total}</value></data>
+  <data name="ValidationIssues" xml:space="preserve"><value>{count} validation issues found</value></data>
+  <data name="Confirm" xml:space="preserve"><value>OK</value></data>
+  <data name="Cancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="NoData" xml:space="preserve"><value>No data</value></data>
+  <data name="GoToValidationIssue" xml:space="preserve"><value>Go to validation issue</value></data>
+  <data name="MoreActions" xml:space="preserve"><value>More actions</value></data>
+  <data name="DurationMilliseconds" xml:space="preserve"><value>Milliseconds</value></data>
+  <data name="DurationSeconds" xml:space="preserve"><value>Seconds</value></data>
+  <data name="DurationMinutes" xml:space="preserve"><value>Minutes</value></data>
+  <data name="DurationHours" xml:space="preserve"><value>Hours</value></data>
+  <data name="DurationDays" xml:space="preserve"><value>Days</value></data>
+  <data name="ShowPassword" xml:space="preserve"><value>Show password</value></data>
+  <data name="HidePassword" xml:space="preserve"><value>Hide password</value></data>
+</root>

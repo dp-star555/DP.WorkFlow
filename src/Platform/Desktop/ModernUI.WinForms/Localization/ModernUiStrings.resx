@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="InputPlaceholder" xml:space="preserve"><value>请输入</value></data>
+  <data name="SelectPlaceholder" xml:space="preserve"><value>请选择</value></data>
+  <data name="NumberIncrease" xml:space="preserve"><value>增加</value></data>
+  <data name="NumberDecrease" xml:space="preserve"><value>减少</value></data>
+  <data name="NumberValidationRange" xml:space="preserve"><value>请输入 {minimum} 到 {maximum} 之间的有效数值。</value></data>
+  <data name="Expand" xml:space="preserve"><value>展开</value></data>
+  <data name="Collapse" xml:space="preserve"><value>关闭</value></data>
+  <data name="RemoveItem" xml:space="preserve"><value>移除 {item}</value></data>
+  <data name="Validating" xml:space="preserve"><value>正在验证…</value></data>
+  <data name="DateUnavailable" xml:space="preserve"><value>该日期不可选择。</value></data>
+  <data name="SelectDate" xml:space="preserve"><value>选择日期</value></data>
+  <data name="StartDate" xml:space="preserve"><value>开始日期</value></data>
+  <data name="EndDate" xml:space="preserve"><value>结束日期</value></data>
+  <data name="Pagination" xml:space="preserve"><value>分页</value></data>
+  <data name="FirstPage" xml:space="preserve"><value>第一页</value></data>
+  <data name="PreviousPage" xml:space="preserve"><value>上一页</value></data>
+  <data name="NextPage" xml:space="preserve"><value>下一页</value></data>
+  <data name="LastPage" xml:space="preserve"><value>最后一页</value></data>
+  <data name="PaginationSummary" xml:space="preserve"><value>第 {page} 页，共 {pages} 页</value></data>
+  <data name="PaginationSummaryWithTotal" xml:space="preserve"><value>第 {page} 页，共 {pages} 页，总计 {total} 条</value></data>
+  <data name="ValidationIssues" xml:space="preserve"><value>发现 {count} 个验证问题</value></data>
+  <data name="Confirm" xml:space="preserve"><value>确定</value></data>
+  <data name="Cancel" xml:space="preserve"><value>取消</value></data>
+  <data name="NoData" xml:space="preserve"><value>暂无数据</value></data>
+  <data name="GoToValidationIssue" xml:space="preserve"><value>定位到验证问题</value></data>
+  <data name="MoreActions" xml:space="preserve"><value>更多操作</value></data>
+  <data name="DurationMilliseconds" xml:space="preserve"><value>毫秒</value></data>
+  <data name="DurationSeconds" xml:space="preserve"><value>秒</value></data>
+  <data name="DurationMinutes" xml:space="preserve"><value>分钟</value></data>
+  <data name="DurationHours" xml:space="preserve"><value>小时</value></data>
+  <data name="DurationDays" xml:space="preserve"><value>天</value></data>
+  <data name="ShowPassword" xml:space="preserve"><value>显示密码</value></data>
+  <data name="HidePassword" xml:space="preserve"><value>隐藏密码</value></data>
+</root>

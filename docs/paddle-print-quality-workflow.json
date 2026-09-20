@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "PaddleOCR 无参考打印质量检测流程",
+    "quality_profile": "showcase",
+    "output": "docs/paddle-print-quality-workflow.html",
+    "viewBox": [1180, 650]
+  },
+  "lanes": [
+    { "id": "input", "label": "采集与定位" },
+    { "id": "analysis", "label": "原图质量分析" },
+    { "id": "decision", "label": "缺陷判定" },
+    { "id": "output", "label": "数据与显示" }
+  ],
+  "phases": [
+    { "id": "intake", "label": "采集与定位", "fromCol": 0, "toCol": 1 },
+    { "id": "analyze", "label": "原图分析", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "report", "label": "判定与报告", "fromCol": 5, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["source", "ocr", "analyzers", "evidence", "aggregate", "result"],
+  "nodes": [
+    { "id": "source", "lane": "input", "col": 0, "type": "external", "label": "原始标签图像", "sublabel": "HALCON 原分辨率" },
+    { "id": "ocr", "lane": "input", "col": 1, "type": "backend", "label": "PaddleOCR", "sublabel": "定位 + 字符假设", "tag": "不裁决质量" },
+    { "id": "analyzers", "lane": "analysis", "col": 3, "type": "backend", "label": "模式质量分析器", "sublabel": "四模式 + 原图指标" },
+    { "id": "evidence", "lane": "decision", "col": 4, "type": "security", "label": "缺陷证据映射", "sublabel": "五类缺陷证据" },
+    { "id": "aggregate", "lane": "decision", "col": 5, "type": "security", "label": "三态聚合", "sublabel": "OK / NG / Review", "tag": "仅 OK 成功" },
+    { "id": "result", "lane": "output", "col": 5, "type": "database", "label": "结构化结果", "sublabel": "Lines / Issues" }
+  ],
+  "edges": [
+    { "id": "source-ocr", "from": "source", "to": "ocr", "variant": "default", "role": "main" },
+    { "id": "ocr-analyzers", "from": "ocr", "to": "analyzers", "label": "框 + 原图坐标", "variant": "emphasis", "role": "main" },
+    { "id": "analyzers-evidence", "from": "analyzers", "to": "evidence", "label": "指标 + Issues", "variant": "emphasis", "role": "main" },
+    { "id": "evidence-aggregate", "from": "evidence", "to": "aggregate", "variant": "security", "role": "main" },
+    { "id": "aggregate-result", "from": "aggregate", "to": "result", "variant": "emphasis", "role": "main", "fromSide": "bottom", "toSide": "top", "route": "drop" }
+  ]
+}

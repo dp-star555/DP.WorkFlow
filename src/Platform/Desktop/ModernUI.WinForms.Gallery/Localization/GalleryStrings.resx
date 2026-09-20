@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="HeaderTitle" xml:space="preserve">
+    <value>ModernUI 控件状态基线</value>
+  </data>
+  <data name="ThemeLight" xml:space="preserve">
+    <value>浅色模式</value>
+  </data>
+  <data name="ThemeDark" xml:space="preserve">
+    <value>深色模式</value>
+  </data>
+  <data name="SwitchToEnglish" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="SwitchToChinese" xml:space="preserve">
+    <value>中文</value>
+  </data>
+  <data name="BandButtons" xml:space="preserve">
+    <value>按钮</value>
+  </data>
+  <data name="BandSelectionStates" xml:space="preserve">
+    <value>选择状态</value>
+  </data>
+  <data name="BandRadioSegmented" xml:space="preserve">
+    <value>单选与分段</value>
+  </data>
+  <data name="BandDataGrid" xml:space="preserve">
+    <value>数据表格</value>
+  </data>
+  <data name="BandListView" xml:space="preserve">
+    <value>列表视图</value>
+  </data>
+  <data name="BandList" xml:space="preserve">
+    <value>列表</value>
+  </data>
+  <data name="BandTree" xml:space="preserve">
+    <value>树形</value>
+  </data>
+  <data name="BandTabs" xml:space="preserve">
+    <value>页签</value>
+  </data>
+  <data name="BandTextInput" xml:space="preserve">
+    <value>文本输入</value>
+  </data>
+  <data name="BandTextArea" xml:space="preserve">
+    <value>多行文本</value>
+  </data>
+  <data name="BandCombo" xml:space="preserve">
+    <value>可编辑下拉</value>
+  </data>
+  <data name="BandNumber" xml:space="preserve">
+    <value>数字输入</value>
+  </data>
+  <data name="BandSelect" xml:space="preserve">
+    <value>下拉选择</value>
+  </data>
+  <data name="BandFeedback" xml:space="preserve">
+    <value>反馈与数值</value>
+  </data>
+  <data name="BandNavigation" xml:space="preserve">
+    <value>导航与容器</value>
+  </data>
+  <data name="BandCommand" xml:space="preserve">
+    <value>命令与反馈</value>
+  </data>
+  <data name="BandDateTime" xml:space="preserve">
+    <value>日期、时间与持续时间</value>
+  </data>
+  <data name="BandRangeValidation" xml:space="preserve">
+    <value>范围与验证</value>
+  </data>
+  <data name="BandExtendedFeedback" xml:space="preserve">
+    <value>扩展反馈</value>
+  </data>
+  <data name="CommandRun" xml:space="preserve">
+    <value>运行</value>
+  </data>
+  <data name="CommandSettings" xml:space="preserve">
+    <value>设置</value>
+  </data>
+  <data name="CommandDiagnostics" xml:space="preserve">
+    <value>诊断</value>
+  </data>
+  <data name="AlertSaved" xml:space="preserve">
+    <value>配置已保存</value>
+  </data>
+  <data name="AlertSavedDescription" xml:space="preserve">
+    <value>新参数将在下次运行时生效。</value>
+  </data>
+  <data name="EmptyRuns" xml:space="preserve">
+    <value>暂无运行记录</value>
+  </data>
+  <data name="Sample.Alert" xml:space="preserve">
+    <value>提示</value>
+  </data>
+  <data name="Sample.Badge" xml:space="preserve">
+    <value>徽标</value>
+  </data>
+  <data name="Sample.Checked" xml:space="preserve">
+    <value>已选择</value>
+  </data>
+  <data name="Sample.Collapsible" xml:space="preserve">
+    <value>折叠面板</value>
+  </data>
+  <data name="Sample.Command bar" xml:space="preserve">
+    <value>命令栏</value>
+  </data>
+  <data name="Sample.Context menu" xml:space="preserve">
+    <value>上下文菜单</value>
+  </data>
+  <data name="Sample.Danger" xml:space="preserve">
+    <value>危险</value>
+  </data>
+  <data name="Sample.Date range" xml:space="preserve">
+    <value>日期范围</value>
+  </data>
+  <data name="Sample.Date" xml:space="preserve">
+    <value>日期</value>
+  </data>
+  <data name="Sample.Default" xml:space="preserve">
+    <value>默认</value>
+  </data>
+  <data name="Sample.Diagnostics details" xml:space="preserve">
+    <value>诊断详情</value>
+  </data>
+  <data name="Sample.Disabled" xml:space="preserve">
+    <value>禁用</value>
+  </data>
+  <data name="Sample.Duration" xml:space="preserve">
+    <value>持续时间</value>
+  </data>
+  <data name="Sample.Editable mapping" xml:space="preserve">
+    <value>可编辑映射</value>
+  </data>
+  <data name="Sample.Empty state" xml:space="preserve">
+    <value>空状态</value>
+  </data>
+  <data name="Sample.Empty" xml:space="preserve">
+    <value>空值</value>
+  </data>
+  <data name="Sample.Error" xml:space="preserve">
+    <value>错误</value>
+  </data>
+  <data name="Sample.Free Text" xml:space="preserve">
+    <value>自由输入</value>
+  </data>
+  <data name="Sample.Indeterminate" xml:space="preserve">
+    <value>不确定进度</value>
+  </data>
+  <data name="Sample.Loading" xml:space="preserve">
+    <value>加载中</value>
+  </data>
+  <data name="Sample.Matched" xml:space="preserve">
+    <value>已匹配</value>
+  </data>
+  <data name="Sample.Maximum" xml:space="preserve">
+    <value>最大值</value>
+  </data>
+  <data name="Sample.Message / Dialog" xml:space="preserve">
+    <value>消息/对话框</value>
+  </data>
+  <data name="Sample.Minimum" xml:space="preserve">
+    <value>最小值</value>
+  </data>
+  <data name="Sample.Mixed" xml:space="preserve">
+    <value>部分选择</value>
+  </data>
+  <data name="Sample.MultiExtended" xml:space="preserve">
+    <value>扩展多选</value>
+  </data>
+  <data name="Sample.Multiple" xml:space="preserve">
+    <value>多选</value>
+  </data>
+  <data name="Sample.Native TabPages" xml:space="preserve">
+    <value>原生页签</value>
+  </data>
+  <data name="Sample.Native checkboxes" xml:space="preserve">
+    <value>原生复选框</value>
+  </data>
+  <data name="Sample.No Wrap" xml:space="preserve">
+    <value>不换行</value>
+  </data>
+  <data name="Sample.Normal" xml:space="preserve">
+    <value>正常</value>
+  </data>
+  <data name="Sample.Notification" xml:space="preserve">
+    <value>通知</value>
+  </data>
+  <data name="Sample.Pagination" xml:space="preserve">
+    <value>分页</value>
+  </data>
+  <data name="Sample.Placeholder" xml:space="preserve">
+    <value>占位提示</value>
+  </data>
+  <data name="Sample.Primary" xml:space="preserve">
+    <value>主要</value>
+  </data>
+  <data name="Sample.Progress" xml:space="preserve">
+    <value>进度</value>
+  </data>
+  <data name="Sample.ReadOnly selection" xml:space="preserve">
+    <value>只读选择</value>
+  </data>
+  <data name="Sample.ReadOnly" xml:space="preserve">
+    <value>只读</value>
+  </data>
+  <data name="Sample.Segmented" xml:space="preserve">
+    <value>分段选择</value>
+  </data>
+  <data name="Sample.Selected" xml:space="preserve">
+    <value>已选</value>
+  </data>
+  <data name="Sample.Selection + hierarchy" xml:space="preserve">
+    <value>Selection + hierarchy</value>
+  </data>
+  <data name="Sample.Single selection" xml:space="preserve">
+    <value>单选</value>
+  </data>
+  <data name="Sample.Slider" xml:space="preserve">
+    <value>滑块</value>
+  </data>
+  <data name="Sample.Spinner" xml:space="preserve">
+    <value>加载指示器</value>
+  </data>
+  <data name="Sample.Status bar" xml:space="preserve">
+    <value>状态栏</value>
+  </data>
+  <data name="Sample.Switch Off" xml:space="preserve">
+    <value>开关关闭</value>
+  </data>
+  <data name="Sample.Switch On" xml:space="preserve">
+    <value>开关开启</value>
+  </data>
+  <data name="Sample.Tag selection" xml:space="preserve">
+    <value>标签选择</value>
+  </data>
+  <data name="Sample.Time" xml:space="preserve">
+    <value>时间</value>
+  </data>
+  <data name="Sample.Unchecked" xml:space="preserve">
+    <value>未选择</value>
+  </data>
+  <data name="Sample.Validation summary" xml:space="preserve">
+    <value>验证摘要</value>
+  </data>
+  <data name="ThemeSwitchAccessible" xml:space="preserve"><value>切换深色主题</value></data>
+  <data name="ButtonDefault" xml:space="preserve"><value>默认按钮</value></data>
+  <data name="ButtonPrimary" xml:space="preserve"><value>主要操作</value></data>
+  <data name="ButtonDanger" xml:space="preserve"><value>危险操作</value></data>
+  <data name="ButtonLoading" xml:space="preserve"><value>正在处理</value></data>
+  <data name="Disabled" xml:space="preserve"><value>不可用</value></data>
+  <data name="Unchecked" xml:space="preserve"><value>未选择</value></data>
+  <data name="Checked" xml:space="preserve"><value>已选择</value></data>
+  <data name="Mixed" xml:space="preserve"><value>部分选择</value></data>
+  <data name="InputDevicePlaceholder" xml:space="preserve"><value>请输入设备名称</value></data>
+  <data name="InputReadOnly" xml:space="preserve"><value>只读内容</value></data>
+  <data name="InputInvalid" xml:space="preserve"><value>无效内容</value></data>
+  <data name="InputDisabled" xml:space="preserve"><value>不可编辑</value></data>
+  <data name="TextAreaNoWrap" xml:space="preserve"><value>长文本不会自动换行，水平滚动查看完整内容&#xD;&#xA;Line 2: horizontal and vertical&#xD;&#xA;Line 3&#xD;&#xA;Line 4&#xD;&#xA;Line 5</value></data>
+  <data name="TextAreaReadOnly" xml:space="preserve"><value>只读说明&#xD;&#xA;保留选择能力</value></data>
+  <data name="TextAreaInvalid" xml:space="preserve"><value>JSON 格式无效</value></data>
+  <data name="GridReadOnlyAccessible" xml:space="preserve"><value>只读变量映射</value></data>
+  <data name="GridEditableAccessible" xml:space="preserve"><value>可编辑变量映射</value></data>
+  <data name="GridTarget" xml:space="preserve"><value>目标变量</value></data>
+  <data name="GridSource" xml:space="preserve"><value>来源</value></data>
+  <data name="GridValue" xml:space="preserve"><value>值</value></data>
+  <data name="ListDiagnosticsCheckedAccessible" xml:space="preserve"><value>可勾选诊断列表</value></data>
+  <data name="ListDiagnosticsAccessible" xml:space="preserve"><value>诊断列表</value></data>
+  <data name="ListLevel" xml:space="preserve"><value>级别</value></data>
+  <data name="ListCode" xml:space="preserve"><value>代码</value></data>
+  <data name="ListMessage" xml:space="preserve"><value>消息</value></data>
+  <data name="ListBoxMultipleAccessible" xml:space="preserve"><value>多选引用列表</value></data>
+  <data name="ListBoxAccessible" xml:space="preserve"><value>引用列表</value></data>
+  <data name="TreeCheckedAccessible" xml:space="preserve"><value>可勾选流程树</value></data>
+  <data name="TreeAccessible" xml:space="preserve"><value>流程工具箱</value></data>
+  <data name="SegmentSelect" xml:space="preserve"><value>选择</value></data>
+  <data name="SegmentRectangle" xml:space="preserve"><value>矩形</value></data>
+  <data name="SegmentEllipse" xml:space="preserve"><value>椭圆</value></data>
+  <data name="SegmentPolygon" xml:space="preserve"><value>多边形</value></data>
+  <data name="TabDiagnostics" xml:space="preserve"><value>诊断</value></data>
+  <data name="TabRuntime" xml:space="preserve"><value>运行时</value></data>
+  <data name="TabTokens" xml:space="preserve"><value>令牌</value></data>
+  <data name="TabTrace" xml:space="preserve"><value>跟踪</value></data>
+  <data name="SelectContinuous" xml:space="preserve"><value>连续采集</value></data>
+  <data name="SelectExternal" xml:space="preserve"><value>外部触发</value></data>
+  <data name="SelectSingleFrame" xml:space="preserve"><value>单帧采集</value></data>
+  <data name="MultiRawImage" xml:space="preserve"><value>原始图像</value></data>
+  <data name="MultiResult" xml:space="preserve"><value>检测结果</value></data>
+  <data name="MultiLog" xml:space="preserve"><value>运行日志</value></data>
+  <data name="AdvancedSettings" xml:space="preserve"><value>高级设置</value></data>
+  <data name="AdvancedSettingsContent" xml:space="preserve"><value>超时 · 重试 · 诊断</value></data>
+  <data name="MessageButton" xml:space="preserve"><value>消息</value></data>
+  <data name="DialogButton" xml:space="preserve"><value>对话框</value></data>
+  <data name="OperationCompleted" xml:space="preserve"><value>操作已完成</value></data>
+  <data name="ConfirmRunTitle" xml:space="preserve"><value>确认运行</value></data>
+  <data name="ConfirmRunMessage" xml:space="preserve"><value>是否立即运行当前工作流？</value></data>
+  <data name="NotificationButton" xml:space="preserve"><value>通知</value></data>
+  <data name="WorkflowCompleted" xml:space="preserve"><value>工作流完成</value></data>
+  <data name="WorkflowCompletedDescription" xml:space="preserve"><value>本次运行未发现错误。</value></data>
+  <data name="InvalidValue" xml:space="preserve"><value>无效值</value></data>
+  <data name="DeviceAddressInvalid" xml:space="preserve"><value>设备地址格式无效</value></data>
+  <data name="SeverityError" xml:space="preserve"><value>错误</value></data>
+  <data name="SeverityWarning" xml:space="preserve"><value>警告</value></data>
+  <data name="SeverityInformation" xml:space="preserve"><value>信息</value></data>
+  <data name="DiagnosticEntryDisconnected" xml:space="preserve"><value>入口节点未连接</value></data>
+  <data name="DiagnosticOutputUnused" xml:space="preserve"><value>输出端口未使用</value></data>
+  <data name="DiagnosticValidationComplete" xml:space="preserve"><value>验证已完成</value></data>
+  <data name="Loading" xml:space="preserve"><value>加载中</value></data>
+  <data name="TreeVision" xml:space="preserve"><value>视觉</value></data>
+  <data name="TreeAcquire" xml:space="preserve"><value>采集图像</value></data>
+  <data name="TreeLocate" xml:space="preserve"><value>定位</value></data>
+  <data name="TreeCircle" xml:space="preserve"><value>查找圆</value></data>
+  <data name="TreeTemplate" xml:space="preserve"><value>模板匹配</value></data>
+  <data name="TreeLogic" xml:space="preserve"><value>逻辑</value></data>
+  <data name="TreeCondition" xml:space="preserve"><value>条件判断</value></data>
+  <data name="OpenMenu" xml:space="preserve"><value>打开菜单</value></data>
+  <data name="MenuRun" xml:space="preserve"><value>运行</value></data>
+  <data name="MenuPause" xml:space="preserve"><value>暂停</value></data>
+  <data name="MenuDelete" xml:space="preserve"><value>删除</value></data>
+  <data name="StatusReady" xml:space="preserve"><value>就绪</value></data>
+  <data name="BusinessDeviceName" xml:space="preserve"><value>设备名称</value></data>
+  <data name="BusinessAddress" xml:space="preserve"><value>IPv4 地址</value></data>
+  <data name="BusinessPort" xml:space="preserve"><value>端口</value></data>
+  <data name="BusinessMode" xml:space="preserve"><value>采集模式</value></data>
+  <data name="BusinessTimeout" xml:space="preserve"><value>超时时间</value></data>
+  <data name="BusinessEnabled" xml:space="preserve"><value>启用设备</value></data>
+  <data name="BusinessNotes" xml:space="preserve"><value>备注</value></data>
+  <data name="BusinessDeviceNamePlaceholder" xml:space="preserve"><value>请输入设备名称</value></data>
+  <data name="BusinessAddressPlaceholder" xml:space="preserve"><value>例如 192.168.1.20</value></data>
+  <data name="BusinessNotesPlaceholder" xml:space="preserve"><value>可选的设备用途说明</value></data>
+  <data name="BusinessSave" xml:space="preserve"><value>保存配置</value></data>
+  <data name="BusinessRestore" xml:space="preserve"><value>恢复保存值</value></data>
+  <data name="BusinessTestConnection" xml:space="preserve"><value>测试连接</value></data>
+  <data name="BusinessSwitchToEnglish" xml:space="preserve"><value>English</value></data>
+  <data name="BusinessSwitchToChinese" xml:space="preserve"><value>中文</value></data>
+  <data name="BusinessModeContinuous" xml:space="preserve"><value>连续采集</value></data>
+  <data name="BusinessModeTriggered" xml:space="preserve"><value>外部触发</value></data>
+  <data name="BusinessModeSingle" xml:space="preserve"><value>单帧采集</value></data>
+  <data name="BusinessNameRequired" xml:space="preserve"><value>请输入设备名称。</value></data>
+  <data name="BusinessAddressRequired" xml:space="preserve"><value>请输入 IPv4 地址。</value></data>
+  <data name="BusinessAddressInvalid" xml:space="preserve"><value>IPv4 地址格式无效。</value></data>
+  <data name="BusinessConnectionRejected" xml:space="preserve"><value>目标地址拒绝连接，请检查设备和网络。</value></data>
+  <data name="BusinessValidating" xml:space="preserve"><value>正在验证配置…</value></data>
+  <data name="BusinessTesting" xml:space="preserve"><value>正在测试连接…</value></data>
+  <data name="BusinessReadyTitle" xml:space="preserve"><value>设备参数已就绪</value></data>
+  <data name="BusinessReadyDescription" xml:space="preserve"><value>编辑参数后可保存配置或测试连接。</value></data>
+  <data name="BusinessSavedTitle" xml:space="preserve"><value>配置已保存</value></data>
+  <data name="BusinessSavedDescription" xml:space="preserve"><value>已保存 {address}:{port} 的当前参数。</value></data>
+  <data name="BusinessRestoredTitle" xml:space="preserve"><value>已恢复保存值</value></data>
+  <data name="BusinessRestoredDescription" xml:space="preserve"><value>未保存的修改已撤销。</value></data>
+  <data name="BusinessTestingTitle" xml:space="preserve"><value>正在测试设备连接</value></data>
+  <data name="BusinessTestingDescription" xml:space="preserve"><value>正在连接 {address}:{port}，可在关闭页面时安全取消。</value></data>
+  <data name="BusinessConnectedTitle" xml:space="preserve"><value>设备连接成功</value></data>
+  <data name="BusinessConnectedDescription" xml:space="preserve"><value>{address}:{port} 已响应连接测试。</value></data>
+  <data name="BusinessValidationFailedTitle" xml:space="preserve"><value>配置验证未通过</value></data>
+  <data name="BusinessValidationFailedDescription" xml:space="preserve"><value>请根据下方摘要修正输入后重试。</value></data>
+  <data name="BusinessConnectionFailedTitle" xml:space="preserve"><value>设备连接失败</value></data>
+  <data name="BusinessConnectionFailedDescription" xml:space="preserve"><value>无法连接 {address}:{port}，请检查设备和网络。</value></data>
+</root>

@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup><Using Include="Xunit" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.UI.WinForms\DP.WorkFlow.UI.WinForms.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Process.UI.WinForms\DP.WorkFlow.Process.UI.WinForms.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Process.UI.Wpf\DP.WorkFlow.Process.UI.Wpf.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.UI.Wpf\DP.WorkFlow.UI.Wpf.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Standard\DP.WorkFlow.Nodes.Standard.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision\DP.WorkFlow.Nodes.Vision.csproj" />
+    <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.OpenCv\DP.Vision.OpenCv.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Vision.UI\DP.WorkFlow.Vision.UI.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Vision.UI.WinForms\DP.WorkFlow.Vision.UI.WinForms.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Vision.UI.Wpf\DP.WorkFlow.Vision.UI.Wpf.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\..\samples\VisionData\WorkflowImageDemo.cs" Link="WorkflowImageDemo.cs" />
+    <Compile Include="..\..\..\samples\Recovery\WorkflowRecoveryDemo.cs" Link="WorkflowRecoveryDemo.cs" />
+    <Content Include="..\..\..\samples\VisionData\demo.pgm" Link="VisionData\demo.pgm" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

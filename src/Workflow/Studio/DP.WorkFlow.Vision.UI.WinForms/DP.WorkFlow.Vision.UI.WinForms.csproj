@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\DP.Vision\src\DP.Vision.Winform\DP.Vision.Winform.csproj" />
+    <ProjectReference Include="..\DP.WorkFlow.UI.WinForms\DP.WorkFlow.UI.WinForms.csproj" />
+    <ProjectReference Include="..\DP.WorkFlow.Vision.UI\DP.WorkFlow.Vision.UI.csproj" />
+  </ItemGroup>
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+</Project>

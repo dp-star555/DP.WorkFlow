@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\DP.WorkFlow.UI.Shared\DP.WorkFlow.UI.Shared.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Scripting\ScriptEngine\ScriptEngine.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Scripting\ScriptEngine.Wpf\ScriptEngine.Wpf.csproj" />
+  </ItemGroup>
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>

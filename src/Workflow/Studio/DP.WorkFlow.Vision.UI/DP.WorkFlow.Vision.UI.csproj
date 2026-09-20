@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\DP.Vision\src\DP.Vision.UI\DP.Vision.UI.csproj" />
+    <ProjectReference Include="..\..\Kernel\DP.WorkFlow.Abstractions\DP.WorkFlow.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Nodes\DP.WorkFlow.Nodes.Vision\DP.WorkFlow.Nodes.Vision.csproj" />
+    <ProjectReference Include="..\DP.WorkFlow.UI.Shared\DP.WorkFlow.UI.Shared.csproj" />
+  </ItemGroup>
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+</Project>

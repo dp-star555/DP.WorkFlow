@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\DP.Vision\src\DP.Vision.WPF\DP.Vision.WPF.csproj" />
+    <ProjectReference Include="..\DP.WorkFlow.UI.Wpf\DP.WorkFlow.UI.Wpf.csproj" />
+    <ProjectReference Include="..\DP.WorkFlow.Vision.UI\DP.WorkFlow.Vision.UI.csproj" />
+  </ItemGroup>
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+</Project>

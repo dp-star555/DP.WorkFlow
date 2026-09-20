@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Platform\Scripting\ScriptEngine\ScriptEngine.csproj" />
+    <ProjectReference Include="..\..\src\Platform\Scripting\ScriptEngine.WinForms\ScriptEngine.WinForms.csproj" />
+    <ProjectReference Include="..\..\src\Platform\Scripting\ScriptEngine.Workspaces\ScriptEngine.Workspaces.csproj" />
+    <PackageReference Include="Scintilla.NET" GeneratePathProperty="true" PrivateAssets="all" />
+    <Reference Include="Scintilla.NET">
+      <HintPath>$(PkgScintilla_NET)\lib\net7.0-windows7.0\Scintilla.NET.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Scintilla.NET 依赖程序集位置寻找原生卫星目录；单文件发布必须启用全部内容自解压。 -->
+  <Target Name="IncludeScintillaInSingleFileBundle" BeforeTargets="ComputeFilesToPublish" Condition="'$(PublishSingleFile)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(PkgScintilla_NET)\lib\net7.0-windows7.0\Scintilla.NET.dll">
+        <RelativePath>Scintilla.NET.dll</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="@(ScintillaNativeX64)">
+        <RelativePath>x64\%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="@(ScintillaNativeX86)">
+        <RelativePath>x86\%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+  <Target Name="CopyScintillaNativeSatellitesAfterPublish" AfterTargets="Publish" Condition="'$(PublishSingleFile)' == 'true'">
+    <MakeDir Directories="$(PublishDir)x64;$(PublishDir)x86" />
+    <Copy SourceFiles="@(ScintillaNativeX64)" DestinationFolder="$(PublishDir)x64" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(ScintillaNativeX86)" DestinationFolder="$(PublishDir)x86" SkipUnchangedFiles="true" />
+  </Target>
+  <ItemGroup>
+    <ScintillaNativeX64 Include="$(PkgScintilla_NET)\build\x64\*.dll" />
+    <ScintillaNativeX86 Include="$(PkgScintilla_NET)\build\x86\*.dll" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader><resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader><resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="DiagnosticsSeverity" xml:space="preserve"><value>级别</value></data><data name="DiagnosticsCode" xml:space="preserve"><value>代码</value></data>
+  <data name="DiagnosticsNode" xml:space="preserve"><value>节点</value></data><data name="DiagnosticsMessage" xml:space="preserve"><value>消息</value></data>
+  <data name="DiagnosticsError" xml:space="preserve"><value>错误</value></data><data name="DiagnosticsWarning" xml:space="preserve"><value>警告</value></data>
+  <data name="DiagnosticsNavigate" xml:space="preserve"><value>定位节点</value></data><data name="DiagnosticsAccessibleName" xml:space="preserve"><value>工作流诊断列表</value></data>
+  <data name="DiagnosticsEmpty" xml:space="preserve"><value>未发现诊断问题</value></data><data name="DiagnosticsSummary" xml:space="preserve"><value>{errors} 个错误，{warnings} 个警告</value></data>
+  <data name="RuntimeTabTokens" xml:space="preserve"><value>令牌</value></data><data name="RuntimeTabScopes" xml:space="preserve"><value>并行作用域</value></data><data name="RuntimeTabChildren" xml:space="preserve"><value>子流程</value></data><data name="RuntimeTabTrace" xml:space="preserve"><value>轨迹</value></data><data name="RuntimeTabOutput" xml:space="preserve"><value>输出</value></data><data name="RuntimeTabTiming" xml:space="preserve"><value>耗时</value></data>
+  <data name="RuntimeToken" xml:space="preserve"><value>令牌</value></data><data name="RuntimeCurrentNode" xml:space="preserve"><value>当前节点</value></data><data name="RuntimeScope" xml:space="preserve"><value>作用域</value></data><data name="RuntimeAncestorToken" xml:space="preserve"><value>祖先令牌</value></data><data name="RuntimeDispatchNode" xml:space="preserve"><value>派发节点</value></data><data name="RuntimeMergeNode" xml:space="preserve"><value>汇聚节点</value></data><data name="RuntimeProgress" xml:space="preserve"><value>进度</value></data><data name="RuntimeCompleted" xml:space="preserve"><value>完成</value></data>
+  <data name="RuntimeParentNode" xml:space="preserve"><value>父节点</value></data><data name="RuntimeChildWorkflow" xml:space="preserve"><value>子流程</value></data><data name="RuntimeState" xml:space="preserve"><value>状态</value></data><data name="RuntimeElapsed" xml:space="preserve"><value>耗时</value></data><data name="RuntimeRunId" xml:space="preserve"><value>运行标识</value></data><data name="RuntimeSequence" xml:space="preserve"><value>序号</value></data><data name="RuntimeTime" xml:space="preserve"><value>时间</value></data><data name="RuntimeNode" xml:space="preserve"><value>节点</value></data><data name="RuntimeStep" xml:space="preserve"><value>步骤</value></data><data name="RuntimeMessage" xml:space="preserve"><value>消息</value></data><data name="RuntimeOutput" xml:space="preserve"><value>输出</value></data><data name="RuntimeExecutionCount" xml:space="preserve"><value>执行次数</value></data><data name="RuntimeTotalElapsed" xml:space="preserve"><value>累计耗时</value></data><data name="RuntimeAverageElapsed" xml:space="preserve"><value>平均耗时</value></data>
+  <data name="RuntimeFilterPlaceholder" xml:space="preserve"><value>筛选节点、令牌、作用域、步骤或消息</value></data><data name="RuntimePauseTrace" xml:space="preserve"><value>暂停滚动</value></data><data name="RuntimeDateRangeAccessible" xml:space="preserve"><value>轨迹日期范围</value></data><data name="RuntimeRefresh" xml:space="preserve"><value>刷新</value></data><data name="RuntimeExport" xml:space="preserve"><value>导出 CSV</value></data><data name="RuntimeResetFilters" xml:space="preserve"><value>重置筛选</value></data>
+  <data name="RuntimeSummaryEmpty" xml:space="preserve"><value>暂无运行时数据</value></data><data name="RuntimeSummary" xml:space="preserve"><value>{tokens} 个令牌，{scopes} 个作用域，{trace} 条轨迹</value></data><data name="RuntimeRangeTooLong" xml:space="preserve"><value>日期范围不能超过 {days} 天。</value></data><data name="RuntimeYes" xml:space="preserve"><value>是</value></data><data name="RuntimeNo" xml:space="preserve"><value>否</value></data>
+  <data name="RuntimeCsvFilter" xml:space="preserve"><value>CSV 文件 (*.csv)|*.csv|所有文件 (*.*)|*.*</value></data><data name="RuntimeExported" xml:space="preserve"><value>已导出 {count} 条轨迹。</value></data><data name="RuntimeExportFailedTitle" xml:space="preserve"><value>导出失败</value></data><data name="RuntimeExportFailed" xml:space="preserve"><value>无法导出轨迹：{message}&#xD;&#xA;追踪标识：{traceId}</value></data><data name="RuntimeAccessibleName" xml:space="preserve"><value>工作流运行监视器</value></data>
+  <data name="ExecutionStateIdle" xml:space="preserve"><value>空闲</value></data>
+  <data name="ExecutionStateRunning" xml:space="preserve"><value>运行中</value></data>
+  <data name="ExecutionStatePaused" xml:space="preserve"><value>已暂停</value></data>
+  <data name="ExecutionStateCompleted" xml:space="preserve"><value>已完成</value></data>
+  <data name="ExecutionStateFaulted" xml:space="preserve"><value>故障</value></data>
+  <data name="ExecutionStateCanceled" xml:space="preserve"><value>已取消</value></data>
+  <data name="NodeStateIdle" xml:space="preserve"><value>未执行</value></data>
+  <data name="NodeStateRunning" xml:space="preserve"><value>执行中</value></data>
+  <data name="NodeStateCompleted" xml:space="preserve"><value>已完成</value></data>
+  <data name="NodeStateFailed" xml:space="preserve"><value>失败</value></data>
+  <data name="NodeStateCanceled" xml:space="preserve"><value>已取消</value></data>
+  <data name="TraceStepNodeStarted" xml:space="preserve"><value>节点开始</value></data>
+  <data name="TraceStepNodeCompleted" xml:space="preserve"><value>节点完成</value></data>
+  <data name="TraceStepNodeFailed" xml:space="preserve"><value>节点失败</value></data>
+  <data name="TraceStepParallelMerged" xml:space="preserve"><value>并行汇聚</value></data>
+  <data name="TraceStepScriptOutput" xml:space="preserve"><value>脚本输出</value></data>
+</root>

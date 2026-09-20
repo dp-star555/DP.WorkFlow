@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="HeaderTitle" xml:space="preserve">
+    <value>ModernUI control state baseline</value>
+  </data>
+  <data name="ThemeLight" xml:space="preserve">
+    <value>Light mode</value>
+  </data>
+  <data name="ThemeDark" xml:space="preserve">
+    <value>Dark mode</value>
+  </data>
+  <data name="SwitchToEnglish" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="SwitchToChinese" xml:space="preserve">
+    <value>中文</value>
+  </data>
+  <data name="BandButtons" xml:space="preserve">
+    <value>Buttons</value>
+  </data>
+  <data name="BandSelectionStates" xml:space="preserve">
+    <value>Selection states</value>
+  </data>
+  <data name="BandRadioSegmented" xml:space="preserve">
+    <value>Radio &amp; segmented</value>
+  </data>
+  <data name="BandDataGrid" xml:space="preserve">
+    <value>Data grid</value>
+  </data>
+  <data name="BandListView" xml:space="preserve">
+    <value>List view</value>
+  </data>
+  <data name="BandList" xml:space="preserve">
+    <value>Lists</value>
+  </data>
+  <data name="BandTree" xml:space="preserve">
+    <value>Tree</value>
+  </data>
+  <data name="BandTabs" xml:space="preserve">
+    <value>Tabs</value>
+  </data>
+  <data name="BandTextInput" xml:space="preserve">
+    <value>Text input</value>
+  </data>
+  <data name="BandTextArea" xml:space="preserve">
+    <value>Text area</value>
+  </data>
+  <data name="BandCombo" xml:space="preserve">
+    <value>Editable combo</value>
+  </data>
+  <data name="BandNumber" xml:space="preserve">
+    <value>Number input</value>
+  </data>
+  <data name="BandSelect" xml:space="preserve">
+    <value>Select</value>
+  </data>
+  <data name="BandFeedback" xml:space="preserve">
+    <value>Feedback &amp; values</value>
+  </data>
+  <data name="BandNavigation" xml:space="preserve">
+    <value>Navigation &amp; containers</value>
+  </data>
+  <data name="BandCommand" xml:space="preserve">
+    <value>Commands &amp; feedback</value>
+  </data>
+  <data name="BandDateTime" xml:space="preserve">
+    <value>Date, time &amp; duration</value>
+  </data>
+  <data name="BandRangeValidation" xml:space="preserve">
+    <value>Range &amp; validation</value>
+  </data>
+  <data name="BandExtendedFeedback" xml:space="preserve">
+    <value>Extended feedback</value>
+  </data>
+  <data name="CommandRun" xml:space="preserve">
+    <value>Run</value>
+  </data>
+  <data name="CommandSettings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="CommandDiagnostics" xml:space="preserve">
+    <value>Diagnostics</value>
+  </data>
+  <data name="AlertSaved" xml:space="preserve">
+    <value>Configuration saved</value>
+  </data>
+  <data name="AlertSavedDescription" xml:space="preserve">
+    <value>New settings take effect on the next run.</value>
+  </data>
+  <data name="EmptyRuns" xml:space="preserve">
+    <value>No run history</value>
+  </data>
+  <data name="Sample.Alert" xml:space="preserve">
+    <value>Alert</value>
+  </data>
+  <data name="Sample.Badge" xml:space="preserve">
+    <value>Badge</value>
+  </data>
+  <data name="Sample.Checked" xml:space="preserve">
+    <value>Checked</value>
+  </data>
+  <data name="Sample.Collapsible" xml:space="preserve">
+    <value>Collapsible</value>
+  </data>
+  <data name="Sample.Command bar" xml:space="preserve">
+    <value>Command bar</value>
+  </data>
+  <data name="Sample.Context menu" xml:space="preserve">
+    <value>Context menu</value>
+  </data>
+  <data name="Sample.Danger" xml:space="preserve">
+    <value>Danger</value>
+  </data>
+  <data name="Sample.Date range" xml:space="preserve">
+    <value>Date range</value>
+  </data>
+  <data name="Sample.Date" xml:space="preserve">
+    <value>Date</value>
+  </data>
+  <data name="Sample.Default" xml:space="preserve">
+    <value>Default</value>
+  </data>
+  <data name="Sample.Diagnostics details" xml:space="preserve">
+    <value>Diagnostics details</value>
+  </data>
+  <data name="Sample.Disabled" xml:space="preserve">
+    <value>Disabled</value>
+  </data>
+  <data name="Sample.Duration" xml:space="preserve">
+    <value>Duration</value>
+  </data>
+  <data name="Sample.Editable mapping" xml:space="preserve">
+    <value>Editable mapping</value>
+  </data>
+  <data name="Sample.Empty state" xml:space="preserve">
+    <value>Empty state</value>
+  </data>
+  <data name="Sample.Empty" xml:space="preserve">
+    <value>Empty</value>
+  </data>
+  <data name="Sample.Error" xml:space="preserve">
+    <value>Error</value>
+  </data>
+  <data name="Sample.Free Text" xml:space="preserve">
+    <value>Free Text</value>
+  </data>
+  <data name="Sample.Indeterminate" xml:space="preserve">
+    <value>Indeterminate</value>
+  </data>
+  <data name="Sample.Loading" xml:space="preserve">
+    <value>Loading</value>
+  </data>
+  <data name="Sample.Matched" xml:space="preserve">
+    <value>Matched</value>
+  </data>
+  <data name="Sample.Maximum" xml:space="preserve">
+    <value>Maximum</value>
+  </data>
+  <data name="Sample.Message / Dialog" xml:space="preserve">
+    <value>Message / Dialog</value>
+  </data>
+  <data name="Sample.Minimum" xml:space="preserve">
+    <value>Minimum</value>
+  </data>
+  <data name="Sample.Mixed" xml:space="preserve">
+    <value>Mixed</value>
+  </data>
+  <data name="Sample.MultiExtended" xml:space="preserve">
+    <value>MultiExtended</value>
+  </data>
+  <data name="Sample.Multiple" xml:space="preserve">
+    <value>Multiple</value>
+  </data>
+  <data name="Sample.Native TabPages" xml:space="preserve">
+    <value>Native TabPages</value>
+  </data>
+  <data name="Sample.Native checkboxes" xml:space="preserve">
+    <value>Native checkboxes</value>
+  </data>
+  <data name="Sample.No Wrap" xml:space="preserve">
+    <value>No Wrap</value>
+  </data>
+  <data name="Sample.Normal" xml:space="preserve">
+    <value>Normal</value>
+  </data>
+  <data name="Sample.Notification" xml:space="preserve">
+    <value>Notification</value>
+  </data>
+  <data name="Sample.Pagination" xml:space="preserve">
+    <value>Pagination</value>
+  </data>
+  <data name="Sample.Placeholder" xml:space="preserve">
+    <value>Placeholder</value>
+  </data>
+  <data name="Sample.Primary" xml:space="preserve">
+    <value>Primary</value>
+  </data>
+  <data name="Sample.Progress" xml:space="preserve">
+    <value>Progress</value>
+  </data>
+  <data name="Sample.ReadOnly selection" xml:space="preserve">
+    <value>ReadOnly selection</value>
+  </data>
+  <data name="Sample.ReadOnly" xml:space="preserve">
+    <value>ReadOnly</value>
+  </data>
+  <data name="Sample.Segmented" xml:space="preserve">
+    <value>Segmented</value>
+  </data>
+  <data name="Sample.Selected" xml:space="preserve">
+    <value>Selected</value>
+  </data>
+  <data name="Sample.Selection + hierarchy" xml:space="preserve">
+    <value>Selection + hierarchy</value>
+  </data>
+  <data name="Sample.Single selection" xml:space="preserve">
+    <value>Single selection</value>
+  </data>
+  <data name="Sample.Slider" xml:space="preserve">
+    <value>Slider</value>
+  </data>
+  <data name="Sample.Spinner" xml:space="preserve">
+    <value>Spinner</value>
+  </data>
+  <data name="Sample.Status bar" xml:space="preserve">
+    <value>Status bar</value>
+  </data>
+  <data name="Sample.Switch Off" xml:space="preserve">
+    <value>Switch Off</value>
+  </data>
+  <data name="Sample.Switch On" xml:space="preserve">
+    <value>Switch On</value>
+  </data>
+  <data name="Sample.Tag selection" xml:space="preserve">
+    <value>Tag selection</value>
+  </data>
+  <data name="Sample.Time" xml:space="preserve">
+    <value>Time</value>
+  </data>
+  <data name="Sample.Unchecked" xml:space="preserve">
+    <value>Unchecked</value>
+  </data>
+  <data name="Sample.Validation summary" xml:space="preserve">
+    <value>Validation summary</value>
+  </data>
+  <data name="ThemeSwitchAccessible" xml:space="preserve"><value>Toggle dark theme</value></data>
+  <data name="ButtonDefault" xml:space="preserve"><value>Default button</value></data>
+  <data name="ButtonPrimary" xml:space="preserve"><value>Primary action</value></data>
+  <data name="ButtonDanger" xml:space="preserve"><value>Danger action</value></data>
+  <data name="ButtonLoading" xml:space="preserve"><value>Processing</value></data>
+  <data name="Disabled" xml:space="preserve"><value>Unavailable</value></data>
+  <data name="Unchecked" xml:space="preserve"><value>Not selected</value></data>
+  <data name="Checked" xml:space="preserve"><value>Selected</value></data>
+  <data name="Mixed" xml:space="preserve"><value>Partially selected</value></data>
+  <data name="InputDevicePlaceholder" xml:space="preserve"><value>Enter device name</value></data>
+  <data name="InputReadOnly" xml:space="preserve"><value>Read-only content</value></data>
+  <data name="InputInvalid" xml:space="preserve"><value>Invalid content</value></data>
+  <data name="InputDisabled" xml:space="preserve"><value>Not editable</value></data>
+  <data name="TextAreaNoWrap" xml:space="preserve"><value>Long text does not wrap; scroll horizontally to see all content&#xD;&#xA;Line 2: horizontal and vertical&#xD;&#xA;Line 3&#xD;&#xA;Line 4&#xD;&#xA;Line 5</value></data>
+  <data name="TextAreaReadOnly" xml:space="preserve"><value>Read-only description&#xD;&#xA;Selection remains available</value></data>
+  <data name="TextAreaInvalid" xml:space="preserve"><value>Invalid JSON format</value></data>
+  <data name="GridReadOnlyAccessible" xml:space="preserve"><value>Read-only variable mapping</value></data>
+  <data name="GridEditableAccessible" xml:space="preserve"><value>Editable variable mapping</value></data>
+  <data name="GridTarget" xml:space="preserve"><value>Target</value></data>
+  <data name="GridSource" xml:space="preserve"><value>Source</value></data>
+  <data name="GridValue" xml:space="preserve"><value>Value</value></data>
+  <data name="ListDiagnosticsCheckedAccessible" xml:space="preserve"><value>Checkable diagnostics list</value></data>
+  <data name="ListDiagnosticsAccessible" xml:space="preserve"><value>Diagnostics list</value></data>
+  <data name="ListLevel" xml:space="preserve"><value>Level</value></data>
+  <data name="ListCode" xml:space="preserve"><value>Code</value></data>
+  <data name="ListMessage" xml:space="preserve"><value>Message</value></data>
+  <data name="ListBoxMultipleAccessible" xml:space="preserve"><value>Multi-select reference list</value></data>
+  <data name="ListBoxAccessible" xml:space="preserve"><value>Reference list</value></data>
+  <data name="TreeCheckedAccessible" xml:space="preserve"><value>Checkable workflow tree</value></data>
+  <data name="TreeAccessible" xml:space="preserve"><value>DP.WorkFlow toolbox</value></data>
+  <data name="SegmentSelect" xml:space="preserve"><value>Select</value></data>
+  <data name="SegmentRectangle" xml:space="preserve"><value>Rectangle</value></data>
+  <data name="SegmentEllipse" xml:space="preserve"><value>Ellipse</value></data>
+  <data name="SegmentPolygon" xml:space="preserve"><value>Polygon</value></data>
+  <data name="TabDiagnostics" xml:space="preserve"><value>Diagnostics</value></data>
+  <data name="TabRuntime" xml:space="preserve"><value>Runtime</value></data>
+  <data name="TabTokens" xml:space="preserve"><value>Tokens</value></data>
+  <data name="TabTrace" xml:space="preserve"><value>Trace</value></data>
+  <data name="SelectContinuous" xml:space="preserve"><value>Continuous acquisition</value></data>
+  <data name="SelectExternal" xml:space="preserve"><value>External trigger</value></data>
+  <data name="SelectSingleFrame" xml:space="preserve"><value>Single frame</value></data>
+  <data name="MultiRawImage" xml:space="preserve"><value>Raw image</value></data>
+  <data name="MultiResult" xml:space="preserve"><value>Inspection result</value></data>
+  <data name="MultiLog" xml:space="preserve"><value>Run log</value></data>
+  <data name="AdvancedSettings" xml:space="preserve"><value>Advanced settings</value></data>
+  <data name="AdvancedSettingsContent" xml:space="preserve"><value>Timeout · Retry · Diagnostics</value></data>
+  <data name="MessageButton" xml:space="preserve"><value>Message</value></data>
+  <data name="DialogButton" xml:space="preserve"><value>Dialog</value></data>
+  <data name="OperationCompleted" xml:space="preserve"><value>Operation completed</value></data>
+  <data name="ConfirmRunTitle" xml:space="preserve"><value>Confirm run</value></data>
+  <data name="ConfirmRunMessage" xml:space="preserve"><value>Run the current workflow now?</value></data>
+  <data name="NotificationButton" xml:space="preserve"><value>Notification</value></data>
+  <data name="WorkflowCompleted" xml:space="preserve"><value>DP.WorkFlow completed</value></data>
+  <data name="WorkflowCompletedDescription" xml:space="preserve"><value>No errors were found in this run.</value></data>
+  <data name="InvalidValue" xml:space="preserve"><value>Invalid value</value></data>
+  <data name="DeviceAddressInvalid" xml:space="preserve"><value>Invalid device address format</value></data>
+  <data name="SeverityError" xml:space="preserve"><value>Error</value></data>
+  <data name="SeverityWarning" xml:space="preserve"><value>Warning</value></data>
+  <data name="SeverityInformation" xml:space="preserve"><value>Information</value></data>
+  <data name="DiagnosticEntryDisconnected" xml:space="preserve"><value>Entry node is disconnected</value></data>
+  <data name="DiagnosticOutputUnused" xml:space="preserve"><value>Output port is unused</value></data>
+  <data name="DiagnosticValidationComplete" xml:space="preserve"><value>Validation completed</value></data>
+  <data name="Loading" xml:space="preserve"><value>Loading</value></data>
+  <data name="TreeVision" xml:space="preserve"><value>Vision</value></data>
+  <data name="TreeAcquire" xml:space="preserve"><value>Acquire Image</value></data>
+  <data name="TreeLocate" xml:space="preserve"><value>Locate</value></data>
+  <data name="TreeCircle" xml:space="preserve"><value>Find Circle</value></data>
+  <data name="TreeTemplate" xml:space="preserve"><value>Match Template</value></data>
+  <data name="TreeLogic" xml:space="preserve"><value>Logic</value></data>
+  <data name="TreeCondition" xml:space="preserve"><value>If / Else</value></data>
+  <data name="OpenMenu" xml:space="preserve"><value>Open menu</value></data>
+  <data name="MenuRun" xml:space="preserve"><value>Run</value></data>
+  <data name="MenuPause" xml:space="preserve"><value>Pause</value></data>
+  <data name="MenuDelete" xml:space="preserve"><value>Delete</value></data>
+  <data name="StatusReady" xml:space="preserve"><value>Ready</value></data>
+  <data name="BusinessDeviceName" xml:space="preserve"><value>Device name</value></data>
+  <data name="BusinessAddress" xml:space="preserve"><value>IPv4 address</value></data>
+  <data name="BusinessPort" xml:space="preserve"><value>Port</value></data>
+  <data name="BusinessMode" xml:space="preserve"><value>Acquisition mode</value></data>
+  <data name="BusinessTimeout" xml:space="preserve"><value>Timeout</value></data>
+  <data name="BusinessEnabled" xml:space="preserve"><value>Enabled</value></data>
+  <data name="BusinessNotes" xml:space="preserve"><value>Notes</value></data>
+  <data name="BusinessDeviceNamePlaceholder" xml:space="preserve"><value>Enter a device name</value></data>
+  <data name="BusinessAddressPlaceholder" xml:space="preserve"><value>For example, 192.168.1.20</value></data>
+  <data name="BusinessNotesPlaceholder" xml:space="preserve"><value>Optional description of the device purpose</value></data>
+  <data name="BusinessSave" xml:space="preserve"><value>Save configuration</value></data>
+  <data name="BusinessRestore" xml:space="preserve"><value>Restore saved values</value></data>
+  <data name="BusinessTestConnection" xml:space="preserve"><value>Test connection</value></data>
+  <data name="BusinessSwitchToEnglish" xml:space="preserve"><value>English</value></data>
+  <data name="BusinessSwitchToChinese" xml:space="preserve"><value>中文</value></data>
+  <data name="BusinessModeContinuous" xml:space="preserve"><value>Continuous</value></data>
+  <data name="BusinessModeTriggered" xml:space="preserve"><value>External trigger</value></data>
+  <data name="BusinessModeSingle" xml:space="preserve"><value>Single frame</value></data>
+  <data name="BusinessNameRequired" xml:space="preserve"><value>Enter a device name.</value></data>
+  <data name="BusinessAddressRequired" xml:space="preserve"><value>Enter an IPv4 address.</value></data>
+  <data name="BusinessAddressInvalid" xml:space="preserve"><value>The IPv4 address is invalid.</value></data>
+  <data name="BusinessConnectionRejected" xml:space="preserve"><value>The target refused the connection. Check the device and network.</value></data>
+  <data name="BusinessValidating" xml:space="preserve"><value>Validating configuration…</value></data>
+  <data name="BusinessTesting" xml:space="preserve"><value>Testing connection…</value></data>
+  <data name="BusinessReadyTitle" xml:space="preserve"><value>Device settings are ready</value></data>
+  <data name="BusinessReadyDescription" xml:space="preserve"><value>Edit the settings, then save or test the connection.</value></data>
+  <data name="BusinessSavedTitle" xml:space="preserve"><value>Configuration saved</value></data>
+  <data name="BusinessSavedDescription" xml:space="preserve"><value>The current settings for {address}:{port} were saved.</value></data>
+  <data name="BusinessRestoredTitle" xml:space="preserve"><value>Saved values restored</value></data>
+  <data name="BusinessRestoredDescription" xml:space="preserve"><value>Unsaved changes were discarded.</value></data>
+  <data name="BusinessTestingTitle" xml:space="preserve"><value>Testing the device connection</value></data>
+  <data name="BusinessTestingDescription" xml:space="preserve"><value>Connecting to {address}:{port}; closing the page cancels safely.</value></data>
+  <data name="BusinessConnectedTitle" xml:space="preserve"><value>Device connection succeeded</value></data>
+  <data name="BusinessConnectedDescription" xml:space="preserve"><value>{address}:{port} responded to the connection test.</value></data>
+  <data name="BusinessValidationFailedTitle" xml:space="preserve"><value>Configuration validation failed</value></data>
+  <data name="BusinessValidationFailedDescription" xml:space="preserve"><value>Correct the inputs listed in the summary and try again.</value></data>
+  <data name="BusinessConnectionFailedTitle" xml:space="preserve"><value>Device connection failed</value></data>
+  <data name="BusinessConnectionFailedDescription" xml:space="preserve"><value>Could not connect to {address}:{port}. Check the device and network.</value></data>
+</root>

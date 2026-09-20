@@ -1,0 +1,20 @@
+<Project>
+  <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
+    <!-- Visual Studio 可能在用户修改环境变量前已启动；直接读取用户环境注册表，避免 HALCON 项目被静默编译成无 SDK 桩。 -->
+    <_HalconRootFromUserProfile>$(registry:HKEY_CURRENT_USER\Environment@HALCONROOT)</_HalconRootFromUserProfile>
+    <_HalconArchFromUserProfile>$(registry:HKEY_CURRENT_USER\Environment@HALCONARCH)</_HalconArchFromUserProfile>
+    <HALCONROOT Condition="!Exists('$(HALCONROOT)\bin\dotnet35\halcondotnet.dll') and Exists('$(_HalconRootFromUserProfile)\bin\dotnet35\halcondotnet.dll')">$(_HalconRootFromUserProfile)</HALCONROOT>
+    <HALCONARCH Condition="'$(HALCONARCH)' == '' and '$(_HalconArchFromUserProfile)' != ''">$(_HalconArchFromUserProfile)</HALCONARCH>
+    <HalconDotNetPath Condition="!Exists('$(HalconDotNetPath)') and Exists('$(HALCONROOT)\bin\dotnet35\halcondotnet.dll')">$(HALCONROOT)\bin\dotnet35\halcondotnet.dll</HalconDotNetPath>
+  </PropertyGroup>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <PlatformTarget>x64</PlatformTarget>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+</Project>

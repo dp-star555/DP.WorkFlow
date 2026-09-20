@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Platform\Localization\ModernUI.Localization\ModernUI.Localization.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Desktop\ModernUI.WinForms\ModernUI.WinForms.csproj" />
+    <ProjectReference Include="..\DP.WorkFlow.UI.Shared\DP.WorkFlow.UI.Shared.csproj" />
+    <ProjectReference Include="..\..\..\Platform\Scripting\ScriptEngine.WinForms\ScriptEngine.WinForms.csproj" />
+  </ItemGroup>
+  <!--
+    显式声明 WinForms 设计器文件关系，确保 SDK-style 项目在 Visual Studio 中
+    将 .Designer.cs 嵌套到对应 Form/UserControl 下，并可直接使用“查看设计器”。
+  -->
+  <ItemGroup>
+    <Compile Update="Designer\WorkflowDesignerControl.cs"><SubType>Component</SubType></Compile>
+    <Compile Update="Designer\WorkflowDesignerControl.Designer.cs"><DependentUpon>WorkflowDesignerControl.cs</DependentUpon></Compile>
+    <Compile Update="Diagnostics\WorkflowDiagnosticsControl.cs"><SubType>UserControl</SubType></Compile>
+    <Compile Update="Diagnostics\WorkflowDiagnosticsControl.Designer.cs"><DependentUpon>WorkflowDiagnosticsControl.cs</DependentUpon></Compile>
+    <Compile Update="Runtime\WorkflowRuntimeMonitorControl.cs"><SubType>UserControl</SubType></Compile>
+    <Compile Update="Runtime\WorkflowRuntimeMonitorControl.Designer.cs"><DependentUpon>WorkflowRuntimeMonitorControl.cs</DependentUpon></Compile>
+    <Compile Update="Studio\WorkflowStudioControl.cs"><SubType>UserControl</SubType></Compile>
+    <Compile Update="Studio\WorkflowStudioControl.Designer.cs"><DependentUpon>WorkflowStudioControl.cs</DependentUpon></Compile>
+    <Compile Update="Toolbox\WorkflowToolboxControl.cs"><SubType>UserControl</SubType></Compile>
+    <Compile Update="Toolbox\WorkflowToolboxControl.Designer.cs"><DependentUpon>WorkflowToolboxControl.cs</DependentUpon></Compile>
+    <Compile Update="Properties\CSharpUsingManagerDialog.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="Properties\CSharpUsingManagerDialog.Designer.cs"><DependentUpon>CSharpUsingManagerDialog.cs</DependentUpon></Compile>
+    <Compile Update="Properties\WorkflowBindingSelectorDialog.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="Properties\WorkflowBindingSelectorDialog.Designer.cs"><DependentUpon>WorkflowBindingSelectorDialog.cs</DependentUpon></Compile>
+    <Compile Update="Properties\WorkflowBlockMappingEditorDialog.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="Properties\WorkflowBlockMappingEditorDialog.Designer.cs"><DependentUpon>WorkflowBlockMappingEditorDialog.cs</DependentUpon></Compile>
+    <Compile Update="Properties\WorkflowNodeEditorDialog.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="Properties\WorkflowNodeEditorDialog.Designer.cs"><DependentUpon>WorkflowNodeEditorDialog.cs</DependentUpon></Compile>
+    <Compile Update="Properties\WorkflowPropertyPanel.cs"><SubType>UserControl</SubType></Compile>
+    <Compile Update="Properties\WorkflowPropertyPanel.Designer.cs"><DependentUpon>WorkflowPropertyPanel.cs</DependentUpon></Compile>
+  </ItemGroup>
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>

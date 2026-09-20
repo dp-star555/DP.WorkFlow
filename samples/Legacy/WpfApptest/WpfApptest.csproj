@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.Halcon\DP.Vision.Halcon.csproj" />
+    <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.OpenCv\DP.Vision.OpenCv.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Kernel\DP.WorkFlow.Abstractions\DP.WorkFlow.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Kernel\DP.WorkFlow.Core\DP.WorkFlow.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Composite\DP.WorkFlow.Nodes.Composite.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Motion\DP.WorkFlow.Nodes.Motion.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Process\DP.WorkFlow.Nodes.Process.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Standard\DP.WorkFlow.Nodes.Standard.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision\DP.WorkFlow.Nodes.Vision.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Persistence\DP.WorkFlow.Persistence.Json\DP.WorkFlow.Persistence.Json.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Kernel\DP.WorkFlow.Runtime\DP.WorkFlow.Runtime.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.UI.Wpf\DP.WorkFlow.UI.Wpf.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Process.UI.Wpf\DP.WorkFlow.Process.UI.Wpf.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Vision.UI\DP.WorkFlow.Vision.UI.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Vision.UI.Wpf\DP.WorkFlow.Vision.UI.Wpf.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\VisionData\WorkflowImageDemo.cs" Link="WorkflowImageDemo.cs" />
+    <Compile Include="..\..\Recovery\WorkflowRecoveryDemo.cs" Link="WorkflowRecoveryDemo.cs" />
+    <Content Include="..\..\VisionData\demo.pgm" Link="VisionData\demo.pgm" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

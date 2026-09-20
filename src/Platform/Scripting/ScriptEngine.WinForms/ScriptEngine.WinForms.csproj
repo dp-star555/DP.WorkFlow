@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\ScriptEngine\ScriptEngine.csproj" />
+    <PackageReference Include="Scintilla.NET" GeneratePathProperty="true" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Update="RoslynScriptEditorControl.cs"><SubType>UserControl</SubType></Compile>
+    <Compile Update="RoslynScriptEditorControl.Designer.cs"><DependentUpon>RoslynScriptEditorControl.cs</DependentUpon></Compile>
+  </ItemGroup>
+  <PropertyGroup>
+    <TargetFrameworks>net48;net8.0-windows</TargetFrameworks>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net48'">
+    <ScintillaPackageVersion>$([System.IO.Path]::GetFileName('$(PkgScintilla_NET)'))</ScintillaPackageVersion>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="all" />
+    <!-- Scintilla.NET 的 net45 包装器会从该卫星目录定位原生 DLL；作为项目引用时也必须传递到最终应用。 -->
+    <None Include="$(PkgScintilla_NET)\build\x64\*.dll">
+      <Link>packages\Scintilla.NET.$(ScintillaPackageVersion)\build\x64\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Include="$(PkgScintilla_NET)\build\x86\*.dll">
+      <Link>packages\Scintilla.NET.$(ScintillaPackageVersion)\build\x86\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+  <Target Name="CopyScintillaManagedAssembly" AfterTargets="Build" Condition="'$(TargetFramework)' != ''">
+    <PropertyGroup>
+      <ScintillaManagedPath Condition="'$(TargetFramework)' == 'net48'">$(PkgScintilla_NET)\lib\net45\Scintilla.NET.dll</ScintillaManagedPath>
+      <ScintillaManagedPath Condition="'$(TargetFramework)' != 'net48'">$(PkgScintilla_NET)\lib\net7.0-windows7.0\Scintilla.NET.dll</ScintillaManagedPath>
+    </PropertyGroup>
+    <Copy SourceFiles="$(ScintillaManagedPath)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

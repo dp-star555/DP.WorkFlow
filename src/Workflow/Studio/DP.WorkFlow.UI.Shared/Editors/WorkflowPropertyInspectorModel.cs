@@ -1,0 +1,502 @@
+using System.ComponentModel;
+using System.Globalization;
+using System.Reflection;
+using System.Text.Json;
+
+namespace DP.WorkFlow.UI;
+
+/// <summary>指定属性面板应使用的编辑器类型。</summary>
+public enum WorkflowPropertyEditorKind
+{
+    /// <summary>单行或多行文本编辑器。</summary>
+    Text,
+    /// <summary>带数值转换和校验的编辑器。</summary>
+    Number,
+    /// <summary>布尔开关编辑器。</summary>
+    Boolean,
+    /// <summary>枚举选项编辑器。</summary>
+    Enum,
+    /// <summary>支持常量值与数据绑定切换的工作流输入编辑器。</summary>
+    WorkflowInput,
+    /// <summary>C# 脚本专用编辑器。</summary>
+    Script,
+    /// <summary>集合、字典或复杂对象的结构化编辑器。</summary>
+    Structured,
+    /// <summary>仅用于显示、不允许修改的属性。</summary>
+    ReadOnly
+}
+
+/// <summary>表示一个可由 WinForms/WPF 属性面板共同消费的节点属性。</summary>
+public sealed class WorkflowPropertyEntry
+{
+    private readonly object _owner;
+    private readonly PropertyInfo _property;
+
+    /// <summary>初始化属性的反射访问、显示元数据和编辑器配置。</summary>
+    /// <param name="owner">属性所属对象。</param>
+    /// <param name="property">反射属性信息。</param>
+    /// <param name="displayName">属性显示名。</param>
+    /// <param name="category">映射类别名称。</param>
+    /// <param name="description">属性说明。</param>
+    /// <param name="editorKind">属性编辑器类型。</param>
+    /// <param name="valueType">编辑器直接处理的值类型。</param>
+    /// <param name="workflowInputType">工作流输入包装的值类型。</param>
+    /// <param name="propertyEditor">属性声明的可选自定义编辑器元数据。</param>
+    internal WorkflowPropertyEntry(
+        object owner,
+        PropertyInfo property,
+        string displayName,
+        string category,
+        string description,
+        WorkflowPropertyEditorKind editorKind,
+        Type valueType,
+        Type? workflowInputType = null,
+        WorkflowPropertyEditorAttribute? propertyEditor = null)
+    {
+        _owner = owner;
+        _property = property;
+        Name = property.Name;
+        DisplayName = displayName;
+        Category = category;
+        Description = description;
+        EditorKind = editorKind;
+        ValueType = valueType;
+        WorkflowInputType = workflowInputType;
+        EditorKey = propertyEditor?.EditorKey;
+        EditorFilter = propertyEditor?.Filter;
+        EditorDialogTitle = propertyEditor?.DialogTitle;
+        EditorCheckExists = propertyEditor?.CheckExists == true;
+    }
+
+    /// <summary>获取 CLR 属性名称。</summary>
+    public string Name { get; }
+
+    /// <summary>获取适合属性面板显示的名称。</summary>
+    public string DisplayName { get; }
+
+    /// <summary>获取属性面板分组名称。</summary>
+    public string Category { get; }
+
+    /// <summary>用于属性树底部帮助区的参数说明。</summary>
+    public string Description { get; }
+
+    /// <summary>获取属性应使用的编辑器类型。</summary>
+    public WorkflowPropertyEditorKind EditorKind { get; }
+
+    /// <summary>获取编辑器直接读写的值类型。</summary>
+    public Type ValueType { get; }
+
+    /// <summary>获取工作流输入包装的值类型；非工作流输入时为空。</summary>
+    public Type? WorkflowInputType { get; }
+
+    /// <summary>获取宿主自定义编辑器键。</summary>
+    public string? EditorKey { get; }
+
+    /// <summary>获取文件等特殊编辑器使用的过滤条件。</summary>
+    public string? EditorFilter { get; }
+
+    /// <summary>获取特殊编辑器对话框标题。</summary>
+    public string? EditorDialogTitle { get; }
+
+    /// <summary>获取编辑器是否必须校验目标路径存在。</summary>
+    public bool EditorCheckExists { get; }
+
+    public bool IsReadOnly => EditorKind == WorkflowPropertyEditorKind.ReadOnly;
+
+    /// <summary>获取属性所属对象中的当前值。</summary>
+    public object? Value => _property.GetValue(_owner);
+
+    /// <summary>设置普通标量属性。</summary>
+    /// <param name="value">要校验、转换或写入的值。</param>
+    public void SetValue(object? value)
+    {
+        if (IsReadOnly)
+            throw new InvalidOperationException($"属性 {Name} 为只读。");
+        if (EditorKind == WorkflowPropertyEditorKind.WorkflowInput)
+            throw new InvalidOperationException($"属性 {Name} 必须使用 SetWorkflowInput。");
+        var converted = ConvertValue(value, ValueType);
+        ValidateSpecialEditorValue(converted);
+        _property.SetValue(_owner, converted);
+    }
+
+    /// <summary>将集合或复杂对象导出为缩进 JSON。</summary>
+    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
+    public string GetStructuredJson() => JsonSerializer.Serialize(Value, ValueType, StructuredJsonOptions);
+
+    /// <summary>从 JSON 整体替换集合或复杂对象。</summary>
+    /// <param name="json">结构化 JSON 文本。</param>
+    public void SetStructuredJson(string json)
+    {
+        if (EditorKind != WorkflowPropertyEditorKind.Structured)
+            throw new InvalidOperationException($"属性 {Name} 不是结构化属性。");
+        var value = JsonSerializer.Deserialize(json, ValueType, StructuredJsonOptions)
+            ?? throw new InvalidOperationException($"{DisplayName} 不能设置为空。");
+        _property.SetValue(_owner, value);
+    }
+
+    /// <summary>读取 WorkflowInput 的来源。</summary>
+    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
+    public WorkflowValueSource GetInputSource() =>
+        (WorkflowValueSource)GetRequiredInputProperty(nameof(WorkflowInput<object>.Source)).GetValue(Value)!;
+
+    /// <summary>读取 WorkflowInput 的固定值。</summary>
+    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
+    public object? GetInputLiteral() =>
+        GetRequiredInputProperty(nameof(WorkflowInput<object>.LiteralValue)).GetValue(Value);
+
+    /// <summary>读取 WorkflowInput 的绑定。</summary>
+    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
+    public WorkflowBindingKey? GetInputBinding() =>
+        (WorkflowBindingKey?)GetRequiredInputProperty(nameof(WorkflowInput<object>.Binding)).GetValue(Value);
+
+    /// <summary>整体替换 WorkflowInput 配置。</summary>
+    /// <param name="source">源数据或路径点集合。</param>
+    /// <param name="literalValue">输入使用的常量值。</param>
+    /// <param name="binding">输入使用的绑定键。</param>
+    public void SetWorkflowInput(
+        WorkflowValueSource source,
+        object? literalValue,
+        WorkflowBindingKey? binding)
+    {
+        if (EditorKind != WorkflowPropertyEditorKind.WorkflowInput || WorkflowInputType is null)
+            throw new InvalidOperationException($"属性 {Name} 不是 WorkflowInput。");
+        if (source == WorkflowValueSource.Binding && !binding.HasValue)
+            throw new InvalidOperationException("绑定模式必须选择绑定键。");
+
+        var input = Activator.CreateInstance(ValueType)
+            ?? throw new InvalidOperationException($"无法创建 {ValueType.Name}。");
+        GetRequiredInputProperty(nameof(WorkflowInput<object>.Source)).SetValue(input, source);
+        GetRequiredInputProperty(nameof(WorkflowInput<object>.LiteralValue)).SetValue(
+            input,
+            source == WorkflowValueSource.Binding && literalValue is null
+                ? (WorkflowInputType.IsValueType ? Activator.CreateInstance(WorkflowInputType) : null)
+                : ConvertValue(literalValue, WorkflowInputType));
+        GetRequiredInputProperty(nameof(WorkflowInput<object>.Binding)).SetValue(input, binding);
+        _property.SetValue(_owner, input);
+    }
+
+    /// <summary>校验特殊编辑器返回值是否符合属性要求。</summary>
+    /// <param name="value">要校验、转换或写入的值。</param>
+    private void ValidateSpecialEditorValue(object? value)
+    {
+        if (!EditorCheckExists || value is not string path || string.IsNullOrWhiteSpace(path)) return;
+        if (string.Equals(EditorKey, WorkflowPropertyEditorKeys.FilePath, StringComparison.Ordinal)
+            && !File.Exists(path))
+            throw new InvalidOperationException($"文件不存在：{path}。");
+        if (string.Equals(EditorKey, WorkflowPropertyEditorKeys.FolderPath, StringComparison.Ordinal)
+            && !Directory.Exists(path))
+            throw new InvalidOperationException($"文件夹不存在：{path}。");
+    }
+
+    private static readonly JsonSerializerOptions StructuredJsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true
+    };
+
+    /// <summary>取得工作流输入对象的必需子属性。</summary>
+    /// <param name="name">名称。</param>
+    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
+    private PropertyInfo GetRequiredInputProperty(string name) =>
+        ValueType.GetProperty(name, BindingFlags.Instance | BindingFlags.Public)
+        ?? throw new InvalidOperationException($"{ValueType.Name} 缺少属性 {name}。");
+
+    /// <summary>将编辑器输入值转换为目标属性类型。</summary>
+    /// <param name="value">要校验、转换或写入的值。</param>
+    /// <param name="targetType">目标转换类型。</param>
+    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
+    private static object? ConvertValue(object? value, Type targetType)
+    {
+        var nullable = Nullable.GetUnderlyingType(targetType);
+        var coreType = nullable ?? targetType;
+        if (value is null || value is string { Length: 0 } && nullable is not null)
+        {
+            if (nullable is not null || !coreType.IsValueType)
+                return null;
+            throw new InvalidOperationException($"{coreType.Name} 不允许空值。");
+        }
+        if (coreType.IsInstanceOfType(value))
+            return value;
+        var text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+        if (coreType == typeof(string))
+            return text;
+        if (coreType.IsEnum)
+            return Enum.Parse(coreType, text, true);
+        if (coreType == typeof(Guid))
+            return Guid.Parse(text);
+        if (coreType == typeof(TimeSpan))
+            return TimeSpan.Parse(text, CultureInfo.InvariantCulture);
+        return Convert.ChangeType(value, coreType, CultureInfo.InvariantCulture);
+    }
+}
+
+/// <summary>共享节点属性面板模型，并提供强类型绑定候选。</summary>
+public sealed class WorkflowPropertyInspectorModel : IDisposable
+{
+    private readonly WorkflowDesignerSession _session;
+    private IReadOnlyList<WorkflowPropertyEntry> _entries = Array.Empty<WorkflowPropertyEntry>();
+
+    /// <summary>初始化属性检查器并订阅会话和公共数据声明变化。</summary>
+    /// <param name="session">设计器会话。</param>
+    /// <param name="startNodeId">工作流开始节点标识。</param>
+    public WorkflowPropertyInspectorModel(WorkflowDesignerSession session, string startNodeId)
+    {
+        _session = session ?? throw new ArgumentNullException(nameof(session));
+        EntryNodeId = startNodeId ?? throw new ArgumentNullException(nameof(startNodeId));
+        _session.Changed += OnSessionChanged;
+        _session.PublicDataCatalog.Changed += OnPublicDataChanged;
+        Refresh();
+    }
+
+    /// <summary>获取或设置当前工作流的开始节点标识。</summary>
+    public string EntryNodeId { get; set; }
+
+    /// <summary>获取当前检查器选中的节点。</summary>
+    public IWorkflowNodeModel? SelectedNode { get; private set; }
+
+    public IReadOnlyList<WorkflowPropertyEntry> Entries => _entries;
+
+    /// <summary>在模型内容发生变化、界面需要刷新时发生。</summary>
+    public event EventHandler? Changed;
+
+    /// <summary>提交普通属性值并通知画布刷新。</summary>
+    /// <param name="entry">目标属性条目。</param>
+    /// <param name="value">要校验、转换或写入的值。</param>
+    public void SetValue(WorkflowPropertyEntry entry, object? value)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        ExecuteConfigurationChange(() => entry.SetValue(value));
+    }
+
+    /// <summary>提交表格化集合并通知画布刷新。</summary>
+    /// <param name="table">集合表格模型。</param>
+    /// <param name="rows">表格行数据。</param>
+    public void ApplyCollectionTable(WorkflowCollectionTableModel table, IEnumerable<IReadOnlyList<string>> rows)
+    {
+        ArgumentNullException.ThrowIfNull(table);
+        ExecuteConfigurationChange(() => table.Apply(rows));
+    }
+
+    /// <summary>提交集合或复杂对象 JSON 并通知画布刷新。</summary>
+    /// <param name="entry">目标属性条目。</param>
+    /// <param name="json">结构化 JSON 文本。</param>
+    public void SetStructuredJson(WorkflowPropertyEntry entry, string json)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        ExecuteConfigurationChange(() => entry.SetStructuredJson(json));
+    }
+
+    /// <summary>提交 WorkflowInput 配置并通知画布刷新。</summary>
+    /// <param name="entry">目标属性条目。</param>
+    /// <param name="source">源数据或路径点集合。</param>
+    /// <param name="literalValue">输入使用的常量值。</param>
+    /// <param name="binding">输入使用的绑定键。</param>
+    public void SetWorkflowInput(
+        WorkflowPropertyEntry entry,
+        WorkflowValueSource source,
+        object? literalValue,
+        WorkflowBindingKey? binding)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        ExecuteConfigurationChange(() => entry.SetWorkflowInput(source, literalValue, binding));
+    }
+
+    private void ExecuteConfigurationChange(Action change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        var node = SelectedNode
+            ?? throw new InvalidOperationException("当前没有选中的节点。");
+        _session.ExecuteNodeConfigurationChange(node.Id, _ => change());
+    }
+
+    /// <summary>获取当前消费者与输入类型兼容的绑定候选。</summary>
+    /// <param name="entry">目标属性条目。</param>
+    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
+    public IReadOnlyList<WorkflowBindingCandidate> GetBindingCandidates(WorkflowPropertyEntry entry)
+    {
+        if (SelectedNode is null || entry.WorkflowInputType is null)
+            return Array.Empty<WorkflowBindingCandidate>();
+        if (!string.Equals(_session.Document.EntryNodeId, EntryNodeId, StringComparison.Ordinal))
+            return Array.Empty<WorkflowBindingCandidate>();
+        var analysis = new WorkflowBindingAnalyzer(_session.Catalog).Analyze(_session.Document);
+        var nodeCandidates = analysis.GetCandidates(SelectedNode.Id, entry.WorkflowInputType);
+        var globalCandidates = _session.PublicDataCatalog.Items
+            .SelectMany(item => WorkflowBindingAnalyzer.EnumerateBindableMembers(item.ValueType)
+                .Where(member => WorkflowBindingAnalyzer.IsTypeCompatible(member.Type, entry.WorkflowInputType))
+                .Select(member => new WorkflowBindingCandidate(
+                    item.Key,
+                    member.Path,
+                    member.Type,
+                    $"{item.Category}/{item.DisplayName}/{member.Path}",
+                    WorkflowBindingCandidateSourceKind.PublicData,
+                    item.DisplayName,
+                    item.Category)))
+            .ToArray();
+        return nodeCandidates.Concat(globalCandidates)
+            .DistinctBy(candidate => candidate.ToBindingKey())
+            .ToArray();
+    }
+
+    /// <summary>解除事件订阅并释放当前模型持有的资源。</summary>
+    public void Dispose()
+    {
+        _session.Changed -= OnSessionChanged;
+        _session.PublicDataCatalog.Changed -= OnPublicDataChanged;
+    }
+
+    /// <summary>处理公共数据声明变化并通知属性面板刷新。</summary>
+    /// <param name="sender">事件发送者。</param>
+    /// <param name="e">事件参数。</param>
+    private void OnPublicDataChanged(object? sender, EventArgs e) => Changed?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>处理设计会话变更，并同步刷新派生模型。</summary>
+    /// <param name="sender">事件发送者。</param>
+    /// <param name="e">事件参数。</param>
+    private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
+    {
+        if (e.Kind is WorkflowDesignerChangeKind.Selection or WorkflowDesignerChangeKind.Document)
+            Refresh();
+    }
+
+    /// <summary>重新构建当前模型的数据并通知界面刷新。</summary>
+    private void Refresh()
+    {
+        SelectedNode = _session.SelectedNodeId is { } selectedId
+            ? _session.Canvas.Nodes.FirstOrDefault(item => item.Node.Id == selectedId)?.Node
+            : null;
+        _entries = SelectedNode is null ? Array.Empty<WorkflowPropertyEntry>() : BuildEntries(SelectedNode);
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>通过反射为节点构建可编辑属性条目。</summary>
+    /// <param name="node">目标画布节点或节点模型。</param>
+    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
+    private static IReadOnlyList<WorkflowPropertyEntry> BuildEntries(IWorkflowNodeModel node)
+    {
+        var entries = new List<WorkflowPropertyEntry>();
+        foreach (var property in node.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                     .Where(property => property.CanRead && property.GetIndexParameters().Length == 0))
+        {
+            if (property.Name is nameof(IWorkflowNodeModel.NodeType) or nameof(IWorkflowScriptNode.ScriptId) or nameof(IWorkflowScriptNode.ScriptLanguage) or nameof(IWorkflowScriptReferenceNode.ScriptReferencePaths) or "SubDocument" or "ChildNodeCount"
+                || property.GetCustomAttribute<BrowsableAttribute>() is { Browsable: false }
+                || !IsPropertyVisible(node, property))
+                continue;
+            var propertyType = property.PropertyType;
+            Type? inputType = null;
+            WorkflowPropertyEditorKind kind;
+            if (propertyType.IsGenericType && propertyType.GetGenericTypeDefinition() == typeof(WorkflowInput<>))
+            {
+                inputType = propertyType.GetGenericArguments()[0];
+                kind = WorkflowPropertyEditorKind.WorkflowInput;
+            }
+            else if (!property.CanWrite || property.Name == nameof(IWorkflowNodeModel.Id))
+                kind = WorkflowPropertyEditorKind.ReadOnly;
+            else if (propertyType == typeof(bool))
+                kind = WorkflowPropertyEditorKind.Boolean;
+            else if ((Nullable.GetUnderlyingType(propertyType) ?? propertyType).IsEnum)
+                kind = WorkflowPropertyEditorKind.Enum;
+            else if (IsNumber(Nullable.GetUnderlyingType(propertyType) ?? propertyType))
+                kind = WorkflowPropertyEditorKind.Number;
+            else if (propertyType == typeof(string) && property.Name == nameof(IWorkflowScriptNode.Script) && node is IWorkflowScriptNode)
+                kind = WorkflowPropertyEditorKind.Script;
+            else if (propertyType == typeof(string) || propertyType == typeof(TimeSpan) || propertyType == typeof(Guid))
+                kind = WorkflowPropertyEditorKind.Text;
+            else if (property.CanWrite && (propertyType.IsClass || typeof(System.Collections.IEnumerable).IsAssignableFrom(propertyType)))
+                kind = WorkflowPropertyEditorKind.Structured;
+            else
+                continue;
+
+            var propertyEditor = property.GetCustomAttribute<WorkflowPropertyEditorAttribute>();
+            if (propertyEditor is not null && propertyType != typeof(string))
+                throw new InvalidOperationException($"专用属性编辑器 {propertyEditor.EditorKey} 当前只支持字符串属性：{node.GetType().Name}.{property.Name}。");
+            var workflowMetadata = property.GetCustomAttribute<WorkflowPropertyAttribute>();
+            var chineseMetadata = WorkflowPropertyChineseMetadata.Resolve(property.Name);
+            var displayName = workflowMetadata?.DisplayName
+                ?? property.GetCustomAttribute<DisplayNameAttribute>()?.DisplayName
+                ?? chineseMetadata.DisplayName;
+            var category = workflowMetadata?.Category
+                ?? property.GetCustomAttribute<CategoryAttribute>()?.Category
+                ?? chineseMetadata.Category;
+            var description = workflowMetadata?.Description
+                ?? property.GetCustomAttribute<DescriptionAttribute>()?.Description
+                ?? chineseMetadata.Description;
+            if (!string.IsNullOrWhiteSpace(workflowMetadata?.Unit))
+                description += $" 单位：{workflowMetadata.Unit}。";
+            var enumType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
+            if (enumType.IsEnum) description = AppendEnumOptions(description, enumType);
+            entries.Add(new WorkflowPropertyEntry(
+                node,
+                property,
+                displayName,
+                category,
+                description,
+                kind,
+                propertyType,
+                inputType,
+                propertyEditor));
+        }
+        return entries.OrderBy(entry => entry.Category, StringComparer.Ordinal)
+            .ThenBy(entry => entry.DisplayName, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    /// <summary>根据属性元数据和节点状态判断属性是否显示。</summary>
+    /// <param name="node">目标画布节点或节点模型。</param>
+    /// <param name="property">反射属性信息。</param>
+    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
+    private static bool IsPropertyVisible(IWorkflowNodeModel node, PropertyInfo property)
+    {
+        var rules = property.GetCustomAttributes<WorkflowPropertyVisibleWhenAttribute>().ToArray();
+        if (rules.Length > 0)
+        {
+            return rules.All(rule =>
+            {
+                var dependency = node.GetType().GetProperty(rule.PropertyName, BindingFlags.Instance | BindingFlags.Public);
+                var actual = Convert.ToString(dependency?.GetValue(node), CultureInfo.InvariantCulture) ?? string.Empty;
+                return rule.ExpectedValues.Count == 0
+                    ? !string.IsNullOrWhiteSpace(actual)
+                    : rule.ExpectedValues.Any(expected => string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase));
+            });
+        }
+
+        if (property.Name.EndsWith("Binding", StringComparison.Ordinal))
+        {
+            var baseName = property.Name[..^"Binding".Length];
+            var source = node.GetType().GetProperty(baseName + "Source", BindingFlags.Instance | BindingFlags.Public)?.GetValue(node);
+            if (source is not null)
+                return string.Equals(Convert.ToString(source, CultureInfo.InvariantCulture), "Binding", StringComparison.OrdinalIgnoreCase);
+        }
+        var ownSource = node.GetType().GetProperty(property.Name + "Source", BindingFlags.Instance | BindingFlags.Public)?.GetValue(node);
+        if (ownSource is not null)
+            return !string.Equals(Convert.ToString(ownSource, CultureInfo.InvariantCulture), "Binding", StringComparison.OrdinalIgnoreCase);
+        if (property.Name == "LiteralValue")
+        {
+            var valueSource = node.GetType().GetProperty("ValueSource", BindingFlags.Instance | BindingFlags.Public)?.GetValue(node);
+            if (valueSource is not null)
+                return !string.Equals(Convert.ToString(valueSource, CultureInfo.InvariantCulture), "Binding", StringComparison.OrdinalIgnoreCase);
+        }
+        return true;
+    }
+
+    private static string AppendEnumOptions(string description, Type enumType)
+    {
+        var values = Enum.GetNames(enumType).Select(name =>
+        {
+            var field = enumType.GetField(name, BindingFlags.Public | BindingFlags.Static);
+            var definition = field?.GetCustomAttribute<DescriptionAttribute>()?.Description
+                ?? field?.GetCustomAttribute<DisplayNameAttribute>()?.DisplayName;
+            return string.IsNullOrWhiteSpace(definition)
+                ? $"- {name}"
+                : $"- {name} - {definition.Trim()}";
+        });
+        return $"{description}{Environment.NewLine}可选值：{Environment.NewLine}{string.Join(Environment.NewLine, values)}";
+    }
+
+    /// <summary>判断类型是否为 CLR 数值类型。</summary>
+    /// <param name="type">目标 CLR 类型。</param>
+    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
+    private static bool IsNumber(Type type) => Type.GetTypeCode(type) is
+        TypeCode.Byte or TypeCode.SByte or TypeCode.Int16 or TypeCode.UInt16 or TypeCode.Int32
+        or TypeCode.UInt32 or TypeCode.Int64 or TypeCode.UInt64 or TypeCode.Single
+        or TypeCode.Double or TypeCode.Decimal;
+}
