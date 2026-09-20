@@ -19,6 +19,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     private readonly System.Windows.Forms.Timer _searchTimer;
     private readonly HashSet<string> _collapsedCategories = new(StringComparer.Ordinal);
     private WorkflowDesignerSession? _session;
+    private WorkflowPropertyChoiceProvider? _choiceProvider;
     private WorkflowPropertyInspectorModel? _model;
     private string? _startNodeId;
     private bool _building;
@@ -75,6 +76,9 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         _modernGrid.RegisterEditor(new WorkflowEditorProvider(
             entry => entry.EditorKind == WorkflowPropertyEditorKind.Structured,
             CreateStructuredLauncher));
+        _modernGrid.RegisterEditor(new WorkflowEditorProvider(
+            entry => entry.EditorKind == WorkflowPropertyEditorKind.Choice,
+            CreateChoiceEditor));
 
         _searchTimer = new System.Windows.Forms.Timer { Interval = 180 };
         _searchTimer.Tick += (_, _) =>
@@ -163,6 +167,22 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         }
     }
 
+    /// <summary>
+    /// 获取或设置候选值提供者。宿主用它把机器配置（例如已发布的逻辑图像源）注入参数面板；
+    /// 未设置时候选编辑器退回文本输入，不会因为宿主未装配而无法编辑。
+    /// </summary>
+    public WorkflowPropertyChoiceProvider? ChoiceProvider
+    {
+        get => _choiceProvider;
+        set
+        {
+            if (ReferenceEquals(_choiceProvider, value))
+                return;
+            _choiceProvider = value;
+            RecreateModel();
+        }
+    }
+
     /// <summary>在专用脚本页面存在时隐藏参数表中的脚本正文。</summary>
     public bool HideScriptProperty
     {
@@ -192,7 +212,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         _modernSchemaKey = null;
         if (_session is not null && !string.IsNullOrWhiteSpace(_startNodeId))
         {
-            _model = new WorkflowPropertyInspectorModel(_session, _startNodeId);
+            _model = new WorkflowPropertyInspectorModel(_session, _startNodeId, _choiceProvider);
             _model.Changed += OnModelChanged;
         }
         Rebuild();
@@ -559,6 +579,8 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             };
             return combo;
         }
+        if (entry.EditorKind == WorkflowPropertyEditorKind.Choice)
+            return CreateChoiceEditor(entry);
         if (string.Equals(entry.EditorKey, WorkflowPropertyEditorKeys.FilePath, StringComparison.Ordinal)
             || string.Equals(entry.EditorKey, WorkflowPropertyEditorKeys.FolderPath, StringComparison.Ordinal))
             return CreatePathEditor(entry);
@@ -580,6 +602,22 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         var text = EditorText(Convert.ToString(entry.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
         text.Validated += (_, _) => TryEdit(() => _model!.SetValue(entry, text.Text));
         return text;
+    }
+
+    /// <summary>创建候选编辑器：只允许从宿主已发布的候选集中选择，避免手写出机器上不存在的标识。</summary>
+    /// <param name="entry">“entry”参数。</param>
+    /// <returns>返回处理结果。</returns>
+    private Control CreateChoiceEditor(WorkflowPropertyEntry entry)
+    {
+        var combo = EditorCombo();
+        foreach (var choice in entry.Choices) combo.Items.Add(choice);
+        combo.SelectedItem = entry.Choices.FirstOrDefault(choice => Equals(choice.Value, entry.Value));
+        combo.SelectedValueChanged += (_, _) =>
+        {
+            if (combo.SelectedItem is WorkflowPropertyChoice choice)
+                TryEdit(() => _model!.SetValue(entry, choice.Value), rebuild: true);
+        };
+        return combo;
     }
 
     /// <summary>创建Path Editor。</summary>

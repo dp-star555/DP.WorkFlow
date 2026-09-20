@@ -27,6 +27,7 @@ public sealed class WorkflowPropertyPanel : UserControl
     private readonly DispatcherTimer _searchTimer;
     private readonly HashSet<string> _collapsedCategories = new(StringComparer.Ordinal);
     private WorkflowPropertyInspectorModel? _model;
+    private WorkflowPropertyChoiceProvider? _choiceProvider;
     private bool _building;
     private bool _hideScriptProperty;
 
@@ -95,6 +96,21 @@ public sealed class WorkflowPropertyPanel : UserControl
     /// <summary>专用展示区域已承载 Block 等操作时隐藏重复快捷按钮。</summary>
     public bool HideSpecialActions { get; set; }
 
+    /// <summary>
+    /// 获取或设置候选值提供者。宿主用它把机器配置（例如已发布的逻辑图像源）注入参数面板；
+    /// 未设置时候选编辑器退回文本输入，不会因为宿主未装配而无法编辑。
+    /// </summary>
+    public WorkflowPropertyChoiceProvider? ChoiceProvider
+    {
+        get => _choiceProvider;
+        set
+        {
+            if (ReferenceEquals(_choiceProvider, value)) return;
+            _choiceProvider = value;
+            RecreateModel();
+        }
+    }
+
     /// <summary>获取或设置 Edit Error 成员。</summary>
     public event EventHandler<string>? EditError;
 
@@ -113,7 +129,7 @@ public sealed class WorkflowPropertyPanel : UserControl
         DisposeModel();
         if (Session is not null && !string.IsNullOrWhiteSpace(EntryNodeId))
         {
-            _model = new WorkflowPropertyInspectorModel(Session, EntryNodeId);
+            _model = new WorkflowPropertyInspectorModel(Session, EntryNodeId, _choiceProvider);
             _model.Changed += OnModelChanged;
         }
         Rebuild();
@@ -372,6 +388,17 @@ public sealed class WorkflowPropertyPanel : UserControl
             {
                 if (combo.SelectedItem is not null)
                     TryEdit(() => _model!.SetValue(entry, combo.SelectedItem));
+            };
+            return combo;
+        }
+        if (entry.EditorKind == WorkflowPropertyEditorKind.Choice)
+        {
+            var combo = Combo(entry.Choices);
+            combo.SelectedItem = entry.Choices.FirstOrDefault(choice => Equals(choice.Value, entry.Value));
+            combo.SelectionChanged += (_, _) =>
+            {
+                if (combo.SelectedItem is WorkflowPropertyChoice choice)
+                    TryEdit(() => _model!.SetValue(entry, choice.Value));
             };
             return combo;
         }

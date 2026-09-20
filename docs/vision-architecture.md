@@ -40,7 +40,13 @@ DP.WorkFlow.Vision.UI           隔离编辑模型、同帧预览、ROI事务
 
 ## 相机与验证边界
 
-`DP.Vision.Halcon` 直接通过 HFramegrabber 获取真实图像并复制为中立租约；没有旧设备服务 Adapter。当前按请求打开/关闭，非长连接高帧率设备栈。设备在线、许可证、曝光、触发和现场吞吐必须实机验收。SDK复制边界测试使用真实 HALCON 合成图像，不冒充相机测试。
+`DP.Vision.Halcon` 直接通过 HFramegrabber 获取真实图像并复制为中立租约；没有旧设备服务 Adapter。当前按请求打开/关闭；宿主装配的是中立采集入口 `IVisionAcquisition`，工作流文档只保存逻辑SourceId，`CameraId`（`接口名|设备名`）已经收回到Provider私有配置里，不再进入文档。
+
+采集Provider已经插件化：`DP.Vision.Halcon` 发布 `plugin.json` 并实现 `IVisionAcquisitionProviderPlugin`，宿主只扫描插件目录即可发现HALCON，编译期不引用任何HALCON类型；Provider组合采用"候选贡献→完整验证→一次发布"，设备按物理ResourceKey协调 `ExclusiveOperation` 与 `Serialized` 两种策略。完整接口、阶段和验收矩阵见[图像采集Provider实施基线](vision-acquisition-providers.md)。
+
+仍未完成：第二个真实厂商Provider（阶段E，受真实设备与SDK阻塞），以及依赖运行作用域所有权的 `ExclusiveRun` 和需要真实连续流需求的 `Broadcast`（阶段F）；两者当前在运行准备阶段被显式拒绝，不用进程内锁冒充。
+
+设备在线、许可证、曝光、触发和现场吞吐必须实机验收。SDK复制边界测试使用真实 HALCON 合成图像，不冒充相机测试。
 
 平移定位与Canny线/圆测量保留原图结果语义，并已接入精确ROI、定位随动与双坐标表达；平移定位的Bounds仅为诊断外接矩形，实际范围使用MatchGeometry。范围解析和页面依赖能力声明，旋转尺度定位可绑定父坐标系产生子定位；新增算子提供梯度峰插值卡尺、RANSAC直线拟合、离散旋转/尺度模板搜索及正反坐标映射。详细边界见[新增算子](nodes/vision-operators.md)：不是连续形状模型、鲁棒圆拟合或现场精度认证。WPF物理输入仍需要现场验证。
 

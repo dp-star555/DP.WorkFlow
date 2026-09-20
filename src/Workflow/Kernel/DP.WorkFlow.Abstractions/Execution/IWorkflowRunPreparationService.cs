@@ -17,10 +17,15 @@ public enum WorkflowRunScopeKind
 /// <param name="Nodes">按根计划优先的稳定顺序递归展开的节点配置。</param>
 /// <param name="ScopeKind">本次准备请求的作用域；调用者必须明确声明。</param>
 /// <param name="ParentNodeId">嵌套运行时承载它的父节点 ID；根运行为空。</param>
+/// <param name="Services">
+/// 本次运行的宿主服务容器；准备实现可据此读取自己需要的装配能力
+/// （例如已发布的逻辑源目录）。为空表示调用者未提供，实现必须按能力缺失处理而不是假定存在。
+/// </param>
 public sealed record WorkflowRunPreparationContext(
     IReadOnlyList<IWorkflowNodeModel> Nodes,
     WorkflowRunScopeKind ScopeKind,
-    string? ParentNodeId = null);
+    string? ParentNodeId = null,
+    IServiceProvider? Services = null);
 
 /// <summary>
 /// 由运行宿主在根运行开始时、以及任何嵌套运行开始时调用。

@@ -1,4 +1,5 @@
 using DP.Vision;
+using DP.Vision.Acquisition;
 using DP.Vision.Algorithms;
 
 namespace DP.WorkFlow;
@@ -57,7 +58,8 @@ public static class WorkflowImageNodes
         return handlers
             .Register(new LoadVisionFileNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IImageFileReader>(), frames)
             .Register(new LoadVisionFolderNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFolderSource>(), frames)
-            .Register(new CaptureVisionFrameNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<ICameraCapture>(), frames)
+            // 采集节点只声明中立采集入口：Provider选择、连接复用、互斥和来源元数据都由采集运行时隐藏。
+            .Register(new CaptureVisionFrameNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IVisionAcquisition>(), frames)
             .Register(new AnalyzeVisionBlobsNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IBlobAnalyzer>())
             .Register(new AnalyzeVisionColorNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IColorAnalyzer>())
             .Register(new MeasureVisionEdgesNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IEdgeMeasurer>())

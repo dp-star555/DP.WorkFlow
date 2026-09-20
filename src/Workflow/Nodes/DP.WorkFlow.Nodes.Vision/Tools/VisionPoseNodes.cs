@@ -60,8 +60,8 @@ public sealed class LocateVisionTemplatePoseNodeHandler : WorkflowNodeHandler<Lo
             throw new InvalidOperationException("定位变换的模板尺寸不一致。");
         result = result.InCoordinateSystem(node.CoordinateSystemId, frame, template, cancellationToken);
         if (coordinates is not null) result = result.WithSearchCoordinates(coordinates);
-        WorkflowVisionFrameScope.Publish(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result));
+        var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }
 

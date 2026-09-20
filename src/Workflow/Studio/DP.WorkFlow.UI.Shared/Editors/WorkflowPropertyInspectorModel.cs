@@ -22,9 +22,29 @@ public enum WorkflowPropertyEditorKind
     Script,
     /// <summary>集合、字典或复杂对象的结构化编辑器。</summary>
     Structured,
+    /// <summary>从宿主提供的候选集中选择，不允许自由文本。</summary>
+    Choice,
     /// <summary>仅用于显示、不允许修改的属性。</summary>
     ReadOnly
 }
+
+/// <summary>属性编辑器的一个候选值；<paramref name="Label"/> 只用于显示，<paramref name="Value"/> 才是提交给属性的实际值。</summary>
+/// <param name="Label">面向操作员的显示文本。</param>
+/// <param name="Value">提交给属性的实际值。</param>
+public sealed record WorkflowPropertyChoice(string Label, object? Value)
+{
+    /// <inheritdoc/>
+    public override string ToString() => Label;
+}
+
+/// <summary>
+/// 按属性的专用编辑器键和内部名称提供候选值。
+/// 宿主用它把机器配置（例如已发布的逻辑图像源）注入属性面板，而共享层不需要认识具体领域类型。
+/// </summary>
+/// <param name="editorKey">属性声明的专用编辑器键。</param>
+/// <param name="propertyName">属性的 CLR 名称。</param>
+/// <returns>候选值；返回空集合表示没有可选项，编辑器退回文本输入。</returns>
+public delegate IReadOnlyList<WorkflowPropertyChoice> WorkflowPropertyChoiceProvider(string editorKey, string propertyName);
 
 /// <summary>表示一个可由 WinForms/WPF 属性面板共同消费的节点属性。</summary>
 public sealed class WorkflowPropertyEntry
@@ -42,6 +62,7 @@ public sealed class WorkflowPropertyEntry
     /// <param name="valueType">编辑器直接处理的值类型。</param>
     /// <param name="workflowInputType">工作流输入包装的值类型。</param>
     /// <param name="propertyEditor">属性声明的可选自定义编辑器元数据。</param>
+    /// <param name="choices">候选编辑器可选项；非候选编辑器为空。</param>
     internal WorkflowPropertyEntry(
         object owner,
         PropertyInfo property,
@@ -51,7 +72,8 @@ public sealed class WorkflowPropertyEntry
         WorkflowPropertyEditorKind editorKind,
         Type valueType,
         Type? workflowInputType = null,
-        WorkflowPropertyEditorAttribute? propertyEditor = null)
+        WorkflowPropertyEditorAttribute? propertyEditor = null,
+        IReadOnlyList<WorkflowPropertyChoice>? choices = null)
     {
         _owner = owner;
         _property = property;
@@ -66,6 +88,7 @@ public sealed class WorkflowPropertyEntry
         EditorFilter = propertyEditor?.Filter;
         EditorDialogTitle = propertyEditor?.DialogTitle;
         EditorCheckExists = propertyEditor?.CheckExists == true;
+        Choices = choices ?? Array.Empty<WorkflowPropertyChoice>();
     }
 
     /// <summary>获取 CLR 属性名称。</summary>
@@ -100,6 +123,9 @@ public sealed class WorkflowPropertyEntry
 
     /// <summary>获取编辑器是否必须校验目标路径存在。</summary>
     public bool EditorCheckExists { get; }
+
+    /// <summary>获取候选编辑器可选项；非候选编辑器为空集合。</summary>
+    public IReadOnlyList<WorkflowPropertyChoice> Choices { get; }
 
     public bool IsReadOnly => EditorKind == WorkflowPropertyEditorKind.ReadOnly;
 
@@ -226,6 +252,9 @@ public sealed class WorkflowPropertyEntry
             return Guid.Parse(text);
         if (coreType == typeof(TimeSpan))
             return TimeSpan.Parse(text, CultureInfo.InvariantCulture);
+        // 只接受单个字符串的取值对象（例如逻辑源身份）：编辑器给出的是文本，由类型自己校验并 Trim。
+        if (!coreType.IsValueType && coreType.GetConstructor(new[] { typeof(string) }) is { } textConstructor)
+            return textConstructor.Invoke(new object[] { text });
         return Convert.ChangeType(value, coreType, CultureInfo.InvariantCulture);
     }
 }
@@ -234,15 +263,24 @@ public sealed class WorkflowPropertyEntry
 public sealed class WorkflowPropertyInspectorModel : IDisposable
 {
     private readonly WorkflowDesignerSession _session;
+    private readonly WorkflowPropertyChoiceProvider? _choiceProvider;
     private IReadOnlyList<WorkflowPropertyEntry> _entries = Array.Empty<WorkflowPropertyEntry>();
 
     /// <summary>初始化属性检查器并订阅会话和公共数据声明变化。</summary>
     /// <param name="session">设计器会话。</param>
     /// <param name="startNodeId">工作流开始节点标识。</param>
-    public WorkflowPropertyInspectorModel(WorkflowDesignerSession session, string startNodeId)
+    /// <param name="choiceProvider">
+    /// 可选候选提供者；宿主用它把机器配置注入属性面板。
+    /// 未提供时所有候选编辑器退回文本输入，不会因为缺少宿主装配而无法编辑。
+    /// </param>
+    public WorkflowPropertyInspectorModel(
+        WorkflowDesignerSession session,
+        string startNodeId,
+        WorkflowPropertyChoiceProvider? choiceProvider = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         EntryNodeId = startNodeId ?? throw new ArgumentNullException(nameof(startNodeId));
+        _choiceProvider = choiceProvider;
         _session.Changed += OnSessionChanged;
         _session.PublicDataCatalog.Changed += OnPublicDataChanged;
         Refresh();
@@ -364,14 +402,15 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
         SelectedNode = _session.SelectedNodeId is { } selectedId
             ? _session.Canvas.Nodes.FirstOrDefault(item => item.Node.Id == selectedId)?.Node
             : null;
-        _entries = SelectedNode is null ? Array.Empty<WorkflowPropertyEntry>() : BuildEntries(SelectedNode);
+        _entries = SelectedNode is null ? Array.Empty<WorkflowPropertyEntry>() : BuildEntries(SelectedNode, _choiceProvider);
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>通过反射为节点构建可编辑属性条目。</summary>
     /// <param name="node">目标画布节点或节点模型。</param>
+    /// <param name="choiceProvider">可选候选提供者。</param>
     /// <returns>返回操作结果；具体含义参见方法说明。</returns>
-    private static IReadOnlyList<WorkflowPropertyEntry> BuildEntries(IWorkflowNodeModel node)
+    private static IReadOnlyList<WorkflowPropertyEntry> BuildEntries(IWorkflowNodeModel node, WorkflowPropertyChoiceProvider? choiceProvider)
     {
         var entries = new List<WorkflowPropertyEntry>();
         foreach (var property in node.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public)
@@ -382,6 +421,8 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
                 || !IsPropertyVisible(node, property))
                 continue;
             var propertyType = property.PropertyType;
+            var propertyEditor = property.GetCustomAttribute<WorkflowPropertyEditorAttribute>();
+            var candidates = ResolveChoices(propertyEditor, property.Name, choiceProvider);
             Type? inputType = null;
             WorkflowPropertyEditorKind kind;
             if (propertyType.IsGenericType && propertyType.GetGenericTypeDefinition() == typeof(WorkflowInput<>))
@@ -397,6 +438,8 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
                 kind = WorkflowPropertyEditorKind.Enum;
             else if (IsNumber(Nullable.GetUnderlyingType(propertyType) ?? propertyType))
                 kind = WorkflowPropertyEditorKind.Number;
+            else if (IsChoiceEditor(propertyEditor))
+                kind = candidates.Count > 0 ? WorkflowPropertyEditorKind.Choice : WorkflowPropertyEditorKind.Text;
             else if (propertyType == typeof(string) && property.Name == nameof(IWorkflowScriptNode.Script) && node is IWorkflowScriptNode)
                 kind = WorkflowPropertyEditorKind.Script;
             else if (propertyType == typeof(string) || propertyType == typeof(TimeSpan) || propertyType == typeof(Guid))
@@ -406,8 +449,7 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
             else
                 continue;
 
-            var propertyEditor = property.GetCustomAttribute<WorkflowPropertyEditorAttribute>();
-            if (propertyEditor is not null && propertyType != typeof(string))
+            if (propertyEditor is not null && propertyType != typeof(string) && !IsChoiceEditor(propertyEditor))
                 throw new InvalidOperationException($"专用属性编辑器 {propertyEditor.EditorKey} 当前只支持字符串属性：{node.GetType().Name}.{property.Name}。");
             var workflowMetadata = property.GetCustomAttribute<WorkflowPropertyAttribute>();
             var chineseMetadata = WorkflowPropertyChineseMetadata.Resolve(property.Name);
@@ -433,11 +475,37 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
                 kind,
                 propertyType,
                 inputType,
-                propertyEditor));
+                propertyEditor,
+                candidates));
         }
         return entries.OrderBy(entry => entry.Category, StringComparer.Ordinal)
             .ThenBy(entry => entry.DisplayName, StringComparer.Ordinal)
             .ToArray();
+    }
+
+    /// <summary>判断属性是否声明了候选编辑器；该键允许作用在非字符串的取值对象上。</summary>
+    private static bool IsChoiceEditor(WorkflowPropertyEditorAttribute? propertyEditor) =>
+        string.Equals(propertyEditor?.EditorKey, WorkflowPropertyEditorKeys.VisionSource, StringComparison.Ordinal);
+
+    /// <summary>
+    /// 解析候选值。宿主提供者抛错时退回文本编辑而不是让整个属性面板不可用；
+    /// 缺少候选时操作员仍然可以手写标识，只是拿不到下拉提示。
+    /// </summary>
+    private static IReadOnlyList<WorkflowPropertyChoice> ResolveChoices(
+        WorkflowPropertyEditorAttribute? propertyEditor,
+        string propertyName,
+        WorkflowPropertyChoiceProvider? choiceProvider)
+    {
+        if (propertyEditor is null || choiceProvider is null)
+            return Array.Empty<WorkflowPropertyChoice>();
+        try
+        {
+            return choiceProvider(propertyEditor.EditorKey, propertyName) ?? Array.Empty<WorkflowPropertyChoice>();
+        }
+        catch (Exception)
+        {
+            return Array.Empty<WorkflowPropertyChoice>();
+        }
     }
 
     /// <summary>根据属性元数据和节点状态判断属性是否显示。</summary>

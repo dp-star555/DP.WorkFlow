@@ -1,4 +1,6 @@
+using System.Linq;
 using DP.Vision;
+using DP.Vision.Acquisition;
 
 namespace DP.WorkFlow;
 
@@ -23,19 +25,24 @@ public interface IWorkflowVisionPreviewSource
 /// <summary>预览快照；只保留自身图像租约，不拥有不可变算法事实。</summary>
 public sealed class WorkflowVisionPreview : IDisposable
 {
-    internal WorkflowVisionPreview(ImageFrame frame, object? facts, long sequence) { Frame = frame; Facts = facts; Sequence = sequence; }
+    internal WorkflowVisionPreview(ImageFrame frame, object? facts, long sequence, long executionSequence)
+    {
+        Frame = frame; Facts = facts; Sequence = sequence; ExecutionSequence = executionSequence;
+    }
     /// <summary>此快照拥有的帧。</summary>
     public ImageFrame Frame { get; }
     /// <summary>同帧结果；采集时为空。</summary>
     public object? Facts { get; }
     /// <summary>单调预览序号，跨重跑不归零。</summary>
     public long Sequence { get; }
+    /// <summary>产生本预览的运行输出提交序号；该序号起失效时必须同步撤销。</summary>
+    public long ExecutionSequence { get; }
     /// <inheritdoc/>
     public void Dispose() => Frame.Dispose();
 }
 
 /// <summary>有界运行帧仓和最新预览源。根运行开始时释放上一轮仓内租约，使结果查看窗口结束后自然回收；根运行内部的嵌套运行只校验、不清空。UI已Retain的快照不受影响。</summary>
-public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkflowVisionPreviewSource, IWorkflowRunPreparationService, IDisposable
+public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkflowVisionPreviewSource, IWorkflowNodeOutputProjectionSink, IWorkflowRunPreparationService, IDisposable
 {
     private readonly object _gate = new();
     private readonly List<ImageFrame> _frames = new();
@@ -71,7 +78,15 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
         }
     }
 
-    internal static void Publish(IWorkflowNodeExecutionContext context, ImageFrame frame, object? facts = null)
+    /// <summary>
+    /// 登记本次执行的预览投影。预览是"已提交输出"的派生投影，只有节点输出正式提交后才会发布；
+    /// 校验仍在Handler内立即执行，避免把同帧身份不一致推迟到提交之后。
+    /// </summary>
+    /// <param name="context">节点执行上下文。</param>
+    /// <param name="frame">本次执行的帧，必须与事实同帧。</param>
+    /// <param name="facts">可选的同帧算法事实。</param>
+    /// <returns>提交后发布的投影；宿主没有注册帧作用域时为空。</returns>
+    internal static IWorkflowNodeOutputProjection? Stage(IWorkflowNodeExecutionContext context, ImageFrame frame, object? facts = null)
     {
         if (facts is null && context.Node is AnalyzeVisionFrameNodeModel and not PreprocessVisionImageNodeModel)
             throw new InvalidOperationException("视觉分析能力返回了空结果。");
@@ -91,15 +106,16 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
         if (identity is not null && !string.Equals(identity, frame.FrameId, StringComparison.Ordinal))
             throw new InvalidOperationException("视觉算法事实与输入帧身份不一致，禁止提交或叠加到另一张图像。");
         if (context.Services.GetService(typeof(IWorkflowVisionFrameScope)) is WorkflowVisionFrameScope scope)
-            scope.Publish(context.Node.Id, frame, facts);
+            return new VisionPreviewProjection(scope, context.Node.Id, frame, facts);
+        return null;
     }
 
-    private void Publish(string nodeId, ImageFrame frame, object? facts)
+    private void Publish(string nodeId, ImageFrame frame, object? facts, long executionSequence)
     {
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            var next = new WorkflowVisionPreview(frame.Retain(), facts, ++_sequence);
+            var next = new WorkflowVisionPreview(frame.Retain(), facts, ++_sequence, executionSequence);
             if (_previews.Remove(nodeId, out var old)) old.Dispose();
             _previews.Add(nodeId, next);
         }
@@ -111,7 +127,19 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
         lock (_gate)
         {
             if (_disposed || !_previews.TryGetValue(nodeId, out var current)) return null;
-            return new WorkflowVisionPreview(current.Frame.Retain(), current.Facts, current.Sequence);
+            return new WorkflowVisionPreview(current.Frame.Retain(), current.Facts, current.Sequence, current.ExecutionSequence);
+        }
+    }
+
+    /// <summary>运行输出失效时同步撤销对应预览，不让界面继续显示已不可绑定的结果。</summary>
+    /// <param name="executionSequence">失效区间的起始序号，含该序号本身。</param>
+    public void InvalidateFrom(long executionSequence)
+    {
+        lock (_gate)
+        {
+            if (_disposed) return;
+            foreach (var pair in _previews.Where(item => item.Value.ExecutionSequence >= executionSequence).ToArray())
+                if (_previews.Remove(pair.Key, out var removed)) removed.Dispose();
         }
     }
 
@@ -125,6 +153,7 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
             .GroupBy(n => n.Id, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1);
         if (duplicate is not null)
             throw new InvalidOperationException($"新版视觉预览节点ID跨子文档重复：{duplicate.Key}；不能把不同节点的图像合并到同一预览槽。");
+        ValidateCaptureNodes(context);
         if (_next is not null) await _next.PrepareAsync(context, cancellationToken).ConfigureAwait(false);
 
         // 释放上一轮资源只有根运行才做。嵌套运行属于本轮内部，仓内帧仍被根运行的节点输出引用，
@@ -146,9 +175,59 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
         _frames.Clear(); _previews.Clear(); _bytes = 0;
     }
 
+    /// <summary>
+    /// 运行前校验采集节点的逻辑源绑定。这里不是最终互斥——真正取得设备使用权仍然只能在执行采集时
+    /// 由Acquisition Runtime原子完成；此处只保证"源不存在"这类配置错误不会拖到首节点之后才暴露。
+    /// </summary>
+    private static void ValidateCaptureNodes(WorkflowRunPreparationContext context)
+    {
+        var captures = context.Nodes.OfType<CaptureVisionFrameNodeModel>().ToArray();
+        if (captures.Length == 0)
+            return;
+        var catalog = context.Services?.GetService(typeof(IWorkflowVisionSourceCatalog)) as IWorkflowVisionSourceCatalog
+            ?? throw new InvalidOperationException(
+                "流程包含采集节点，但宿主没有发布逻辑源目录（IWorkflowVisionSourceCatalog）；"
+                + "无法在运行前校验Source绑定，禁止开始执行。");
+        foreach (var capture in captures)
+        {
+            var source = capture.Source
+                ?? throw new InvalidOperationException($"采集节点 {capture.Id} 未配置逻辑图像源。");
+            if (!catalog.TryGet(source.SourceId, out var info) || info is null)
+                throw new InvalidOperationException(
+                    $"采集节点 {capture.Id} 的逻辑源 {source.SourceId} 未在当前机器配置中发布；"
+                    + "Provider失败时不会自动尝试其他源。");
+            if (!info.IsAvailable)
+                throw new InvalidOperationException(
+                    $"采集节点 {capture.Id} 的逻辑源 {source.SourceId} 当前不可用（Provider {info.ProviderId}）："
+                    + (info.Diagnostic ?? "未提供原因。"));
+            if (info.SharingPolicy == EVisionSourceSharingPolicy.ExclusiveRun)
+                throw new InvalidOperationException(
+                    $"采集节点 {capture.Id} 的逻辑源 {source.SourceId} 配置为 ExclusiveRun；"
+                    + "该策略依赖根运行作用域所有权（AR-01阶段3），尚未实现，不能用进程内锁冒充。");
+            // 参数不合法时同样在运行前拒绝，而不是等到设备已经打开之后。
+            _ = capture.CreateRequest();
+        }
+    }
+
     /// <summary>使用者结束借用后释放；并行持有者须保留独立租约。</summary>
     public void Dispose()
     {
         lock (_gate) { if (_disposed) return; _disposed = true; Clear(); }
+    }
+
+    /// <summary>预览投影；借用帧作用域已拥有的帧，不额外持有租约，因此未提交时无需清理。</summary>
+    private sealed class VisionPreviewProjection : IWorkflowNodeOutputProjection
+    {
+        private readonly WorkflowVisionFrameScope _scope;
+        private readonly string _nodeId;
+        private readonly ImageFrame _frame;
+        private readonly object? _facts;
+
+        internal VisionPreviewProjection(WorkflowVisionFrameScope scope, string nodeId, ImageFrame frame, object? facts)
+        {
+            _scope = scope; _nodeId = nodeId; _frame = frame; _facts = facts;
+        }
+
+        public void Commit(long executionSequence) => _scope.Publish(_nodeId, _frame, _facts, executionSequence);
     }
 }

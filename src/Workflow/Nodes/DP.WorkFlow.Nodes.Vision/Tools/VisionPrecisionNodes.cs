@@ -66,8 +66,8 @@ public sealed class MeasureVisionCaliperNodeHandler : WorkflowNodeHandler<Measur
         var coordinates = node.ResolveCoordinates(frame, context);
         var result = context.GetRequiredCapability<ICaliperMeasurer>().Measure(frame, node.Options(coordinates), cancellationToken);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
-        WorkflowVisionFrameScope.Publish(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result));
+        var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }
 
@@ -125,7 +125,7 @@ public sealed class FitVisionRobustLineNodeHandler : WorkflowNodeHandler<FitVisi
         }
         var result = context.GetRequiredCapability<IRobustLineFitter>().Fit(frame.FrameId, points, node.DistanceThreshold * (coordinates?.Pose.Scale ?? 1), node.Iterations, node.MinimumInliers, cancellationToken);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
-        WorkflowVisionFrameScope.Publish(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result));
+        var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }

@@ -71,9 +71,11 @@ handlers.Register(
 
 `WorkflowImageRuntimePluginModule` 是视觉节点程序集唯一的 Runtime Module，成组贡献18种 NodeModel、Handler 与中立能力要求。节点保存 `WorkflowInput<T>`、明确参数和 ROI 配置，不保存 SDK 对象。
 
-最终宿主固定装配 `IImageFileReader`、`ICameraCapture`、`IBlobAnalyzer`、`IColorAnalyzer`、`IEdgeMeasurer` 和 `ITemplateLocator` 等中立接口的实现；新增预处理、Region、Blob筛选、卡尺、鲁棒拟合和姿态定位服务见[算子装配](nodes/vision-operators.md)。算法和厂商边界位于同级 DP.Vision，不反向依赖 Workflow。`WorkflowRuntimeHost` 使用统一能力预检，文件夹清单与帧租约分别由采集会话和帧仓准备。
+最终宿主固定装配 `IImageFileReader`、`IVisionAcquisition`、`IBlobAnalyzer`、`IColorAnalyzer`、`IEdgeMeasurer` 和 `ITemplateLocator` 等中立接口的实现；新增预处理、Region、Blob筛选、卡尺、鲁棒拟合和姿态定位服务见[算子装配](nodes/vision-operators.md)。算法和厂商边界位于同级 DP.Vision，不反向依赖 Workflow。`WorkflowRuntimeHost` 使用统一能力预检，文件夹清单与帧租约分别由采集会话和帧仓准备。
 
-当前没有视觉 Profile/Provider 候选选择器、旧 Importer 或独立 vision 分组装载器；不自动故障切换。目录 Freeze 不是服务容器 Freeze，宿主必须保证运行中不更换实例。完整示例见[视觉使用说明](nodes/new-vision-file-pipeline.md)。
+当前没有视觉 Profile/Provider 候选选择器、旧 Importer 或独立 vision 分组装载器；采集侧宿主装配的是中立入口 `IVisionAcquisition`，具体厂商Provider由插件目录发现，运行中不自动故障切换。目录 Freeze 不是服务容器 Freeze，宿主必须保证运行中不更换实例。
+
+多厂商采集没有恢复旧Workflow Profile/Provider/Importer，而是在独立DP.Vision侧建立了采集Provider Module、不可变Provider组合和机器级逻辑Source绑定；Workflow Vision节点只消费统一采集入口。HALCON已发布 `plugin.json` 并作为正式插件被目录发现，`ICameraCapture` 已退回为 DP.Vision 内部的设备适配细节，不再是工作流能力契约。接口、候选发布、硬件生命周期、迁移阶段和验收矩阵见[图像采集Provider实施基线](vision-acquisition-providers.md)：阶段A–D已完成，阶段E（第二个真实厂商Provider）与阶段F（RunScope与高级共享模式）受外部依赖阻塞。完整现有示例见[视觉使用说明](nodes/new-vision-file-pipeline.md)。
 
 ## Studio Module
 

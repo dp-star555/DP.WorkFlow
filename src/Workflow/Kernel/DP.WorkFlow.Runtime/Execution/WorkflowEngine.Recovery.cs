@@ -150,9 +150,12 @@ public sealed partial class WorkflowEngine
             throw new InvalidOperationException("V1命名入口重执行仅支持无环串行计划，禁止循环或并行回退。");
         var entries = _plan.Nodes.Values.Where(node => node is IWorkflowRecoveryEntryNode entry
             && string.Equals(entry.RecoveryEntryKey, entryKey, StringComparison.Ordinal)).ToArray();
-        if (entries.Length != 1 || !_recoveryEntries.TryGetValue(entryKey, out var reached)
-            || reached.TokenId != token.TokenId)
-            throw new InvalidOperationException($"恢复入口 {entryKey} 必须唯一且已由当前Token实际经过。");
+        _recoveryEntries.TryGetValue(entryKey, out var reached);
+        if (entries.Length != 1 || reached is null || reached.TokenId != token.TokenId)
+            throw new InvalidOperationException(
+                $"恢复入口 {entryKey} 必须唯一且已由当前Token实际经过。"
+                + $"匹配节点数={entries.Length}，已注册={reached is not null}，"
+                + $"入口TokenId={(reached is null ? "无" : reached.TokenId.ToString())}，当前TokenId={token.TokenId}。");
         var outputs = RunState.ValidNodeOutputs.Where(output => output.ExecutionSequence >= reached.ExecutionSequence).ToArray();
         var affected = outputs.Select(output => output.NodeId).Append(request.FaultNodeId).Distinct(StringComparer.Ordinal).ToArray();
         if (affected.Any(id => _plan.GetNodeOrThrow(id) is IWorkflowSubDocumentNode))
@@ -176,6 +179,9 @@ public sealed partial class WorkflowEngine
         }
         cancellationToken.ThrowIfCancellationRequested();
         RunState.InvalidateOutputsFrom(reached.ExecutionSequence);
+        // 输出失效必须同步撤销派生投影，否则界面会继续显示已不可绑定的旧结果。
+        if (Context.Services.GetService(typeof(IWorkflowNodeOutputProjectionSink)) is IWorkflowNodeOutputProjectionSink projectionSink)
+            projectionSink.InvalidateFrom(reached.ExecutionSequence);
         foreach (var key in variables) Context.RemoveVariable(key);
         foreach (var pair in _recoveryEntries.Where(pair => pair.Value.ExecutionSequence >= reached.ExecutionSequence))
             _recoveryEntries.TryRemove(pair.Key, out _);

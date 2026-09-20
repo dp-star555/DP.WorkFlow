@@ -156,13 +156,25 @@ _Avoid_: 裸Jump、全部数据还原
 跨视觉实现保持稳定的一项原子能力，例如找线、采集或 Blob 分析；它定义输入和事实输出语义。
 _Avoid_: HALCON 工具实例、Provider 内部方法
 
-**视觉能力实现**:
-独立 DP.Vision 中实现中立算法/采集接口的适配者，例如 OpenCvBlobAnalyzer 或 HalconCameraCapture；它不是工作流节点语义的一部分，不反向依赖 Workflow。
-_Avoid_: 视觉节点、视觉操作
+**视觉算法实现**:
+独立 DP.Vision 中实现中立算法接口的适配者，例如 OpenCvBlobAnalyzer；它不是工作流节点语义的一部分，不反向依赖 Workflow。
+_Avoid_: 视觉节点、硬件设备管理
+
+**视觉采集 Provider**:
+独立管理某类厂商SDK、设备发现、连接、配置、采集和关闭的硬件适配模块，例如HALCON或相机品牌SDK Provider；它不注册工作流节点，也不反向依赖 Workflow。
+_Avoid_: Workflow Runtime Module、节点内部SDK对象、全局图像仓
+
+**逻辑视觉源**:
+流程节点引用的稳定SourceId；机器级配置将它唯一绑定到一个采集Provider设备配置和物理资源键，更换Provider不要求修改流程文档。
+_Avoid_: HALCON接口字符串、设备数组下标、厂商SDK句柄
+
+**物理图像源**:
+相机、采集卡通道或其他具有真实占用关系的硬件资源；公共协调器按稳定资源键管理互斥，同一设备可以被多个逻辑视觉源引用但不能绕过同一占用状态。
+_Avoid_: ImageFrame、FrameScope、SourceId唯一性
 
 **视觉宿主装配**:
-宿主为本次部署选择固定中立接口实现；节点目录冻结和运行前能力预检不等于服务容器已冻结，运行期间由宿主保证不更换实现。
-_Avoid_: Profile 候选选择、自动故障切换
+宿主在启动期发布不可变的Provider组合和机器级逻辑Source绑定；节点目录冻结和运行前能力预检不等于设备已在线或已经取得Lease，运行中不自动切换Provider。
+_Avoid_: 旧Profile/Importer、自动故障切换、运行中直接替换设备实现
 
 **图像帧**:
 统一 IImageSource 租约与 FrameId 组成的 ImageFrame；结果证据必须引用同帧身份，像素改变必须换身份，预览刷新另用递增序号。

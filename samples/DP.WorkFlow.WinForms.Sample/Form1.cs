@@ -1,4 +1,4 @@
-using DP.Vision.Halcon;
+using DP.Vision.Acquisition;
 using DP.Vision.Algorithms;
 using DP.Vision.OpenCv;
 using DP.WorkFlow;
@@ -19,6 +19,8 @@ public partial class Form1 : Form
     private readonly WorkflowStudioRuntimeBinding _runtimeBinding;
     private readonly WorkflowContext _runtimeContext;
     private readonly WorkflowVisionFrameScope _frameScope;
+    private readonly VisionAcquisitionRuntime _visionAcquisition;
+    private readonly WorkflowVisionSourceCatalog _visionSources;
     private readonly WorkflowWinFormsOperatorService _operatorService;
     private bool _closing;
     private bool _runtimeResourcesDisposed;
@@ -48,6 +50,32 @@ public partial class Form1 : Form
         var acquisition = new WorkflowVisionAcquisitionSession(fileReader);
         _frameScope = new WorkflowVisionFrameScope(acquisition);
 
+        // 2.1 机器配置：插件目录 + 公共Source绑定。工作流文档只保存SourceId，
+        // 换机器时只改这里，不需要改流程文档，也不需要重新编译节点。
+        // 宿主只认识 plugin.json 与中立插件契约，编译期不选择任何具体Provider。
+        var providerPluginDirectory = Path.Combine(AppContext.BaseDirectory, "plugins");
+        var providerPlugins = new VisionAcquisitionProviderPluginLoader()
+            .Load(providerPluginDirectory, ReadProviderConfiguration);
+        var sourceBindings = new[]
+        {
+            new VisionAcquisitionSourceBinding("Camera.Top", "dp.vision.halcon", "top-camera", "camera:serial:DEMO0001")
+        };
+        _visionAcquisition = new VisionAcquisitionRuntime(
+            new VisionAcquisitionProviderComposer().Compose(providerPlugins.Modules, sourceBindings));
+        _visionSources = new WorkflowVisionSourceCatalog(sourceBindings.Select(binding =>
+        {
+            var availability = providerPlugins.ProviderAvailability
+                .FirstOrDefault(item => string.Equals(item.ProviderId, binding.ProviderId, StringComparison.Ordinal));
+            return new WorkflowVisionSourceInfo(
+                binding.SourceId,
+                binding.ProviderId,
+                binding.SharingPolicy,
+                isAvailable: availability?.IsAvailable ?? false,
+                diagnostic: availability is null
+                    ? $"Provider {binding.ProviderId} 未安装：插件目录 {providerPluginDirectory} 中没有加载到该Provider。"
+                    : availability.Diagnostic);
+        }));
+
         // 3. 创建新文档
         _workspace.New(recoveryDemo is null ? "新版视觉文件分析" : "异常恢复演示（仅软件模拟）");
         if (recoveryDemo is null) WorkflowImageDemo.PopulateProcessing(_workspace.Navigator!.RootSession);
@@ -62,6 +90,13 @@ public partial class Form1 : Form
         workflowStudioControl1.NodeEditorExtensions.Register(
             new VisionWinFormsStudioExtension()
             { FrameSource = _frameScope, FileReader = fileReader });
+        // 采集节点的"逻辑图像源"从本机已发布的源里选，避免手写出机器上不存在的标识。
+        workflowStudioControl1.Properties.ChoiceProvider = (editorKey, _) =>
+            string.Equals(editorKey, WorkflowPropertyEditorKeys.VisionSource, StringComparison.Ordinal)
+                ? _visionSources.Sources.Select(source => new WorkflowPropertyChoice(
+                    source.IsAvailable ? source.SourceId : $"{source.SourceId}（不可用：{source.Diagnostic}）",
+                    new VisionSourceReference(source.SourceId))).ToArray()
+                : Array.Empty<WorkflowPropertyChoice>();
 
         // 5. 注册宿主运行能力；节点和 Handler 已由上面的 Runtime Module 成组注册。
         var actions = new WorkflowActionRegistry()
@@ -95,6 +130,8 @@ public partial class Form1 : Form
             .Add<ITemplatePoseLocator>(new OpenCvTemplatePoseLocator())
             .Add<IWorkflowVisionFrameScope>(_frameScope)
             .Add<IWorkflowVisionFolderSource>(acquisition)
+            .Add<IVisionAcquisition>(_visionAcquisition)
+            .Add<IWorkflowVisionSourceCatalog>(_visionSources)
             .Add<IWorkflowActionRegistry>(actions)
             .Add<IWorkflowConditionRegistry>(conditions)
             .Add<IWorkflowSignalService>(new WorkflowSignalService())
@@ -110,8 +147,6 @@ public partial class Form1 : Form
             .Add<IWorkflowWaferRobotService>(new DemoWaferRobotService())
             .Add<IWorkflowRecoveryService>(new DemoRecoveryService())
             .Add<IWorkflowRunPreparationService>(_frameScope);
-        if (HalconCameraCapture.IsSdkEnabled)
-            services.Add<ICameraCapture>(new HalconCameraCapture());
         recoveryDemo?.ConfigureServices(services, _nodeCatalog, handlers, actions);
         _runtimeContext = new WorkflowContext(services);
         _runtimeHost = new WorkflowRuntimeHost(_nodeCatalog, handlers);
@@ -145,6 +180,13 @@ public partial class Form1 : Form
         workflowStudioControl1.InteractionError += OnInteractionError;
     }
 
+    /// <summary>按PluginId读取该Provider的私有配置；宿主只转交文本，不解释其中任何字段。</summary>
+    private static string? ReadProviderConfiguration(string pluginId)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "vision-providers", pluginId + ".json");
+        return File.Exists(path) ? File.ReadAllText(path) : null;
+    }
+
     private void OnInteractionError(object? sender, string message) =>
         MessageBox.Show(
             this,
@@ -162,6 +204,9 @@ public partial class Form1 : Form
             _closing = true;
             workflowStudioControl1.Enabled = false;
             try { await _runtimeHost.StopAsync(); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
+            // 设备会话必须异步释放；放在这里等待，避免在同步释放路径上阻塞UI线程。
+            try { await _visionAcquisition.DisposeAsync(); }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
             DisposeRuntimeResources();
             BeginInvoke(new Action(Close));

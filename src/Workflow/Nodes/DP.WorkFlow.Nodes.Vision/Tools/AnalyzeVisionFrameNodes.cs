@@ -164,8 +164,8 @@ public sealed class AnalyzeVisionBlobsNodeHandler : WorkflowNodeHandler<AnalyzeV
         var result = context.GetRequiredCapability<IBlobAnalyzer>().Analyze(frame, range.Bounds,
             new BlobOptions(node.MinimumGray, node.MaximumGray, node.MinimumArea, node.EightConnected), cancellationToken, range.Region);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
-        WorkflowVisionFrameScope.Publish(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result));
+        var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }
 
@@ -190,7 +190,7 @@ public sealed class AnalyzeVisionColorNodeHandler : WorkflowNodeHandler<AnalyzeV
         var range = node.ResolveRange(frame, context, cancellationToken); var coordinates = range.Coordinates;
         var result = context.GetRequiredCapability<IColorAnalyzer>().Analyze(frame, range.Bounds, cancellationToken, range.Region);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
-        WorkflowVisionFrameScope.Publish(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result));
+        var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }

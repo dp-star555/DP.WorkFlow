@@ -20,10 +20,11 @@ DP.WorkFlow 是从旧 `WorkFlow.Rebuild` 独立出来的 .NET 8 重构主线。�
 - [插件架构](docs/plugin-architecture.md)
 - [节点重写保真审计](docs/nodes/fidelity-audit.md)
 - [独立 DP.Vision 实施记录](docs/dp-vision-integration-plan.md)
+- [多厂商图像采集 Provider 实施与验收基线](docs/vision-acquisition-providers.md)（阶段A–D 已实施；阶段E–F 受外部依赖阻塞）
 - [新版视觉节点、ROI 与双宿主示例](docs/nodes/new-vision-file-pipeline.md)
 - [模板定位坐标系、ROI随动与双坐标结果](docs/nodes/vision-coordinate-systems.md)
 
-WinForms/WPF 示例使用独立 DP.Vision 的18种节点及原生图像页，启动即有可运行的文件→预处理→Region→形态学→Blob→筛选→掩码颜色流程。构建需保留同级 `../DP.Vision/` 源码。旧视觉节点、MachineVision 工程、兼容 Adapter、旧页面及 Paddle 工作流/工具已删除；不会静默转换旧文档。相机由独立 `DP.Vision.Halcon` 直接实现，不再经过旧框架。详见[清理决定](docs/decisions/0014-vision-clean-break.md)和[已落地算子及用法](docs/nodes/vision-operators.md)。
+WinForms/WPF 示例使用独立 DP.Vision 的18种节点及原生图像页，启动即有可运行的文件→预处理→Region→形态学→Blob→筛选→掩码颜色流程。构建需保留同级 `../DP.Vision/` 源码。旧视觉节点、MachineVision 工程、兼容 Adapter、旧页面及 Paddle 工作流/工具已删除；不会静默转换旧文档。相机采集由独立 `DP.Vision.Halcon` 以插件形式提供：示例只扫描 `plugins/` 目录里的 `plugin.json`，编译期不引用任何 HALCON 类型，工作流文档只保存逻辑SourceId。详见[清理决定](docs/decisions/0014-vision-clean-break.md)和[已落地算子及用法](docs/nodes/vision-operators.md)。
 
 ## 构建
 

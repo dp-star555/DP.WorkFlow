@@ -6,10 +6,15 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <!-- 采集Provider插件包目录；目标框架必须与DP.Vision.Halcon的对应输出一致。 -->
+    <VisionAcquisitionPluginRoot>$(MSBuildThisFileDirectory)..\..\..\..\DP.Vision\src\DP.Vision.Halcon\</VisionAcquisitionPluginRoot>
+    <VisionAcquisitionPluginTfm>net8.0-windows</VisionAcquisitionPluginTfm>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.Halcon\DP.Vision.Halcon.csproj" />
+    <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.Acquisition.Runtime\DP.Vision.Acquisition.Runtime.csproj" />
+    <!-- 只保证HALCON插件被构建并投放到插件目录；不加编译期引用，宿主因此无法在编译期选择具体Provider。 -->
+    <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.Halcon\DP.Vision.Halcon.csproj" ReferenceOutputAssembly="false" Private="false" />
     <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.OpenCv\DP.Vision.OpenCv.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Kernel\DP.WorkFlow.Abstractions\DP.WorkFlow.Abstractions.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Kernel\DP.WorkFlow.Core\DP.WorkFlow.Core.csproj" />
@@ -30,5 +35,18 @@
     <Compile Include="..\..\VisionData\WorkflowImageDemo.cs" Link="WorkflowImageDemo.cs" />
     <Compile Include="..\..\Recovery\WorkflowRecoveryDemo.cs" Link="WorkflowRecoveryDemo.cs" />
     <Content Include="..\..\VisionData\demo.pgm" Link="VisionData\demo.pgm" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\VisionData\vision-providers\**" Link="vision-providers\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!-- 把HALCON插件按包结构投放到plugins目录，使宿主只通过目录发现Provider。 -->
+  <Target Name="StageVisionAcquisitionProviderPlugins" AfterTargets="Build">
+    <ItemGroup>
+      <VisionAcquisitionProviderPayload Include="$(VisionAcquisitionPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Halcon.dll" />
+      <VisionAcquisitionProviderPayload Include="$(VisionAcquisitionPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Halcon.pdb" />
+      <VisionAcquisitionProviderPayload Include="$(VisionAcquisitionPluginRoot)plugin.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(VisionAcquisitionProviderPayload)"
+          DestinationFolder="$(OutDir)plugins\dp.vision.halcon"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>

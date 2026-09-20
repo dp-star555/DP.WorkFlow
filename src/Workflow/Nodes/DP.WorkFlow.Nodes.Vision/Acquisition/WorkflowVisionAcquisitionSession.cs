@@ -99,39 +99,3 @@ public sealed class LoadVisionFolderNodeHandler : WorkflowNodeHandler<LoadVision
         return LoadVisionFileNodeHandler.Output(image, context, cancellationToken);
     }
 }
-
-/// <summary>通过宿主装配的相机Adapter采集新版ImageFrame。</summary>
-[WorkflowNode("Vision.CaptureFrame", DisplayName = "采集相机帧", Category = "5.Vision/ImageBuffer")]
-public sealed class CaptureVisionFrameNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
-{
-    /// <inheritdoc/>
-    public override string NodeType => "Vision.CaptureFrame";
-    /// <summary>设备键。</summary>
-    public string CameraId { get; set; } = string.Empty;
-    /// <summary>曝光。</summary>
-    public double Exposure { get; set; }
-    /// <summary>增益。</summary>
-    public double Gain { get; set; }
-    /// <summary>外部触发。</summary>
-    public bool Triggered { get; set; }
-    /// <inheritdoc/>
-    public IReadOnlyList<string> ValidateConfiguration()
-    {
-        var errors = new List<string>();
-        if (string.IsNullOrWhiteSpace(CameraId)) errors.Add("相机标识不能为空。");
-        try { _ = new CameraCaptureOptions(Exposure, Gain, Triggered); } catch (ArgumentException ex) { errors.Add(ex.Message); }
-        return errors;
-    }
-}
-
-/// <summary>执行相机采集，不包含模拟成功路径。</summary>
-public sealed class CaptureVisionFrameNodeHandler : WorkflowNodeHandler<CaptureVisionFrameNodeModel>
-{
-    /// <inheritdoc/>
-    protected override async ValueTask<NodeExecutionResult> ExecuteAsync(CaptureVisionFrameNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
-    {
-        using var image = await context.GetRequiredCapability<ICameraCapture>().CaptureAsync(node.CameraId,
-            new CameraCaptureOptions(node.Exposure, node.Gain, node.Triggered), cancellationToken).ConfigureAwait(false);
-        return LoadVisionFileNodeHandler.Output(image, context, cancellationToken);
-    }
-}

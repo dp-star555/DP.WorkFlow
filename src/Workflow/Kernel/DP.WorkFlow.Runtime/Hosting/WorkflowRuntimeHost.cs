@@ -283,7 +283,8 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
             await preparation.PrepareAsync(
                 new WorkflowRunPreparationContext(
                     EnumerateNodes(plan.Plan).ToArray(),
-                    WorkflowRunScopeKind.Root),
+                    WorkflowRunScopeKind.Root,
+                    Services: context.Services),
                 cancellationToken).ConfigureAwait(false);
         var result = await engine.RunAsync(cancellationToken).ConfigureAwait(false);
         lock (_syncRoot)

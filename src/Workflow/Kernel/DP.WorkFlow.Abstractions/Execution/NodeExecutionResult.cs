@@ -50,6 +50,11 @@ public sealed class NodeExecutionResult
     /// <summary>获取节点产生的标准输出。</summary>
     public object? Output { get; private init; }
 
+    /// <summary>
+    /// 获取本次执行的派生投影；运行状态正式提交输出后才会发布。取消、失败或提交失败时不发布。
+    /// </summary>
+    public IWorkflowNodeOutputProjection? Projection { get; private init; }
+
     /// <summary>获取失败消息。</summary>
     public string? Message { get; private init; }
 
@@ -62,9 +67,13 @@ public sealed class NodeExecutionResult
     /// <summary>创建沿指定输出端口继续调度的成功结果。</summary>
     /// <param name="portKey">当前节点选择的稳定输出端口键；运行时据此从编译定义查找后继节点。</param>
     /// <param name="output">节点产生的可选标准输出；运行时会按 Run、Token、Scope 和执行次数记录。</param>
+    /// <param name="projection">可选派生投影；仅在输出正式提交后发布。</param>
     /// <returns>不会结束当前路径的成功结果。</returns>
     /// <exception cref="ArgumentException"><paramref name="portKey"/> 为空或仅包含空白字符。</exception>
-    public static NodeExecutionResult Continue(string portKey = WorkflowPorts.Success, object? output = null)
+    public static NodeExecutionResult Continue(
+        string portKey = WorkflowPorts.Success,
+        object? output = null,
+        IWorkflowNodeOutputProjection? projection = null)
     {
         if (string.IsNullOrWhiteSpace(portKey))
             throw new ArgumentException("出口端口不能为空。", nameof(portKey));
@@ -73,17 +82,20 @@ public sealed class NodeExecutionResult
         {
             Outcome = NodeExecutionOutcome.Continue,
             SelectedPortKey = portKey.Trim(),
-            Output = output
+            Output = output,
+            Projection = projection
         };
     }
 
     /// <summary>创建正常结束当前执行路径的成功结果。</summary>
     /// <param name="output">路径结束前由当前节点产生的可选标准输出。</param>
+    /// <param name="projection">可选派生投影；仅在输出正式提交后发布。</param>
     /// <returns>将 <see cref="CompleteCurrentPath"/> 标记为 <see langword="true"/> 的成功结果。</returns>
-    public static NodeExecutionResult Complete(object? output = null) => new()
+    public static NodeExecutionResult Complete(object? output = null, IWorkflowNodeOutputProjection? projection = null) => new()
     {
         Outcome = NodeExecutionOutcome.CompletePath,
-        Output = output
+        Output = output,
+        Projection = projection
     };
 
     /// <summary>创建节点执行失败结果，并声明运行时应采用的故障处理策略。</summary>

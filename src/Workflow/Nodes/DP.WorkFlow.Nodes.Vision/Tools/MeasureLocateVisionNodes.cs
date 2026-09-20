@@ -41,8 +41,8 @@ public sealed class MeasureVisionEdgesNodeHandler : WorkflowNodeHandler<MeasureV
         var result = context.GetRequiredCapability<IEdgeMeasurer>().Measure(frame, range.Bounds,
             new EdgeMeasurementOptions(node.Model, node.LowThreshold, node.HighThreshold, node.MinimumPoints), cancellationToken, range.Region);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
-        WorkflowVisionFrameScope.Publish(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result));
+        var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }
 
@@ -82,7 +82,7 @@ public sealed class LocateVisionTemplateNodeHandler : WorkflowNodeHandler<Locate
         var result = context.GetRequiredCapability<ITemplateLocator>().Locate(frame, range.Bounds, template,
             new PixelBounds(0, 0, template.Image.Info.Width, template.Image.Info.Height), node.MinimumScore, cancellationToken, range.Region, range.Coordinates);
         if (result.TemplateFrameId != template.FrameId) throw new InvalidOperationException("定位结果模板身份与本次输入不一致。");
-        WorkflowVisionFrameScope.Publish(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result));
+        var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }

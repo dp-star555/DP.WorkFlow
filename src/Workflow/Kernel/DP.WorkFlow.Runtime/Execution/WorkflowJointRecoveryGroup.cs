@@ -152,7 +152,8 @@ public sealed class WorkflowJointRecoveryGroup : IDisposable
                     await preparation.PrepareAsync(
                         new WorkflowRunPreparationContext(
                             participant.Plan.Plan.Nodes.Values.ToArray(),
-                            WorkflowRunScopeKind.Nested),
+                            WorkflowRunScopeKind.Nested,
+                            Services: participant.Context.Services),
                         linked.Token).ConfigureAwait(false);
             linked.Token.ThrowIfCancellationRequested();
             var tasks = _participants.Values.Select(p => Task.Run(async () =>

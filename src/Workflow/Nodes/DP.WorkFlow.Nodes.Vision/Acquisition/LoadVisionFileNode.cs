@@ -34,9 +34,15 @@ public sealed class LoadVisionFileNodeHandler : WorkflowNodeHandler<LoadVisionFi
     internal static NodeExecutionResult Output(IImageSource image, IWorkflowNodeExecutionContext context, CancellationToken token)
     {
         using var frame = new ImageFrame(Guid.NewGuid().ToString("N"), image);
+        return Output(frame, context, token);
+    }
+
+    /// <summary>把已有帧身份交给运行帧作用域；采集帧必须保留CaptureId作为FrameId，不能重新编号。</summary>
+    internal static NodeExecutionResult Output(ImageFrame frame, IWorkflowNodeExecutionContext context, CancellationToken token)
+    {
         token.ThrowIfCancellationRequested();
         var retained = context.GetRequiredCapability<IWorkflowVisionFrameScope>().Retain(frame);
-        WorkflowVisionFrameScope.Publish(context, retained);
-        return NodeExecutionResult.Continue(output: retained);
+        var projection = WorkflowVisionFrameScope.Stage(context, retained);
+        return NodeExecutionResult.Continue(output: retained, projection: projection);
     }
 }

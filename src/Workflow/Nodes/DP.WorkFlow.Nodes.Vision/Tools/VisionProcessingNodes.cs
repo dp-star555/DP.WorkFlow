@@ -49,8 +49,8 @@ public sealed class PreprocessVisionImageNodeHandler : WorkflowNodeHandler<Prepr
         using var frame = new ImageFrame(Guid.NewGuid().ToString("N"), pixels);
         cancellationToken.ThrowIfCancellationRequested();
         var output = context.GetRequiredCapability<IWorkflowVisionFrameScope>().Retain(frame);
-        WorkflowVisionFrameScope.Publish(context, output);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: output));
+        var projection = WorkflowVisionFrameScope.Stage(context, output);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: output, projection: projection));
     }
 }
 
@@ -89,8 +89,8 @@ public sealed class ThresholdVisionRegionNodeHandler : WorkflowNodeHandler<Thres
             range.Region, cancellationToken) ?? throw new InvalidOperationException("分割返回空结果。");
         result.ValidateFrame(frame);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
-        WorkflowVisionFrameScope.Publish(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result));
+        var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }
 
@@ -135,8 +135,8 @@ public sealed class MorphVisionRegionNodeHandler : WorkflowNodeHandler<MorphVisi
             ?? throw new InvalidOperationException("形态学返回空结果。");
         result.ValidateFrame(frame);
         if (input.CoordinateSystem is not null) result = result.InCoordinates(input.CoordinateSystem);
-        WorkflowVisionFrameScope.Publish(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result));
+        var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }
 
@@ -184,7 +184,7 @@ public sealed class SelectVisionBlobsNodeHandler : WorkflowNodeHandler<SelectVis
         if (input.FrameId != frame.FrameId) throw new InvalidOperationException("Blob与预览帧不一致。");
         var result = context.GetRequiredCapability<IBlobSelector>().Select(input, node.Options(), cancellationToken);
         if (input.CoordinateSystem is not null) result = result.InCoordinates(input.CoordinateSystem);
-        WorkflowVisionFrameScope.Publish(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result));
+        var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }

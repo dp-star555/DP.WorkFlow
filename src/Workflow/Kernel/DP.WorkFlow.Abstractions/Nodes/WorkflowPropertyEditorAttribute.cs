@@ -8,6 +8,9 @@ public static class WorkflowPropertyEditorKeys
 
     /// <summary>使用文件夹选择对话框编辑字符串路径。</summary>
     public const string FolderPath = "FolderPath";
+
+    /// <summary>从宿主已发布的候选集中选择；只对逻辑标识类属性有效，不允许自由文本。</summary>
+    public const string VisionSource = "VisionSource";
 }
 
 /// <summary>为节点属性显式指定跨 WinForms/WPF 的专用编辑器。</summary>

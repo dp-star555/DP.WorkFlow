@@ -446,6 +446,9 @@ public sealed partial class WorkflowEngine
             cancellationToken.ThrowIfCancellationRequested();
             executionContext.CommitDataChanges();
             var committedOutput = Context.SetNodeOutput(node.Id, identity, result.Output);
+            // 输出已正式写入运行状态，此时才发布派生投影（例如Vision预览）；
+            // 取消、失败或提交失败的执行不会走到这里，界面因此看不到未被调度承认的结果。
+            result.Projection?.Commit(committedOutput.ExecutionSequence);
             if (executionContext.ChangedVariableKeys.Count > 0)
                 _committedVariableKeys[committedOutput.ExecutionSequence] = executionContext.ChangedVariableKeys;
             if (node is IWorkflowRecoveryEntryNode entry && token.ScopeIds.Count == 0)
@@ -540,7 +543,8 @@ public sealed partial class WorkflowEngine
                         new WorkflowRunPreparationContext(
                             EnumerateRecoveryNodes(boundPlan.Plan).ToArray(),
                             WorkflowRunScopeKind.Nested,
-                            parentNode.Id),
+                            parentNode.Id,
+                            childContext.Services),
                         cancellationToken).ConfigureAwait(false);
             }
             var result = await childEngine.RunAsync(cancellationToken).ConfigureAwait(false);
