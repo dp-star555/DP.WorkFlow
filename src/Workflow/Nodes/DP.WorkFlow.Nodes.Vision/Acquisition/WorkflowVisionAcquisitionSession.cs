@@ -13,7 +13,7 @@ public interface IWorkflowVisionFolderSource
     Task<IImageSource> NextAsync(string nodeId, CancellationToken token);
 }
 
-/// <summary>在运行准备时冻结目录清单；各节点独立游标并串行推进，新运行归零。</summary>
+/// <summary>在运行准备时冻结目录清单；各节点独立游标并串行推进。根运行开始时冻结并归零，根运行内部的嵌套运行只校验、不重置。</summary>
 public sealed class WorkflowVisionAcquisitionSession(IImageFileReader reader, IWorkflowRunPreparationService? next = null)
     : IWorkflowVisionFolderSource, IWorkflowRunPreparationService
 {
@@ -37,6 +37,12 @@ public sealed class WorkflowVisionAcquisitionSession(IImageFileReader reader, IW
                 throw new InvalidOperationException($"文件夹节点ID跨文档重复：{node.Id}");
         }
         if (next is not null) await next.PrepareAsync(context, cancellationToken).ConfigureAwait(false);
+
+        // 冻结清单与游标归零只属于根运行。嵌套运行属于本轮内部：重置游标会让根运行重复消费
+        // 已经处理过的图像，重新冻结清单还会让运行中的文件列表中途变化。
+        if (context.ScopeKind != WorkflowRunScopeKind.Root)
+            return;
+
         _sequences = prepared;
     }
 
