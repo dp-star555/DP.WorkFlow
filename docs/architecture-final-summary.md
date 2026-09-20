@@ -794,6 +794,21 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
    唯一真正的项目级约束是 `LangVersion=latest`（它约束的不是版本号，而是"必须固定"），
    把它写死（如 `12`）即可解除 SDK 敏感性。
 
+   **`rollForward` 实测**（2026-09-20，本机已装 SDK `9.0.316` / `10.0.302`，在仓库目录内执行）：
+
+   | `global.json` version | `rollForward` | 仓库内解析结果 |
+   |---|---|---|
+   | `8.0.100` | `latestPatch` | ❌ `A compatible .NET SDK was not found` |
+   | `8.0.100` | `latestMinor` | ❌ 同上（**不跨主版本**） |
+   | `8.0.100` | `latestMajor` | ✅ `10.0.302` |
+   | `9.0.308`（现状） | `latestPatch` | ✅ `9.0.316` |
+
+   所以"降成 8 会砍掉可构建路径"这句话要拆开说：**砍掉的是"仓库内解析出 SDK"这件事**，
+   而**仓库外（cwd = `C:\Data`）那条路完全不受 `global.json` 影响**——`global.json` 只在仓库目录树内生效。
+   现状是"仓库内解析出 9.0.316 但编不动（NuGet 6.14）"，降成 8 变成"仓库内根本解析不出 SDK"，
+   两者在仓库内都不可用；真正的差别只在于报错更早、更直白。
+   `latestMajor` 能让它解析到 10.0.302，但那等于"写着 8、实际用 10"，声明就失去意义了。
+
    **为什么需要 pin 一个 SDK 版本**：本仓库 `Directory.Build.props` 里
    `LangVersion=latest`（**C# 语言版本跟着 SDK 走**：SDK 9 → C# 13，SDK 10 → C# 14）
    且 `TreatWarningsAsErrors=true`（**多一条分析器警告就构建失败**）。
