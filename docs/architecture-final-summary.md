@@ -1,6 +1,6 @@
 # DP.WorkFlow 架构评审最终总结
 
-状态：**合并结论，取代以下三份文档**（最后更新 2026-09-20，AR-24 已完成 / AR-01 阶段 1 已修复 / 新增 AR-27 至 AR-30）
+状态：**合并结论，取代以下三份文档**（最后更新 2026-09-21：AR-24 已完成 / AR-01 阶段 1 已修复 / AR-02、AR-27、AR-29 已修复 / 图像采集Provider阶段A–D完成 / 新增 AR-27 至 AR-30）
 - `docs/architecture-smell-review.md`（依赖/内核/UI/构建异味）
 - `docs/architecture-review-and-roadmap.md`（AR-01..AR-12 + 阶段 A–D）
 - `docs/architecture-review-and-roadmap-critique.md`（对上一份的评审意见）
@@ -48,6 +48,18 @@
 >   → §1.2 第 2 项关闭。**AR-25 记录的测试期望已同步更正**，不再是改完即红的障碍。
 > - **本机构建环境已恢复**：`dotnet restore` 的根因（系统环境变量缺失）已定位并修复，
 >   仓库内用 `global.json` 选中的 SDK 9.0.316 可带还原完整构建（详见 AR-24 一节）。
+>
+> **进展（2026-09-21）**
+> - **AR-29 已修复**（`10ac31a`）→ 预览改为"已提交输出的派生投影"，
+>   由成功提交事件发布、输出失效时同步撤销，不再由 Handler 提前 Publish。
+> - **图像采集Provider改造阶段 A–D 完成**（`10ac31a`）：公共契约与运行时落在 DP.Vision，
+>   Workflow 改用逻辑 SourceId + `IVisionAcquisition`，HALCON 以 `plugin.json` 插件形式被目录发现。
+>   详见 `docs/vision-acquisition-providers.md` §13 状态表。阶段 E（第二个真实厂商Provider）与
+>   阶段 F（`ExclusiveRun`/`Broadcast`）受外部依赖阻塞，两者在运行准备阶段被显式拒绝。
+> - **新发现（AR-16 补充）**：`DP.Vision` 目录下没有 `.git`，其源码与本次新增的三个工程、
+>   522 例测试全部不在版本控制之下。这比 AR-16 原本描述的"跨仓源码引用无版本锁定"更弱一层，
+>   建议优先为 DP.Vision 建立仓库并做基线提交。
+> - 实测基线：`DP.Vision.sln` 522 例 0 失败；`DP.WorkFlow.sln` 811 例 0 失败、0 警告 0 错误。
 
 ### 1.2 四件最该先做的事
 
@@ -314,13 +326,20 @@ private void PublishSnapshot(string? message = null) =>
 
 **建议**：当前状态与审计历史分开；高频监控只发差量/轻量快照，历史按序列分页读取。为输出、故障、Trace 与资源租约分别定义保留策略。**任何优化都不能静默淘汰后续绑定仍需使用的输出。**
 
-### AR-29 / P1：Vision预览投影与正式输出失效不同步【代码确认】
+### AR-29 / P1：Vision预览投影与正式输出失效不同步【已修复 · 预览改为已提交输出的派生投影】
 
 视觉Handler在返回`NodeExecutionResult`之前调用`WorkflowVisionFrameScope.Publish`；预览立即替换。正式输出则由Engine在Handler返回、取消检查和暂存提交之后才写入RunState。恢复入口使`WorkflowRunState`输出失效时，也没有同步撤销按NodeId保存的最新预览。
 
 因此可能出现两种分裂：节点未正式提交但UI已看到预览；或恢复已使旧输出不可绑定，UI仍显示旧预览。预览不是执行数据源，所以不会直接污染调度，但会误导操作员和调试。
 
 **建议**：把预览定义为已提交输出的派生投影；由成功提交事件发布，并在输出失效/运行代次切换时同步推进投影代次。不能让UI通过“仍能显示”推断运行输出仍有效。
+
+**已实施**（`10ac31a`，随阶段C一起）：新增内核中立投影契约 `IWorkflowNodeOutputProjection`
+（`Stage` 暂存投影、`InvalidateFrom` 撤销），`NodeExecutionResult` 携带投影而不直接发布。
+12处视觉Handler不再在返回结果前调用 `Publish`；`WorkflowEngine` 只在 `Context.SetNodeOutput`
+成功提交后发布投影，恢复流程使输出失效时调用 `InvalidateFrom(起点序号)` 同步撤销预览。
+端到端回归 `WorkflowNodeOutputProjectionTests.运行输出失效时通知投影接收方` 覆盖
+“重跑前预览可见 → 重跑后预览被撤销且失效序号与投影接收方一致”。
 
 ### AR-30 / P2：Vision预览轮询对未变化帧仍反复Retain/Dispose【代码确认】
 
@@ -392,6 +411,13 @@ UI.Shared  →  Abstractions + Core + Runtime + Persistence.Json + ScriptEngine
 `Nodes.Vision` 与 `Vision.UI*` 使用 `..\..\..\..\..\DP.Vision\src\...` 形式的 `ProjectReference`：构建要求同级目录存在源码，版本无法锁定，两侧改动互相击穿，没有版本号可回溯。单向依赖规则是好的，缺的是**单向的版本化契约**。
 
 **建议**：改为包引用或子模块 + 显式版本锁定。
+
+**补充实测（2026-09-21）**：`DP.Vision` 目录下**根本没有 `.git`**（只有 `.gitignore`），
+同级 `C:\Data\PiProgects\WorkFlow` 也不是仓库——即 DP.Vision 当前**不在任何版本控制之下**。
+这比"有仓库但无版本锁定"更弱一层：本次采集Provider改造新增的三个工程
+（`DP.Vision.Acquisition.Abstractions` / `DP.Vision.Acquisition.Runtime` / `DP.Vision.Halcon` 插件化）
+与 522 例测试都没有可回退的历史。建议先给 DP.Vision 建立仓库并做一次基线提交，
+再谈包引用或子模块。对比 AR-24（DP.WorkFlow 已纳入版本控制）。
 
 ---
 
@@ -841,7 +867,7 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 | AR-13 | S1-1 + S1-2 | 合并节点包依赖与 ScriptEngine 泄漏 |
 | AR-14 | S2-1 | — |
 | AR-15 | S2-2 + S2-4 + S4-1 + S4-2 | 合并平台耦合、sln、TFM |
-| AR-16 | S2-3 | — |
+| AR-16 | S2-3 | **已补充实测**：DP.Vision 无 `.git`，源码与新增工程完全不在版本控制下 |
 | AR-17 | S1-4 | — |
 | AR-18 | S3-2 | — |
 | AR-19 | S3-4 | — |
@@ -854,7 +880,7 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 | AR-26 | S4-4 + C | 合并文档治理与探针入库 |
 | AR-27 | 本轮实施 | AR-01 的姊妹实例：文件夹采集游标被嵌套运行重置（已修复 `1164725`） |
 | AR-28 | 本轮实施 | UI.Windows 套件不确定，不能当作门禁（实测抖动） |
-| AR-29 | 后续Vision边界审计 | 恢复输出失效与预览投影不同步 |
+| AR-29 | 后续Vision边界审计 | 恢复输出失效与预览投影不同步（**已修复 `10ac31a`**） |
 | AR-30 | 后续Vision边界审计 | 未变化预览在100ms轮询中仍Retain/Dispose |
 
 来源标记：`AR` = 你的 `architecture-review-and-roadmap.md`；`S` = `architecture-smell-review.md`；`C` = `architecture-review-and-roadmap-critique.md`；`本轮实施` = 2026-09-20 执行 AR-24 / AR-01 阶段 1 时发现。
