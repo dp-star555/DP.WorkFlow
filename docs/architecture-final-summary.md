@@ -447,17 +447,37 @@ git status   → fatal: not a git repository
 注意不对称：**用户级** NuGet 配置能正常解析（`C:\Users\25845\AppData\Roaming\NuGet\NuGet.Config`
 存在且可用），只有**机器级**（`CommonApplicationData`）这一个解析不出来。
 
-**⚠️ 由此产生的脆弱点（新记录）**：仓库 46 个 `obj/project.assets.json` 全部是
-**2026-09-10 一次性生成**的，且 `project.restore.SdkAnalysisLevel` 一律为 `10.0.300`
-（该值由 SDK 自己写入，SDK 9.0.316 写 `9.0.300`、SDK 10.0.302 写 `10.0.300`，
-与项目的 `TargetFramework` 无关——同一个文件里 `targets` / `project.frameworks` 仍是 `net8.0`）。
-既然本机 `restore` 在任何 SDK 上都失败，**这批资产不可能是在本机当前状态下生成的**，
-只能是从配置正常的开发机 / CI 带过来的冻结产物。而 `obj/` 被 `.gitignore` 排除、
-**不在版本控制里（被跟踪的 obj 文件数为 0）**。
+**为什么 `dotnet` CLI 崩、Visual Studio 不崩（2026-09-20 查清）**：
 
-结论：**`obj/` 是本机唯一能构建的依托，一旦被删（如 `git clean -xdf`）就再也生成不出来。**
-这是当前最脆弱的一环。可选处置：① 修机器让 `restore` 恢复；② 把 assets 纳入版本控制
-（不常规，但能让任何人在此环境下构建）；③ 至少在 README/文档里显式警告不要清理 `obj/`。
+| 运行时 | `GetFolderPath(CommonApplicationData)` | 结果 |
+|---|---|---|
+| .NET Framework 4.0.30319（`MSBuild.exe` / `devenv.exe` / Windows PowerShell 5.1） | `C:\ProgramData` | ✅ 走注册表外壳文件夹，正常 |
+| .NET 9 / 10（`dotnet` CLI） | 取不到 → `null` | ❌ `Path.Combine(null, "NuGet")` 崩 |
+
+实测（本机）：Windows PowerShell 5.1（CLR 4.0.30319）下 `GetFolderPath` 六个文件夹全部正常返回；
+而 `dotnet restore` 在 SDK 9.0.316 与 10.0.302 上**都**报同一个 `path1` 错误。
+
+**这解释了那批 assets 的来历——它是在本机生成的，由 Visual Studio / `MSBuild.exe` 完成还原，
+不是从别处拷来的。** 证据在 `project.assets.json` 自身：
+
+- `project.restore.packagesPath` = `C:\Users\25845\.nuget\packages\`（本机用户目录）
+- `project.restore.outputPath` = 本仓库 `obj\` 路径
+- `project.restore.configFilePaths` 含本机用户级 `NuGet.Config`
+- `project.restore.fallbackFolders` 含 Visual Studio 的 `Shared\NuGetPackages`
+- 仓库根有 `.vs/`（2026-09-02 起），`Directory.Build.props` 同为 2026-09-02
+
+且 `SdkAnalysisLevel` 一律 `10.0.300`（SDK 9.0.316 写 `9.0.300`、SDK 10.0.302 写 `10.0.300`；
+该值由 SDK 自己写入，与 `TargetFramework` 无关——同一文件里 `targets` / `project.frameworks` 仍是 `net8.0`），
+说明还原用的是 SDK 10——与 `global.json` 写的 9.0.308 不一致，间接说明 **`global.json` 是 2026-09-10 之后才加上的**。
+
+注册表佐证：`HKLM\SYSTEM\...\Session Manager\Environment` 的**最后写入时间是 2026-08-11 09:49:55**，
+即环境变量缺失这件事在 9 月 9–10 日那批构建之前就已存在——所以那批构建**只能**是 Visual Studio 干的。
+
+**⚠️ 脆弱点（已修正）**：`obj/` 被 `.gitignore` 排除、**不在版本控制里（被跟踪的 obj 文件数为 0）**。
+但**它并非不可再生**——用 Visual Studio 打开解决方案即可重新还原/构建。
+只有 `dotnet` CLI 这条路不可再生。真正的风险是"**只有 VS 一条路能还原**"这一单点依赖。
+可选处置：① 修机器让 CLI 的 `restore` 恢复（首选）；② 文档显式写明"此仓库须用 Visual Studio 还原"；
+③ 把 assets 纳入版本控制（不常规）。
 
 **决定性因素不是 SDK 版本，是 NuGet 版本**：
 
@@ -825,6 +845,13 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
    ② 不提升则所有构建都必须 `cd` 出仓库，容易忘、容易错。
    **无论是否提升，本机都无法执行任何 `dotnet restore`；根治要修机器（补回 `ProgramData` 等系统环境变量
    或修 Known Folder 注册项），而不是改仓库。** 详见 AR-24 一节的新发现。
+
+   **关键补充（2026-09-20 查清）：本机真正可用的构建入口是 Visual Studio，不是 `dotnet` CLI。**
+   `devenv.exe` / `MSBuild.exe` 跑在 .NET Framework 上，`GetFolderPath(CommonApplicationData)`
+   走注册表外壳文件夹能正常返回 `C:\ProgramData`，所以它们的 NuGet **不崩**；
+   仓库里那 46 个 assets 正是 2026-09-10 由它们生成的（路径字段全部指向本机）。
+   因此"改 `global.json` 换 SDK"解决的是 **CLI 的便利问题**，不是"能不能构建"的问题——
+   能不能构建取决于是否用 Visual Studio。详见 AR-24 一节。
 
 7. ~~阶段 1 的两条验收是否补测？~~ **已关闭：已补齐。** 生产路径端到端（`WorkflowVisionFrameScopeRecoveryEndToEndTests`）
    与"结束后租约按所有权恰好释放"（`WorkflowVisionFrameScopeLeaseOwnershipTests`）均已落地，并各自用故意改坏生产代码
