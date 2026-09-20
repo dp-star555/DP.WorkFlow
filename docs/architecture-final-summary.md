@@ -43,15 +43,20 @@
 > - **AR-01 阶段 1 已修复**（`16f1c45`）→ 阶段 2 待评估。
 > - 新增 **AR-27**（AR-01 的姊妹实例，同日已修复 `1164725`）。
 > - 新增 **AR-28**（UI.Windows 套件不可作为门禁，本轮实测发现）。
+> - **AR-02 已修复**（`WorkflowRuntimePluginCatalog.Freeze` 改为"先校验后发布"，失败不再留下"已冻结"外观）
+>   → §1.2 第 2 项关闭。**AR-25 记录的测试期望已同步更正**，不再是改完即红的障碍。
+> - **本机构建环境已恢复**：`dotnet restore` 的根因（系统环境变量缺失）已定位并修复，
+>   仓库内用 `global.json` 选中的 SDK 9.0.316 可带还原完整构建（详见 AR-24 一节）。
 
 ### 1.2 四件最该先做的事
 
 1. ~~**AR-24 纳入版本控制**~~ — **已完成**（`8fdd174`）。它是其他一切修复的安全网，且 AR-11 与阶段 D 的全部内容以它为前提。
-2. **AR-02 冻结语义** — 当前"校验失败"与"已冻结有效"在 API 上不可区分，且子目录冻结不可逆。
+2. ~~**AR-02 冻结语义**~~ — **已完成**。"校验失败"与"已冻结有效"在 API 上已可区分：失败不产生任何状态变更。
 3. ~~**AR-01 准备与资源所有权**~~ — **阶段 1 已完成**（`16f1c45`），**验收 4/5 条测试已补齐**（见 §10.5）；阶段 2 的接口拆分待评估。姊妹实例 AR-27 一并修复。
 4. **AR-17 快照热路径** — 无条件全量构造 + 与调度共用一把锁，是并发扩展的直接瓶颈。
 
-**下一个待办是 AR-02**（第 2 项）。注意 AR-25 已记录：修复 AR-02 必须同步修改 `WorkflowPluginLoaderTests.cs:53-60` 的测试期望，否则改完即红。
+**下一个待办是 AR-17**（第 4 项）。另外 AR-01 阶段 2（接口拆分）与 AR-02 的姊妹语义（`WorkflowNodeHandlerCatalog.Freeze`
+从不校验、无条件置位）仍待评估。
 
 ---
 
@@ -170,9 +175,9 @@ AR-01 只修了帧仓，这条当时被列为"同源遗留"。本轮用确定性
 排查结论：目前只有这两个类型实现了 `IWorkflowRunPreparationService`，均已修正；
 但**根因（接口不表达作用域）仍在**，阶段 2 的接口拆分才能从结构上封住。
 
-### AR-02 / P0：插件冻结具有失败后的"成功外观"【已复现】
+### AR-02 / P0：插件冻结具有失败后的"成功外观"【已修复】
 
-`WorkflowRuntimePluginCatalog.cs:89` 的 `Freeze()`：
+**原缺陷**（`WorkflowRuntimePluginCatalog.cs` 的 `Freeze()`）：
 
 ```csharp
 var descriptors = Nodes.Freeze();   // 子目录已不可逆冻结
@@ -185,13 +190,33 @@ foreach (...) { ResolveWithRequirements(...); }   // 后置校验
 
 **关键结论（本条的核心）**：`Nodes.Freeze()` 与 `Handlers.Freeze()` 在赋值之前就已执行且**不可逆**，因此**只把 `_frozen = true` 移到后面不足以恢复已冻结的子目录**。修复方案只能是"**在候选目录上完整校验，通过后再发布**"。
 
-同文件 `Register` 先记录 `ExtensionId` 再调用插件写入真实目录，插件中途失败会留下部分注册与已占用的 ID（AR-07 另见）。
+**红灯证据（修复前实测）**：三个新测试中，两个报 `Assert.False() Failure / Expected: False / Actual: True`
+（子目录已被冻结），第三个报 **`Assert.Throws() Failure: No exception was thrown`**——
+第二次 `Freeze()` 静默返回成功，正是"失败的成功外观"本身。
 
-**证据强度**：直接代码推导 + 探针（最强）。**且测试把风险行为写成了期望**：`WorkflowPluginLoaderTests.cs:56` 在 `Freeze()` 抛错后断言 `Assert.True(catalog.IsFrozen)`——修复必须同步修改该测试（见 AR-25）。
+**已实施的修复（"先校验后发布"）**：
 
-**建议**：目录具备明确的 `Building / Validated / Failed / Published` 语义。先对候选完整配置校验再发布；做不到事务注册时，应明确让失败目录永久失效。
+| 改动 | 内容 |
+|---|---|
+| `WorkflowNodeCatalog` | 提取公开的 `Validate()`：只校验全部节点工厂，**不冻结、不改状态、可重复调用**；`Freeze()` 改为先 `Validate()` 再置位 |
+| `WorkflowRuntimePluginCatalog.Freeze()` | 第一步 `Nodes.Validate()` + 逐节点 `ResolveWithRequirements` 交叉校验；**第二步**才 `Nodes.Freeze()` / `Handlers.Freeze()` / `_frozen = true` |
 
-**验收**：注册/冻结失败后不能得到可运行目录；重试必须得到明确错误，或在全新候选目录重建。
+效果：**任何一步校验失败都不产生状态变更**——节点目录、处理器目录、本目录三者全部保持可变。
+调用方可以补全配置后重试（已用测试锁定），重试会重新执行完整校验并再次给出明确错误，
+而不是因为"已冻结"被跳过。
+
+**验收**：注册/冻结失败后不能得到可运行目录 ✅（`IsFrozen` 保持 `false`，调用方据它即可判定不可用）；
+重试必须得到明确错误 ✅，或在全新候选目录重建 ✅（重复注册无法撤销时即走这条路，测试已注明）。
+
+**验证方式**：新测试先在未修复代码上变红（3 个失败，含 `No exception was thrown`），
+再把修复改回原顺序做**变异验证**——三个测试再次全部变红，证明它们真的咬住缺陷而非碰巧绿。
+
+**遗留（姊妹实例，未处理）**：`WorkflowNodeHandlerCatalog.Freeze()` 无条件置位、从不校验，
+因此它**没有失败路径**——今天不出问题只是因为"不校验所以不会失败"。
+一旦将来给它加校验，就会复现同一类缺陷；届时应一并改为"先校验后发布"。
+
+**另一处未处理**：同文件 `Register` 先记录 `ExtensionId` 再调用插件写入真实目录，
+插件中途失败会留下部分注册与已占用的 ID（AR-07 另见）。本次未改动该路径。
 
 ### AR-04 / P0：运行生命周期入口没有形成完整 Interface【竞态分析】
 
@@ -541,6 +566,21 @@ Assert.True(catalog.IsFrozen);     // ← 断言"失败后仍然是已冻结"
 
 测试锁定了 AR-02 的风险行为。这意味着**修复 AR-02 必须同步修改测试期望**，否则改完即红。这不是单个测试的问题，而是**测试把待修缺陷固化为契约**的治理问题——同类风险应系统性排查。
 
+**本条已随 AR-02 修复一并处理（2026-09-20）**：原测试 `RuntimePluginCatalog_FreezeRejectsNodeWithoutHandlerAndClosesRegistration`
+在 `Freeze()` 抛错后断言 `Assert.True(catalog.IsFrozen)` / `Assert.True(nodes.IsFrozen)` / `Assert.True(handlers.IsFrozen)`，
+并把"失败后不能继续注册"当作契约——**这三条断言正是把缺陷写成了规范**。
+
+已替换为三个断言"正确语义"的测试：
+
+| 测试 | 锁定的内容 |
+|---|---|
+| `RuntimePluginCatalog_FreezeFailureLeavesEverythingUnfrozenAndRepairable` | 失败后三者 `IsFrozen` 均为 `false`；补上缺失处理器后 `Freeze()` 能真正成功 |
+| `RuntimePluginCatalog_FreezeFailureIsReportedAgainOnRetry` | 重试必须重新校验并再次报错，不得因"已冻结"被跳过 |
+| `RuntimePluginCatalog_FreezeRejectsAmbiguousHandlersWithoutFreezing` | 歧义处理器失败后同样不得冻结；重复注册无法撤销，只能换全新目录重建 |
+
+**同类风险排查结论**：全仓库 `IsFrozen` 的断言只有这一处是"断言失败后仍已冻结"，
+其余（`Nodes.Composite/Motion/Process/Standard` 与 `Core` 的 `LoadsModules`）都在**成功路径**上断言，属正常契约，无需改动。
+
 ### AR-28 / P1：UI.Windows 套件不确定，不能当作门禁【已复现·抖动】
 
 `DP.WorkFlow.UI.Windows.Tests` 是本仓库最大的测试套件（353 例），但**同一份二进制重复运行结果不同**：
@@ -769,7 +809,7 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 | 最终编号 | 来源 | 说明 |
 |---|---|---|
 | AR-01 | AR | 补充三处调用点与三层归因 |
-| AR-02 | AR + S1-3 + C | 强化"子目录冻结不可逆"结论 |
+| AR-02 | AR + S1-3 + C | 强化"子目录冻结不可逆"结论；**已按此结论修复**（先校验后发布） |
 | AR-03 | AR + S2-6 | 补充"受影响节点清单"待办 |
 | AR-04 | AR | 行号校正（StopAsync 实为 `:133`，ResetAsync `:231`） |
 | AR-05..AR-12 | AR | 原样保留 |
@@ -803,7 +843,7 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 | `WorkflowVisionFrameScope.cs:119` `PrepareAsync` 起始 | 精确 |
 | `WorkflowWarningHandlerCoordinator.cs:36` 复用 `context.Services` | 精确 |
 | `WorkflowDocumentJsonStore.cs:285` NodeVersion 全等校验 | 精确 |
-| `WorkflowPluginLoaderTests.cs:56` `Assert.True(catalog.IsFrozen)` | 精确 |
+| `WorkflowPluginLoaderTests.cs:56` `Assert.True(catalog.IsFrozen)` | 精确（**已被修复取代**：该断言本身是 AR-25 记录的"把缺陷写成规范"，现改为断言失败后不冻结） |
 | `WorkflowRuntimeBinder.cs:60` `ToArray()` 转 `IReadOnlyList` | 成立（可强转回数组） |
 | `WorkflowRuntimeHost.cs` 有 `StopAsync`/`ResetAsync`，`IWorkflowRuntimeHost` 无 | 成立 |
 | `WorkflowRuntimeHost.cs:282` / `WorkflowEngine.cs:538` / `WorkflowJointRecoveryGroup.cs:149` / `WorkflowWarningHandlerCoordinator.cs:55` 四处准备调用 | 成立 |
