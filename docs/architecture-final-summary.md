@@ -48,7 +48,7 @@
 
 1. ~~**AR-24 纳入版本控制**~~ — **已完成**（`8fdd174`）。它是其他一切修复的安全网，且 AR-11 与阶段 D 的全部内容以它为前提。
 2. **AR-02 冻结语义** — 当前"校验失败"与"已冻结有效"在 API 上不可区分，且子目录冻结不可逆。
-3. ~~**AR-01 准备与资源所有权**~~ — **阶段 1 已完成**（`16f1c45`）；阶段 2 的接口拆分待评估。姊妹实例 AR-27 一并修复。
+3. ~~**AR-01 准备与资源所有权**~~ — **阶段 1 已完成**（`16f1c45`），**验收 4/5 条测试已补齐**（见 §10.5）；阶段 2 的接口拆分待评估。姊妹实例 AR-27 一并修复。
 4. **AR-17 快照热路径** — 无条件全量构造 + 与调度共用一把锁，是并发扩展的直接瓶颈。
 
 **下一个待办是 AR-02**（第 2 项）。注意 AR-25 已记录：修复 AR-02 必须同步修改 `WorkflowPluginLoaderTests.cs:53-60` 的测试期望，否则改完即红。
@@ -737,5 +737,64 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 6. **`global.json` 是否提升到 SDK 10？** 当前固定 `9.0.308`，但本机只有 SDK 10 能绕过 NuGet 的
    `Value cannot be null (Parameter 'path1')` 失败，且仓库现有 `project.assets.json` 是 SDK 10.0.302 生成的
    （内含 `SdkAnalysisLevel: 10.0.300`）。**在决定前，本机无法执行任何 `dotnet restore`。**
-7. **阶段 1 的两条验收是否补测？** 生产路径端到端（采图 → 主操作故障 → 处置 → 继续消费原图）与
-   "结束后租约按所有权恰好释放"目前都只有构造性覆盖。
+7. ~~阶段 1 的两条验收是否补测？~~ **已关闭：已补齐。** 生产路径端到端（`WorkflowVisionFrameScopeRecoveryEndToEndTests`）
+   与"结束后租约按所有权恰好释放"（`WorkflowVisionFrameScopeLeaseOwnershipTests`）均已落地，并各自用故意改坏生产代码
+   的方式证明了有效性。另补 `WorkflowRunPreparationScopeDeclarationTests` 锁定 AR-01 破坏点
+   （`WorkflowEngine` 嵌套调用）声明的作用域——此前把 `WorkflowEngine` 改回 `Root` 时全部测试仍然绿灯，
+   属于覆盖盲区。详见 §10.5。
+8. **另 2 个准备调用点是否需要声明级覆盖？** `WorkflowWarningHandlerCoordinator.cs:55` 与
+   `WorkflowJointRecoveryGroup.cs:150` 都传 `Nested`，但都没有测试锁定其声明。后者的"一轮"语义
+   尚未定论（见 `ar-01-fix-plan.md` §5），现在写断言会把待定行为固化成契约。建议与阶段 2 一并处理。
+
+---
+
+### 10.5 阶段 1 验收补齐与覆盖盲区（2026-09-20 续）
+
+阶段 1 修复后只有 4 个"给定 ScopeKind 时帧仓行为"的测试。补测时发现一个更关键的缺口：
+**没有任何测试锁定 4 个调用点声明的作用域是否正确**。把 `WorkflowEngine` 的 `Nested` 改回 `Root`，
+4 个测试仍然全绿——因为它们直接构造 `WorkflowRunPreparationContext`，根本不经过调用点。
+
+本轮补 3 个测试文件，覆盖阶段 1 验收第 4、5 条并封堵上述盲区：
+
+| 测试文件 | 覆盖 | 有效性验证方式 | 结果 |
+|---|---|---|---|
+| `Nodes.Vision.Tests/WorkflowVisionFrameScopeRecoveryEndToEndTests` | 验收 4：采图 → 主操作故障 → 处置 → 继续消费原图 | 移除帧仓守卫 → 红灯 | 红灯信息直指 `ObjectDisposedException: ImageBuffer`（`ImageBuffer.Alive()` → `CopyTo()`），未被重试安全守卫掩盖 |
+| `Nodes.Vision.Tests/WorkflowVisionFrameScopeLeaseOwnershipTests` | 验收 5：租约按所有权恰好释放 | 变异 A/B → 红灯 | 见下 |
+| `Runtime.Tests/WorkflowRunPreparationScopeDeclarationTests` | 破坏点（`WorkflowEngine` 嵌套调用）声明的作用域 | 把 `WorkflowEngine` 改回 `Root` → 红灯 | `Expected: Nested / Actual: Root` |
+
+**覆盖范围如实说明**：上表第 3 行只覆盖了 1 个调用点。4 个调用点的声明级覆盖现状：
+
+| 调用点 | 声明 | 声明级覆盖 |
+|---|---|---|
+| `WorkflowRuntimeHost.cs:283` | `Root` | ✅ `WorkflowRuntimeHostTests.TestRunPreparation` |
+| `WorkflowEngine.cs:539` | `Nested` + `parentNode.Id` | ✅ 本轮新增（破坏点） |
+| `WorkflowWarningHandlerCoordinator.cs:55` | `Nested` | ❌ 无 |
+| `WorkflowJointRecoveryGroup.cs:150` | 暂 `Nested`（语义待定） | ❌ 无 |
+
+后两处是残留缺口，已记为 §10.4 第 8 问。**不在本轮补**，因为 `WorkflowJointRecoveryGroup` 的"一轮"
+语义尚未定论，现在写断言等于把待定行为固化成契约。
+
+#### 验收 5 的观测手法
+
+帧仓不暴露租约计数。改用**容量为 1 的 `FrameBufferPool` 当探针**：采集时借走唯一槽位，
+只要还有任何一个租约没释放，槽位就回不来，`TryRent` 必然失败。于是"租约是否恰好释放"
+成为确定性的布尔断言，不依赖 GC 与计时。探针用完立即归还槽位，可重复调用。
+
+两个变异验证（改坏生产代码后必须变红）：
+
+| 变异 | 预期红灯 | 实测 |
+|---|---|---|
+| `Clear()` 漏掉 `_previews` 释放（租约泄漏） | 两条都红 | `根运行开始后上一轮仓内租约必须全部释放。` / `全部租约释放后底层存储必须归池。` |
+| `Capture()` 不 `Retain`（UI 快照与仓共用句柄） | 第 2 条红 | `ObjectDisposedException`，落在读快照像素那一行 |
+
+#### 验收 5 的措辞修正
+
+原文写"运行结束后帧仓内租约数为 0"，与设计不符。设计是：
+**本轮结束后仓仍持有租约**（供结果查看窗口使用），**下一轮根运行开始时才归零**。
+测试按设计语义断言，并把这个区别显式写进两个测试名。
+
+#### 这两条测试的性质
+
+与验收 4 不同，验收 5 的两条是**特征锁定**测试——它们锁定"释放语义不能被过度削弱"
+（例如为了修 AR-01 干脆删掉 `Clear()`）。它们不揭示 AR-01 缺陷本身，但正是
+防止"修过头"的反向门禁。

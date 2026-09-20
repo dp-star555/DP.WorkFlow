@@ -328,16 +328,21 @@ AR-24 纳入版本控制  →  实施本文阶段 1  →  跑全量测试  →  
 
 沿用 AR-01 的验收，并补上可判定条件：
 
-| # | 验收项 | 判定方式 |
-|---|---|---|
-| 1 | 嵌套准备不释放父资源 | `嵌套运行准备不得释放根运行已保留的帧` 通过 |
-| 2 | 根准备仍然释放上一轮资源 | `根运行准备仍然释放上一轮保留的帧` 通过 |
-| 3 | 嵌套准备仍然执行校验 | `嵌套准备仍然执行跨子文档节点ID重复校验` 通过 |
-| 4 | 生产路径端到端 | 采图 → 主操作故障 → 执行处置 → **继续消费原图成功**（当前会抛 `ObjectDisposedException`） |
-| 5 | 结束后租约按所有权恰好释放 | 运行结束后帧仓内租约数为 0；UI 已 Retain 的快照仍可显示 |
-| 6 | 全量回归 | `tools/Test-DPWorkFlow.ps1` 全绿；新增测试在修复前**必须红**（否则测试没测到点上） |
+| # | 验收项 | 判定方式 | 状态 |
+|---|---|---|---|
+| 1 | 嵌套准备不释放父资源 | `嵌套运行准备不得释放根运行已保留的帧` 通过 | ✅ |
+| 2 | 根准备仍然释放上一轮资源 | `根运行准备仍然释放上一轮保留的帧` 通过 | ✅ |
+| 3 | 嵌套准备仍然执行校验 | `嵌套准备仍然执行跨子文档节点ID重复校验` 通过 | ✅ |
+| 4 | 生产路径端到端 | 采图 → 主操作故障 → 执行处置 → **继续消费原图成功** | ✅ 见 §10 |
+| 5 | 结束后租约按所有权恰好释放 | 仓释放后 UI 已 Retain 的快照仍可显示；最后一个租约释放时底层存储归池 | ✅ 见 §10 |
+| 6 | 全量回归 | `tools/Test-DPWorkFlow.ps1` 全绿；新增测试在修复前**必须红**（否则测试没测到点上） | ✅ 见 §9 |
+| 7 | **调用点声明的作用域**（补测时发现） | 覆盖 AR-01 的破坏点（`WorkflowEngine` 嵌套路径）；另 2 处仍无声明级覆盖 | ⚠️ 部分覆盖，见 §10 |
 
 第 6 条是硬要求：**先在未修复的代码上跑，确认新增测试失败**，再实施修复。否则无法证明测试真的覆盖了这个缺陷。
+
+第 7 条是本轮补测时发现的覆盖盲区：阶段 1 原有 4 个测试直接构造 `WorkflowRunPreparationContext`，
+**根本不经过调用点**，因此把 `WorkflowEngine` 的 `Nested` 改回 `Root` 时它们仍然全绿。
+已补 1 个测试覆盖该破坏点；其余调用点的覆盖情况见 §10。
 
 ---
 
@@ -399,3 +404,87 @@ Debug 与 Release 构建均 **0 警告 0 错误**。
 本次验证使用 `ProgramData` 环境变量 + SDK 10 + `--no-restore` / `--no-build` 完成，
 未修改 `global.json` 与 `tools/Test-DPWorkFlow.ps1`。`global.json` 当前固定 `9.0.308`，
 在本机无法完成任何还原，需用户决策是否提升到 `10.0.302`。
+
+---
+
+## 10. 验收补齐记录（2026-09-20 续）
+
+阶段 1 交付时只有 4 个"给定 ScopeKind 时帧仓行为"的测试。本轮补齐验收第 4、5 条，
+并封堵补测时发现的第 7 条覆盖盲区。
+
+### 新增测试
+
+| 测试 | 文件 | 覆盖 |
+|---|---|---|
+| `处置子流程运行后父运行仍能消费原图` | `Nodes.Vision.Tests/WorkflowVisionFrameScopeRecoveryEndToEndTests.cs` | 验收 4 |
+| `运行结束后仓仍持有租约下一轮根运行开始时恰好归零` | `Nodes.Vision.Tests/WorkflowVisionFrameScopeLeaseOwnershipTests.cs` | 验收 5（仓侧） |
+| `仓释放后UI快照仍可显示且最后一个租约释放时才归池` | 同上 | 验收 5（UI 侧） |
+| `恢复子流程的准备请求声明嵌套作用域并携带父节点ID` | `Runtime.Tests/WorkflowRunPreparationScopeDeclarationTests.cs` | 验收 7（仅 `WorkflowEngine` 调用点） |
+
+### 验收 4：端到端
+
+走真实引擎与真实 `LoadVisionFileNode`（含帧仓 `Retain` / `Publish`）：
+`LoadVisionFileNode("file") → FaultNode("fault") → ConsumeFrameNode("consume", Frame ← file)`。
+处置协调器走 `IWorkflowRecoverySubflowContext.RunRecoverySubflowAsync`，即生产唯一入口。
+
+有效性验证：把帧仓守卫改回无条件清空 → 红灯。**注意第一版红灯被掩盖了**：
+失败信息是 `节点 consume 未声明 Idempotent 或 ResumeAware，禁止重试`——
+二次恢复被重试安全守卫拦住，真正的 `ObjectDisposedException` 没露出来。
+修正办法是让消费节点实现 `IWorkflowRetrySafetyNode`，并在 handler 里捕获
+`ObjectDisposedException` 单独记录。修正后红灯信息为：
+
+```text
+Assert.Null() Failure: Value is not null
+Actual:   System.ObjectDisposedException: Cannot access a disposed object.
+Object name: 'ImageBuffer'.
+   at DP.Vision.ImageBuffer.Alive() ... ImageBuffer.cs:line 62
+   at DP.Vision.ImageBuffer.CopyTo(...) ... ImageBuffer.cs:line 90
+   at ...ConsumeFrameHandler.ExecuteAsync(...) EndToEndTests.cs:line 169
+```
+
+**教训**：让测试在红灯时报出真正的原因，否则红灯只是"某处失败"，等于没测到点上。
+
+### 验收 5：租约按所有权恰好释放
+
+帧仓不暴露租约计数，用**容量为 1 的 `FrameBufferPool` 当探针**：
+采集时借走唯一槽位，只要还有任何一个租约没释放，槽位就回不来，`TryRent` 必然失败。
+探针用完立即归还槽位，可重复调用。于是"恰好释放"成为确定性布尔断言，不依赖 GC 与计时。
+
+两个变异验证：
+
+| 变异 | 实测红灯 |
+|---|---|
+| `Clear()` 漏掉 `_previews` 释放 | `根运行开始后上一轮仓内租约必须全部释放。` / `全部租约释放后底层存储必须归池。` |
+| `Capture()` 不 `Retain` | `ObjectDisposedException`，落在读快照像素那一行 |
+
+**措辞修正**：原文写"运行结束后帧仓内租约数为 0"，与设计不符。设计是**本轮结束后仓仍持有租约**
+（供结果查看窗口使用），**下一轮根运行开始时才归零**。测试按设计语义断言。
+
+**性质说明**：这两条是**特征锁定**测试，锁定"释放语义不能被过度削弱"
+（例如为了修 AR-01 干脆删掉 `Clear()`），不揭示 AR-01 缺陷本身。
+
+### 验收 7：调用点声明（补测时发现的盲区）
+
+原有 4 个测试直接构造 `WorkflowRunPreparationContext`，**不经过调用点**。
+把 `WorkflowEngine` 的 `Nested` 改回 `Root`，4 个测试仍然全绿。
+
+新增测试走真实恢复路径：`SubflowRecoveryCoordinator : IWorkflowFaultRecoveryCoordinator`
+在 `RecoverAsync` 里调用 `IWorkflowRecoverySubflowContext.RunRecoverySubflowAsync`，
+用一个 `RecordingPreparation : IWorkflowRunPreparationService` 记录实际收到的上下文，
+断言 `ScopeKind == Nested` 且 `ParentNodeId == 故障节点 Id`。
+
+有效性验证：把 `WorkflowEngine` 改回 `Root` → `Expected: Nested / Actual: Root`。
+
+**覆盖范围要如实说明**：新增测试只锁定了 `WorkflowEngine.cs:539` 这**一个**调用点
+（即 AR-01 的破坏点本身）。4 个调用点当前的声明级覆盖如下：
+
+| 调用点 | 声明 | 声明级覆盖 |
+|---|---|---|
+| `WorkflowRuntimeHost.cs:283` | `Root` | ✅ `WorkflowRuntimeHostTests.TestRunPreparation` 断言 `ScopeKind == Root` |
+| `WorkflowEngine.cs:539` | `Nested` + `parentNode.Id` | ✅ 本轮新增（破坏点） |
+| `WorkflowWarningHandlerCoordinator.cs:55` | `Nested` | ❌ 无 |
+| `WorkflowJointRecoveryGroup.cs:150` | 暂 `Nested`（语义待定） | ❌ 无 |
+
+后两处是**残留缺口**。它们是否也需要声明级覆盖，取决于 §5 里"联合恢复那一处为什么暂不定"
+的结论——在"一轮"语义定下来之前，为它们写断言会把待定行为固化成契约。
+建议与阶段 2 一并处理。
