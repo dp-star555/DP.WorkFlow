@@ -86,6 +86,10 @@ public sealed class WorkflowRuntimePluginCatalog
     /// </summary>
     /// <returns>当前已经冻结的运行组合目录。</returns>
     /// <exception cref="InvalidOperationException">节点工厂无效，或节点缺少处理器、匹配多个处理器。</exception>
+    /// <remarks>
+    /// 全部校验都在发布之前完成：任何一步失败都不会冻结节点目录、处理器目录或本目录，
+    /// 因此失败后不会留下"已冻结"的外观，调用方可以补全配置后重试。
+    /// </remarks>
     public WorkflowRuntimePluginCatalog Freeze()
     {
         lock (_syncRoot)
@@ -93,12 +97,21 @@ public sealed class WorkflowRuntimePluginCatalog
             if (_frozen)
                 return this;
 
-            var descriptors = Nodes.Freeze();
-            Handlers.Freeze();
-            _frozen = true;
-            foreach (var descriptor in descriptors.Values)
+            // 第一步：在候选配置上完整校验。此阶段不得产生任何状态变更。
+            Nodes.Validate();
+            foreach (var descriptor in Nodes.Snapshot().Values)
             {
-                var sample = descriptor.Factory();
+                IWorkflowNodeModel sample;
+                try
+                {
+                    sample = descriptor.Factory();
+                }
+                catch (Exception exception)
+                {
+                    throw new InvalidOperationException(
+                        $"节点类型 {descriptor.NodeType} 的工厂无法创建模型。", exception);
+                }
+
                 try
                 {
                     _ = Handlers.ResolveWithRequirements(sample);
@@ -109,6 +122,11 @@ public sealed class WorkflowRuntimePluginCatalog
                         $"节点类型 {descriptor.NodeType} 的运行处理器配置无效：{exception.Message}", exception);
                 }
             }
+
+            // 第二步：校验全部通过，此时发布（冻结）才是安全的。
+            Nodes.Freeze();
+            Handlers.Freeze();
+            _frozen = true;
             return this;
         }
     }

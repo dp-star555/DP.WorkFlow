@@ -296,6 +296,22 @@ public sealed class WorkflowNodeCatalog
     }
 
     /// <summary>
+    /// 校验全部节点工厂是否可用。不会冻结目录，也不会改变任何状态，可重复调用。
+    /// </summary>
+    /// <remarks>
+    /// 供"先对候选配置完整校验、通过后再发布"的调用方使用；校验失败后目录仍可继续注册。
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">节点工厂失败、返回 null、返回错误模型类型或返回不一致的节点类型键。</exception>
+    public void Validate()
+    {
+        lock (_syncRoot)
+        {
+            foreach (var descriptor in _descriptors.Values)
+                ValidateFactory(descriptor);
+        }
+    }
+
+    /// <summary>
     /// 校验所有节点工厂并冻结目录。冻结后仍可查询节点，但不能继续注册。
     /// </summary>
     /// <returns>冻结时刻的只读节点描述快照。</returns>
@@ -306,8 +322,8 @@ public sealed class WorkflowNodeCatalog
         {
             if (!_frozen)
             {
-                foreach (var descriptor in _descriptors.Values)
-                    ValidateFactory(descriptor);
+                // 校验在置位之前完成：校验抛错时目录保持可变，不留下"已冻结"的外观。
+                Validate();
                 _frozen = true;
             }
             return CreateSnapshot();

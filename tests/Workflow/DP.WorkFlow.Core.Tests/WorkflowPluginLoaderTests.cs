@@ -43,7 +43,7 @@ public sealed class WorkflowPluginLoaderTests
     }
 
     [Fact]
-    public void RuntimePluginCatalog_FreezeRejectsNodeWithoutHandlerAndClosesRegistration()
+    public void RuntimePluginCatalog_FreezeFailureLeavesEverythingUnfrozenAndRepairable()
     {
         var nodes = new WorkflowNodeCatalog()
             .Register(WorkflowNodeDescriptor.Create<TestRuntimeNode>());
@@ -53,15 +53,38 @@ public sealed class WorkflowPluginLoaderTests
         var error = Assert.Throws<InvalidOperationException>(() => catalog.Freeze());
 
         Assert.Contains("没有已注册的处理器", error.Message);
+        // 冻结失败不得留下"已冻结"的外观：三个目录都必须保持可变。
+        Assert.False(catalog.IsFrozen);
+        Assert.False(nodes.IsFrozen);
+        Assert.False(handlers.IsFrozen);
+
+        // 目录仍然可用：补上缺失的处理器后必须能真正完成冻结。
+        handlers.Register(new TestRuntimeNodeHandler());
+        catalog.Freeze();
+
         Assert.True(catalog.IsFrozen);
         Assert.True(nodes.IsFrozen);
         Assert.True(handlers.IsFrozen);
-        Assert.Throws<InvalidOperationException>(() => handlers.Register(new TestRuntimeNodeHandler()));
-        Assert.Throws<InvalidOperationException>(() => catalog.Register(new TestWorkflowRuntimePluginModule()));
     }
 
     [Fact]
-    public void RuntimePluginCatalog_FreezeRejectsAmbiguousHandlers()
+    public void RuntimePluginCatalog_FreezeFailureIsReportedAgainOnRetry()
+    {
+        var nodes = new WorkflowNodeCatalog()
+            .Register(WorkflowNodeDescriptor.Create<TestRuntimeNode>());
+        var catalog = new WorkflowRuntimePluginCatalog(nodes, new WorkflowNodeHandlerCatalog());
+
+        Assert.Throws<InvalidOperationException>(() => catalog.Freeze());
+
+        // 重试必须重新执行校验并再次报错，而不是因为"已冻结"被跳过。
+        var retry = Assert.Throws<InvalidOperationException>(() => catalog.Freeze());
+
+        Assert.Contains("没有已注册的处理器", retry.Message);
+        Assert.False(catalog.IsFrozen);
+    }
+
+    [Fact]
+    public void RuntimePluginCatalog_FreezeRejectsAmbiguousHandlersWithoutFreezing()
     {
         var nodes = new WorkflowNodeCatalog()
             .Register(WorkflowNodeDescriptor.Create<TestRuntimeNode>());
@@ -73,6 +96,10 @@ public sealed class WorkflowPluginLoaderTests
         var error = Assert.Throws<InvalidOperationException>(() => catalog.Freeze());
 
         Assert.Contains("匹配到多个处理器", error.Message);
+        // 重复注册无法撤销，只能改用全新目录重建；此时必须能从 IsFrozen 看出目录不可用。
+        Assert.False(catalog.IsFrozen);
+        Assert.False(nodes.IsFrozen);
+        Assert.False(handlers.IsFrozen);
     }
 
     [Fact]
