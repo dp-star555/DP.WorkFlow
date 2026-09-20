@@ -9,8 +9,6 @@ public enum WorkflowNodeEditorPageKind
     SubWorkflow,
     /// <summary>C# 脚本编辑与编译页。</summary>
     Script,
-    /// <summary>实时图像显示或图像参数页。</summary>
-    Image,
     /// <summary>节点或子工作流诊断页。</summary>
     Diagnostics,
     /// <summary>由宿主页面提供器定义的扩展页。</summary>
@@ -40,12 +38,10 @@ public sealed record WorkflowNodeEditorPageDescriptor(
 /// <param name="Session">关联的设计器会话。</param>
 /// <param name="EntryNodeId">工作流开始节点标识。</param>
 /// <param name="Node">关联的工作流节点。</param>
-/// <param name="ImageSourceResolver">图像帧源解析器。</param>
 public sealed record WorkflowNodeEditorContext(
     WorkflowDesignerSession Session,
     string EntryNodeId,
-    IWorkflowNodeModel Node,
-    IWorkflowImageFrameSourceResolver? ImageSourceResolver);
+    IWorkflowNodeModel Node);
 
 /// <summary>扩展节点工作台页面；实现不得返回 WinForms/WPF 控件。</summary>
 public interface IWorkflowNodeEditorPageProvider
@@ -229,75 +225,7 @@ public sealed class WorkflowScriptEditorPageModel
     }
 }
 
-/// <summary>通用图像页面模型，管理帧源生命周期并只向 UI 发布不可变帧。</summary>
-public sealed class WorkflowImageEditorPageModel : IAsyncDisposable
-{
-    private readonly IWorkflowImageFrameSourceResolver? _resolver;
-    private IWorkflowImageFrameSource? _source;
-    private readonly CancellationTokenSource _lifetime = new();
-    private bool _sourceResolved;
-    private bool _started;
-
-    /// <summary>初始化图像编辑页及其可选帧源解析器。</summary>
-    /// <param name="node">目标画布节点或节点模型。</param>
-    /// <param name="resolver">可选的图像帧源解析器。</param>
-    public WorkflowImageEditorPageModel(IWorkflowImageDisplayNode node, IWorkflowImageFrameSourceResolver? resolver)
-    {
-        Node = node;
-        _resolver = resolver;
-    }
-
-    /// <summary>获取当前页面或模型关联的节点。</summary>
-    public IWorkflowImageDisplayNode Node { get; }
-    public bool IsAvailable => ResolveSource() is not null;
-    /// <summary>获取图像源最近推送的一帧。</summary>
-    public WorkflowImageFrame? CurrentFrame { get; private set; }
-    /// <summary>在图像源推送新帧时发生。</summary>
-    public event EventHandler<WorkflowImageFrame>? FrameChanged;
-
-    /// <summary>启动图像帧源并订阅帧更新。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
-    public async ValueTask StartAsync()
-    {
-        var source = ResolveSource();
-        if (source is null || _started) return;
-        _started = true;
-        source.FrameAvailable += OnFrameAvailable;
-        await source.StartAsync(_lifetime.Token).ConfigureAwait(false);
-    }
-
-    /// <summary>接收图像源的新帧并转发给编辑页。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="frame">新到达的图像帧。</param>
-    private void OnFrameAvailable(object? sender, WorkflowImageFrame frame)
-    {
-        var pixels = frame.Pixels.ToArray();
-        CurrentFrame = frame with { Pixels = pixels };
-        FrameChanged?.Invoke(this, CurrentFrame);
-    }
-
-    /// <summary>异步停止外部资源并解除事件订阅。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
-    public async ValueTask DisposeAsync()
-    {
-        if (_source is null) { _lifetime.Dispose(); return; }
-        _lifetime.Cancel();
-        _source.FrameAvailable -= OnFrameAvailable;
-        try { if (_started) await _source.StopAsync(CancellationToken.None).ConfigureAwait(false); }
-        finally { await _source.DisposeAsync().ConfigureAwait(false); _lifetime.Dispose(); }
-    }
-
-    private IWorkflowImageFrameSource? ResolveSource()
-    {
-        if (_sourceResolved)
-            return _source;
-        _sourceResolved = true;
-        _source = _resolver?.Resolve(Node);
-        return _source;
-    }
-}
-
-/// <summary>统一构建参数、子流程、脚本、图像、诊断及宿主扩展页面。</summary>
+/// <summary>统一构建参数、子流程、脚本、诊断及宿主扩展页面。</summary>
 public sealed class WorkflowNodeEditorModel : IAsyncDisposable
 {
     private readonly List<IAsyncDisposable> _resources = new();
@@ -308,13 +236,11 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
     /// <param name="startNodeId">工作流开始节点标识。</param>
     /// <param name="nodeId">节点标识。</param>
     /// <param name="providers">自定义编辑页提供者集合。</param>
-    /// <param name="imageSourceResolver">图像帧源解析器。</param>
     public WorkflowNodeEditorModel(
         WorkflowDesignerSession session,
         string startNodeId,
         string nodeId,
-        IEnumerable<IWorkflowNodeEditorPageProvider>? providers = null,
-        IWorkflowImageFrameSourceResolver? imageSourceResolver = null)
+        IEnumerable<IWorkflowNodeEditorPageProvider>? providers = null)
     {
         Session = session ?? throw new ArgumentNullException(nameof(session));
         EntryNodeId = startNodeId ?? throw new ArgumentNullException(nameof(startNodeId));
@@ -322,7 +248,7 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
             ?? throw new InvalidOperationException($"节点 {nodeId} 不存在。");
         session.SelectedNodeId = nodeId;
         (EditingSession, EditingNode) = CreateEditingSession(session, nodeId);
-        var context = new WorkflowNodeEditorContext(EditingSession, startNodeId, EditingNode, imageSourceResolver);
+        var context = new WorkflowNodeEditorContext(EditingSession, startNodeId, EditingNode);
         var pageCatalog = WorkflowNodeEditorPageCatalog.CreateDefault();
         foreach (var provider in providers ?? Array.Empty<IWorkflowNodeEditorPageProvider>())
             pageCatalog.Register(provider);

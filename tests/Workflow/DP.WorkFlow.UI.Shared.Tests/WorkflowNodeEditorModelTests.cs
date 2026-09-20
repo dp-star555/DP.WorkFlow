@@ -98,38 +98,18 @@ public sealed class WorkflowNodeEditorModelTests
     }
 
     [Fact]
-    public async Task ImageCapability_UsesResolverAndDisposesFrameSource()
-    {
-        var node = new ImageNode { Id = "Vision", Title = "视觉" };
-        var source = new FakeFrameSource();
-        var session = new WorkflowDesignerSession(Document(node), new WorkflowNodeCatalog().RegisterStandardNodes());
-        var model = new WorkflowNodeEditorModel(session, node.Id, node.Id, imageSourceResolver: new FakeResolver(source));
-        var image = Assert.IsType<WorkflowImageEditorPageModel>(model.Pages.Single(page => page.PageId == "Image").Model);
-        WorkflowImageFrame? received = null;
-        image.FrameChanged += (_, frame) => received = frame;
-
-        await image.StartAsync();
-        source.Publish();
-        Assert.NotNull(received);
-        await model.DisposeAsync();
-
-        Assert.True(source.Started);
-        Assert.True(source.Stopped);
-        Assert.True(source.Disposed);
-    }
-
-    [Fact]
     public async Task HigherPriorityPluginPage_ReplacesBuiltInCapabilityPageBySlot()
     {
-        var node = new ImageNode { Id = "Vision", Title = "视觉" };
+        var node = new CSharpScriptNodeModel { Id = "Script", Title = "脚本" };
         var session = new WorkflowDesignerSession(Document(node), new WorkflowNodeCatalog().RegisterStandardNodes());
-        var provider = new SlotProvider("Vision.Roi", "Image", priority: 100);
+        var provider = new SlotProvider("Vision.Roi", "Script", priority: 100);
 
         await using var model = new WorkflowNodeEditorModel(session, node.Id, node.Id, new[] { provider });
 
-        var image = Assert.Single(model.Pages, page => page.PageId == "Image");
-        Assert.Equal("Vision.Roi", image.RendererKey);
-        Assert.Equal(100, image.Priority);
+        var script = Assert.Single(model.Pages, page => page.PageId == "Script");
+        Assert.Equal("Vision.Roi", script.RendererKey);
+        Assert.Equal(100, script.Priority);
+        Assert.Single(model.Pages, page => page.PageId == "ScriptDiagnostics");
     }
 
     [Fact]
@@ -147,12 +127,12 @@ public sealed class WorkflowNodeEditorModelTests
     [Fact]
     public void PageCatalog_RejectsAmbiguousPageSlotAtSamePriority()
     {
-        var node = new ImageNode { Id = "Image", Title = "图像" };
+        var node = new PlainNode { Id = "Plain", Title = "普通" };
         var session = new WorkflowDesignerSession(Document(node), new WorkflowNodeCatalog().RegisterStandardNodes());
-        var context = new WorkflowNodeEditorContext(session, node.Id, node, null);
+        var context = new WorkflowNodeEditorContext(session, node.Id, node);
         var catalog = new WorkflowNodeEditorPageCatalog()
-            .Register(new SlotProvider("First", "Image", priority: 10))
-            .Register(new SlotProvider("Second", "Image", priority: 10));
+            .Register(new SlotProvider("First", "Shared", priority: 10))
+            .Register(new SlotProvider("Second", "Shared", priority: 10));
 
         var error = Assert.Throws<InvalidOperationException>(() => catalog.CreatePages(context));
 
@@ -162,9 +142,9 @@ public sealed class WorkflowNodeEditorModelTests
     [Fact]
     public void PageCatalog_RejectsCustomPageWithoutExplicitRendererKey()
     {
-        var node = new ImageNode { Id = "Custom", Title = "扩展" };
+        var node = new PlainNode { Id = "Custom", Title = "扩展" };
         var session = new WorkflowDesignerSession(Document(node), new WorkflowNodeCatalog().RegisterStandardNodes());
-        var context = new WorkflowNodeEditorContext(session, node.Id, node, null);
+        var context = new WorkflowNodeEditorContext(session, node.Id, node);
         var catalog = new WorkflowNodeEditorPageCatalog().Register(new MissingRendererKeyProvider());
 
         var error = Assert.Throws<InvalidOperationException>(() => catalog.CreatePages(context));
@@ -175,7 +155,7 @@ public sealed class WorkflowNodeEditorModelTests
     [Fact]
     public async Task HostProvider_CanAppendCustomPageWithoutDesktopControlDependency()
     {
-        var node = new ImageNode { Id = "Custom", Title = "扩展" };
+        var node = new PlainNode { Id = "Custom", Title = "扩展" };
         var session = new WorkflowDesignerSession(Document(node), new WorkflowNodeCatalog().RegisterStandardNodes());
 
         await using var model = new WorkflowNodeEditorModel(session, node.Id, node.Id, new[] { new CustomProvider() });
@@ -194,28 +174,9 @@ public sealed class WorkflowNodeEditorModelTests
         return canvasDocument;
     }
 
-    private sealed class ImageNode : WorkflowNodeModel, IWorkflowImageDisplayNode
+    private sealed class PlainNode : WorkflowNodeModel
     {
         public override string NodeType => "Action";
-        public string ImageSourceKey => "Camera1";
-    }
-
-    private sealed class FakeResolver(FakeFrameSource source) : IWorkflowImageFrameSourceResolver
-    {
-        public IWorkflowImageFrameSource? Resolve(IWorkflowImageDisplayNode node) => source;
-    }
-
-    private sealed class FakeFrameSource : IWorkflowImageFrameSource
-    {
-        public bool Started { get; private set; }
-        public bool Stopped { get; private set; }
-        public bool Disposed { get; private set; }
-        public event EventHandler<WorkflowImageFrame>? FrameAvailable;
-        public ValueTask StartAsync(CancellationToken cancellationToken) { Started = true; return ValueTask.CompletedTask; }
-        public ValueTask StopAsync(CancellationToken cancellationToken) { Stopped = true; return ValueTask.CompletedTask; }
-        public ValueTask DisposeAsync() { Disposed = true; return ValueTask.CompletedTask; }
-        public void Publish() => FrameAvailable?.Invoke(this, new WorkflowImageFrame(
-            2, 2, 2, WorkflowImagePixelFormat.Gray8, new byte[] { 0, 1, 2, 3 }, DateTimeOffset.UtcNow, 1));
     }
 
     private sealed class SlotProvider(string extensionId, string slotId, int priority) : IWorkflowNodeEditorPageProvider

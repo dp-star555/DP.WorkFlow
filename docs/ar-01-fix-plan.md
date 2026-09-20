@@ -1,6 +1,6 @@
 # AR-01 修复方案：运行准备与资源作用域
 
-状态：**修复方案（未实施）**。本文只给方案，不改代码——原因见 §7。
+状态：**阶段 1 已实施；阶段 2/3 待实施**。本文保留阶段 1 的历史方案与验收，并补充后续架构审计结论。
 
 ---
 
@@ -307,6 +307,31 @@ public interface IWorkflowRunResourceOwner
 ### 阶段 3（AR-01 的完整方向）
 
 RunScope 层级 + 所有权令牌：子作用域拥有自己的资源容器，父资源只由父释放。这是 AR-01 建议的终态，改动面大，应放在阶段 A 之后。
+
+### 阶段 2/3 的补充审计与约束
+
+2026-09-20 后续审计确认，阶段 2 的方向正确，但完整实现必须同时处理以下四个角色，不能只拆视觉写入与预览读取：
+
+| 角色 | 当前/目标接口 | 消费者 | 约束 |
+|---|---|---|---|
+| 图像租约所有者 | `IWorkflowVisionFrameScope.Retain`（待更名收敛） | 产生新像素的 Vision Handler | 只拥有租约、预算与释放，不成为节点间查询仓库 |
+| 预览只读投影 | `IWorkflowVisionPreviewSource.Capture` | Vision UI | UI只读是当前使用事实，尚非程序集边界保证 |
+| 根运行资源所有者 | 目标 `IWorkflowRunResourceOwner.ReleasePreviousRunAsync` | 根运行宿主 | 嵌套调用点在类型上拿不到清理入口 |
+| 最终释放 | `IDisposable`/所有权令牌 | 宿主生命周期 | 必须等待在途运行退出，并保留约定的结果查看窗口 |
+
+当前“每个 Vision 宿主拥有一个 FrameScope”只是样例装配结果，不是 `WorkflowRuntimeHost` 不变式：Host既不创建也不拥有该实例，同一实例仍可被注入多个Host。阶段 3不能只增加注释，必须让根运行捕获独立的运行资源所有权令牌，Nested从父RunScope继承同一令牌。
+
+实现时还必须修正两个容易过度简化的点：
+
+1. 通用`WorkflowRuntimeHost`不得直接依赖`Func<IWorkflowVision...>`。工厂/贡献者应是运行时中立的RunScope契约，Vision在领域侧提供Adapter；否则为修视觉资源反而让Kernel依赖Vision。
+2. 新资源可以在根运行开始时创建，但**不能在Engine刚完成时立即释放**。当前契约允许运行完成后查看结果，上一轮仓内租约在下一轮根运行开始或宿主显式关闭结果窗口时才退役；UI独立Retain的租约继续存活。阶段 3应表达“活动→已完成可查看→退役”，而不是简单“Run结束即Dispose”。
+
+`ScopeKind`只能在所有有状态准备实现都迁入RunScope所有权后退场。阶段 2先把破坏性清理移出`PrepareAsync`；阶段 3再让文件夹采集会话等运行级状态由每轮RunScope创建，Nested只继承和校验。不能提前删除枚举而让AR-27语义重新变成隐式约定。
+
+### 相关边界核实
+
+- ~~`DP.WorkFlow.Abstractions`仍声明`IWorkflowImageDisplayNode`、`WorkflowImageFrame`、`IWorkflowImageFrameSource`等通用图像编辑契约，因此“Kernel完全不认识图像概念”不成立~~ **已于 2026-09-20 删除**：确认仓内 0 个实现者、samples 0 处引用、`WorkflowPluginModuleGroups.Vision` 分组常量 0 引用后整体移除，Kernel 不再携带图像/像素/帧概念。`DP.WorkFlow.Abstractions/Nodes/IWorkflowNodeEditorCapabilities.cs` 现仅保留 `IWorkflowScriptNode` / `IWorkflowScriptReferenceNode`。验证：全解决方案 0 警告 0 错误，`UI.Shared.Tests` 62 通过、`UI.Windows.Tests` 351 通过。
+- `DP.WorkFlow.Vision.UI`直接引用`DP.WorkFlow.Nodes.Vision`。UI当前只调用`IWorkflowVisionPreviewSource`，但编译期能够看到公开的`IWorkflowVisionFrameScope`；“只读”目前是约定。仅把只读接口另放一个程序集仍不够，因为UI还要引用Vision NodeModel；要形成编译边界，模型/只读契约与运行写能力/Handler必须位于不同引用方向，或让写能力成为UI不可见的内部实现并由宿主工厂装配。
 
 ---
 

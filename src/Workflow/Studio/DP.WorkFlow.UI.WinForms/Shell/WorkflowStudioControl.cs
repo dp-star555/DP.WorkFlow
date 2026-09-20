@@ -203,9 +203,6 @@ public sealed partial class WorkflowStudioControl : UserControl
         return count + modules.Count;
     }
 
-    /// <summary>获取或设置视觉节点图像源解析器。</summary>
-    public IWorkflowImageFrameSourceResolver? ImageFrameSourceResolver { get; set; }
-
     /// <inheritdoc />
     protected override void Dispose(bool disposing)
     {
@@ -332,7 +329,7 @@ public sealed partial class WorkflowStudioControl : UserControl
         try
         {
             var model = new WorkflowNodeEditorModel(
-                Session, EntryNodeId, node.Id, NodeEditorExtensions.GetPageProviders(), ImageFrameSourceResolver);
+                Session, EntryNodeId, node.Id, NodeEditorExtensions.GetPageProviders());
             using var dialog = new WorkflowNodeEditorDialog(
                 model, NodeEditorExtensions.GetRenderers(),
                 block => OnBlockMappingEditRequested(this, block));

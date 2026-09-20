@@ -8,6 +8,7 @@ DP.WorkFlow 是从旧 `WorkFlow.Rebuild` 独立出来的 .NET 8 重构主线。�
 - [当前进度](docs/progress.md)
 - [Node平台架构问题与优化清单](docs/node-platform-review-backlog.md)
 - [节点异常、处理与恢复专项评审](docs/node-fault-recovery-review.md)
+- [节点数据传递与模型关系](docs/nodes/node-data-flow-model.md)
 - [大型节点系统：整体架构审阅与长期演进路线](docs/architecture-review-and-roadmap.md)
 - [联合恢复与处置步骤继续：当前SDK、契约和限制](docs/nodes/joint-recovery.md)
 - [真实人工交互与双平台恢复演示](docs/nodes/operator-interaction.md)（`--recovery-demo`）

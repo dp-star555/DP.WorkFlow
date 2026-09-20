@@ -10,13 +10,12 @@ public sealed class WorkflowNodeEditorPageCatalog
     private readonly HashSet<string> _extensionIds = new(StringComparer.Ordinal);
     private bool _frozen;
 
-    /// <summary>创建包含参数、子流程、脚本和图像能力提供器的默认目录。</summary>
+    /// <summary>创建包含参数、子流程和脚本能力提供器的默认目录。</summary>
     /// <returns>可继续注册插件页面提供器的目录。</returns>
     public static WorkflowNodeEditorPageCatalog CreateDefault() => new WorkflowNodeEditorPageCatalog()
         .Register(new WorkflowPropertyEditorPageProvider())
         .Register(new WorkflowSubWorkflowEditorPageProvider())
-        .Register(new WorkflowScriptEditorPageProvider())
-        .Register(new WorkflowImageEditorPageProvider());
+        .Register(new WorkflowScriptEditorPageProvider());
 
     /// <summary>注册一个节点详情页提供器。</summary>
     /// <param name="provider">UI 无关页面提供器。</param>
@@ -152,25 +151,5 @@ public sealed class WorkflowScriptEditorPageProvider : IWorkflowNodeEditorPagePr
             "Script", "脚本", WorkflowNodeEditorPageKind.Script, 300, model, "Code");
         yield return new WorkflowNodeEditorPageDescriptor(
             "ScriptDiagnostics", "诊断", WorkflowNodeEditorPageKind.Diagnostics, 600, model, "Diagnostics");
-    }
-}
-
-/// <summary>根据图像显示能力提供通用图像页。</summary>
-public sealed class WorkflowImageEditorPageProvider : IWorkflowNodeEditorPageProvider
-{
-    /// <inheritdoc />
-    public string ExtensionId => "Workflow.BuiltIn.Image";
-
-    /// <inheritdoc />
-    public bool CanProvide(WorkflowNodeEditorContext context) => context.Node is IWorkflowImageDisplayNode;
-
-    /// <inheritdoc />
-    public IEnumerable<WorkflowNodeEditorPageDescriptor> CreatePages(WorkflowNodeEditorContext context)
-    {
-        if (context.Node is not IWorkflowImageDisplayNode node)
-            yield break;
-        yield return new WorkflowNodeEditorPageDescriptor(
-            "Image", "图像", WorkflowNodeEditorPageKind.Image, 400,
-            new WorkflowImageEditorPageModel(node, context.ImageSourceResolver), "Image");
     }
 }

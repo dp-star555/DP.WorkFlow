@@ -293,9 +293,6 @@ public sealed class WorkflowStudioControl : UserControl
         return count + modules.Count;
     }
 
-    /// <summary>获取或设置视觉节点图像源解析器。</summary>
-    public IWorkflowImageFrameSourceResolver? ImageFrameSourceResolver { get; set; }
-
     /// <summary>处理工作室 Session 依赖属性变化并同步各子控件。</summary>
     /// <param name="dependencyObject">发生属性变化的工作室控件。</param>
     /// <param name="e">依赖属性变化参数。</param>
@@ -422,7 +419,7 @@ public sealed class WorkflowStudioControl : UserControl
         try
         {
             var model = new WorkflowNodeEditorModel(
-                Session, EntryNodeId, node.Id, NodeEditorExtensions.GetPageProviders(), ImageFrameSourceResolver);
+                Session, EntryNodeId, node.Id, NodeEditorExtensions.GetPageProviders());
             var dialog = new WorkflowNodeEditorWindow(
                 model, NodeEditorExtensions.GetRenderers(),
                 block => OnBlockMappingEditRequested(this, block))

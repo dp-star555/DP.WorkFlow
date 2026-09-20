@@ -1,12 +1,12 @@
 # DP.WorkFlow 架构评审最终总结
 
-状态：**合并结论，取代以下三份文档**（最后更新 2026-09-20，AR-24 已完成 / AR-01 阶段 1 已修复 / 新增 AR-27、AR-28）
+状态：**合并结论，取代以下三份文档**（最后更新 2026-09-20，AR-24 已完成 / AR-01 阶段 1 已修复 / 新增 AR-27 至 AR-30）
 - `docs/architecture-smell-review.md`（依赖/内核/UI/构建异味）
 - `docs/architecture-review-and-roadmap.md`（AR-01..AR-12 + 阶段 A–D）
 - `docs/architecture-review-and-roadmap-critique.md`（对上一份的评审意见）
 
 编号约定：**沿用 AR-xx**，新增项续编 AR-13 起，不引入第三套编号。每条问题的来源（AR / S / C）见 §10.2 溯源表。
-本轮续编至 **AR-28**（AR-27 = AR-01 姊妹实例，AR-28 = UI.Windows 套件不确定）。
+本轮续编至 **AR-30**（AR-27 = AR-01 姊妹实例，AR-28 = UI.Windows 套件不确定，AR-29/30 = Vision预览一致性与轮询成本）。
 **进展以各条目标题的【状态标签】与 §1.1 的进展块为准**；未标注即仍为待处理。
 
 本文的原始评审未修改任何生产代码、测试或构建脚本。文中的「已实施 / 已完成」块记录的是
@@ -35,14 +35,15 @@
 | 等级 | 含义 | 数量 |
 |---|---|---|
 | **P0** | 继续扩大生产使用前必须修复，或阻塞其他工作 | 6 |
-| **P1** | 节点、流程与团队规模扩大前应治理 | 14 |
-| **P2** | 按实际部署与性能指标推进 | 8 |
+| **P1** | 节点、流程与团队规模扩大前应治理 | 15 |
+| **P2** | 按实际部署与性能指标推进 | 9 |
 
 > **进展（2026-09-20）**
 > - **AR-24 已完成** → 阶段 0 关闭。`main` 分支，基线提交 `8fdd174`（768 文件）。
 > - **AR-01 阶段 1 已修复**（`16f1c45`）→ 阶段 2 待评估。
 > - 新增 **AR-27**（AR-01 的姊妹实例，同日已修复 `1164725`）。
 > - 新增 **AR-28**（UI.Windows 套件不可作为门禁，本轮实测发现）。
+> - 新增 **AR-29/30**：恢复输出失效与Vision预览不同步，以及100ms轮询对未变化预览仍Retain/Dispose。
 > - **AR-02 已修复**（`WorkflowRuntimePluginCatalog.Freeze` 改为"先校验后发布"，失败不再留下"已冻结"外观）
 >   → §1.2 第 2 项关闭。**AR-25 记录的测试期望已同步更正**，不再是改完即红的障碍。
 > - **本机构建环境已恢复**：`dotnet restore` 的根因（系统环境变量缺失）已定位并修复，
@@ -144,6 +145,8 @@ Nodes.Process/Recovery/WorkflowWarningHandlerCoordinator.cs:55 ← 协调器兜�
   应由联合组在"协作开始"单点显式触发一次，而不是每个参与者各触发一次。
 - 生产路径端到端复现（验收第 4 条）仍未做：现有测试是构造性的，未走 `LoadVisionFileNode` 全链路。
 - 验收第 5 条（结束后租约按所有权恰好释放）尚无对应测试。
+
+**后续审计补充**：当前FrameScope同时承担图像租约所有者、预览投影、准备期清理和最终释放四个角色；阶段2不能只拆`Retain/Capture`。`WorkflowRuntimeHost`也不创建或拥有FrameScope，“每Host一个”只是样例装配结果。完整方向是阶段2拆出仅根所有者可见的破坏性清理接口，阶段3让根运行捕获中立RunScope所有权令牌、Nested继承。通用Host不得直接依赖Vision工厂；同时不能在运行刚完成时立即释放，因为现有结果查看窗口要求租约保留到下一轮根运行或显式退役。完整约束见`docs/ar-01-fix-plan.md`阶段2/3补充审计。
 
 ### AR-27 / P0：文件夹采集游标被嵌套运行重置【已修复 · AR-01 姊妹实例】
 
@@ -311,11 +314,25 @@ private void PublishSnapshot(string? message = null) =>
 
 **建议**：当前状态与审计历史分开；高频监控只发差量/轻量快照，历史按序列分页读取。为输出、故障、Trace 与资源租约分别定义保留策略。**任何优化都不能静默淘汰后续绑定仍需使用的输出。**
 
+### AR-29 / P1：Vision预览投影与正式输出失效不同步【代码确认】
+
+视觉Handler在返回`NodeExecutionResult`之前调用`WorkflowVisionFrameScope.Publish`；预览立即替换。正式输出则由Engine在Handler返回、取消检查和暂存提交之后才写入RunState。恢复入口使`WorkflowRunState`输出失效时，也没有同步撤销按NodeId保存的最新预览。
+
+因此可能出现两种分裂：节点未正式提交但UI已看到预览；或恢复已使旧输出不可绑定，UI仍显示旧预览。预览不是执行数据源，所以不会直接污染调度，但会误导操作员和调试。
+
+**建议**：把预览定义为已提交输出的派生投影；由成功提交事件发布，并在输出失效/运行代次切换时同步推进投影代次。不能让UI通过“仍能显示”推断运行输出仍有效。
+
+### AR-30 / P2：Vision预览轮询对未变化帧仍反复Retain/Dispose【代码确认】
+
+`VisionFrameEditorPage.Capture`每100ms先调用`IWorkflowVisionPreviewSource.Capture(id)`取得独立租约，之后才用`FrameId+Sequence`与`_lastKey`比较。画面不变时仍产生每节点约10Hz的引用计数增减。
+
+简单把`_lastKey`判断前移并不可行，因为当前键所需的FrameId/Sequence只有Capture后才能取得。应把优化放在Interface中，例如`CaptureIfChanged(nodeId, afterSequence)`或先读取无租约Revision，只有变化时才Retain；不要让UI绕过只读接口读取内部字典。
+
 ### AR-18 / P1：进程级静态可变状态
 
 | 位置 | 内容 | 风险 |
 |---|---|---|
-| `Runtime/Data/WorkflowBindingResolver.cs:13` | `static ConcurrentDictionary<BindingPlanKey, BindingPathPlan> PathPlans` | **无上界、无失效**；长驻进程持续增长；跨运行实例共享，与"运行实例独立状态"冲突 |
+| `Runtime/Data/WorkflowBindingResolver.cs:13` | `static ConcurrentDictionary<BindingPlanKey, BindingPathPlan> PathPlans` | **无上界、无失效**；键直接持有运行时`Type`，未来启用可回收插件加载上下文时会钉住插件程序集；长驻进程持续增长 |
 | `Nodes.Standard/Scripting/CSharpScriptNode.cs:179` | `RoslynScriptService.Shared` | 脚本服务成为进程级单例，宿主无法替换或隔离 |
 | `UI.Shared/Editors/WorkflowCSharpScriptEditorModel.cs:11` | `static readonly RoslynScriptService Service = new()` | 设计期与运行期各持一套脚本服务，配置漂移 |
 | `UI.Shared/.../WorkflowDesignerSession.cs:64` | `static readonly object ClipboardSync` | 同进程多文档共享剪贴板锁 |
@@ -394,9 +411,17 @@ UI.Shared  →  Abstractions + Core + Runtime + Persistence.Json + ScriptEngine
 
 `Abstractions/Nodes/` 中与 UI 直接相关：`WorkflowPropertyAttribute`、`WorkflowPropertyEditorAttribute`、`WorkflowPropertyVisibleWhenAttribute`、`IWorkflowNodeEditorCapabilities`。
 
+后续审计进一步确认，`IWorkflowNodeEditorCapabilities.cs`曾包含`IWorkflowImageDisplayNode`、`WorkflowImageFrame`、`WorkflowImagePixelFormat`、`IWorkflowImageFrameSource`和Resolver。它们不引用`DP.Vision`，但意味着Kernel确实认识图像、像素与帧概念。
+
+**2026-09-20 已删除该残留双轨**。删除前核实：仓内 0 个类型实现`IWorkflowImageDisplayNode`（唯一实现者是测试里的假节点）、samples 0 处引用、`WorkflowPluginModuleGroups.Vision`（为视觉插件预留的分组常量）全仓 0 引用——该插件分组通道从未接通，视觉模块实际挂在`Runtime`分组下。删除范围：5 个契约类型、`Vision` 分组常量、`WorkflowImageEditorPageProvider`、`WorkflowImageEditorPageModel`、`WorkflowNodeEditorContext.ImageSourceResolver`、`WorkflowNodeEditorModel` 的 `imageSourceResolver` 参数、两平台 `WorkflowStudioControl.ImageFrameSourceResolver`、WinForms/WPF 的 `PageKind.Image` 分支与 `CreateImage`/`ConvertFrame`、枚举成员 `WorkflowNodeEditorPageKind.Image`、WinForms 控件 `WorkflowImageViewport` 及其测试。该文件现仅保留`IWorkflowScriptNode`与`IWorkflowScriptReferenceNode`。
+
+视觉路径不受影响：Vision 自己的页面走`Kind = Custom` + `RendererKey = "DP.Vision.FrameEditor"`（槽位 `Image`、优先级 100），与内置页（优先级 0）无依赖；内置页删除后其优先级 100 仍唯一胜出。
+
+Vision新UI的只读性也只是使用约定：`DP.WorkFlow.Vision.UI`直接引用`DP.WorkFlow.Nodes.Vision`，因此编译期同时看得到公开的`IWorkflowVisionPreviewSource`和`IWorkflowVisionFrameScope`。仅移动只读接口不足以形成边界，因为UI仍要引用Vision NodeModel；必须让模型/只读契约与运行写能力/Handler处于不同引用方向，或让写能力成为UI不可见的内部实现并由宿主工厂装配。
+
 但"字段是否可见、用哪种编辑器渲染"是纯粹的呈现决策。放进内核契约意味着：新增一种编辑器控件就要动内核程序集，内核 schema 版本被迫跟随 UI 演进。
 
-**建议**：迁出为独立 `Workflow.Editing.Contracts` + Provider 扩展包，与 Vision 的 `PageProvider` / `RendererKey` 统一为同一套"扩展描述 + 平台 Renderer"机制（`NP-07` 已提出方向）。
+**已完成与剩余建议**：上述旧图像接口及通用图像页残留双轨已经删除；当前Vision页面统一使用`IWorkflowNodeEditorPageProvider` + `RendererKey`。尚存的属性元数据和脚本编辑能力是否迁出为独立`Workflow.Editing.Contracts`，继续按`NP-07`评估，不再与已删除图像路径混为同一待办。
 
 ### AR-10 / P1：双平台 Adapter 重复承载交互状态机
 
@@ -829,6 +854,8 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 | AR-26 | S4-4 + C | 合并文档治理与探针入库 |
 | AR-27 | 本轮实施 | AR-01 的姊妹实例：文件夹采集游标被嵌套运行重置（已修复 `1164725`） |
 | AR-28 | 本轮实施 | UI.Windows 套件不确定，不能当作门禁（实测抖动） |
+| AR-29 | 后续Vision边界审计 | 恢复输出失效与预览投影不同步 |
+| AR-30 | 后续Vision边界审计 | 未变化预览在100ms轮询中仍Retain/Dispose |
 
 来源标记：`AR` = 你的 `architecture-review-and-roadmap.md`；`S` = `architecture-smell-review.md`；`C` = `architecture-review-and-roadmap-critique.md`；`本轮实施` = 2026-09-20 执行 AR-24 / AR-01 阶段 1 时发现。
 

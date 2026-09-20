@@ -18,9 +18,6 @@ public static class WorkflowPluginModuleGroups
 
     /// <summary>WPF 平台 Module。</summary>
     public const string Wpf = "wpf";
-
-    /// <summary>视觉 Provider Module。</summary>
-    public const string Vision = "vision";
 }
 
 /// <summary>描述一个部署插件包及其按宿主类型分组的程序集。</summary>

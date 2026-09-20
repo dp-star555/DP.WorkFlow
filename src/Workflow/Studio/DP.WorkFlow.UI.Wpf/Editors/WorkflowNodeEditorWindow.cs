@@ -151,7 +151,6 @@ public sealed class WorkflowNodeEditorWindow : Window
             var group = new GroupBox { Header = specialPages[index].Title, Content = special, Margin = new Thickness(3) };
             Grid.SetRow(group, index);
             specialHost.Children.Add(group);
-            if (specialPages[index].Model is WorkflowImageEditorPageModel image) _ = StartImageAsync(image);
         }
         var layout = new Grid();
         layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(340), MinWidth = 280 });
@@ -192,16 +191,6 @@ public sealed class WorkflowNodeEditorWindow : Window
             _elements.Add(item.Page.PageId, element);
         }
         _host.Content = element;
-        if (item.Page.Model is WorkflowImageEditorPageModel image) _ = StartImageAsync(image);
-    }
-
-    /// <summary>执行 Start Image 相关处理。</summary>
-    /// <param name="image">“image”参数。</param>
-    /// <returns>返回处理结果。</returns>
-    private async Task StartImageAsync(WorkflowImageEditorPageModel image)
-    {
-        try { await image.StartAsync(); }
-        catch (Exception exception) { await Dispatcher.InvokeAsync(() => MessageBox.Show(this, exception.Message, "图像源", MessageBoxButton.OK, MessageBoxImage.Error)); }
     }
 
     /// <summary>创建Page Element。</summary>
@@ -223,7 +212,6 @@ public sealed class WorkflowNodeEditorWindow : Window
             WorkflowNodeEditorPageKind.SubWorkflow => CreateSubWorkflow((WorkflowSubWorkflowEditorPageModel)page.Model),
             WorkflowNodeEditorPageKind.Script => CreateScript((WorkflowScriptEditorPageModel)page.Model),
             WorkflowNodeEditorPageKind.Diagnostics => CreateDiagnostics((WorkflowScriptEditorPageModel)page.Model),
-            WorkflowNodeEditorPageKind.Image => CreateImage((WorkflowImageEditorPageModel)page.Model),
             _ => throw new InvalidOperationException($"WPF 不支持节点详情页类型 {page.Kind}：{page.PageId}。")
         };
     }
@@ -303,35 +291,6 @@ public sealed class WorkflowNodeEditorWindow : Window
         if (diagnostics.Count == 0) list.Items.Add("✓ 未发现脚本诊断。");
         else foreach (var item in diagnostics) list.Items.Add(item);
         return list;
-    }
-
-    /// <summary>创建Image。</summary>
-    /// <param name="page">“page”参数。</param>
-    /// <returns>返回处理结果。</returns>
-    private FrameworkElement CreateImage(WorkflowImageEditorPageModel page)
-    {
-        var image = new Image { Stretch = Stretch.Uniform };
-        var status = new TextBlock { Height = 28, Text = page.IsAvailable ? "等待图像帧…" : "宿主未注册图像源。", Margin = new Thickness(6) };
-        page.FrameChanged += (_, frame) => Dispatcher.BeginInvoke(() =>
-        {
-            var format = frame.PixelFormat switch
-            {
-                WorkflowImagePixelFormat.Gray8 => PixelFormats.Gray8,
-                WorkflowImagePixelFormat.Bgra32 => PixelFormats.Bgra32,
-                _ => PixelFormats.Bgr24
-            };
-            var bitmap = new WriteableBitmap(frame.Width, frame.Height, 96, 96, format, null);
-            bitmap.WritePixels(new Int32Rect(0, 0, frame.Width, frame.Height), frame.Pixels.ToArray(), frame.Stride, 0);
-            image.Source = bitmap;
-            status.Text = $"{frame.Width} × {frame.Height}  Frame #{frame.FrameId}  {frame.Timestamp:HH:mm:ss.fff}";
-        });
-        var grid = new Grid { Background = Brushes.Black };
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        grid.Children.Add(image);
-        Grid.SetRow(status, 1);
-        grid.Children.Add(status);
-        return grid;
     }
 
     private static IReadOnlyDictionary<string, IWorkflowWpfNodeEditorPageRenderer> CreateRendererIndex(

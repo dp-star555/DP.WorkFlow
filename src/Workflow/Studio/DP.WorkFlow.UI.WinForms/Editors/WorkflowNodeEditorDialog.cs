@@ -138,7 +138,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             var group = new GroupBox { Text = specialPages[index].Title, Dock = DockStyle.Fill, Padding = new Padding(6) };
             group.Controls.Add(special);
             specialHost.Controls.Add(group, 0, index);
-            if (specialPages[index].Model is WorkflowImageEditorPageModel image) _ = StartImageAsync(image);
         }
         var split = new SplitContainer
         {
@@ -195,17 +194,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             _controls.Add(item.Page.PageId, control);
         }
         workspacePanel.Controls.Add(control);
-        if (item.Page.Model is WorkflowImageEditorPageModel image)
-            _ = StartImageAsync(image);
-    }
-
-    /// <summary>异步启动图像页的数据订阅，异常切回 UI 线程显示。</summary>
-    /// <param name="image">“image”参数。</param>
-    /// <returns>返回处理结果。</returns>
-    private async Task StartImageAsync(WorkflowImageEditorPageModel image)
-    {
-        try { await image.StartAsync(); }
-        catch (Exception exception) { BeginInvoke(() => MessageBox.Show(this, exception.Message, "图像源", MessageBoxButtons.OK, MessageBoxIcon.Error)); }
     }
 
     /// <summary>
@@ -230,7 +218,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             WorkflowNodeEditorPageKind.SubWorkflow => CreateSubWorkflow((WorkflowSubWorkflowEditorPageModel)page.Model),
             WorkflowNodeEditorPageKind.Script => CreateScript((WorkflowScriptEditorPageModel)page.Model),
             WorkflowNodeEditorPageKind.Diagnostics => CreateDiagnostics((WorkflowScriptEditorPageModel)page.Model),
-            WorkflowNodeEditorPageKind.Image => CreateImage((WorkflowImageEditorPageModel)page.Model),
             _ => throw new InvalidOperationException($"WinForms 不支持节点详情页类型 {page.Kind}：{page.PageId}。")
         };
     }
@@ -311,79 +298,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         if (diagnostics.Count == 0) list.Items.Add("✓ 未发现脚本诊断。");
         else foreach (var item in diagnostics) list.Items.Add(item);
         return list;
-    }
-
-    /// <summary>创建Image。</summary>
-    /// <param name="page">“page”参数。</param>
-    /// <returns>返回处理结果。</returns>
-    private Control CreateImage(WorkflowImageEditorPageModel page)
-    {
-        var viewport = new WorkflowImageViewport { Dock = DockStyle.Fill, AllowLeftButtonPan = true };
-        var frameStatus = page.IsAvailable ? "等待图像帧…" : "宿主未注册图像源。";
-        var status = new Label
-        {
-            Dock = DockStyle.Bottom,
-            Height = 28,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Text = frameStatus + "  滚轮缩放｜拖拽平移｜双击复位"
-        };
-        void UpdateStatus() => status.Text = $"{frameStatus}  视图 {viewport.ZoomFactor:P0}  滚轮缩放｜拖拽平移｜双击复位";
-        viewport.ViewChanged += (_, _) => UpdateStatus();
-        page.FrameChanged += (_, frame) =>
-        {
-            void Apply()
-            {
-                var old = viewport.Image;
-                viewport.Image = ConvertFrame(frame);
-                old?.Dispose();
-                frameStatus = $"{frame.Width} × {frame.Height}  Frame #{frame.FrameId}  {frame.Timestamp:HH:mm:ss.fff}";
-                UpdateStatus();
-            }
-            if (viewport.IsDisposed) return;
-            if (viewport.InvokeRequired) viewport.BeginInvoke(Apply); else Apply();
-        };
-        viewport.Disposed += (_, _) => viewport.Image?.Dispose();
-        var panel = new Panel { Dock = DockStyle.Fill };
-        panel.Controls.Add(viewport);
-        panel.Controls.Add(status);
-        return panel;
-    }
-
-    /// <summary>转换Frame。</summary>
-    /// <param name="frame">“frame”参数。</param>
-    /// <returns>返回处理结果。</returns>
-    private static Bitmap ConvertFrame(WorkflowImageFrame frame)
-    {
-        var format = frame.PixelFormat == WorkflowImagePixelFormat.Bgra32
-            ? System.Drawing.Imaging.PixelFormat.Format32bppArgb
-            : System.Drawing.Imaging.PixelFormat.Format24bppRgb;
-        var bitmap = new Bitmap(frame.Width, frame.Height, format);
-        var rect = new Rectangle(0, 0, frame.Width, frame.Height);
-        var data = bitmap.LockBits(rect, System.Drawing.Imaging.ImageLockMode.WriteOnly, format);
-        try
-        {
-            var source = frame.Pixels.Span;
-            var target = new byte[Math.Abs(data.Stride) * frame.Height];
-            if (frame.PixelFormat == WorkflowImagePixelFormat.Gray8)
-            {
-                for (var y = 0; y < frame.Height; y++)
-                    for (var x = 0; x < frame.Width; x++)
-                    {
-                        var value = source[y * frame.Stride + x];
-                        var index = y * data.Stride + x * 3;
-                        target[index] = value; target[index + 1] = value; target[index + 2] = value;
-                    }
-            }
-            else
-            {
-                var bytes = frame.PixelFormat == WorkflowImagePixelFormat.Bgra32 ? 4 : 3;
-                for (var y = 0; y < frame.Height; y++)
-                    source.Slice(y * frame.Stride, frame.Width * bytes).CopyTo(target.AsSpan(y * data.Stride, frame.Width * bytes));
-            }
-            System.Runtime.InteropServices.Marshal.Copy(target, 0, data.Scan0, target.Length);
-        }
-        finally { bitmap.UnlockBits(data); }
-        return bitmap;
     }
 
     private static IReadOnlyDictionary<string, IWorkflowWinFormsNodeEditorPageRenderer> CreateRendererIndex(

@@ -376,6 +376,7 @@
 - [x] 参数行及其所有子编辑控件统一响应鼠标和键盘焦点，底部说明实时切换；新增 `WorkflowPropertyAttribute` 中文参数元数据，并为未标注参数提供覆盖全部节点的中文约定回退；
 - [x] 新增 UI 无关 `IWorkflowScriptNode`、`IWorkflowImageDisplayNode`、图像帧源/解析器及 `IWorkflowNodeEditorPageProvider`，宿主可注册自定义共享页面模型和双原生渲染器；
 - [x] Block 子画布可直接嵌入节点工作台编辑，并向父 Session 传播文档变更；视觉帧采用复制后的不可变快照并在窗口关闭时停止和释放帧源；
+- [x] 移除旧“通用图像编辑页”残留双轨（2026-09-20）：删除 `IWorkflowImageDisplayNode`、`WorkflowImageFrame`、`WorkflowImagePixelFormat`、`IWorkflowImageFrameSource`、`IWorkflowImageFrameSourceResolver`、`WorkflowPluginModuleGroups.Vision`、内置 `WorkflowImageEditorPageProvider` / `WorkflowImageEditorPageModel`、两平台 `ImageFrameSourceResolver` 与 `PageKind.Image` 渲染分支、`WorkflowImageViewport`；节点详情页扩展统一由 `IWorkflowNodeEditorPageProvider` + `RendererKey` 承担（全解决方案 0 警告 0 错误，`UI.Shared.Tests` 62 通过 / `UI.Windows.Tests` 351 通过）；
 - [x] 增加 Axis 超时分支/恢复/取消、大型障碍场路由、反馈回环 Waypoint 和两层嵌套 Block 导航测试；
 - [x] 节点高度改为按左右边端口数自动计算：默认上进下出节点由 84 压缩至 64，多侧边端口仍按数量自动增高；
 - [x] 单节点耗时改用 `Stopwatch` 仅统计节点调度/Handler 执行，不再包含快照观察者和运行监视 UI 耗时；Studio 快照投递改为异步合并，亚毫秒耗时保留三位小数。
