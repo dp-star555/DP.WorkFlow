@@ -73,7 +73,13 @@
 >   运行级状态也迁入 RunScope、`WorkflowRunScopeKind` 退场"仍未处理。
 >   顺带修复 `VisionAcquisitionRuntime` 每次布防都重新打开相机（与"设备保持打开以便复用"契约矛盾，
 >   且漏掉上一根运行持有的设备对象）的缺陷。
-> - 实测基线：`DP.Vision.sln` **752 例** 0 失败；`DP.WorkFlow.sln` **834 例** 0 失败、0 警告 0 错误。
+> - **图像采集深化 V1-D（Basler 真实回调 Adapter）软件结构验收已完成**（2026-09-21）→
+>   `BaslerAcquisitionDevice` 实现 `IVisionStreamingAcquisitionDevice`：相机跨布防复用、
+>   `ImageGrabbed` 回调边界内复制为中立图像、回调内异常绝不抛回 SDK 线程、释放先停流再等在途回调退出；
+>   `VisionResourceSession.Complete(failure)` 现在把会话标为 `Faulted`，使"断线"表现为带原因的故障态。
+>   **真实相机现场验收（断线/重连/停流时序、外部触发、长时间吞吐）仍待做**，不能用假相机替代。
+> - 实测基线：`DP.Vision.sln` **806 例** 0 失败（含 HALCON 启用时的条件编译用例；
+>   此前记录的 752 是缺 `HALCONROOT` 时的口径）；`DP.WorkFlow.sln` **834 例** 0 失败、0 警告 0 错误。
 
 ### 1.2 四件最该先做的事
 
