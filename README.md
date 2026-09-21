@@ -20,7 +20,7 @@ DP.WorkFlow 是从旧 `WorkFlow.Rebuild` 独立出来的 .NET 8 重构主线。�
 - [插件架构](docs/plugin-architecture.md)
 - [节点重写保真审计](docs/nodes/fidelity-audit.md)
 - [独立 DP.Vision 实施记录](docs/dp-vision-integration-plan.md)
-- [多厂商图像采集 Provider 实施与验收基线](docs/vision-acquisition-providers.md)（阶段A–D 已实施；阶段E–F 受外部依赖阻塞）
+- [多厂商图像采集 Provider 实施与验收基线](docs/vision-acquisition-providers.md)（阶段A–E 已实施：HALCON 与 Basler 两个真实 Provider；阶段F 受外部依赖阻塞）
 - [新版视觉节点、ROI 与双宿主示例](docs/nodes/new-vision-file-pipeline.md)
 - [模板定位坐标系、ROI随动与双坐标结果](docs/nodes/vision-coordinate-systems.md)
 

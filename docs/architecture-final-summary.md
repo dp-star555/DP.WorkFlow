@@ -1,6 +1,6 @@
 # DP.WorkFlow 架构评审最终总结
 
-状态：**合并结论，取代以下三份文档**（最后更新 2026-09-21：AR-24 已完成 / AR-01 阶段 1 已修复 / AR-02、AR-27、AR-29 已修复 / 图像采集Provider阶段A–D完成 / 新增 AR-27 至 AR-30）
+状态：**合并结论，取代以下三份文档**（最后更新 2026-09-21：AR-24 已完成 / AR-01 阶段 1 已修复 / AR-02、AR-27、AR-29 已修复 / AR-16 已缓解 / 图像采集Provider阶段A–E完成 / 新增 AR-27 至 AR-30）
 - `docs/architecture-smell-review.md`（依赖/内核/UI/构建异味）
 - `docs/architecture-review-and-roadmap.md`（AR-01..AR-12 + 阶段 A–D）
 - `docs/architecture-review-and-roadmap-critique.md`（对上一份的评审意见）
@@ -54,12 +54,14 @@
 >   由成功提交事件发布、输出失效时同步撤销，不再由 Handler 提前 Publish。
 > - **图像采集Provider改造阶段 A–D 完成**（`10ac31a`）：公共契约与运行时落在 DP.Vision，
 >   Workflow 改用逻辑 SourceId + `IVisionAcquisition`，HALCON 以 `plugin.json` 插件形式被目录发现。
->   详见 `docs/vision-acquisition-providers.md` §13 状态表。阶段 E（第二个真实厂商Provider）与
->   阶段 F（`ExclusiveRun`/`Broadcast`）受外部依赖阻塞，两者在运行准备阶段被显式拒绝。
-> - **新发现（AR-16 补充）**：`DP.Vision` 目录下没有 `.git`，其源码与本次新增的三个工程、
->   524 例测试全部不在版本控制之下。这比 AR-16 原本描述的"跨仓源码引用无版本锁定"更弱一层，
->   建议优先为 DP.Vision 建立仓库并做基线提交。
-> - 实测基线：`DP.Vision.sln` 524 例 0 失败；`DP.WorkFlow.sln` 811 例 0 失败、0 警告 0 错误。
+>   详见 `docs/vision-acquisition-providers.md` §13 状态表。
+> - **AR-16 已缓解**（`e04f4e0`）：`DP.Vision` 原本只有 `.gitignore` 而没有 `.git`，源码与测试
+>   完全不在版本控制下。已建立仓库并做基线提交（291 文件，纯本地，无远端，与 DP.WorkFlow 一致），
+>   提交身份为仓库级 `DP.Vision Dev <dev@localhost>`。跨仓源码引用本身（无版本锁定）仍未解决。
+> - **图像采集Provider阶段 E 完成**：第二个真实厂商 Provider 落地为 `DP.Vision.Basler`
+>   （官方 NuGet 包 `Basler.Pylon.NET.x64`，免费）。两个真实 Provider 可在同一进程组合并按
+>   SourceId 各自路由。阶段 F（`ExclusiveRun`/`Broadcast`）仍受外部依赖阻塞，在运行准备阶段被显式拒绝。
+> - 实测基线：`DP.Vision.sln` 646 例 0 失败；`DP.WorkFlow.sln` 811 例 0 失败、0 警告 0 错误。
 
 ### 1.2 四件最该先做的事
 
@@ -413,11 +415,18 @@ UI.Shared  →  Abstractions + Core + Runtime + Persistence.Json + ScriptEngine
 **建议**：改为包引用或子模块 + 显式版本锁定。
 
 **补充实测（2026-09-21）**：`DP.Vision` 目录下**根本没有 `.git`**（只有 `.gitignore`），
-同级 `C:\Data\PiProgects\WorkFlow` 也不是仓库——即 DP.Vision 当前**不在任何版本控制之下**。
-这比"有仓库但无版本锁定"更弱一层：本次采集Provider改造新增的三个工程
-（`DP.Vision.Acquisition.Abstractions` / `DP.Vision.Acquisition.Runtime` / `DP.Vision.Halcon` 插件化）
-与 524 例测试都没有可回退的历史。建议先给 DP.Vision 建立仓库并做一次基线提交，
-再谈包引用或子模块。对比 AR-24（DP.WorkFlow 已纳入版本控制）。
+同级 `C:\Data\PiProgects\WorkFlow` 也不是仓库——即 DP.Vision 当时**不在任何版本控制之下**。
+这比"有仓库但无版本锁定"更弱一层。
+
+**已缓解（2026-09-21，`e04f4e0`）**：已为 DP.Vision 建立仓库并做基线提交。
+`git init -b main`，291 个文件纳入跟踪，`.gitignore` 排除 `bin/`、`obj/`、`artifacts/`（60MB）
+与 `.vs/`、`*.user`、`.pi-tmp/`、`TestResults/` 等；新增 `.gitattributes` 与 DP.WorkFlow 保持一致；
+提交身份用**仓库级**配置（`DP.Vision Dev <dev@localhost>`），不动全局设置。
+与 DP.WorkFlow 一样是**纯本地仓库，无任何远端**。
+
+**仍未解决**：跨仓源码引用本身（`ProjectReference` 到同级目录）依然没有版本锁定——
+现在是"两个本地仓库之间的无锁定引用"，比"无仓库"强，但仍不是包引用或子模块。AR-16 的原始建议
+（包引用或子模块 + 显式版本锁定）仍需独立决策。
 
 ---
 
@@ -508,7 +517,7 @@ git status   → fatal: not a git repository
 | 洁净度核实 | 无厂商二进制、无敏感信息、无日志混入；最大文件 644KB（`docs/paddle-print-quality-workflow.html`） |
 | 仓库配置 | 仓库级 `user.name` / `user.email` / `core.autocrlf=false` |
 
-**未处理**：`../DP.Vision` 仍是跨仓源码引用（AR-16），纳入 VCS 后既不是子模块也不是包——
+**未处理**：`../DP.Vision` 仍是跨仓源码引用（AR-16），两侧现在各自有仓库但既不是子模块也不是包——
 本次未改变其引用方式，AR-16 仍需独立决策。
 
 **新发现（本机环境，与 AR-23 同族，2026-09-20 查清并已修复）**：`dotnet restore` 在本机报
@@ -769,7 +778,8 @@ Assert.True(catalog.IsFrozen);     // ← 断言"失败后仍然是已冻结"
 - ~~初始化仓库或确认丢失原因；确认 `.gitignore` 覆盖 `bin/`、`obj/`、`.tmp/`、`.pi-tmp/`、`artifacts/`；~~
   **已完成**（`8fdd174`）。性质为漏初始化；`.gitignore` 已补齐 `.pi-tmp/`、`artifacts/`、`TestResults/`、`*.log`、`.workbuddy-ai/`。
 - 确认 `../DP.Vision` 的引用方式（AR-16）在纳入 VCS 后如何处理（子模块或包）。
-  **未处理**，仍为跨仓源码引用，需独立决策。
+  **部分处理**（`e04f4e0`）：DP.Vision 已建立仓库并做基线提交，两侧都有可回退历史；
+  但引用方式仍是跨仓 `ProjectReference`，无版本锁定，需独立决策。
 
 ### 阶段 A：先修成立条件（AR-01/02/03/04/17/19/25）
 
@@ -867,7 +877,7 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 | AR-13 | S1-1 + S1-2 | 合并节点包依赖与 ScriptEngine 泄漏 |
 | AR-14 | S2-1 | — |
 | AR-15 | S2-2 + S2-4 + S4-1 + S4-2 | 合并平台耦合、sln、TFM |
-| AR-16 | S2-3 | **已补充实测**：DP.Vision 无 `.git`，源码与新增工程完全不在版本控制下 |
+| AR-16 | S2-3 | **已缓解**：DP.Vision 已建仓并做基线提交（`e04f4e0`，291 文件）；跨仓源码引用无版本锁定仍未解决 |
 | AR-17 | S1-4 | — |
 | AR-18 | S3-2 | — |
 | AR-19 | S3-4 | — |

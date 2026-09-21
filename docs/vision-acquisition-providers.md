@@ -546,12 +546,14 @@ ResourceKey
 | B Source Registry与多Provider组合 | **已完成** | `DP.Vision.Acquisition.Runtime`（Composer / Runtime / Source绑定）；组合、路由、并发、内存租约用例 |
 | C Workflow迁移到逻辑SourceId | **已完成** | `Vision.CaptureFrame` 改用逻辑源 + `IVisionAcquisition`；AR-29 预览改为已提交输出的派生投影；旧文档一次性迁移 |
 | D HALCON正式Provider插件 | **已完成** | `plugin.json` + `HalconAcquisitionProviderPlugin` + 私有配置校验 + 插件目录加载；两个示例不再编译期选择Provider |
-| E 第二个真实厂商Provider | **阻塞（外部依赖）** | 需要真实的第二个品牌设备与SDK；不为证明架构创建空壳 |
+| E 第二个真实厂商Provider | **已完成（Basler pylon）** | `DP.Vision.Basler`：官方 NuGet 包 `Basler.Pylon.NET.x64`（免费）+ `plugin.json` + `BaslerAcquisitionProviderPlugin`；`DP.Vision.Acquisition.Integration.Tests` 验证同一组合内两个真实Provider按SourceId各管自己的设备 |
 | F RunScope与高级共享模式 | **阻塞（外部依赖）** | `ExclusiveRun` 依赖 AR-01 阶段3；`Broadcast` 待真实连续流需求 |
 
 已实现的共享策略只有 `ExclusiveOperation` 与 `Serialized`；`ExclusiveRun` 与 `Broadcast` 在运行准备阶段被显式拒绝，不使用进程内锁冒充跨进程互斥。
 
-自动化实测（本机 Debug）：`DP.Vision.sln` **524 例 0 失败**（含 net48 与 net8.0 两套目标框架）；`DP.WorkFlow.sln` **811 例 0 失败**，构建 0 警告 0 错误。
+阶段 E 厂商选型实测（2026-09-21，本机联网）：**Basler 是唯一提供官方 NuGet 包的工业相机厂商**——`Basler.Pylon.NET.x64` 无依赖、可从 nuget.org 直接还原、在 net48 与 net8.0-windows 下均编译通过；pylon 相机软件套装与 .NET API 均为免费软件，仅运行期需要安装 pylon 运行时。海康（Hikrobot）官方 SDK 只能从官网手工下载 MVS 客户端，nuget.org 上只有第三方非官方封装（`MvCameraControl.Net` 等，非厂商发布）；大华、大恒同理。因此第二个真实 Adapter 选择 Basler：它能在**没有相机、没有装 SDK** 的机器上完成全部契约与边界验证，只有真实出图路径需要现场验收。
+
+自动化实测（本机 Debug）：`DP.Vision.sln` **646 例 0 失败**（含 net48 与 net8.0 两套目标框架）；`DP.WorkFlow.sln` **811 例 0 失败**，构建 0 警告 0 错误。
 
 依赖关系：
 
@@ -606,7 +608,21 @@ ResourceKey
 
 只有第二个真实Adapter接入后，多Provider接口才算经真实变化验证。建议选一个实际项目必需品牌，不为了证明架构创建空壳。
 
+已落地：选择 **Basler pylon**（理由与厂商选型实测见上文阶段 E 行）。`DP.Vision.Basler` 与 `DP.Vision.Halcon` 结构同构，两者都只通过中立契约被使用。
+
+厂商差异被显式处理，而不是抹平：
+
+- **缺 SDK 的时机不同**。HALCON 的 SDK 缺失是编译期问题（未找到 `halcondotnet.dll` 就不编译采集实现），因此 `HalconCameraCapture.IsSdkEnabled` 是编译期开关；Basler 的托管程序集随 NuGet 包还原、编译期一定在，缺的是**原生运行时**，因此健康探测改为检查进程能否解析 `PylonBase_v10.dll`。两者都必须让采集节点在首节点执行前失败，而不是等到采集时抛原生异常（Basler 缺运行时直接调 API 会抛 `SEHException`）。
+- **设备选择器语义不同**。HALCON 用 `接口名|设备名`；Basler 用 `SerialNumber` 或 `UserDefinedName`，且必须且只能给出一个——两个都给无法判断以哪个为准，都不给会匹配到任意一台。
+- **像素格式落地规则不同**。Basler 的格式映射表（`BaslerPixelFormats`）是**纯逻辑、不依赖 SDK**，因此可以在没有相机、甚至没有 pylon 运行时的机器上被完整验证；映射之外的格式一律拒绝，特别是不把 10/12/16 位彩色静默降位到 8 位。
+- **触发表达能力不同**。HALCON Adapter 无法表达软件触发，因此明确拒绝；Basler 能表达，于是支持 `Software`，但对 `External` 要求私有配置声明 `triggerSource`，否则明确拒绝而不是沿用设备当前设置。
+
 验收：同一进程两个真实Provider各管理自己的设备；公共Workflow/Vision程序集无厂商引用。
+
+- 前者由 `DP.Vision.Acquisition.Integration.Tests` 覆盖（两个真实Provider在同一组合里按SourceId路由、互不串台、各自报告自己的规范资源键）。
+- 后者由 `DP.Vision.Acquisition.Tests` 的 `AssemblyBoundaryTests` 覆盖：公共契约程序集与组合/路由程序集都不得引用任何厂商程序集，且厂商名单是**显式清单**，新增厂商时必须补一项。
+
+**未完成的部分必须说清楚**：真实出图路径（打开设备、写曝光/增益、抓图、像素转换）没有真实 Basler 相机与 pylon 运行时验收，本仓库的自动化测试不能替代现场验收；曝光/触发精度与现场吞吐同样未验证。
 
 ### 阶段 F：RunScope与高级模式
 
@@ -633,8 +649,17 @@ DP.Vision/src/DP.Vision.Halcon/                      HALCON Provider 插件
   HalconAcquisitionProvider / HalconAcquisitionProviderModule / HalconAcquisitionDevice
   HalconAcquisitionProviderPlugin / HalconProviderConfiguration / plugin.json
 
+DP.Vision/src/DP.Vision.Basler/                      Basler pylon Provider 插件（阶段E）
+  BaslerAcquisitionProvider / BaslerAcquisitionProviderModule / BaslerAcquisitionDevice
+  BaslerAcquisitionProviderPlugin / BaslerProviderConfiguration / plugin.json
+  BaslerAcquisitionBinding（选择器语义，不引用厂商程序集）
+  BaslerPixelFormats（像素格式映射表，纯逻辑，不引用厂商程序集）
+  BaslerPylonRuntime（原生运行时部署探测）
+
 DP.Vision/tests/DP.Vision.Acquisition.Tests/         契约、边界、组合、路由、并发、插件目录
 DP.Vision/tests/DP.Vision.Halcon.Tests/              厂商边界、Manifest与私有配置校验
+DP.Vision/tests/DP.Vision.Basler.Tests/              像素映射表、绑定选择器、Manifest与私有配置校验、缺运行时诊断
+DP.Vision/tests/DP.Vision.Acquisition.Integration.Tests/  两个真实Provider并存与按SourceId路由（阶段E验收）
 ```
 
 已演进：
@@ -678,6 +703,8 @@ DP.Vision.Acquisition.Runtime不得引用Workflow
 内存和租约   DP.Vision.Acquisition.Tests / FakeProviderContractTests
 Workflow     DP.WorkFlow.Nodes.Vision.Tests / VisionAcquisitionNodeTests、WorkflowNodeOutputProjectionTests
 厂商边界     DP.Vision.Halcon.Tests / HalconBoundaryTests、HalconAcquisitionProviderPluginTests
+             DP.Vision.Basler.Tests / BaslerPixelFormatsTests、BaslerAcquisitionBindingTests、BaslerAcquisitionProviderPluginTests
+双真实Provider  DP.Vision.Acquisition.Integration.Tests / CrossVendorProviderCoexistenceTests
 ```
 
 仍未自动化、只能现场签署的项见本节末尾「现场验收」。
@@ -685,6 +712,8 @@ Workflow     DP.WorkFlow.Nodes.Vision.Tests / VisionAcquisitionNodeTests、Workf
 ### 契约与架构
 
 - 公共采集程序集不引用厂商SDK或Workflow。
+- 组合/路由程序集（`DP.Vision.Acquisition.Runtime`）同样不引用厂商SDK或Workflow。
+- 厂商程序集名单是显式清单（HalconDotNet、Basler、MvCamCtrl/MvCameraControl、Dahua、Galaxy）；新增厂商Provider时必须补一项，否则该断言失去强制力。
 - 每个Provider程序集只引用自己的SDK和中立采集契约。
 - DP.Vision全仓无Workflow反向引用。
 - Workflow Kernel全仓无Vision引用。
@@ -693,12 +722,22 @@ Workflow     DP.WorkFlow.Nodes.Vision.Tests / VisionAcquisitionNodeTests、Workf
 ### 组合
 
 - 两个不同ProviderId可同时发布。
+- 两个**真实厂商**Provider（HALCON + Basler）可同进程组合并按SourceId各自路由，互不串台。
+- Provider只打开自己私有配置里的绑定，不接受另一个厂商的绑定身份。
+- Source绑到未参与本次组合的Provider在组合阶段失败。
 - 重复ProviderId/ExtensionId拒绝。
 - Module贡献中途抛异常时正式组合不变。
 - 缺少Provider的Source绑定拒绝发布。
 - 重复SourceId拒绝。
 - 两个SourceId映射同ResourceKey时共享同一互斥状态。
 - CompositionId和Provider/Source版本清单稳定可导出。
+
+### 厂商差异（Basler 侧）
+
+- 像素格式映射表覆盖直接复制、单色族、8位彩色族与拒绝分支；高位深彩色必须被拒绝而不是降位。
+- 绑定选择器必须唯一：两个都给或都不给都拒绝。
+- 缺 pylon 运行时通过Provider级诊断暴露，而不是等到采集时抛原生异常。
+- 私有配置拒绝未知字段、缺失字段、非法类型与重复绑定身份。
 
 ### 路由
 
@@ -733,13 +772,14 @@ Workflow     DP.WorkFlow.Nodes.Vision.Tests / VisionAcquisitionNodeTests、Workf
 
 ### 现场验收（自动测试不能替代）
 
-- 各厂商SDK部署、许可证和驱动。
+- 各厂商SDK部署、许可证和驱动；Basler 侧还需部署 pylon 运行时（免费），否则Provider在首节点前即报不可用。
 - 设备枚举、序列号稳定性、断线重连。
 - 曝光/增益单位转换。
-- 软件触发/外部触发和超时。
+- 软件触发/外部触发和超时；Basler 外部触发需要现场确认触发源接线名与私有配置一致。
 - 长连接吞吐、连续运行内存和温度。
 - 多进程设备独占。
 - 停机、取消、安全互锁和应用关闭顺序。
+- 真实出图路径：Basler 的打开设备、写参数、抓图与像素转换只在装有 pylon 与相机的现场可验证。
 
 ## 16. 明确不做
 
@@ -772,12 +812,12 @@ Workflow     DP.WorkFlow.Nodes.Vision.Tests / VisionAcquisitionNodeTests、Workf
 | 条件 | 状态 |
 |---|---|
 | 1 Workflow文档只引用逻辑SourceId | **已达成** |
-| 2 至少两个Provider同进程组合，其中至少一个真实硬件Provider；最终要求两个真实Provider | **部分**：真实HALCON Provider + 内存Fake可同进程组合；第二个真实厂商Provider受外部依赖阻塞（阶段E） |
+| 2 至少两个Provider同进程组合，其中至少一个真实硬件Provider；最终要求两个真实Provider | **已达成**：真实 HALCON Provider + 真实 Basler Provider 同进程组合并按SourceId路由（`CrossVendorProviderCoexistenceTests`） |
 | 3 Provider候选失败不污染正式组合 | **已达成** |
 | 4 同物理设备并发访问有确定性策略和诊断 | **部分**：`ExclusiveOperation` 与 `Serialized` 已实现并有诊断；`ExclusiveRun`/`Broadcast` 显式拒绝，待 AR-01 阶段3 |
 | 5 Provider管理设备生命周期，Workflow只管理取得后的帧生命周期 | **已达成** |
 | 6 Kernel无Vision/厂商依赖，Provider无Workflow反向依赖 | **已达成**（有依赖边界回归用例） |
 | 7 HALCON不再由样例直接`new`成唯一Workflow采集能力 | **已达成**：示例只扫描插件目录，编译期不引用HALCON类型 |
-| 8 自动化矩阵通过，真实设备验收项单独签署 | **部分**：自动化矩阵通过（524 + 811 例）；真实设备、许可证、驱动与多进程独占仍需现场签署 |
+| 8 自动化矩阵通过，真实设备验收项单独签署 | **部分**：自动化矩阵通过（646 + 811 例）；真实设备、许可证、驱动与多进程独占仍需现场签署 |
 
-因此当前应表述为：**契约已建立、HALCON已插件化、Workflow已切换逻辑Source；第二个真实厂商Provider与RunScope高级模式未完成。**
+因此当前应表述为：**契约已建立、HALCON与Basler均已插件化、Workflow已切换逻辑Source、两个真实Provider已同进程组合；RunScope高级共享模式（阶段F）未完成，真实设备出图与现场指标未签署。**
