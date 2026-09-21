@@ -144,7 +144,14 @@ Composite、Process 节点仍引用 Runtime；应逐项判断是必要运行宿�
 
 ### 测试套件分层
 
-`tests/Workflow/DP.WorkFlow.UI.Windows.Tests` 里混着两类目标完全不同的用例，用 xUnit Trait 区分
+控件库用例有两种切法，取决于该测试项目是"整个都属于控件库"还是"混着两类目标"：
+
+| 项目 | 依赖 | 切法 |
+|---|---|---|
+| `tests/Workflow/DP.WorkFlow.UI.Windows.Tests` | 混着控件库与业务流程 | xUnit Trait 分类过滤 |
+| `tests/Platform/ScriptEngine.Windows.Tests` | 只引用 `ScriptEngine.WinForms/Wpf` | 整项目开关 |
+
+`DP.WorkFlow.UI.Windows.Tests` 里混着两类目标完全不同的用例，用 xUnit Trait 区分
 （常量见 `TestCategories.cs`）：
 
 | 类别 | 保护对象 | 何时需要跑 | 规模 |
@@ -165,3 +172,8 @@ Composite、Process 节点仍引用 Runtime；应逐项判断是必要运行宿�
 dotnet test tests/Workflow/DP.WorkFlow.UI.Windows.Tests -c Debug --filter "Category!=UiControls"   # 只跑业务/集成
 dotnet test tests/Workflow/DP.WorkFlow.UI.Windows.Tests -c Debug --filter "Category=UiControls"    # 只跑控件库
 ```
+
+> **新增测试项目时务必同步 `tools/Test-DPWorkFlow.ps1` 的清单。**
+> `ScriptEngine.Windows.Tests`（38 例）与 `ScriptEngine.Workspaces.Tests`（26 例）曾长期不在脚本清单里，
+> 因此从未被官方入口执行过——只有 `dotnet test DP.WorkFlow.sln` 会跑到它们。
+> 现在 `-Suite All` 的总数（817）与 `dotnet test DP.WorkFlow.sln` 完全一致，可据此核对清单是否漏项。

@@ -125,7 +125,7 @@ blob.Regions = new()
 
 ## 验证入口
 
-当前Workflow817项（Windows套件351项，其中控件库298项默认跳过）通过；Vision两框架各核心115、算法67、HALCON边界5及原生探针/Demo smoke通过。Workflow Debug/Release与独立WPF Debug/Release均零警告/错误，Solution43/43。包含父子定位、线圆测量、精确足迹与外部节点能力声明测试；间歇UI测试情况见[实施记录](../dp-vision-integration-plan.md)。
+当前Workflow全量817项（`-Suite All`，与`dotnet test DP.WorkFlow.sln`一致；默认`-Suite Auto`跑481项，跳过控件库298项与`ScriptEngine.Windows.Tests`38项）通过；Vision两框架各核心115、算法67、HALCON边界5及原生探针/Demo smoke通过。Workflow Debug/Release与独立WPF Debug/Release均零警告/错误，Solution43/43。包含父子定位、线圆测量、精确足迹与外部节点能力声明测试；间歇UI测试情况见[实施记录](../dp-vision-integration-plan.md)。
 
 - `LocatedCoordinateSystemTests`：正反矩阵、0/90/45度与非整数尺度、逐像素逆映射真值、孔洞、身份/模板签名、取消/越界、卡尺及直线双坐标。
 - `VisionCoordinatePipelineTests`：真实OpenCV模板匹配，参考图→平移旋转新图→未检出，三种面积算子、卡尺与拟合、JSON重跑、失败不提交、隔离编辑/确认/Undo、无效预览禁用及恢复。

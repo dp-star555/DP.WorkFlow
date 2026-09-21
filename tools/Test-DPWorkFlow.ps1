@@ -15,10 +15,11 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
-# 除控件库以外的全部测试项目。
+# 每次都跑的项目：不依赖任何控件库。
 $projects = @(
     'tests/Workflow/DP.WorkFlow.Nodes.Vision.Tests/DP.WorkFlow.Nodes.Vision.Tests.csproj',
     'tests/Platform/ScriptEngine.Tests/ScriptEngine.Tests.csproj',
+    'tests/Platform/ScriptEngine.Workspaces.Tests/ScriptEngine.Workspaces.Tests.csproj',
     'tests/Workflow/DP.WorkFlow.Core.Tests/DP.WorkFlow.Core.Tests.csproj',
     'tests/Workflow/DP.WorkFlow.Nodes.Composite.Tests/DP.WorkFlow.Nodes.Composite.Tests.csproj',
     'tests/Workflow/DP.WorkFlow.Nodes.Motion.Tests/DP.WorkFlow.Nodes.Motion.Tests.csproj',
@@ -29,6 +30,12 @@ $projects = @(
     'tests/Workflow/DP.WorkFlow.UI.Shared.Tests/DP.WorkFlow.UI.Shared.Tests.csproj'
 )
 
+# 整个项目都是控件库用例：只在控件库源码改动时跑。判定依据是它引用了 ScriptEngine.WinForms / ScriptEngine.Wpf。
+$controlLibraryProjects = @(
+    'tests/Platform/ScriptEngine.Windows.Tests/ScriptEngine.Windows.Tests.csproj'
+)
+
+# 混合项目：既含控件库用例也含业务流程用例，因此靠 xUnit 分类过滤而不是整项目开关。
 # Keep the WinForms suite in its own testhost so its module initializer can establish 96-DPI behavior tests.
 $windowsProject = 'tests/Workflow/DP.WorkFlow.UI.Windows.Tests/DP.WorkFlow.UI.Windows.Tests.csproj'
 
@@ -111,12 +118,16 @@ try {
 
     if ($Suite -eq 'UiControls') {
         # 快速回路：只跑控件库用例。
+        foreach ($project in $controlLibraryProjects) { Invoke-TestProject -Project $project -Filter $null }
         Invoke-TestProject -Project $windowsProject -Filter "Category=$uiControlsCategory"
         return
     }
 
     foreach ($project in $projects) { Invoke-TestProject -Project $project -Filter $null }
 
+    if ($runUiControls) {
+        foreach ($project in $controlLibraryProjects) { Invoke-TestProject -Project $project -Filter $null }
+    }
     $windowsFilter = if ($runUiControls) { $null } else { "Category!=$uiControlsCategory" }
     Invoke-TestProject -Project $windowsProject -Filter $windowsFilter
 }

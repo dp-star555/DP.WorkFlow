@@ -35,9 +35,10 @@ powershell -ExecutionPolicy Bypass -File tools/Test-DPWorkFlow.ps1 -Configuratio
 ```
 
 `Test-DPWorkFlow.ps1` 默认按 `-Suite Auto` 运行：现代控件库（`ModernUI.WinForms`、`ModernUI.Localization`、
-`ScriptEngine.WinForms/Wpf`）源码没改动时，跳过 298 个控件库用例，只跑 53 个业务与集成用例（约 2 秒）。
-改过控件库时自动带上它们。需要强制时用 `-Suite All`（全跑）、`-Suite Core`（永不跑控件库）、
-`-Suite UiControls`（只跑控件库，改控件时的快速回路）。
+`ScriptEngine.WinForms/Wpf`）源码没改动时跳过控件库用例，跑 481 例业务与集成用例；改过控件库时自动带上
+全部 817 例。需要强制时用 `-Suite All`（全跑，817 例）、`-Suite Core`（永不跑控件库）、
+`-Suite UiControls`（只跑控件库，改控件时的快速回路，336 例）。分层依据见
+[测试套件分层](docs/project-structure.md#测试套件分层)。
 
 ## 当前能力
 
