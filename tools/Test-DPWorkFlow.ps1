@@ -83,10 +83,18 @@ function Get-ControlLibraryTrigger {
     return $null
 }
 
+function Write-SuiteNote {
+    # Write-Host 在 PowerShell 5.1 里只写宿主、不进重定向流，因此判定依据不会落进日志。
+    # 这里同时写输出流，保证 `& script.ps1 *> log` 或 `| Out-File` 能留下可审计的判定记录。
+    param([string]$Message, [string]$Color = 'Gray')
+    Write-Host $Message -ForegroundColor $Color
+    Write-Output $Message
+}
+
 function Invoke-TestProject {
     param([string]$Project, [string]$Filter)
     $suffix = if ($Filter) { "  [$Filter]" } else { '' }
-    Write-Host "`n=== $Project$suffix ===" -ForegroundColor Cyan
+    Write-SuiteNote -Message "`n=== $Project$suffix ===" -Color Cyan
     [string[]]$testArguments = @($Project, '-c', $Configuration, '--no-build', '--nologo')
     if ($Filter) { $testArguments += @('--filter', $Filter) }
     & dotnet test @testArguments
@@ -108,10 +116,10 @@ try {
             $trigger = Get-ControlLibraryTrigger -ChangedPaths (Get-ChangedPaths)
             if ($trigger) {
                 $runUiControls = $true
-                Write-Host "`n[suite] 检测到控件库源码改动（$trigger）→ 一并运行控件库用例。" -ForegroundColor Yellow
+                Write-SuiteNote -Message "`n[suite] 检测到控件库源码改动（$trigger）→ 一并运行控件库用例。" -Color Yellow
             }
             else {
-                Write-Host "`n[suite] 控件库源码未改动（已检查工作区与 HEAD）→ 跳过控件库用例；用 -Suite All 强制全跑。" -ForegroundColor DarkGray
+                Write-SuiteNote -Message "`n[suite] 控件库源码未改动（已检查工作区与 HEAD）→ 跳过控件库用例；用 -Suite All 强制全跑。" -Color DarkGray
             }
         }
     }
