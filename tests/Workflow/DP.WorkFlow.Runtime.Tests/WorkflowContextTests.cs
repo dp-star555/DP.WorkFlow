@@ -118,7 +118,7 @@ public sealed class WorkflowContextTests
         var fault = Assert.Single(engine.RunState.Faults);
         Assert.Equal(node.Id, fault.NodeId);
         Assert.Equal("fatal", fault.Message);
-        Assert.Single(engine.GetRuntimeSnapshot().Faults!);
+        Assert.NotNull(engine.GetRuntimeSnapshot().CurrentFault);
     }
 
     [Fact]

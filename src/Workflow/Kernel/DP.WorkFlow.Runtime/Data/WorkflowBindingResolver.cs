@@ -63,6 +63,49 @@ public sealed class WorkflowBindingResolver
         return ConvertValue<T>(binding, raw);
     }
 
+    /// <summary>解析绑定并返回来源身份，供运行时记录可查询的数据血缘。</summary>
+    /// <typeparam name="T">节点输入要求的目标类型。</typeparam>
+    /// <param name="input">包含来源模式、固定值或绑定键的输入配置。</param>
+    /// <returns>解析后的值以及来源类型、来源节点和来源输出序号。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="input"/> 为空。</exception>
+    /// <exception cref="InvalidOperationException">输入配置缺少所选来源模式要求的值。</exception>
+    /// <exception cref="WorkflowBindingException">来源不可见、成员路径无效或值不能转换为 <typeparamref name="T"/>。</exception>
+    internal WorkflowInputBindingResult<T> ResolveWithSource<T>(WorkflowInput<T> input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var validationError = input.Validate();
+        if (validationError is not null)
+            throw new InvalidOperationException(validationError);
+
+        if (input.Source == WorkflowValueSource.Literal)
+        {
+            var literal = typeof(T) == typeof(object) && input.LiteralValue is JsonElement element
+                ? (T?)(object?)ConvertJsonElement(element)
+                : input.LiteralValue;
+            return new WorkflowInputBindingResult<T>(literal, "Literal", null, null);
+        }
+
+        var binding = input.Binding!.Value;
+        object? root;
+        if (binding.IsPublicData)
+        {
+            var publicDataKey = binding.PublicDataKey!;
+            if (!_context.PublicData.TryGet<object>(publicDataKey, out root))
+                throw new WorkflowBindingException(binding, $"公共数据 {publicDataKey} 不存在或尚未发布。");
+            return new WorkflowInputBindingResult<T>(
+                ConvertValue<T>(binding, ReadMemberPath(binding, root)), "PublicData", null, null);
+        }
+
+        if (!_context.TryGetVisibleNodeOutput(binding.NodeId, _consumer, out var output))
+            throw new WorkflowBindingException(binding, $"来源节点 {binding.NodeId} 在当前 Token/Scope 中没有可见输出。");
+        root = output!.Value;
+        return new WorkflowInputBindingResult<T>(
+            ConvertValue<T>(binding, ReadMemberPath(binding, root)),
+            "NodeOutput",
+            binding.NodeId,
+            output.ExecutionSequence);
+    }
+
     /// <summary>从上下文的最终 Latest 输出解析绑定；仅用于已完成子流程的显式输出映射。</summary>
     /// <typeparam name="T">输出映射要求的目标类型。</typeparam>
     /// <param name="context">已经完成子流程运行的隔离上下文。</param>
@@ -228,5 +271,48 @@ public sealed class WorkflowBindingResolver
         public static BindingPathPlan Succeeded(PropertyInfo[] properties) => new(properties, null);
 
         public static BindingPathPlan Failed(string error) => new(Array.Empty<PropertyInfo>(), error);
+    }
+}
+
+/// <summary>表示一次成功绑定解析的来源身份；仅在 Runtime 内部使用，不扩大节点处理器负担。</summary>
+/// <typeparam name="T">解析后的值类型。</typeparam>
+/// <param name="Value">解析及类型转换后的值。</param>
+/// <param name="SourceKind">来源类别：Literal、NodeOutput 或 PublicData。</param>
+/// <param name="SourceNodeId">节点输出来源的节点 ID；其他来源为空。</param>
+/// <param name="SourceOutputSequence">节点输出来源在 Run 内的输出提交序号；其他来源为空。</param>
+internal sealed record WorkflowInputBindingResult<T>(
+    T? Value,
+    string SourceKind,
+    string? SourceNodeId,
+    long? SourceOutputSequence);
+
+/// <summary>描述节点输入配置声明的来源，使解析失败时也能记录可查询的血缘。</summary>
+/// <param name="SourceKind">来源类别：Literal、NodeOutput 或 PublicData。</param>
+/// <param name="SourceNodeId">节点输出来源的节点 ID；其他来源为空。</param>
+/// <param name="PublicDataKey">公共数据来源的键；其他来源为空。</param>
+/// <param name="MemberPath">成员路径；固定值来源为空。</param>
+/// <param name="TargetType">目标输入类型的完整名称。</param>
+internal sealed record WorkflowBindingSourceDescriptor(
+    string SourceKind,
+    string? SourceNodeId,
+    string? PublicDataKey,
+    string? MemberPath,
+    string TargetType)
+{
+    /// <summary>从输入配置构造来源描述，不执行实际解析。</summary>
+    /// <typeparam name="T">目标输入类型。</typeparam>
+    /// <param name="input">节点输入配置。</param>
+    /// <returns>声明层面的来源描述。</returns>
+    internal static WorkflowBindingSourceDescriptor From<T>(WorkflowInput<T> input)
+    {
+        var targetType = typeof(T).FullName ?? typeof(T).Name;
+        if (input.Source != WorkflowValueSource.Binding || input.Binding is not { } binding)
+            return new WorkflowBindingSourceDescriptor("Literal", null, null, null, targetType);
+        return new WorkflowBindingSourceDescriptor(
+            binding.IsPublicData ? "PublicData" : "NodeOutput",
+            binding.IsPublicData ? null : binding.NodeId,
+            binding.PublicDataKey,
+            binding.MemberPath,
+            targetType);
     }
 }

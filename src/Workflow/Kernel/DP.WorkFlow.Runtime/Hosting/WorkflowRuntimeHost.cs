@@ -221,6 +221,7 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
                 new Dictionary<string, WorkflowNodeRuntimeInfo>(),
                 new Dictionary<long, WorkflowParallelScopeInfo>(),
                 new Dictionary<string, WorkflowChildRuntimeInfo>(),
+                new Dictionary<string, WorkflowChildRuntimeInfo>(),
                 Array.Empty<string>());
         }
     }

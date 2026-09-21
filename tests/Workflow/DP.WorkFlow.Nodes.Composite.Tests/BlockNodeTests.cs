@@ -36,7 +36,7 @@ public sealed class BlockNodeTests
         Assert.Equal(new[] { "Block", "ParentEnd" }, completed);
         Assert.Equal(3, invoked);
         Assert.False(context.ContainsVariable("ChildOnly"));
-        var child = Assert.Single(snapshot.ChildWorkflows.Values);
+        var child = Assert.Single(snapshot.EnumerateChildWorkflows());
         Assert.Equal(block.Id, child.ParentNodeId);
         Assert.Equal(E_WorkflowExecutionState.Completed, child.Snapshot.ExecutionState);
         Assert.NotEqual(snapshot.RunId, child.Snapshot.RunId);
@@ -64,7 +64,7 @@ public sealed class BlockNodeTests
         Assert.Equal(E_WorkflowExecutionState.Canceled, result.State);
         Assert.Empty(engine.RunState.Faults);
         Assert.Equal(E_WorkflowExecutionState.Canceled,
-            Assert.Single(engine.GetRuntimeSnapshot().ChildWorkflows.Values).Snapshot.ExecutionState);
+            Assert.Single(engine.GetRuntimeSnapshot().EnumerateChildWorkflows()).Snapshot.ExecutionState);
     }
 
     [Fact]
@@ -152,7 +152,7 @@ public sealed class BlockNodeTests
         engine.Pause();
         release.TrySetResult(true);
         await WaitUntilAsync(() =>
-            engine.GetRuntimeSnapshot().ChildWorkflows.Values
+            engine.GetRuntimeSnapshot().EnumerateChildWorkflows()
                 .Any(info => info.Snapshot.ExecutionState == E_WorkflowExecutionState.Paused));
 
         Assert.Equal(0, Volatile.Read(ref afterCount));

@@ -63,6 +63,14 @@ public interface IWorkflowNodeExecutionContext
     /// <returns>解析及类型转换后的值；可空输入允许返回 <see langword="null"/>。</returns>
     T? ResolveInput<T>(WorkflowInput<T> input);
 
+    /// <summary>解析带稳定输入名称的绑定，并记录可查询的数据血缘事件。</summary>
+    /// <typeparam name="T">节点属性要求的输入类型。</typeparam>
+    /// <param name="inputName">节点作者可见的稳定输入名称；用于关联来源身份和诊断。</param>
+    /// <param name="input">包含固定值或绑定来源的输入配置。</param>
+    /// <returns>解析及类型转换后的值；可空输入允许返回 <see langword="null"/>。</returns>
+    /// <remarks>内置节点应优先使用命名重载，以便外部分析确认消费者实际读取了哪一次来源输出。</remarks>
+    T? ResolveInput<T>(string inputName, WorkflowInput<T> input);
+
     /// <summary>触发当前工作流上下文中的一个幂等信号。</summary>
     /// <param name="signalKey">信号稳定键；同一运行中重复触发不会重复累积。</param>
     void RaiseWorkflowSignal(string signalKey);
@@ -84,6 +92,17 @@ public interface IWorkflowNodeExecutionContext
     /// <param name="message">面向使用者的可选说明。</param>
     /// <param name="data">可选结构化数据；调用方不应在提交后修改其中内容。</param>
     void Trace(string step, string? message = null, IReadOnlyDictionary<string, object?>? data = null);
+
+    /// <summary>按指定推送优先级写入与当前节点和执行身份关联的结构化跟踪记录。</summary>
+    /// <param name="step">稳定的跟踪步骤键，供监视器筛选和聚合。</param>
+    /// <param name="message">面向使用者的可选说明。</param>
+    /// <param name="data">可选结构化数据；调用方不应在提交后修改其中内容。</param>
+    /// <param name="writeMode">推送优先级；Durable 只请求立即调度，不阻塞节点执行。</param>
+    void Trace(
+        string step,
+        string? message,
+        IReadOnlyDictionary<string, object?>? data,
+        WorkflowEventWriteMode writeMode);
 }
 
 /// <summary>

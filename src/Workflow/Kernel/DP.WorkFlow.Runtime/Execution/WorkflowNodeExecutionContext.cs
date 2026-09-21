@@ -3,7 +3,8 @@ namespace DP.WorkFlow;
 internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionContext, IWorkflowChildExecutionContext
 {
     private readonly WorkflowContext _context;
-    private readonly Action<IWorkflowNodeModel, string, string?, IReadOnlyDictionary<string, object?>?> _traceWriter;
+    private readonly Action<IWorkflowNodeModel, string, string?, IReadOnlyDictionary<string, object?>?, WorkflowEventWriteMode> _traceWriter;
+    private readonly Action<WorkflowRunEventDraft, WorkflowEventWriteMode> _eventRecorder;
     private readonly Func<WorkflowExecutionPlan, WorkflowContext, CancellationToken, Task<WorkflowRunResult>> _childRunner;
     private readonly WorkflowExecutionPlan? _childDefinition;
     private readonly Dictionary<string, object> _pendingVariableWrites = new(StringComparer.Ordinal);
@@ -16,14 +17,16 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     /// <param name="node">当前节点配置。</param>
     /// <param name="executionIdentity">当前 Run、Token、Scope 和执行次数身份。</param>
     /// <param name="childDefinition">复合节点的可选编译后子定义。</param>
-    /// <param name="traceWriter">将节点自定义步骤写回父引擎的委托。</param>
+    /// <param name="traceWriter">将节点自定义步骤按推送优先级写回父引擎的委托。</param>
+    /// <param name="eventRecorder">将数据血缘等结构化事件写回父引擎的委托。</param>
     /// <param name="childRunner">在父引擎监管下启动子引擎的委托。</param>
     public WorkflowNodeExecutionContext(
         WorkflowContext context,
         IWorkflowNodeModel node,
         WorkflowExecutionIdentity executionIdentity,
         WorkflowExecutionPlan? childDefinition,
-        Action<IWorkflowNodeModel, string, string?, IReadOnlyDictionary<string, object?>?> traceWriter,
+        Action<IWorkflowNodeModel, string, string?, IReadOnlyDictionary<string, object?>?, WorkflowEventWriteMode> traceWriter,
+        Action<WorkflowRunEventDraft, WorkflowEventWriteMode> eventRecorder,
         Func<WorkflowExecutionPlan, WorkflowContext, CancellationToken, Task<WorkflowRunResult>> childRunner)
     {
         _context = context;
@@ -31,6 +34,7 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
         ExecutionIdentity = executionIdentity;
         _childDefinition = childDefinition;
         _traceWriter = traceWriter;
+        _eventRecorder = eventRecorder;
         _childRunner = childRunner;
     }
 
@@ -127,6 +131,59 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     public T? ResolveInput<T>(WorkflowInput<T> input) =>
         new WorkflowBindingResolver(_context, ExecutionIdentity).Resolve(input);
 
+    public T? ResolveInput<T>(string inputName, WorkflowInput<T> input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var descriptor = WorkflowBindingSourceDescriptor.From(input);
+        try
+        {
+            var resolution = new WorkflowBindingResolver(_context, ExecutionIdentity).ResolveWithSource(input);
+            RecordInputResolved(
+                inputName,
+                descriptor,
+                resolution.SourceNodeId,
+                resolution.SourceOutputSequence,
+                resolution.Value,
+                null);
+            return resolution.Value;
+        }
+        catch (Exception exception)
+        {
+            RecordInputResolved(inputName, descriptor, descriptor.SourceNodeId, null, null, exception.Message);
+            throw;
+        }
+    }
+
+    private void RecordInputResolved(
+        string inputName,
+        WorkflowBindingSourceDescriptor descriptor,
+        string? sourceNodeId,
+        long? sourceOutputSequence,
+        object? resolvedValue,
+        string? failure)
+    {
+        _eventRecorder(
+            new WorkflowRunEventDraft(
+                WorkflowRunEventCategory.DataFlow,
+                "InputResolved",
+                failure,
+                Node.Id,
+                Node.NodeType,
+                ExecutionIdentity,
+                Data: new Dictionary<string, object?>
+                {
+                    ["InputName"] = inputName,
+                    ["SourceKind"] = descriptor.SourceKind,
+                    ["SourceNodeId"] = sourceNodeId,
+                    ["SourceOutputSequence"] = sourceOutputSequence,
+                    ["PublicDataKey"] = descriptor.PublicDataKey,
+                    ["MemberPath"] = descriptor.MemberPath,
+                    ["TargetType"] = descriptor.TargetType,
+                    ["ResolvedValueSummary"] = resolvedValue
+                }),
+            WorkflowEventWriteMode.Buffered);
+    }
+
     public void RaiseWorkflowSignal(string signalKey) => _context.RaiseWorkflowSignal(signalKey);
 
     public bool ContainsWorkflowSignal(string signalKey) => _context.ContainsWorkflowSignal(signalKey);
@@ -135,7 +192,14 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
         _context.WaitAllWorkflowSignalsAsync(signalKeys, timeout, cancellationToken);
 
     public void Trace(string step, string? message = null, IReadOnlyDictionary<string, object?>? data = null) =>
-        _traceWriter(Node, step, message, data);
+        _traceWriter(Node, step, message, data, WorkflowEventWriteMode.Buffered);
+
+    public void Trace(
+        string step,
+        string? message,
+        IReadOnlyDictionary<string, object?>? data,
+        WorkflowEventWriteMode writeMode) =>
+        _traceWriter(Node, step, message, data, writeMode);
 
     public WorkflowExecutionPlan GetChildWorkflowExecutionPlan() =>
         _childDefinition ?? throw new InvalidOperationException($"节点 {Node.Id} 没有编译后的子流程定义。");
@@ -150,6 +214,9 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
 
     internal IReadOnlyList<string> ChangedVariableKeys =>
         _pendingVariableWrites.Keys.Concat(_pendingVariableRemovals).Distinct(StringComparer.Ordinal).ToArray();
+
+    internal IReadOnlyList<string> ChangedPublicDataKeys =>
+        _pendingPublicDataWrites.Keys.Concat(_pendingPublicDataRemovals).Distinct(StringComparer.Ordinal).ToArray();
 
     /// <summary>Publishes local-variable and public-data changes staged by a successfully completed node.</summary>
     internal void CommitDataChanges()

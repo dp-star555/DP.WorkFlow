@@ -192,10 +192,42 @@ public sealed partial class WorkflowEngine
 
     private void RecordRecovery(WorkflowFaultRecoveryRequest request, string stage, string? message)
     {
-        RunState.RecordRecovery(new WorkflowRecoveryEvent(request.CaseId, request.FaultNodeId,
-            request.Attempt, stage, message, request.OperationId, DateTimeOffset.UtcNow));
-        WriteTrace(_plan.GetNodeOrThrow(request.FaultNodeId), request.ExecutionIdentity!,
-            "Recovery" + stage, message, new Dictionary<string, object?> { ["CaseId"] = request.CaseId, ["OperationId"] = request.OperationId });
+        var recovery = new WorkflowRecoveryEvent(request.CaseId, request.FaultNodeId,
+            request.Attempt, stage, message, request.OperationId, DateTimeOffset.UtcNow);
+        RunState.RecordRecovery(recovery);
+        var node = _plan.GetNodeOrThrow(request.FaultNodeId);
+        string eventType;
+        lock (_stateSync)
+        {
+            _currentRecovery = recovery;
+            // 同一 CaseId 的首次 Waiting 代表恢复会话开始，后续 Waiting 代表一次新的裁决。
+            eventType = stage == "Waiting"
+                ? (_startedRecoveryCases.Add(request.CaseId) ? "RecoveryStarted" : "RecoveryDecision")
+                : stage switch
+                {
+                    "Applied" => "RecoveryApplied",
+                    "Stopped" => "RecoveryStopped",
+                    "Rejected" => "RecoveryRejected",
+                    _ => "RecoveryDecision"
+                };
+        }
+        RecordRunEvent(
+            new WorkflowRunEventDraft(
+                WorkflowRunEventCategory.Recovery,
+                eventType,
+                message,
+                node.Id,
+                node.NodeType,
+                request.ExecutionIdentity,
+                request.OperationId,
+                request.CaseId,
+                new Dictionary<string, object?>
+                {
+                    ["Stage"] = stage,
+                    ["Attempt"] = request.Attempt,
+                    ["FaultNodeId"] = request.FaultNodeId
+                }),
+            WorkflowEventWriteMode.Durable);
         PublishSnapshot();
     }
 
@@ -208,8 +240,20 @@ public sealed partial class WorkflowEngine
             catch (Exception failure)
             {
                 var identity = new WorkflowExecutionIdentity(_runId, pair.Key.TokenId, Array.Empty<long>(), Array.Empty<long>(), 0);
-                RunState.RecordFault(new WorkflowNodeFault(pair.Key.NodeId, identity,
-                    "操作清理失败：" + failure.Message, 0, failure.GetType().FullName, DateTimeOffset.UtcNow));
+                var fault = new WorkflowNodeFault(pair.Key.NodeId, identity,
+                    "操作清理失败：" + failure.Message, 0, failure.GetType().FullName, DateTimeOffset.UtcNow);
+                RunState.RecordFault(fault);
+                lock (_stateSync)
+                    _currentFault = fault;
+                RecordRunEvent(
+                    new WorkflowRunEventDraft(
+                        WorkflowRunEventCategory.Fault,
+                        "OperationCleanupFailed",
+                        fault.Message,
+                        pair.Key.NodeId,
+                        ExecutionIdentity: identity,
+                        Data: new Dictionary<string, object?> { ["ExceptionType"] = fault.ExceptionType }),
+                    WorkflowEventWriteMode.Durable);
             }
         }
     }

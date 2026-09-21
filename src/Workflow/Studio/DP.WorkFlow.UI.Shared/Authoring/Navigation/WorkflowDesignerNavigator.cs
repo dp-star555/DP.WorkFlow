@@ -94,7 +94,7 @@ public sealed class WorkflowDesignerNavigator
         for (var index = 1; index < _frames.Count; index++)
         {
             var parentNodeId = _frames[index].ParentNodeId;
-            current = current?.ChildWorkflows.Values
+            current = current?.EnumerateChildWorkflows()
                 .Where(info => info.ParentNodeId == parentNodeId)
                 .OrderByDescending(info => info.Snapshot.Sequence)
                 .Select(info => info.Snapshot)

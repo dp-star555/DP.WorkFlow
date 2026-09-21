@@ -64,7 +64,7 @@ public sealed record WorkflowChildRuntimeInfo(
 /// <param name="MergeNodeId">所有分支等待到达的共同汇聚节点 ID。</param>
 /// <param name="TotalBranches">本次派发创建的分支总数。</param>
 /// <param name="CompletedBranches">已经到达汇聚点的分支数。</param>
-/// <param name="IsCompleted">所有分支完成且输出已可向父 Token 暴露时为真。</param>
+/// <param name="IsCompleted">所有分支完成且输出已可向父 Token 暴露时为真；实时集合只保留未完成作用域。</param>
 public sealed record WorkflowParallelScopeInfo(
     long RuntimeScopeId,
     string ScopeNodeId,
@@ -86,12 +86,17 @@ public sealed record WorkflowParallelScopeInfo(
 /// <param name="ActiveTokens">按 Token ID 索引的活动执行路径。</param>
 /// <param name="TotalElapsed">本轮运行截至快照时刻的总耗时。</param>
 /// <param name="Nodes">按节点 ID 索引的最近一次执行状态。</param>
-/// <param name="ParallelScopes">按运行时 Scope ID 索引的并行进度。</param>
-/// <param name="ChildWorkflows">按父节点执行实例键索引的子流程快照。</param>
+/// <param name="ParallelScopes">按运行时 Scope ID 索引的并行进度；已完成作用域不再保留。</param>
+/// <param name="ActiveChildWorkflows">按父节点执行实例键索引的活动子流程快照。</param>
+/// <param name="LatestChildWorkflowByParentNode">每个父节点最近一次完成的子流程快照。</param>
 /// <param name="ExternalHoldReasons">当前阻止继续调度的外部条件快照。</param>
 /// <param name="Message">触发本快照的可选状态消息。</param>
-/// <param name="Faults">本轮运行截至当前快照已经发生的节点故障事实。</param>
-/// <param name="NodeOutputs">本轮运行截至当前快照已经成功提交的节点输出。</param>
+/// <param name="CurrentFault">当前需要关注的最近一次节点故障；完整故障历史只存在于运行事件中。</param>
+/// <param name="CurrentRecovery">当前需要关注的最近一次恢复处理进展；完整历史只存在于运行事件中。</param>
+/// <remarks>
+/// 快照只表达当前可观察状态，不携带随运行时间增长的输出、故障、恢复或 Trace 历史，
+/// 因此单次快照的复制量只随静态节点数、当前并行度和当前活动子流程数变化。
+/// </remarks>
 public sealed record WorkflowRuntimeSnapshot(
     Guid RunId,
     long Sequence,
@@ -104,11 +109,30 @@ public sealed record WorkflowRuntimeSnapshot(
     TimeSpan TotalElapsed,
     IReadOnlyDictionary<string, WorkflowNodeRuntimeInfo> Nodes,
     IReadOnlyDictionary<long, WorkflowParallelScopeInfo> ParallelScopes,
-    IReadOnlyDictionary<string, WorkflowChildRuntimeInfo> ChildWorkflows,
+    IReadOnlyDictionary<string, WorkflowChildRuntimeInfo> ActiveChildWorkflows,
+    IReadOnlyDictionary<string, WorkflowChildRuntimeInfo> LatestChildWorkflowByParentNode,
     IReadOnlyCollection<string> ExternalHoldReasons,
     string? Message = null,
-    IReadOnlyList<WorkflowNodeFault>? Faults = null,
-    IReadOnlyList<WorkflowNodeOutput>? NodeOutputs = null);
+    WorkflowNodeFault? CurrentFault = null,
+    WorkflowRecoveryEvent? CurrentRecovery = null)
+{
+    /// <summary>按“当前活动优先，其次每个父节点最近一次完成”的顺序枚举子流程状态。</summary>
+    /// <returns>活动子流程，以及对没有活动子流程的父节点保留的最近一次完成状态。</returns>
+    public IEnumerable<WorkflowChildRuntimeInfo> EnumerateChildWorkflows()
+    {
+        var activeParents = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var child in ActiveChildWorkflows.Values.OrderByDescending(info => info.Snapshot.Sequence))
+        {
+            activeParents.Add(child.ParentNodeId);
+            yield return child;
+        }
+        foreach (var pair in LatestChildWorkflowByParentNode.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            if (!activeParents.Contains(pair.Key))
+                yield return pair.Value;
+        }
+    }
+}
 
 /// <summary>表示内存中当前保留的不可变节点 Trace 批次。</summary>
 /// <param name="RunId">这些条目所属的运行 ID。</param>

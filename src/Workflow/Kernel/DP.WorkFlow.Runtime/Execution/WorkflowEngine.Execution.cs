@@ -88,7 +88,7 @@ public sealed partial class WorkflowEngine
             loopIteration);
         MarkNodeStarted(node, identity);
         SafeInvoke(NodeStarted, node);
-        WriteTrace(node, identity, "NodeStarted", "节点开始执行。", null);
+        RecordRunEvent(WorkflowRunEventDraft.Node("NodeStarted", node, identity, "节点开始执行。"));
         BeginNodeTiming(node.Id);
         var commitStarted = false;
         try
@@ -100,7 +100,8 @@ public sealed partial class WorkflowEngine
                 node,
                 identity,
                 _plan.ChildPlans.TryGetValue(node.Id, out var childDefinition) ? childDefinition : null,
-                (traceNode, step, message, data) => WriteTrace(traceNode, identity, step, message, data),
+                (traceNode, step, message, data, writeMode) => WriteTrace(traceNode, identity, step, message, data, writeMode),
+                (draft, writeMode) => RecordRunEvent(draft, writeMode),
                 (plan, childContext, childCancellation) =>
                     RunChildWorkflowAsync(node, identity, plan, childContext, childCancellation));
             var operationKey = (token.TokenId, node.Id);
@@ -138,7 +139,9 @@ public sealed partial class WorkflowEngine
                 await completedOperation.Instance.DisposeAsync().ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             executionContext.CommitDataChanges();
+            RecordDataChangesCommitted(node, identity, executionContext);
             var committedOutput = Context.SetNodeOutput(node.Id, identity, result.Output);
+            RecordOutputCommitted(node, identity, committedOutput);
             // 输出已正式写入运行状态，此时才发布派生投影（例如Vision预览）；
             // 取消、失败或提交失败的执行不会走到这里，界面因此看不到未被调度承认的结果。
             result.Projection?.Commit(committedOutput.ExecutionSequence);
@@ -156,12 +159,22 @@ public sealed partial class WorkflowEngine
             }
             MarkNodeFinished(node.Id, token.TokenId, E_NodeState.Completed, null);
             SafeInvoke(NodeCompleted, node);
-            WriteTrace(node, identity, "NodeCompleted", "节点执行完成。", null);
+            RecordRunEvent(WorkflowRunEventDraft.Node(
+                "NodeCompleted",
+                node,
+                identity,
+                "节点执行完成。",
+                new Dictionary<string, object?>
+                {
+                    ["Elapsed"] = GetNodeElapsed(node.Id).TotalMilliseconds,
+                    ["SelectedPort"] = result.SelectedPortKey ?? WorkflowPorts.Success
+                }));
             return result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             MarkNodeFinished(node.Id, token.TokenId, E_NodeState.Canceled, "节点执行已取消。");
+            RecordRunEvent(WorkflowRunEventDraft.Node("NodeCanceled", node, identity, "节点执行已取消。"));
             throw;
         }
         catch (Exception exception)
@@ -172,17 +185,81 @@ public sealed partial class WorkflowEngine
             pathException.IsNodeFault = true;
             pathException.CommitStarted = commitStarted;
             var faultIdentity = pathException.ExecutionIdentity ?? identity;
-            RunState.RecordFault(new WorkflowNodeFault(
+            var fault = new WorkflowNodeFault(
                 node.Id,
                 faultIdentity,
                 pathException.Message,
                 pathException.InterruptAlarmCode,
                 (exception.InnerException ?? exception).GetType().FullName,
-                DateTimeOffset.UtcNow));
+                DateTimeOffset.UtcNow);
+            RunState.RecordFault(fault);
+            lock (_stateSync)
+                _currentFault = fault;
             MarkNodeFinished(node.Id, token.TokenId, E_NodeState.Failed, pathException.Message);
-            WriteTrace(node, faultIdentity, "NodeFailed", pathException.Message, null);
+            RecordRunEvent(WorkflowRunEventDraft.Fault(
+                "NodeFailed",
+                node,
+                faultIdentity,
+                pathException.Message,
+                data: new Dictionary<string, object?>
+                {
+                    ["ExceptionType"] = fault.ExceptionType,
+                    ["InterruptAlarmCode"] = fault.InterruptAlarmCode,
+                    ["CommitStarted"] = commitStarted
+                }));
             throw pathException;
         }
+    }
+
+    private TimeSpan GetNodeElapsed(string nodeId)
+    {
+        lock (_stateSync)
+            return _nodeRuntime.TryGetValue(nodeId, out var info) ? info.Elapsed : TimeSpan.Zero;
+    }
+
+    private void RecordDataChangesCommitted(
+        IWorkflowNodeModel node,
+        WorkflowExecutionIdentity identity,
+        WorkflowNodeExecutionContext executionContext)
+    {
+        var variableKeys = executionContext.ChangedVariableKeys;
+        if (variableKeys.Count > 0)
+            RecordRunEvent(new WorkflowRunEventDraft(
+                WorkflowRunEventCategory.DataFlow,
+                "VariableChangesCommitted",
+                NodeId: node.Id,
+                NodeType: node.NodeType,
+                ExecutionIdentity: identity,
+                Data: new Dictionary<string, object?> { ["Keys"] = variableKeys }));
+        var publicDataKeys = executionContext.ChangedPublicDataKeys;
+        if (publicDataKeys.Count > 0)
+            RecordRunEvent(new WorkflowRunEventDraft(
+                WorkflowRunEventCategory.DataFlow,
+                "PublicDataChangesCommitted",
+                NodeId: node.Id,
+                NodeType: node.NodeType,
+                ExecutionIdentity: identity,
+                Data: new Dictionary<string, object?> { ["Keys"] = publicDataKeys }));
+    }
+
+    private void RecordOutputCommitted(
+        IWorkflowNodeModel node,
+        WorkflowExecutionIdentity identity,
+        WorkflowNodeOutput output)
+    {
+        // 只记录正式提交的输出身份和摘要；图像和二进制由编码器转换为引用，不写入完整内容。
+        RecordRunEvent(new WorkflowRunEventDraft(
+            WorkflowRunEventCategory.DataFlow,
+            "OutputCommitted",
+            NodeId: node.Id,
+            NodeType: node.NodeType,
+            ExecutionIdentity: identity,
+            Data: new Dictionary<string, object?>
+            {
+                ["OutputExecutionSequence"] = output.ExecutionSequence,
+                ["OutputType"] = output.Value?.GetType().FullName,
+                ["ValueSummary"] = output.Value
+            }));
     }
 
     private int GetNextNodeExecutionCount(string nodeId)

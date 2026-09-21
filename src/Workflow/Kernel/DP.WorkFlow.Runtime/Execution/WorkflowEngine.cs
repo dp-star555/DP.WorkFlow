@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 
 namespace DP.WorkFlow;
@@ -21,11 +20,18 @@ public sealed partial class WorkflowEngine
     private readonly Dictionary<string, int> _nodeExecutionCounts = new(StringComparer.Ordinal);
     private readonly Dictionary<long, MutableParallelScopeInfo> _parallelScopes = new();
     private readonly Dictionary<string, WorkflowEngine> _activeChildEngines = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, WorkflowChildRuntimeInfo> _childWorkflows = new(StringComparer.Ordinal);
-    private readonly ConcurrentQueue<WorkflowTraceEntry> _traceEntries = new();
+    private readonly Dictionary<string, WorkflowChildRuntimeInfo> _activeChildWorkflows = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, WorkflowChildRuntimeInfo> _latestChildWorkflowByParentNode = new(StringComparer.Ordinal);
+    private readonly HashSet<Guid> _startedRecoveryCases = new();
+    private volatile IWorkflowRunRecorder? _recorder;
     private Stopwatch? _runStopwatch;
     private Guid _runId;
+    private Guid? _parentRunId;
+    private WorkflowExecutionIdentity? _parentExecution;
     private string? _currentNodeId;
+    private string? _terminalMessage;
+    private WorkflowNodeFault? _currentFault;
+    private WorkflowRecoveryEvent? _currentRecovery;
     private bool _manualPauseRequested;
     private int _isRunning;
     private int _totalNodeExecutions;
@@ -33,7 +39,6 @@ public sealed partial class WorkflowEngine
     private long _nodeExecutionSequence;
     private long _tokenSequence;
     private long _snapshotSequence;
-    private long _traceSequence;
     private E_WorkflowExecutionState _state = E_WorkflowExecutionState.Idle;
 
     /// <summary>获取当前或最近一次运行的独立状态模型。</summary>
@@ -110,4 +115,19 @@ public sealed partial class WorkflowEngine
 
     /// <summary>运行快照变化时发生。</summary>
     public event Action<WorkflowRuntimeSnapshot>? SnapshotChanged;
+
+    /// <summary>记录链路健康状态变化时发生；记录失败不影响工作流运行结果。</summary>
+    public event Action<WorkflowRecordingHealth>? RecordingHealthChanged;
+
+    /// <summary>获取当前运行的事件记录健康状态；未启动运行时为初始健康状态。</summary>
+    public WorkflowRecordingHealth RecordingHealth => _recorder?.Health ?? WorkflowRecordingHealth.Initial;
+
+    /// <summary>由父引擎在启动子运行前注入父 Run 身份，使子事件记录父子血缘。</summary>
+    /// <param name="parentRunId">父运行身份。</param>
+    /// <param name="parentExecution">触发子运行的父节点执行身份。</param>
+    internal void SetParentContext(Guid parentRunId, WorkflowExecutionIdentity parentExecution)
+    {
+        _parentRunId = parentRunId;
+        _parentExecution = parentExecution;
+    }
 }

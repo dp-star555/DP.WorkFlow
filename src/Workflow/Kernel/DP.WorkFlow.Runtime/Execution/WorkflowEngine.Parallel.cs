@@ -72,7 +72,7 @@ public sealed partial class WorkflowEngine
         }
 
         lock (_stateSync)
-            _parallelScopes[runtimeScopeId].IsCompleted = true;
+            _parallelScopes.Remove(runtimeScopeId);
         Context.CompleteParallelScope(runtimeScopeId);
         var parentIdentity = new WorkflowExecutionIdentity(
             _runId,
@@ -80,6 +80,7 @@ public sealed partial class WorkflowEngine
             parentToken.AncestorTokenIds,
             parentToken.ScopeIds,
             0);
+        // 已完成作用域不再留在实时集合；合并事实只进入事件流，避免循环中无限累计。
         WriteTrace(scopeNode, parentIdentity, "ParallelMerged", $"{plan.BranchEntryNodeIds.Count} 个分支全部到达汇聚节点 {plan.MergeNodeId}。", null);
         PublishSnapshot();
     }

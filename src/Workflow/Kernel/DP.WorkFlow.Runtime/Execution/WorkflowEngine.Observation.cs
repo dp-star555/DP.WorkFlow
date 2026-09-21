@@ -7,7 +7,7 @@ public sealed partial class WorkflowEngine
 {
     /// <summary>获取当前运行状态的深层集合快照。</summary>
     /// <param name="message">可选的快照触发原因或终态说明。</param>
-    /// <returns>包含活动 Token、节点最近状态、并行进度和子流程状态的不可变快照。</returns>
+    /// <returns>包含活动 Token、节点最近状态、并行进度和子流程状态的不可变快照；不携带随运行增长的历史。</returns>
     public WorkflowRuntimeSnapshot GetRuntimeSnapshot(string? message = null)
     {
         WorkflowRuntimeSnapshot snapshot;
@@ -23,8 +23,10 @@ public sealed partial class WorkflowEngine
                 _parallelScopes.ToDictionary(pair => pair.Key, pair => pair.Value.ToSnapshot()));
             var tokens = new ReadOnlyDictionary<long, WorkflowActiveTokenInfo>(
                 _activeTokens.ToDictionary(pair => pair.Key, pair => pair.Value));
-            var children = new ReadOnlyDictionary<string, WorkflowChildRuntimeInfo>(
-                _childWorkflows.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
+            var activeChildren = new ReadOnlyDictionary<string, WorkflowChildRuntimeInfo>(
+                _activeChildWorkflows.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
+            var latestChildren = new ReadOnlyDictionary<string, WorkflowChildRuntimeInfo>(
+                _latestChildWorkflowByParentNode.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
             snapshot = new WorkflowRuntimeSnapshot(
                 _runId,
                 Interlocked.Increment(ref _snapshotSequence),
@@ -37,25 +39,57 @@ public sealed partial class WorkflowEngine
                 _runStopwatch?.Elapsed ?? TimeSpan.Zero,
                 nodes,
                 scopes,
-                children,
+                activeChildren,
+                latestChildren,
                 Array.AsReadOnly(_externalHoldReasons.ToArray()),
                 message,
-                RunState.Faults,
-                RunState.NodeOutputs);
+                _currentFault,
+                _currentRecovery);
         }
         RunState.Publish(snapshot);
         return snapshot;
     }
 
     /// <summary>获取内存中当前保留的不可变 Trace 批次。</summary>
-    /// <returns>受 <see cref="WorkflowExecutionOptions.MaxTraceEntries"/> 限制的最近条目及最后序号。</returns>
+    /// <returns>来自 Recorder 最近事件窗口、按事件序号升序排列的条目及最后序号。</returns>
     public WorkflowTraceBatch GetTraceBatch()
     {
-        var entries = _traceEntries.ToArray();
-        return new WorkflowTraceBatch(
-            _runId,
-            entries.LastOrDefault()?.Sequence ?? 0,
-            Array.AsReadOnly(entries));
+        var batch = _recorder?.GetRecent();
+        if (batch is null)
+            return new WorkflowTraceBatch(_runId, 0, Array.Empty<WorkflowTraceEntry>());
+        var entries = batch.Events.Select(ToTraceEntry).ToArray();
+        return new WorkflowTraceBatch(_runId, entries.Length == 0 ? 0 : entries[^1].Sequence, Array.AsReadOnly(entries));
+    }
+
+    private static WorkflowTraceEntry ToTraceEntry(WorkflowRunEvent @event)
+    {
+        string? message = null;
+        IReadOnlyDictionary<string, object?>? data = null;
+        if (@event.Data is { Count: > 0 })
+        {
+            var restored = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var pair in @event.Data)
+            {
+                if (string.Equals(pair.Key, "Message", StringComparison.Ordinal))
+                {
+                    message = pair.Value.Text;
+                    continue;
+                }
+                restored[pair.Key] = pair.Value.ToObject();
+            }
+            if (restored.Count > 0)
+                data = new ReadOnlyDictionary<string, object?>(restored);
+        }
+        return new WorkflowTraceEntry(
+            @event.Sequence,
+            @event.Timestamp,
+            @event.NodeId ?? string.Empty,
+            @event.NodeType ?? string.Empty,
+            @event.EventType,
+            message,
+            data,
+            @event.ExecutionIdentity?.TokenId ?? 0,
+            Array.AsReadOnly(@event.ExecutionIdentity?.ScopeIds.ToArray() ?? Array.Empty<long>()));
     }
 
     private void MarkNodeStarted(IWorkflowNodeModel node, WorkflowExecutionIdentity identity)
@@ -117,15 +151,21 @@ public sealed partial class WorkflowEngine
     private void PublishSnapshot(string? message = null) =>
         SafeInvoke(SnapshotChanged, GetRuntimeSnapshot(message));
 
+    /// <summary>向 Recorder 提交一条事件草稿；未配置记录器时静默忽略，绝不改变运行结果。</summary>
+    private void RecordRunEvent(WorkflowRunEventDraft draft, WorkflowEventWriteMode writeMode = WorkflowEventWriteMode.Buffered) =>
+        _recorder?.Record(draft, writeMode);
+
     private void WriteTrace(
         IWorkflowNodeModel node,
         WorkflowExecutionIdentity identity,
         string step,
         string? message,
-        IReadOnlyDictionary<string, object?>? data)
+        IReadOnlyDictionary<string, object?>? data,
+        WorkflowEventWriteMode writeMode = WorkflowEventWriteMode.Buffered)
     {
-        var entry = new WorkflowTraceEntry(
-            Interlocked.Increment(ref _traceSequence),
+        var receipt = _recorder?.Record(WorkflowRunEventDraft.Trace(step, node, identity, message, data), writeMode);
+        SafeInvoke(NodeTrace, new WorkflowTraceEntry(
+            receipt?.Sequence ?? 0,
             DateTimeOffset.UtcNow,
             node.Id,
             node.NodeType,
@@ -136,11 +176,7 @@ public sealed partial class WorkflowEngine
                 : new ReadOnlyDictionary<string, object?>(
                     new Dictionary<string, object?>(data, StringComparer.Ordinal)),
             identity.TokenId,
-            Array.AsReadOnly(identity.ScopeIds.ToArray()));
-        _traceEntries.Enqueue(entry);
-        while (_traceEntries.Count > _options.MaxTraceEntries)
-            _traceEntries.TryDequeue(out _);
-        SafeInvoke(NodeTrace, entry);
+            Array.AsReadOnly(identity.ScopeIds.ToArray())));
     }
 
     private static void SafeInvoke<T>(Action<T>? handlers, T argument)

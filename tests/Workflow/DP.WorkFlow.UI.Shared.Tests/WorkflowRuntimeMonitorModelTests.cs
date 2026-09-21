@@ -30,6 +30,7 @@ public sealed class WorkflowRuntimeMonitorModelTests
                 [9] = new(9, "Parallel", "Merge", 2, 1, false)
             },
             new Dictionary<string, WorkflowChildRuntimeInfo>(),
+            new Dictionary<string, WorkflowChildRuntimeInfo>(),
             Array.Empty<string>());
         var model = new WorkflowRuntimeMonitorModel();
 

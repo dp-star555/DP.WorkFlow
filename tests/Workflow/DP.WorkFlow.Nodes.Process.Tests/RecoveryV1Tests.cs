@@ -23,7 +23,7 @@ public sealed class RecoveryV1Tests
         Assert.Equal(1, rig.Operator.ChoiceCalls);
         Assert.Equal(creations - 1, rig.Operator.ConfirmCalls);
         Assert.NotEmpty(rig.Engine.RunState.RecoveryEvents);
-        Assert.Contains(rig.Engine.GetRuntimeSnapshot().ChildWorkflows.Values,
+        Assert.Contains(rig.Engine.GetRuntimeSnapshot().EnumerateChildWorkflows(),
             child => child.Snapshot.ExecutionState == E_WorkflowExecutionState.Completed);
         if (creations == 2)
         {

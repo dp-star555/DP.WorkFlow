@@ -52,9 +52,8 @@ public sealed class ParallelWorkflowTests
         Assert.Equal(2, branchOutputs.Select(output => output.TokenId).Distinct().Count());
         Assert.All(branchOutputs, output => Assert.Single(output.ScopeIds));
         Assert.Equal(1, afterMergeCount);
-        var scope = Assert.Single(finalSnapshot.ParallelScopes.Values);
-        Assert.True(scope.IsCompleted);
-        Assert.Equal(2, scope.CompletedBranches);
+        // 已完成作用域在 ParallelMerged 后从实时集合移除，避免循环中无限累计。
+        Assert.Empty(finalSnapshot.ParallelScopes);
         Assert.Equal(E_NodeState.Completed, finalSnapshot.Nodes["Merge"].State);
     }
 
@@ -183,8 +182,8 @@ public sealed class ParallelWorkflowTests
 
         Assert.True(result.Success, result.Message);
         Assert.Equal(3, executed.Count);
-        Assert.Equal(2, snapshot.ParallelScopes.Count);
-        Assert.All(snapshot.ParallelScopes.Values, scope => Assert.True(scope.IsCompleted));
+        // 嵌套并行全部合并后，两层作用域都不再保留在实时集合中。
+        Assert.Empty(snapshot.ParallelScopes);
     }
 
     [Fact]

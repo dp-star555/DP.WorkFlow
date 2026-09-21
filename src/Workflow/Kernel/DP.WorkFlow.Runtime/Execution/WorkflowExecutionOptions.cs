@@ -23,13 +23,18 @@ public sealed class WorkflowExecutionOptions
     /// <summary>当前引擎的联合准备屏障；处置子引擎不得继承此屏障。</summary>
     public IWorkflowRecoveryBarrier? RecoveryBarrier { get; set; }
 
-    /// <summary>获取或设置内存中保留的最近 Trace 条数。</summary>
+    /// <summary>获取或设置内存中保留的最近运行事件条数；它同时是 UI 最近 Trace 窗口的上限。</summary>
     public int MaxTraceEntries { get; set; } = 2_000;
 
+    /// <summary>获取或设置运行事件记录的有界容量、批量策略和顶层 Sink。</summary>
+    public WorkflowRunRecordingOptions Recording { get; set; } = new();
+
     /// <summary>验证所有安全上限可用于启动引擎。</summary>
-    /// <exception cref="ArgumentOutOfRangeException">执行次数或 Trace 容量非正，或恢复次数为负。</exception>
+    /// <exception cref="ArgumentOutOfRangeException">执行次数、Trace 容量或记录容量非正，或恢复次数为负。</exception>
     internal void Validate()
     {
+        ArgumentNullException.ThrowIfNull(Recording);
+        Recording.Validate();
         if (MaxTotalNodeExecutions <= 0)
             throw new ArgumentOutOfRangeException(nameof(MaxTotalNodeExecutions));
         if (MaxNodeExecutions <= 0)

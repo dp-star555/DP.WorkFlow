@@ -1,6 +1,20 @@
 # DP.WorkFlow 重构进度
 
-## 当前：联合恢复协议与处置步骤原操作继续
+## 当前：运行记录与实时快照（V2-10 服务端收口）
+
+按[运行记录设计](workflow-run-recording-design.md)完成阶段 A–D 与阶段 E 的 Runtime 侧交付，实现"实时快照是当前仪表盘、运行事件是执行行车记录"的职责分离。
+
+快照收口：`WorkflowRuntimeSnapshot` 删除完整 `Faults`/`NodeOutputs`，改为 `CurrentFault`/`CurrentRecovery`；子流程状态拆为 `ActiveChildWorkflows` + `LatestChildWorkflowByParentNode`，完成后每个父节点只保留最近一次快照；已完成 ParallelScope 与已完成子流程不再永久留在实时集合。绑定与恢复语义未改变。
+
+记录链路：新增 `IWorkflowRunRecorder`/`IWorkflowRunEventSink`、`WorkflowRunEvent` 系列类型、`WorkflowTracePayloadEncoder` 和 `WorkflowRunRecordingOptions`。引擎统一分配 Run 内序号，接入 Run/Node/Fault/Recovery 事件，原 Trace 最近窗口迁移到 Recorder；新增命名输入解析重载记录 `InputResolved`、`OutputCommitted` 及变量和公共数据提交摘要。Runtime 只向顶层注入的 Sink 推送，不预先绑定 SQL/SQLite/文件；查询、清理与保留策略由顶层 Adapter 负责。
+
+记录完全 fail-open：`RunStarted`、Durable 推送和 Flush 失败都不改变节点调度与 Run 终态，只更新 `RecordingHealth`、失败计数并通知宿主。有界内存窗口与待推送队列始终淘汰最老数据，不因旧记录保护期拒绝最新记录，更不阻塞流程。**现实取舍：因为记录不能阻塞运行，Runtime 无法保证闪退前最后几条事件一定已落盘，崩溃持久性取决于顶层 Sink 的实现和实际确认进度。**
+
+验收：新增 `WorkflowRunRecorderTests`（序号单调、有界窗口/队列、Durable 立即调度、非阻塞、健康状态与通知、收尾 Flush）、`WorkflowTracePayloadEncoderTests`（摘要/引用编码、截断标记、敏感脱敏、编码失败吸收）和 `WorkflowRunRecordingEventTests`（生命周期与单调序号、并行 Token/Scope、循环 ExecutionCount/LoopIteration、`InputResolved.SourceOutputSequence`、失败不产生 `OutputCommitted`、快照不随历史增长）。全量构建 0 警告 0 错误，除预先存在的 WPF 动画/DPI 偶发失败外全部通过。
+
+**边界：**阶段 D 只新增命名重载与 `ResolveWithSource`，内置节点仍用旧 `ResolveInput<T>(WorkflowInput<T>)`，完整输入血缘迁移需单独安排；阶段 F（Studio 实时覆盖层与分页 Reader、按节点/类型/Case 查询）与顶层保存 Adapter 未在本次实现；§20 的 100,000 次循环基准与 Adapter 子进程崩溃持久性测试属于基准/Adapter 侧验证。
+
+## 前轮：联合恢复协议与处置步骤原操作继续
 
 已实现[联合恢复SDK](nodes/joint-recovery.md)：按工艺角色注册独立的串行运行，统一阻断和设备退出核实，仅运行一次工艺处置；本地命名入口验证、操作清理和数据准备全部完成后，再次核实共同条件并授权。只等待的角色可保留原路径；原有Pause及独立Hold不被解除。角色句柄只提供监控与阻断，不暴露单独启动或跨流程跳转。
 

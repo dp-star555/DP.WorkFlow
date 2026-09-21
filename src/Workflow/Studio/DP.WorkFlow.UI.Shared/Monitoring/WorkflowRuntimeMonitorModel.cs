@@ -157,7 +157,7 @@ public sealed class WorkflowRuntimeMonitorModel
                 node.Elapsed.TotalMilliseconds / Math.Max(1, node.ExecutionCount),
                 node.State))
             .ToArray() ?? Array.Empty<WorkflowNodeTimingTrendItem>();
-        ChildWorkflows = snapshot?.ChildWorkflows.Values
+        ChildWorkflows = snapshot?.EnumerateChildWorkflows()
             .OrderBy(child => child.ParentNodeId, StringComparer.Ordinal)
             .ThenBy(child => child.Snapshot.RunId)
             .Select(child => new WorkflowChildMonitorItem(

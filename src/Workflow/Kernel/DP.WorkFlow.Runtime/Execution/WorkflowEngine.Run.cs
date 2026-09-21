@@ -61,15 +61,60 @@ public sealed partial class WorkflowEngine
             await DisposePendingOperationsAsync().ConfigureAwait(false);
             _recoveryEntries.Clear();
             _committedVariableKeys.Clear();
+            E_WorkflowExecutionState terminalState;
+            string? terminalMessage;
             lock (_stateSync)
             {
                 _runStopwatch?.Stop();
                 _currentNodeId = null;
                 _activeNodeIds.Clear();
                 _activeTokens.Clear();
+                terminalState = _state;
+                terminalMessage = _terminalMessage;
             }
-            PublishSnapshot();
+            // 终态事件和 Flush 失败只影响 RecordingHealth，不改写已经确定的 Workflow 终态。
+            await CompleteRecordingAsync(terminalState, terminalMessage).ConfigureAwait(false);
+            PublishSnapshot(terminalMessage);
             Volatile.Write(ref _isRunning, 0);
+        }
+    }
+
+    private async Task CompleteRecordingAsync(E_WorkflowExecutionState terminalState, string? message)
+    {
+        // 保留 _recorder 引用：Run 结束后最近事件窗口仍需可读，供 Studio 和诊断查询使用。
+        var recorder = _recorder;
+        if (recorder is null)
+            return;
+        try
+        {
+            recorder.Record(
+                WorkflowRunEventDraft.Lifecycle(
+                    terminalState switch
+                    {
+                        E_WorkflowExecutionState.Completed => "RunCompleted",
+                        E_WorkflowExecutionState.Canceled => "RunCanceled",
+                        _ => "RunFaulted"
+                    },
+                    message,
+                    new Dictionary<string, object?> { ["State"] = terminalState.ToString() }),
+                WorkflowEventWriteMode.Durable);
+            await recorder.CompleteAsync(new WorkflowRunCompletion(terminalState, message, Elapsed)).ConfigureAwait(false);
+        }
+        catch
+        {
+            // 收尾记录异常绝不能改写 Run 结果。
+        }
+        finally
+        {
+            recorder.HealthChanged -= OnRecordingHealthChanged;
+            try
+            {
+                await recorder.DisposeAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // 记录器释放失败同样不影响已经返回的 Run 结果。
+            }
         }
     }
 
@@ -91,12 +136,17 @@ public sealed partial class WorkflowEngine
     private void BeginRun(string? startNodeId)
     {
         E_WorkflowExecutionState? changedState;
+        Guid runId;
         lock (_stateSync)
         {
             _runId = Guid.NewGuid();
+            runId = _runId;
             RunState = new WorkflowRunState();
             RunState.Begin(_runId);
             _currentNodeId = startNodeId;
+            _terminalMessage = null;
+            _currentFault = null;
+            _currentRecovery = null;
             _activeNodeIds.Clear();
             _activeTokens.Clear();
             _nodeRuntime.Clear();
@@ -104,25 +154,47 @@ public sealed partial class WorkflowEngine
             _nodeExecutionSequence = 0;
             _parallelScopes.Clear();
             _activeChildEngines.Clear();
-            _childWorkflows.Clear();
+            _activeChildWorkflows.Clear();
+            _latestChildWorkflowByParentNode.Clear();
+            _startedRecoveryCases.Clear();
             _totalNodeExecutions = 0;
             _tokenSequence = 0;
-            while (_traceEntries.TryDequeue(out _))
-            {
-            }
             _runStopwatch = Stopwatch.StartNew();
             _manualPauseRequested = false;
             _state = E_WorkflowExecutionState.Running;
             Context.BeginRun(RunState);
             changedState = ApplyPauseStateLocked() ?? _state;
         }
+        // RunStarted 进入 Recorder 后立即开始调度；后续 Sink 推送失败不能阻止或终止运行。
+        StartRecorder(runId);
         PublishStateChange(changedState);
     }
+
+    private void StartRecorder(Guid runId)
+    {
+        _recorder = new WorkflowRunRecorder(
+            runId,
+            _plan.Name,
+            _options.MaxTraceEntries,
+            _options.Recording,
+            _parentRunId,
+            _parentExecution);
+        _recorder.HealthChanged += OnRecordingHealthChanged;
+        _recorder.Record(
+            WorkflowRunEventDraft.Lifecycle("RunStarted", "流程开始执行。"),
+            WorkflowEventWriteMode.Durable);
+    }
+
+    private void OnRecordingHealthChanged(WorkflowRecordingHealth health) =>
+        SafeInvoke(RecordingHealthChanged, health);
 
     private void SetTerminalState(E_WorkflowExecutionState state, string? message)
     {
         lock (_stateSync)
+        {
             _state = state;
+            _terminalMessage = message;
+        }
         SafeInvoke(StateChanged, state);
         PublishSnapshot(message);
     }

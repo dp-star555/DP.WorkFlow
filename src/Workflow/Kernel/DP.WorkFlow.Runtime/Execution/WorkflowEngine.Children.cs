@@ -22,10 +22,11 @@ public sealed partial class WorkflowEngine
         var key = $"{parentNode.Id}:{parentExecution.TokenId}:{parentExecution.NodeExecutionCount}"
             + (excludedHold is null ? string.Empty : ":Recovery");
         var childEngine = new WorkflowEngine(boundPlan, childContext, options);
+        childEngine.SetParentContext(_runId, parentExecution);
         void UpdateChildSnapshot(WorkflowRuntimeSnapshot snapshot)
         {
             lock (_stateSync)
-                _childWorkflows[key] = new WorkflowChildRuntimeInfo(parentNode.Id, parentExecution, snapshot);
+                _activeChildWorkflows[key] = new WorkflowChildRuntimeInfo(parentNode.Id, parentExecution, snapshot);
             PublishSnapshot();
         }
 
@@ -65,7 +66,13 @@ public sealed partial class WorkflowEngine
         {
             childEngine.SnapshotChanged -= UpdateChildSnapshot;
             lock (_stateSync)
+            {
                 _activeChildEngines.Remove(key);
+                // 完成后从活动集合移除，并按父节点覆盖保存最近一次快照；更早历史只进入事件流。
+                if (_activeChildWorkflows.Remove(key, out var completed))
+                    _latestChildWorkflowByParentNode[parentNode.Id] = completed;
+            }
+            PublishSnapshot();
         }
     }
 }
