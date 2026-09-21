@@ -45,9 +45,12 @@ public sealed class BufferedExternalRunScopeEndToEndTests
         AssertReleasedExactlyOnce(runtime.Device, "f11");
     }
 
-    /// <summary>根运行退役后必须停流：否则回调会继续进入已经没有领取者的队列，等于跨运行泄漏。</summary>
+    /// <summary>
+    /// V2-4：根运行退役只收口采集代次，不停流、不关设备——接收流由 Runtime Start 布防一次，
+    /// 跨根运行保持。退役后无活动代次，回调帧被释放并计数，但绝不触发 Source 故障。
+    /// </summary>
     [Fact]
-    public async Task 根运行退役后相机停流且不再交付回调()
+    public async Task 根运行退役后接收流保持运行且无代次帧被释放()
     {
         FakeStreamingDevice? device = null;
         var trigger = new TriggerHandler(() => Device(device), ("f21", 21));
@@ -59,12 +62,14 @@ public sealed class BufferedExternalRunScopeEndToEndTests
         var result = await rig.Host.RunAsync();
 
         Assert.True(result.Success, result.Message);
-        Assert.False(runtime.Device!.IsStreaming, "根运行退役后必须停流。");
-        Assert.False(runtime.Device.Emit("after-run", 22), "停流之后不得再交付帧。");
+        Assert.True(runtime.Device!.IsStreaming, "根运行退役后接收流保持运行。");
+        Assert.True(runtime.Device.StreamStopCount == 0, "退役不停流。");
+        Assert.True(runtime.Device.DisposeCount == 0, "退役不关设备。");
+        Assert.True(runtime.Device.Emit("after-run", 22), "接收流仍在运行，回调必须被交付给会话。");
+        Assert.Empty(runtime.Device.SinkFailures);
+        // 无活动代次的帧被会话释放并计数，不进入任何队列，也不触发故障。
         Assert.Equal(1, runtime.Device.StreamStartCount);
-        Assert.Equal(1, runtime.Device.StreamStopCount);
-        // 停流之后到达的帧根本没有被创建，因此"交付过的帧"必须全部恰好释放一次。
-        AssertReleasedExactlyOnce(runtime.Device, "f21");
+        AssertReleasedExactlyOnce(runtime.Device, "f21", "after-run");
     }
 
     /// <summary>
@@ -105,22 +110,22 @@ public sealed class BufferedExternalRunScopeEndToEndTests
             Assert.Equal(new long?[] { 3 }, CaptureDeviceSequences(second));
         }
 
-        Assert.Equal(2, runtime.Device!.StreamStartCount);
+        Assert.Equal(1, runtime.Device!.StreamStartCount);
+        // V2-4：接收流由 Runtime Start 布防一次并跨根运行保持，根运行之间只收口/重开采集代次。
         // 设备在两次布防之间保持打开：重复打开会让真实相机第二次直接失败，并漏掉上一根持有的设备对象。
         Assert.Equal(1, runtime.Provider.OpenCount);
         AssertReleasedExactlyOnce(runtime.Device, "r1-f1", "r1-f2", "r2-f1");
     }
 
     /// <summary>
-    /// 运行准备校验失败时设备没有被布防。
+    /// 运行准备校验失败时接收流不被本轮代次占用。
     /// <para>
-    /// V2-3 语义：设备连接属于软件生命周期，Runtime Start 阶段已真实打开设备（OpenCount==1）；
-    /// 准备校验失败发生在根运行取得作用域之前，因此接收流不得布防（StreamStartCount==0）。
-    /// 这仍锁住顺序：布防必须晚于准备校验，否则一次注定失败的运行也会先把相机抢过来。
+    /// V2-4 语义：接收流由 Runtime Start 布防一次（StreamStartCount==1）；
+    /// 准备校验失败发生在根运行取得作用域之前，因此本轮无活动代次，不会有人领取到帧。
     /// </para>
     /// </summary>
     [Fact]
-    public async Task 运行准备校验失败时设备没有被布防()
+    public async Task 运行准备校验失败时本轮没有活动代次()
     {
         FakeStreamingDevice? device = null;
         var trigger = new TriggerHandler(() => Device(device), ("f31", 31));
@@ -134,8 +139,8 @@ public sealed class BufferedExternalRunScopeEndToEndTests
 
         Assert.Contains("BufferedExternal", failure.Message);
         Assert.Contains("曝光/增益", failure.Message);
-        Assert.True(runtime.Provider.OpenCount == 1, "V2-3：设备由Runtime Start打开一次。");
-        Assert.True(runtime.Device!.StreamStartCount == 0, "准备校验失败时不得布防接收流。");
+        Assert.True(runtime.Provider.OpenCount == 1, "设备由Runtime Start打开一次。");
+        Assert.True(runtime.Device!.StreamStartCount == 1, "V2-4：接收流由 Runtime Start 布防一次，与根运行无关。");
         Assert.Equal(0, trigger.ExecutionCount);
         Assert.Equal(0, sink.ExecutionCount);
     }
