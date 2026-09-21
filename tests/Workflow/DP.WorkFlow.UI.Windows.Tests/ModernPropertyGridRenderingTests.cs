@@ -10,6 +10,8 @@ using ModernUI.WinForms;
 
 namespace DP.WorkFlow.Tests;
 
+// 控件库用例：保护 ModernPropertyGrid.WinForms 的绘制契约，只在控件库源码改动时才需要重跑。
+[Trait(TestCategories.Category, TestCategories.UiControls)]
 public sealed class ModernPropertyGridRenderingTests
 {
     [Fact]

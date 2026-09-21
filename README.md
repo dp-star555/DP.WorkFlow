@@ -34,6 +34,11 @@ dotnet build DP.WorkFlow.sln --no-restore
 powershell -ExecutionPolicy Bypass -File tools/Test-DPWorkFlow.ps1 -Configuration Debug
 ```
 
+`Test-DPWorkFlow.ps1` 默认按 `-Suite Auto` 运行：现代控件库（`ModernUI.WinForms`、`ModernUI.Localization`、
+`ScriptEngine.WinForms/Wpf`）源码没改动时，跳过 298 个控件库用例，只跑 53 个业务与集成用例（约 2 秒）。
+改过控件库时自动带上它们。需要强制时用 `-Suite All`（全跑）、`-Suite Core`（永不跑控件库）、
+`-Suite UiControls`（只跑控件库，改控件时的快速回路）。
+
 ## 当前能力
 
 - 模板定位输出稳定定义/模板签名与本帧正反矩阵；全部面积ROI节点（含线圆测量及两类模板定位）、卡尺和鲁棒直线支持显式坐标绑定；统一范围能力与解析入口支持外部节点扩展，父子定位不重复补偿；两平台页面保存局部ROI，拒绝混帧和换模板误用；

@@ -5,6 +5,8 @@ using ModernUI.WinForms;
 
 namespace DP.WorkFlow.Tests;
 
+// 控件库用例：保护控件工具箱元数据（分类/图标）完整性，只在控件库源码改动时才需要重跑。
+[Trait(TestCategories.Category, TestCategories.UiControls)]
 public sealed class ToolboxMetadataTests
 {
     [Fact]

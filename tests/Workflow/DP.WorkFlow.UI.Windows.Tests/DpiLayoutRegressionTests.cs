@@ -5,6 +5,8 @@ using ModernUI.WinForms;
 
 namespace DP.WorkFlow.Tests;
 
+// 控件库用例：保护 ModernUI 控件在 96-DPI 下的逻辑尺寸，只在控件库源码改动时才需要重跑。
+[Trait(TestCategories.Category, TestCategories.UiControls)]
 public sealed class DpiLayoutRegressionTests
 {
     [Fact]

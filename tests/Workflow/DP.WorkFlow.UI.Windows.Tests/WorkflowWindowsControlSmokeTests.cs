@@ -2,6 +2,8 @@ using DP.WorkFlow.UI;
 
 namespace DP.WorkFlow.Tests;
 
+// 控件库用例：Studio 的 WinForms/WPF 控件能否在同一会话上创建并绑定，只在控件库源码改动时才需要重跑。
+[Trait(TestCategories.Category, TestCategories.UiControls)]
 public sealed class WorkflowWindowsControlSmokeTests
 {
     [Fact]

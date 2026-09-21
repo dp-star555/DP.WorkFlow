@@ -139,3 +139,29 @@ Composite、Process 节点仍引用 Runtime；应逐项判断是必要运行宿�
 4. Provider 不得依赖工作流；工作流集成代码应位于 Workflow 一侧。
 5. 测试通过与生产代码相同的 Module Interface 验证行为，不按内部文件夹机械拆分测试项目。
 6. 每次结构变更必须运行 `tools/Test-DPWorkFlow.ps1` 并执行 Release Solution 构建。
+   该脚本默认 `-Suite Auto`：**现代控件库源码没改动时跳过控件库用例**（见下节）。
+   结构变更若触及 `src/Platform/` 下的控件库，自动判定会带上它们；跨领域改动建议直接 `-Suite All`。
+
+### 测试套件分层
+
+`tests/Workflow/DP.WorkFlow.UI.Windows.Tests` 里混着两类目标完全不同的用例，用 xUnit Trait 区分
+（常量见 `TestCategories.cs`）：
+
+| 类别 | 保护对象 | 何时需要跑 | 规模 |
+|---|---|---|---|
+| `Category=UiControls` | 现代控件库自身：控件外观与行为、DPI 布局、控件本地化、控件元数据、脚本编辑器控件布局 | 只在 `ModernUI.WinForms` / `ModernUI.Localization` / `ScriptEngine.WinForms` / `ScriptEngine.Wpf` 源码改动时 | 298 例，约 45 秒 |
+| 未分类（默认） | 业务流程与集成：视觉管线、操作台窗口、Studio 编辑器渲染校验、程序集依赖边界 | 每次 | 53 例，约 2 秒 |
+
+判定标准是"它保护的是控件库契约，还是业务流程"，不是"它是否碰 WinForms"——操作台窗口和视觉管线
+同样创建窗口，但它们会因为业务改动而失败，因此留在默认集合里。
+
+控件库用例的失败信号也弱于业务用例：`ModernControlBehaviorTests` 与 `FeedbackLifecycleTests` 里
+若干断言依赖绘制次数与弹窗时序，同一二进制重复运行结果不同（AR-28）。因此**默认不跑**，
+且把它们当作"控件库改动后的专项验证"，不要用它判定业务回归。
+
+单独驱动：
+
+```powershell
+dotnet test tests/Workflow/DP.WorkFlow.UI.Windows.Tests -c Debug --filter "Category!=UiControls"   # 只跑业务/集成
+dotnet test tests/Workflow/DP.WorkFlow.UI.Windows.Tests -c Debug --filter "Category=UiControls"    # 只跑控件库
+```

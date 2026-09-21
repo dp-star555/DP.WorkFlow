@@ -11,6 +11,8 @@ using DP.WorkFlow.UI.WinForms;
 
 namespace DP.WorkFlow.Tests;
 
+// 控件库用例：保护 ModernUI.Localization 与控件资源键的闭合性，只在控件库/本地化资源改动时才需要重跑。
+[Trait(TestCategories.Category, TestCategories.UiControls)]
 public sealed class LocalizationClosureTests
 {
     [Fact]

@@ -5,6 +5,8 @@ using ModernUI.WinForms;
 
 namespace DP.WorkFlow.Tests;
 
+// 控件库用例：保护 ModernUI 反馈控件（提示条/加载态）的生命周期，只在控件库源码改动时才需要重跑。
+[Trait(TestCategories.Category, TestCategories.UiControls)]
 public sealed class FeedbackLifecycleTests
 {
     [Fact]

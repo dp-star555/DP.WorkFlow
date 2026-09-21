@@ -10,6 +10,8 @@ using DP.WorkFlow.UI.WinForms;
 
 namespace DP.WorkFlow.Tests;
 
+// 控件库用例：保护 ModernUI.WinForms 控件的外观与行为契约，只在控件库源码改动时才需要重跑。
+[Trait(TestCategories.Category, TestCategories.UiControls)]
 public sealed class ModernControlBehaviorTests
 {
     [Fact]

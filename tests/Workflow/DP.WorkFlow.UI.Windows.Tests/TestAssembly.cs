@@ -74,6 +74,8 @@ internal static class UiTestThread
     }
 }
 
+// 控件库用例：本类直接驱动控件行为用例来验证 96-DPI 进程基线，属于控件库测试的一部分。
+[Trait(TestCategories.Category, TestCategories.UiControls)]
 public sealed class UiTestInfrastructureTests
 {
     [Fact]
