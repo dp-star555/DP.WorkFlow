@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using DP.Vision.Acquisition;
 
 namespace DP.WorkFlow;
@@ -99,6 +102,27 @@ public sealed class WorkflowVisionSourceCatalog : IWorkflowVisionSourceCatalog
             if (!_sources.TryAdd(source.SourceId, source))
                 throw new ArgumentException($"逻辑源 {source.SourceId} 重复发布。", nameof(sources));
         }
+    }
+
+    /// <summary>
+    /// 从采集侧一次发布的Composition直接投影Workflow源目录（V2-2需求4）。
+    /// 条目字段来自公共层可解释的机器配置部分与Plugin解析后的验证结果；
+    /// 未安装Type的Source被保真保留并标记不可用，由宿主诊断与显示。
+    /// </summary>
+    /// <param name="acquisition">已发布的不可变Composition。</param>
+    /// <exception cref="ArgumentNullException">组合为空。</exception>
+    /// <exception cref="ArgumentException">组合投影含重复SourceId。</exception>
+    public static WorkflowVisionSourceCatalog FromAcquisition(IVisionAcquisitionSourceCatalog acquisition)
+    {
+        ArgumentNullException.ThrowIfNull(acquisition);
+        return new WorkflowVisionSourceCatalog(
+            acquisition.SourceCatalog.Select(entry => new WorkflowVisionSourceInfo(
+                entry.SourceId,
+                entry.ProviderId,
+                entry.SharingPolicy,
+                entry.IsAvailable,
+                entry.Diagnostic,
+                entry.AcquisitionMode)));
     }
 
     /// <inheritdoc/>

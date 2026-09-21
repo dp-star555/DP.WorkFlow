@@ -1,9 +1,0 @@
-{
-  "bindings": {
-    "top-camera": {
-      "interfaceName": "GigEVision2",
-      "deviceName": "cam-top",
-      "serialNumber": "DEMO0001"
-    }
-  }
-}

@@ -38,7 +38,6 @@
     <Compile Include="..\..\VisionData\WorkflowImageDemo.cs" Link="WorkflowImageDemo.cs" />
     <Compile Include="..\..\Recovery\WorkflowRecoveryDemo.cs" Link="WorkflowRecoveryDemo.cs" />
     <Content Include="..\..\VisionData\demo.pgm" Link="VisionData\demo.pgm" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\VisionData\vision-providers\**" Link="vision-providers\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!--

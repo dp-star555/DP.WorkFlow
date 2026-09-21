@@ -50,43 +50,60 @@ public partial class Form1 : Form
         var acquisition = new WorkflowVisionAcquisitionSession(fileReader);
         _frameScope = new WorkflowVisionFrameScope(acquisition);
 
-        // 2.1 机器配置：插件目录 + 公共Source绑定。工作流文档只保存SourceId，
+        // 2.1 V2 机器配置：插件自动发现 + 版本化CameraDefinition。工作流文档只保存SourceId，
         // 换机器时只改这里，不需要改流程文档，也不需要重新编译节点。
-        // 宿主只认识 plugin.json 与中立插件契约，编译期不选择任何具体Provider。
-        // 两个逻辑源分属两家厂商（HALCON / Basler），由同一组合按SourceId路由到各自的设备。
+        // 宿主只按插件目录自动发现Driver Module，编译期不选择任何具体Provider。
+        // 公共层只解释sourceId/acquisitionType/connection等字段；deviceSettings由对应Plugin解析，
+        // 生成内部绑定、规范资源键与进入CompositionId的私有配置摘要。
+        const string machineConfigurationJson = """
+            [
+              {
+                "sourceId": "Camera.Top",
+                "acquisitionType": "dp.acquisition.halcon.area",
+                "settingsVersion": 1,
+                "connection": { "openOnApplicationStart": true, "transferStart": "PerRequest" },
+                "deviceSettings": {
+                  "interfaceName": "GigEVision2",
+                  "deviceName": "cam-top",
+                  "serialNumber": "DEMO0001"
+                }
+              },
+              {
+                "sourceId": "Camera.Side",
+                "acquisitionType": "dp.acquisition.basler.area",
+                "settingsVersion": 1,
+                "connection": { "openOnApplicationStart": true, "transferStart": "PerRequest" },
+                "deviceSettings": { "serialNumber": "DEMO-BASLER-0001" }
+              }
+            ]
+            """;
         var providerPluginDirectory = Path.Combine(AppContext.BaseDirectory, "plugins");
-        var providerPlugins = new VisionAcquisitionProviderPluginLoader()
-            .Load(providerPluginDirectory, ReadProviderConfiguration);
-        var sourceBindings = new[]
-        {
-            new VisionAcquisitionSourceBinding("Camera.Top", "dp.vision.halcon", "top-camera", "camera:serial:DEMO0001"),
-            new VisionAcquisitionSourceBinding("Camera.Side", "dp.vision.basler", "side-camera", "camera:serial:DEMO-BASLER-0001")
-        };
-        _visionAcquisition = new VisionAcquisitionRuntime(
-            new VisionAcquisitionProviderComposer().Compose(providerPlugins.Modules, sourceBindings));
+        var driverModules = new VisionAcquisitionDriverModuleLoader().Load(providerPluginDirectory);
+        var typeCatalog = new VisionAcquisitionTypeCatalogComposer().Compose(driverModules.Modules);
+        var cameras = VisionAcquisitionMachineConfigurationParser.Parse(machineConfigurationJson);
+        var composition = new VisionAcquisitionMachineConfigurationComposer()
+            .Compose(typeCatalog, cameras);
+        _visionAcquisition = new VisionAcquisitionRuntime(composition);
         // 插件包整体加载失败（例如投放不完整、缺厂商程序集）必须出现在诊断里，
-        // 否则界面只会显示"Provider 未安装"，把真实原因藏起来。
-        var pluginLoadFailure = providerPlugins.Failures.Count == 0
+        // 否则界面只会显示"未安装"，把真实原因藏起来。
+        var driverLoadFailure = driverModules.Failures.Count == 0
             ? null
-            : "插件包加载失败：" + string.Join(
+            : "Driver Module 加载失败：" + string.Join(
                 "；",
-                providerPlugins.Failures.Select(failure => failure.ManifestPath + " -> " + failure.Reason));
-        _visionSources = new WorkflowVisionSourceCatalog(sourceBindings.Select(binding =>
-        {
-            var availability = providerPlugins.ProviderAvailability
-                .FirstOrDefault(item => string.Equals(item.ProviderId, binding.ProviderId, StringComparison.Ordinal));
-            return new WorkflowVisionSourceInfo(
-                binding.SourceId,
-                binding.ProviderId,
-                binding.SharingPolicy,
-                isAvailable: availability?.IsAvailable ?? false,
-                diagnostic: availability is null
-                    ? $"Provider {binding.ProviderId} 未安装：插件目录 {providerPluginDirectory} 中没有加载到该Provider。"
-                      + (pluginLoadFailure is null ? string.Empty : " " + pluginLoadFailure)
-                    : availability.Diagnostic,
-                // 采集时序必须随绑定一起发布：运行前校验靠它决定能否做节点级参数覆盖。
-                acquisitionMode: binding.AcquisitionMode);
-        }));
+                driverModules.Failures.Select(failure => failure.AssemblyPath + " -> " + failure.Reason));
+        var projectedSources = WorkflowVisionSourceCatalog.FromAcquisition(composition);
+        _visionSources = driverLoadFailure is null
+            ? projectedSources
+            : new WorkflowVisionSourceCatalog(projectedSources.Sources.Select(source =>
+                source.IsAvailable || source.Diagnostic is null
+                    ? source
+                    : new WorkflowVisionSourceInfo(
+                        source.SourceId,
+                        source.ProviderId,
+                        source.SharingPolicy,
+                        source.IsAvailable,
+                        source.Diagnostic + " " + driverLoadFailure,
+                        source.AcquisitionMode)));
 
         // 3. 创建新文档
         _workspace.New(recoveryDemo is null ? "新版视觉文件分析" : "异常恢复演示（仅软件模拟）");
@@ -195,13 +212,6 @@ public partial class Form1 : Form
                 MessageBoxIcon.Warning) == DialogResult.Yes;
 
         workflowStudioControl1.InteractionError += OnInteractionError;
-    }
-
-    /// <summary>按PluginId读取该Provider的私有配置；宿主只转交文本，不解释其中任何字段。</summary>
-    private static string? ReadProviderConfiguration(string pluginId)
-    {
-        var path = Path.Combine(AppContext.BaseDirectory, "vision-providers", pluginId + ".json");
-        return File.Exists(path) ? File.ReadAllText(path) : null;
     }
 
     private void OnInteractionError(object? sender, string message) =>
