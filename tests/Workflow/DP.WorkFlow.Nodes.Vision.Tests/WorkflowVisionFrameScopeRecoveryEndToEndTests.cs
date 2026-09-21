@@ -55,6 +55,7 @@ public sealed class WorkflowVisionFrameScopeRecoveryEndToEndTests
                 .Add<IImageFileReader>(new NumberedReader())
                 .Add<IWorkflowVisionFrameScope>(scope)
                 .Add<IWorkflowRunPreparationService>(scope)
+                .Add<IWorkflowRunResourceOwner>(scope)
                 .Add<IWorkflowFaultRecoveryCoordinator>(new SubflowRecoveryCoordinator(subflow, catalog, handlers));
 
             var result = await new WorkflowEngine(

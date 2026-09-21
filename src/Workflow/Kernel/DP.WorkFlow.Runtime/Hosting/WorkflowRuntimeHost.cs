@@ -266,9 +266,11 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
         }
     }
 
-    /// <summary>在线程池边界内执行可选运行准备服务，然后启动本次引擎。</summary>
+    /// <summary>在线程池边界内执行可选运行准备与上一轮资源退役，然后启动本次引擎。</summary>
     /// <param name="engine">本次运行新创建的引擎。</param>
-    /// <param name="context">用于发现 <see cref="IWorkflowRunPreparationService"/> 的上下文。</param>
+    /// <param name="context">
+    /// 用于发现 <see cref="IWorkflowRunPreparationService"/> 与 <see cref="IWorkflowRunResourceOwner"/> 的上下文。
+    /// </param>
     /// <param name="plan">本次运行已经编译且与文档隔离的执行计划。</param>
     /// <param name="cancellationToken">宿主与调用方链接后的运行取消令牌。</param>
     /// <returns>引擎最终结果，同时写入 <see cref="LastRunResult"/>。</returns>
@@ -286,6 +288,10 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
                     WorkflowRunScopeKind.Root,
                     Services: context.Services),
                 cancellationToken).ConfigureAwait(false);
+        // AR-01 阶段2：退役上一轮资源只在这里发生。准备阶段只校验并产出候选状态，
+        // 因此顺序必须是"先准备、后释放"；嵌套调用点不解析本接口，在类型上无法触发清理。
+        if (context.Services.GetService(typeof(IWorkflowRunResourceOwner)) is IWorkflowRunResourceOwner owner)
+            await owner.ReleasePreviousRunAsync(cancellationToken).ConfigureAwait(false);
         var result = await engine.RunAsync(cancellationToken).ConfigureAwait(false);
         lock (_syncRoot)
             _lastRunResult = result;

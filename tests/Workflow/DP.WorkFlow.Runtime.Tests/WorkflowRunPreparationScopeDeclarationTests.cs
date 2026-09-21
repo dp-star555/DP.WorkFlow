@@ -33,7 +33,9 @@ public sealed class WorkflowRunPreparationScopeDeclarationTests
 
         var services = new WorkflowServiceProvider()
             .Add<IWorkflowFaultRecoveryCoordinator>(new SubflowRecoveryCoordinator(subflow, catalog, handlers))
-            .Add<IWorkflowRunPreparationService>(preparation);
+            .Add<IWorkflowRunPreparationService>(preparation)
+            // 故意把资源所有者一并注册：即使它在容器里可达，嵌套调用点也不得解析并调用它。
+            .Add<IWorkflowRunResourceOwner>(preparation);
 
         var result = await new WorkflowEngine(
                 new WorkflowCompiler(catalog).Compile(document), handlers, new WorkflowContext(services),
@@ -44,6 +46,9 @@ public sealed class WorkflowRunPreparationScopeDeclarationTests
         var recorded = Assert.Single(preparation.Contexts);
         Assert.Equal(WorkflowRunScopeKind.Nested, recorded.ScopeKind);
         Assert.Equal(faulty.Id, recorded.ParentNodeId);
+        // AR-01 阶段2：退役上一轮资源是根运行宿主的专属动作。引擎的嵌套路径不解析
+        // IWorkflowRunResourceOwner，因此这里必须一次都没有发生——这是"父资源只由父释放"的类型级保证。
+        Assert.Equal(0, preparation.ReleaseCount);
     }
 
     /// <summary>
@@ -68,14 +73,24 @@ public sealed class WorkflowRunPreparationScopeDeclarationTests
         }
     }
 
-    private sealed class RecordingPreparation : IWorkflowRunPreparationService
+    private sealed class RecordingPreparation : IWorkflowRunPreparationService, IWorkflowRunResourceOwner
     {
         public List<WorkflowRunPreparationContext> Contexts { get; } = new();
+
+        /// <summary>被调用过的退役次数；嵌套运行必须保持为 0。</summary>
+        public int ReleaseCount { get; private set; }
 
         public ValueTask PrepareAsync(WorkflowRunPreparationContext context, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Contexts.Add(context);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask ReleasePreviousRunAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ReleaseCount++;
             return ValueTask.CompletedTask;
         }
     }

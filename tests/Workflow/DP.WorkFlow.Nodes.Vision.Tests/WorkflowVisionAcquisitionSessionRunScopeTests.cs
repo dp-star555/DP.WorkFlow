@@ -39,6 +39,7 @@ public sealed class WorkflowVisionAcquisitionSessionRunScopeTests
         {
             var session = new WorkflowVisionAcquisitionSession(new NumberedReader());
             await session.PrepareAsync(Context(WorkflowRunScopeKind.Root, node), default);
+            await session.ReleasePreviousRunAsync(default);
             Assert.Equal(1, await ReadAsync(session, node.Id));
             Assert.Equal(2, await ReadAsync(session, node.Id));
 
@@ -52,17 +53,41 @@ public sealed class WorkflowVisionAcquisitionSessionRunScopeTests
     }
 
     [Fact]
-    public async Task 根运行准备仍然重置文件夹游标()
+    public async Task 根运行退役上一轮后重置文件夹游标()
     {
         string directory = CreateFolder(out var node);
         try
         {
             var session = new WorkflowVisionAcquisitionSession(new NumberedReader());
             await session.PrepareAsync(Context(WorkflowRunScopeKind.Root, node), default);
+            await session.ReleasePreviousRunAsync(default);
             Assert.Equal(1, await ReadAsync(session, node.Id));
 
             // 归零语义不能被削弱：开新一轮仍要从头读。
             await session.PrepareAsync(Context(WorkflowRunScopeKind.Root, node), default);
+            await session.ReleasePreviousRunAsync(default);
+            Assert.Equal(1, await ReadAsync(session, node.Id));
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Fact]
+    public async Task 嵌套运行的准备不会让后续根运行退役成嵌套清单()
+    {
+        string directory = CreateFolder(out var node);
+        try
+        {
+            var session = new WorkflowVisionAcquisitionSession(new NumberedReader());
+            await session.PrepareAsync(Context(WorkflowRunScopeKind.Root, node), default);
+            await session.ReleasePreviousRunAsync(default);
+            Assert.Equal(1, await ReadAsync(session, node.Id));
+
+            // 嵌套准备会覆盖候选清单，但它不触发退役；下一次根运行的准备必须重新产出候选，
+            // 否则"嵌套运行用什么节点"会悄悄决定"根运行读哪个目录"。
+            await session.PrepareAsync(Context(WorkflowRunScopeKind.Nested), default);
+            await session.PrepareAsync(Context(WorkflowRunScopeKind.Root, node), default);
+            await session.ReleasePreviousRunAsync(default);
+
             Assert.Equal(1, await ReadAsync(session, node.Id));
         }
         finally { Directory.Delete(directory, true); }
@@ -80,6 +105,25 @@ public sealed class WorkflowVisionAcquisitionSessionRunScopeTests
             // 嵌套作用域只是"不重置游标"，不是"跳过准备"：清单校验必须照常执行。
             await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 session.PrepareAsync(Context(WorkflowRunScopeKind.Nested, node, duplicate), default).AsTask());
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Fact]
+    public async Task 准备阶段本身不得启用新清单即使声明根作用域()
+    {
+        string directory = CreateFolder(out var node);
+        try
+        {
+            var session = new WorkflowVisionAcquisitionSession(new NumberedReader());
+            await session.PrepareAsync(Context(WorkflowRunScopeKind.Root, node), default);
+
+            // AR-01 阶段2：PrepareAsync 只校验并产出候选清单，不启用它。
+            // 启用（退役上一轮）是运行所有者的独立动作。
+            await Assert.ThrowsAsync<InvalidOperationException>(() => session.NextAsync(node.Id, default));
+
+            await session.ReleasePreviousRunAsync(default);
+            Assert.Equal(1, await ReadAsync(session, node.Id));
         }
         finally { Directory.Delete(directory, true); }
     }

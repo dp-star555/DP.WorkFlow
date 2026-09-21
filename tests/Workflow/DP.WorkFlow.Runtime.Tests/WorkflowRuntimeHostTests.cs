@@ -82,6 +82,54 @@ public sealed class WorkflowRuntimeHostTests
     }
 
     [Fact]
+    public async Task RunAsync_ReleasesPreviousRunAfterPreparationAndBeforeExecution()
+    {
+        var events = new List<string>();
+        var owner = new TestRunOwner(() => events.Add("prepare"), () => events.Add("release"));
+        var services = new WorkflowServiceProvider()
+            .Add<IWorkflowRunPreparationService>(owner)
+            .Add<IWorkflowRunResourceOwner>(owner);
+        var node = new HostTestNode { Id = "Node" };
+        var canvasDocument = new WorkflowDocument { Name = "Release" };
+        canvasDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        using var host = new WorkflowRuntimeHost(
+            new WorkflowNodeCatalog().Register<HostTestNode>(),
+            new WorkflowNodeHandlerCatalog().Register(new CountingHostTestHandler(() => events.Add("execute"))));
+        canvasDocument.EntryNodeId = node.Id;
+        host.Configure(canvasDocument, new WorkflowContext(services));
+
+        Assert.True((await host.RunAsync()).Success);
+        Assert.True((await host.RunAsync()).Success);
+
+        // AR-01 阶段2：根宿主是唯一退役上一轮资源的位置，且必须"先准备、后释放"——
+        // 准备阶段产出的候选状态（例如冻结后的文件夹清单）在释放时才启用。
+        Assert.Equal(
+            new[] { "prepare", "release", "execute", "prepare", "release", "execute" },
+            events);
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotReleaseWhenHostHasNoResourceOwner()
+    {
+        var events = new List<string>();
+        var preparation = new TestRunPreparation(_ => events.Add("prepare"));
+        // 只注册准备服务、不注册资源所有者：宿主不得凭空推断"准备服务就是所有者"。
+        var services = new WorkflowServiceProvider().Add<IWorkflowRunPreparationService>(preparation);
+        var node = new HostTestNode { Id = "Node" };
+        var canvasDocument = new WorkflowDocument { Name = "NoOwner" };
+        canvasDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        using var host = new WorkflowRuntimeHost(
+            new WorkflowNodeCatalog().Register<HostTestNode>(),
+            new WorkflowNodeHandlerCatalog().Register(new CountingHostTestHandler(() => events.Add("execute"))));
+        canvasDocument.EntryNodeId = node.Id;
+        host.Configure(canvasDocument, new WorkflowContext(services));
+
+        Assert.True((await host.RunAsync()).Success);
+
+        Assert.Equal(new[] { "prepare", "execute" }, events);
+    }
+
+    [Fact]
     public async Task RunPreparation_ReceivesRootAndNestedPlanNodes()
     {
         IReadOnlyList<string>? preparedNodeIds = null;
@@ -190,6 +238,30 @@ public sealed class WorkflowRuntimeHostTests
             // AR-01：根宿主是唯一的"开新一轮"位置，必须声明 Root，否则上一轮资源永不释放。
             Assert.Equal(WorkflowRunScopeKind.Root, context.ScopeKind);
             action(context);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>同时是准备服务与资源所有者，用来验证根宿主的调用顺序与次数。</summary>
+    private sealed class TestRunOwner(
+        Action onPrepare,
+        Action onRelease) : IWorkflowRunPreparationService, IWorkflowRunResourceOwner
+    {
+        public ValueTask PrepareAsync(
+            WorkflowRunPreparationContext context,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Assert.NotEmpty(context.Nodes);
+            Assert.Equal(WorkflowRunScopeKind.Root, context.ScopeKind);
+            onPrepare();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask ReleasePreviousRunAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            onRelease();
             return ValueTask.CompletedTask;
         }
     }

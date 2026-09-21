@@ -224,7 +224,9 @@ public sealed class VisionCoordinatePipelineTests
         .Add<IEdgeMeasurer>(new OpenCvEdgeMeasurer()).Add<ITemplateLocator>(new OpenCvTemplateLocator())
         .Add<IBlobAnalyzer>(new OpenCvBlobAnalyzer()).Add<IColorAnalyzer>(new RgbColorAnalyzer()).Add<IRegionProcessor>(new OpenCvRegionProcessor())
         .Add<IBlobSelector>(new BlobSelector()).Add<ICaliperMeasurer>(new CaliperMeasurer()).Add<IRobustLineFitter>(new RobustLineFitter())
-        .Add<IWorkflowVisionFrameScope>(scope).Add<IWorkflowRunPreparationService>(scope);
+        .Add<IWorkflowVisionFrameScope>(scope).Add<IWorkflowRunPreparationService>(scope)
+        // AR-01 阶段2：退役上一轮租约是运行所有者的独立职责，与示例装配保持一致。
+        .Add<IWorkflowRunResourceOwner>(scope);
     private static WorkflowInput<T> Input<T>(string id) => WorkflowInput<T>.FromBinding(new(id, "$"));
     private static T Output<T>(WorkflowRuntimeHost host, string id) => Assert.IsType<T>(host.Engine!.RunState.NodeOutputs.Single(o => o.NodeId == id).Value);
     private sealed class Images : IDisposable

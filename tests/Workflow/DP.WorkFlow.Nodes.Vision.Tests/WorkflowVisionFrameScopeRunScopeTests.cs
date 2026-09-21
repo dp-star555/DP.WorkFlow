@@ -36,15 +36,41 @@ public sealed class WorkflowVisionFrameScopeRunScopeTests
     }
 
     [Fact]
-    public async Task 根运行准备仍然释放上一轮保留的帧()
+    public async Task 准备阶段本身不得释放既有资源即使声明根作用域()
+    {
+        using var scope = new WorkflowVisionFrameScope();
+        var previous = PublishNodeOutput(scope);
+
+        // AR-01 阶段2：破坏性清理已移出 PrepareAsync。准备只做校验与绑定，
+        // 释放上一轮资源是运行所有者的独立动作（IWorkflowRunResourceOwner）。
+        await scope.PrepareAsync(Context(WorkflowRunScopeKind.Root), CancellationToken.None);
+
+        using var lease = previous.Retain();
+        Assert.Equal("f1", lease.FrameId);
+    }
+
+    [Fact]
+    public async Task 运行所有者释放上一轮保留的帧()
     {
         using var scope = new WorkflowVisionFrameScope();
         var previous = PublishNodeOutput(scope);
 
         await scope.PrepareAsync(Context(WorkflowRunScopeKind.Root), CancellationToken.None);
+        await scope.ReleasePreviousRunAsync(CancellationToken.None);
 
         // 清理语义不能被削弱：开新一轮仍要回收上一轮资源。
         Assert.Throws<ObjectDisposedException>(() => previous.Retain());
+    }
+
+    [Fact]
+    public async Task 释放沿准备链转发给后续所有者()
+    {
+        var next = new RecordingOwner();
+        using var scope = new WorkflowVisionFrameScope(next);
+
+        await scope.ReleasePreviousRunAsync(CancellationToken.None);
+
+        Assert.Equal(1, next.ReleaseCount);
     }
 
     [Fact]
@@ -84,6 +110,25 @@ public sealed class WorkflowVisionFrameScopeRunScopeTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Contexts.Add(context);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>同时是准备服务与资源所有者，用来验证释放会沿准备链转发。</summary>
+    private sealed class RecordingOwner : IWorkflowRunPreparationService, IWorkflowRunResourceOwner
+    {
+        public int ReleaseCount;
+
+        public ValueTask PrepareAsync(WorkflowRunPreparationContext context, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask ReleasePreviousRunAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ReleaseCount++;
             return ValueTask.CompletedTask;
         }
     }

@@ -21,14 +21,18 @@ public sealed class NewVisionCompletionTests
             var node = new LoadVisionFolderNodeModel { Id = "folder", FolderPath = directory };
             var preparation = new WorkflowRunPreparationContext(new[] { node }, WorkflowRunScopeKind.Root);
             var session = new WorkflowVisionAcquisitionSession(new OpenCvImageFileReader());
+            // 开新一轮由根宿主完成：先准备产出候选清单，再退役上一轮并启用它（AR-01 阶段 2）。
             await session.PrepareAsync(preparation, default);
+            await session.ReleasePreviousRunAsync(default);
             WritePng(Path.Combine(directory, "0.png"), 1); // 运行清单已经冻结。
             using var first = await session.NextAsync(node.Id, default);
             using var second = await session.NextAsync(node.Id, default);
             var pixel = new byte[1]; first.CopyTo(0, pixel, 0, 1); Assert.Equal(50, pixel[0]);
             second.CopyTo(0, pixel, 0, 1); Assert.Equal(200, pixel[0]);
             await Assert.ThrowsAsync<InvalidOperationException>(() => session.NextAsync(node.Id, default));
+            // 新一轮：重新枚举目录（此时 0.png 已在），退役旧序列并启用新序列。
             await session.PrepareAsync(preparation, default);
+            await session.ReleasePreviousRunAsync(default);
             using var reset = await session.NextAsync(node.Id, default);
             reset.CopyTo(0, pixel, 0, 1); Assert.Equal(1, pixel[0]);
         }
@@ -44,6 +48,9 @@ public sealed class NewVisionCompletionTests
         var output = scope.Retain(frame); using var ui = output.Retain();
         Assert.Throws<InvalidOperationException>(() => scope.Retain(frame));
         await scope.PrepareAsync(new WorkflowRunPreparationContext(Array.Empty<IWorkflowNodeModel>(), WorkflowRunScopeKind.Root), default);
+        // 准备阶段不清空；退役上一轮资源是根宿主在准备之后单独触发的（AR-01 阶段 2）。
+        Assert.NotNull(output.Retain());
+        await scope.ReleasePreviousRunAsync(default);
         Assert.Throws<ObjectDisposedException>(() => output.Retain());
         var bytes = new byte[1]; ui.Image.CopyTo(0, bytes, 0, 1); Assert.Equal(7, bytes[0]);
         Assert.NotNull(scope.Retain(frame));
@@ -199,7 +206,9 @@ public sealed class NewVisionCompletionTests
         using var frames = new WorkflowVisionFrameScope();
         var services = new WorkflowServiceProvider().Add<IImageFileReader>(new OpenCvImageFileReader())
             .Add<IBlobAnalyzer>(new OpenCvBlobAnalyzer()).Add<IColorAnalyzer>(new RgbColorAnalyzer())
-            .Add<IWorkflowVisionFrameScope>(frames).Add<IWorkflowRunPreparationService>(frames);
+            .Add<IWorkflowVisionFrameScope>(frames).Add<IWorkflowRunPreparationService>(frames)
+            // AR-01 阶段2：退役上一轮租约是运行所有者的独立职责，与示例装配保持一致。
+            .Add<IWorkflowRunResourceOwner>(frames);
         using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterStandardNodeHandlers().RegisterImageNodeHandlers());
         host.Configure(workspace.Navigator.RootDocument, new WorkflowContext(services));
         Assert.True((await host.RunAsync()).Success);

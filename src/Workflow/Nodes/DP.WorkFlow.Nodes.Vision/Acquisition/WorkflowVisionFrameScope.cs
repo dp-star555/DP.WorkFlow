@@ -41,8 +41,8 @@ public sealed class WorkflowVisionPreview : IDisposable
     public void Dispose() => Frame.Dispose();
 }
 
-/// <summary>有界运行帧仓和最新预览源。根运行开始时释放上一轮仓内租约，使结果查看窗口结束后自然回收；根运行内部的嵌套运行只校验、不清空。UI已Retain的快照不受影响。</summary>
-public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkflowVisionPreviewSource, IWorkflowNodeOutputProjectionSink, IWorkflowRunPreparationService, IDisposable
+/// <summary>有界运行帧仓和最新预览源。作为 <see cref="IWorkflowRunResourceOwner"/> 在根运行开始时释放上一轮仓内租约，使结果查看窗口结束后自然回收；准备阶段只校验，不清空。UI已Retain的快照不受影响。</summary>
+public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkflowVisionPreviewSource, IWorkflowNodeOutputProjectionSink, IWorkflowRunPreparationService, IWorkflowRunResourceOwner, IDisposable
 {
     private readonly object _gate = new();
     private readonly List<ImageFrame> _frames = new();
@@ -144,6 +144,10 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// 本方法**只校验，不释放任何既有资源**：仓内帧仍被本轮运行的节点输出引用。
+    /// 退役上一轮租约由 <see cref="ReleasePreviousRunAsync"/> 承担，只有根运行宿主持有该接口。
+    /// </remarks>
     public async ValueTask PrepareAsync(WorkflowRunPreparationContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -155,15 +159,25 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
             throw new InvalidOperationException($"新版视觉预览节点ID跨子文档重复：{duplicate.Key}；不能把不同节点的图像合并到同一预览槽。");
         ValidateCaptureNodes(context);
         if (_next is not null) await _next.PrepareAsync(context, cancellationToken).ConfigureAwait(false);
+    }
 
-        // 释放上一轮资源只有根运行才做。嵌套运行属于本轮内部，仓内帧仍被根运行的节点输出引用，
-        // 此时清空会让父输出指向已释放的图像（ObjectDisposedException）。
-        if (context.ScopeKind != WorkflowRunScopeKind.Root)
-            return;
-
+    /// <summary>
+    /// 退役上一轮运行留下的仓内租约与预览投影。只有根运行宿主会调用本方法：
+    /// 嵌套调用点（恢复处置子流程、联合恢复参与者、告警协调器）不解析
+    /// <see cref="IWorkflowRunResourceOwner"/>，因此在类型上无法触发这次清理。
+    /// </summary>
+    /// <param name="cancellationToken">宿主取消本次运行时触发的令牌。</param>
+    /// <returns>清理完成时结束的异步操作。</returns>
+    public async ValueTask ReleasePreviousRunAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        // 链上的后续所有者（例如文件夹采集会话）先退役，再释放本仓：
+        // 本仓持有的是本轮取到的帧租约，会话持有的是清单与游标，两者互不依赖。
+        if (_next is IWorkflowRunResourceOwner nextOwner)
+            await nextOwner.ReleasePreviousRunAsync(cancellationToken).ConfigureAwait(false);
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_disposed) return;
             Clear();
         }
     }

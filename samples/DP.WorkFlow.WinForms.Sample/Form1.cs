@@ -156,7 +156,9 @@ public partial class Form1 : Form
             .Add<IWorkflowProductFlowService>(new DemoProductFlowService())
             .Add<IWorkflowWaferRobotService>(new DemoWaferRobotService())
             .Add<IWorkflowRecoveryService>(new DemoRecoveryService())
-            .Add<IWorkflowRunPreparationService>(_frameScope);
+            // 准备服务只做校验；退役上一轮资源是运行所有者的职责，只有根运行宿主持有它（AR-01 阶段2）。
+            .Add<IWorkflowRunPreparationService>(_frameScope)
+            .Add<IWorkflowRunResourceOwner>(_frameScope);
         recoveryDemo?.ConfigureServices(services, _nodeCatalog, handlers, actions);
         _runtimeContext = new WorkflowContext(services);
         _runtimeHost = new WorkflowRuntimeHost(_nodeCatalog, handlers);

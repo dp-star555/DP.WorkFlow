@@ -192,7 +192,9 @@ public sealed class VisionOperatorPipelineTests
         .Add<IRegionProcessor>(new OpenCvRegionProcessor()).Add<IBlobAnalyzer>(new OpenCvBlobAnalyzer()).Add<IBlobSelector>(new BlobSelector())
         .Add<IColorAnalyzer>(new RgbColorAnalyzer()).Add<ICaliperMeasurer>(new CaliperMeasurer()).Add<IRobustLineFitter>(new RobustLineFitter())
         .Add<ITemplatePoseLocator>(new OpenCvTemplatePoseLocator())
-        .Add<IWorkflowVisionFrameScope>(scope).Add<IWorkflowRunPreparationService>(scope);
+        .Add<IWorkflowVisionFrameScope>(scope).Add<IWorkflowRunPreparationService>(scope)
+        // AR-01 阶段2：退役上一轮租约是运行所有者的独立职责，与示例装配保持一致。
+        .Add<IWorkflowRunResourceOwner>(scope);
     private sealed class WithoutPreprocessor(IServiceProvider inner) : IServiceProvider
     {
         public object? GetService(Type serviceType) => serviceType == typeof(IImagePreprocessor) ? null : inner.GetService(serviceType);

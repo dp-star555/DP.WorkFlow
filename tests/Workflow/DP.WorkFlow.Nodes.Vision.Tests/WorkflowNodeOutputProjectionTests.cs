@@ -127,6 +127,7 @@ public sealed class WorkflowNodeOutputProjectionTests
                 .Add<IImageFileReader>(new NumberedReader())
                 .Add<IWorkflowVisionFrameScope>(scope)
                 .Add<IWorkflowRunPreparationService>(scope)
+                .Add<IWorkflowRunResourceOwner>(scope)
                 .Add<IWorkflowNodeOutputProjectionSink>(sink)
                 .Add<IWorkflowRecoveryEntryGuard>(new AllowGuard())
                 .Add<IWorkflowFaultRecoveryCoordinator>(new RestartCoordinator());
@@ -185,7 +186,8 @@ public sealed class WorkflowNodeOutputProjectionTests
             var services = new WorkflowServiceProvider()
                 .Add<IImageFileReader>(new NumberedReader())
                 .Add<IWorkflowVisionFrameScope>(scope)
-                .Add<IWorkflowRunPreparationService>(scope);
+                .Add<IWorkflowRunPreparationService>(scope)
+                .Add<IWorkflowRunResourceOwner>(scope);
 
             var result = await new WorkflowEngine(
                     new WorkflowCompiler(catalog).Compile(document), handlers, new WorkflowContext(services))

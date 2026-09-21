@@ -1,6 +1,6 @@
 # AR-01 修复方案：运行准备与资源作用域
 
-状态：**阶段 1 已实施；阶段 2/3 待实施**。本文保留阶段 1 的历史方案与验收，并补充后续架构审计结论。
+状态：**阶段 1、2 已实施；阶段 3 待实施**。本文保留阶段 1 的历史方案与验收，并补充后续架构审计结论。
 
 ---
 
@@ -280,7 +280,7 @@ public sealed class WorkflowVisionFrameScopeRunScopeTests
 
 风险点：`WorkflowRunPreparationContext` 是公开类型，`ScopeKind` 必填会**编译期击穿所有外部实现者**。本项目尚未发布，建议直接改；若要平滑，用默认值 `Nested`。
 
-### 阶段 2（语义修正，更彻底）
+### 阶段 2（语义修正，更彻底）【已实施 2026-09-21】
 
 把两种职责拆成**两个接口**，让误用从"运行期 bug"变成"编译期错误"：
 
@@ -519,4 +519,68 @@ Object name: 'ImageBuffer'.
 
 后两处是**残留缺口**。它们是否也需要声明级覆盖，取决于 §5 里"联合恢复那一处为什么暂不定"
 的结论——在"一轮"语义定下来之前，为它们写断言会把待定行为固化成契约。
-建议与阶段 2 一并处理。
+
+**阶段 2 后的状态（2026-09-21）**：风险已显著降低。这两处**不解析 `IWorkflowRunResourceOwner`**，
+因此在类型上无法触发清理；新增的
+`WorkflowRunPreparationScopeDeclarationTests.恢复子流程的准备请求声明嵌套作用域并携带父节点ID`
+特意**把资源所有者一并注册进容器**，断言嵌套路径下 `ReleaseCount == 0`——
+即使接口在容器里可达，嵌套调用点也不得解析它。残留问题只是 `ScopeKind` 枚举本身传错
+（当前无行为影响），仍留待阶段 3 与"一轮"语义一起定。
+
+---
+
+## 9. 阶段 2 实施记录（2026-09-21）
+
+### 9.1 落地内容
+
+| # | 文件 | 改动 |
+|---|---|---|
+| 1 | `Abstractions/Execution/IWorkflowRunPreparationService.cs` | 新增 `IWorkflowRunResourceOwner`；修正两个接口的注释，明确"准备只校验、释放归所有者" |
+| 2 | `Nodes.Vision/Acquisition/WorkflowVisionFrameScope.cs` | 同时实现两个接口；`PrepareAsync` 只校验（删除 `ScopeKind` 分支），`ReleasePreviousRunAsync` 才 `Clear()` |
+| 3 | `Nodes.Vision/Acquisition/WorkflowVisionAcquisitionSession.cs` | 同上；`PrepareAsync` 只枚举并暂存候选清单（`_pending`），`ReleasePreviousRunAsync` 才切换清单并归零游标 |
+| 4 | `Runtime/Hosting/WorkflowRuntimeHost.cs` | 唯一调用 `ReleasePreviousRunAsync` 的位置，顺序为"先准备、后退役" |
+| 5 | 两个示例装配 | `IWorkflowRunResourceOwner` 与 `IWorkflowRunPreparationService` 一并注册（同一实例） |
+| 6 | 8 个测试文件 | 按两步契约更新直接调用点；新增调用点级断言 |
+
+关键点：两个有状态实现的 `PrepareAsync` **都不再读取 `ScopeKind`**。作用域判断从"运行期分支"
+变成"能不能拿到接口"。`WorkflowRunScopeKind` 暂时保留——阶段 3 还有其它运行级状态要迁入 RunScope 所有权。
+
+### 9.2 调用顺序
+
+```text
+根运行：  PrepareAsync(Root)  →  ReleasePreviousRunAsync()  →  engine.RunAsync()
+嵌套运行：PrepareAsync(Nested) →  （无 Release：类型上拿不到 IWorkflowRunResourceOwner）
+```
+
+会话的候选清单因此天然安全：嵌套准备会覆盖 `_pending`，但它后面没有 `Release`，
+候选被下一轮根运行准备覆盖，不会污染生效清单。
+
+### 9.3 验收
+
+新增/改造 5 条回归测试，修复前红灯形态：
+
+| 测试 | 修复前红灯 |
+|---|---|
+| `准备阶段本身不得释放既有资源即使声明根作用域` | `Assert.Throws<ObjectDisposedException>` 未抛出 |
+| `准备阶段本身不得启用新清单即使声明根作用域` | `Assert.Throws() Failure: No exception was thrown` |
+| `运行所有者释放上一轮保留的帧` | 新契约上的正向断言 |
+| `根运行退役上一轮后重置文件夹游标` | 新契约上的正向断言 |
+| `RunAsync_ReleasesPreviousRunAfterPreparationAndBeforeExecution` | 宿主调用顺序（准备 → 退役 → 执行） |
+
+### 9.4 变异验证（两轮，撤销后复绿）
+
+| 变异 | 精确命中的红灯 |
+|---|---|
+| 根宿主不再调用 `ReleasePreviousRunAsync` | `RunAsync_ReleasesPreviousRunAfterPreparationAndBeforeExecution`、`ShippedSample_IsRunnableAndRerunReleasesOldOwnedFrames`、`Preprocess_Region_Morphology_BlobSelectionAndColor_RoundTripAndRerun` |
+| 会话在 `PrepareAsync` 里直接启用候选清单（旧行为） | `准备阶段本身不得启用新清单即使声明根作用域`、`嵌套准备不得重置根运行的文件夹游标` |
+| `Clear()` 放回 `PrepareAsync` | `准备阶段本身不得释放既有资源即使声明根作用域`、`嵌套运行准备不得释放根运行已保留的帧`、`运行结束后仓仍持有租约下一轮根运行开始时恰好归零`、`处置子流程运行后父运行仍能消费原图`、`FrameScope_IsBoundedAndNewRunPreservesIndependentUiLease` |
+
+全量 **817 例 0 失败**，Debug 构建 0 警告 0 错误。
+
+### 9.5 仍未做
+
+- 阶段 3：根运行捕获中立 RunScope 所有权令牌，`Nested` 从父 RunScope 继承；
+  文件夹采集会话等运行级状态由每轮 RunScope 创建；表达"活动 → 已完成可查看 → 退役"，
+  而不是"Run 结束即 Dispose"。
+- `WorkflowJointRecoveryGroup` 的"一轮"语义（§5）。
+- 生产路径端到端复现（§10 验收第 4 条）仍是构造性的，未走 `LoadVisionFileNode` 全链路。

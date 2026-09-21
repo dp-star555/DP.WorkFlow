@@ -185,6 +185,8 @@ public sealed class VisionAcquisitionNodeTests
             var services = new WorkflowServiceProvider()
                 .Add<IWorkflowVisionFrameScope>(FrameScope)
                 .Add<IWorkflowRunPreparationService>(FrameScope)
+                // AR-01 阶段2：退役上一轮租约是运行所有者的独立职责，与示例装配保持一致。
+                .Add<IWorkflowRunResourceOwner>(FrameScope)
                 .Add<IVisionAcquisition>(Acquisition);
             if (registerSourceCatalog)
                 services.Add<IWorkflowVisionSourceCatalog>(new WorkflowVisionSourceCatalog(sources ?? Array.Empty<WorkflowVisionSourceInfo>()));

@@ -13,16 +13,22 @@ public interface IWorkflowVisionFolderSource
     Task<IImageSource> NextAsync(string nodeId, CancellationToken token);
 }
 
-/// <summary>在运行准备时冻结目录清单；各节点独立游标并串行推进。根运行开始时冻结并归零，根运行内部的嵌套运行只校验、不重置。</summary>
+/// <summary>在运行准备时冻结目录清单；各节点独立游标并串行推进。准备阶段只校验并产出候选清单，由 <see cref="IWorkflowRunResourceOwner.ReleasePreviousRunAsync"/> 启用。</summary>
 public sealed class WorkflowVisionAcquisitionSession(IImageFileReader reader, IWorkflowRunPreparationService? next = null)
-    : IWorkflowVisionFolderSource, IWorkflowRunPreparationService
+    : IWorkflowVisionFolderSource, IWorkflowRunPreparationService, IWorkflowRunResourceOwner
 {
     private readonly IImageFileReader _reader = reader ?? throw new ArgumentNullException(nameof(reader));
     private Dictionary<string, Sequence> _sequences = new(StringComparer.Ordinal);
+    private Dictionary<string, Sequence>? _pending;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// 本方法只校验并**产出候选清单**，不启用它：启用意味着重置游标，而嵌套运行重置游标
+    /// 会让根运行重复消费已经处理过的图像（AR-27）。启用由 <see cref="ReleasePreviousRunAsync"/> 完成。
+    /// </remarks>
     public async ValueTask PrepareAsync(WorkflowRunPreparationContext context, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(context);
         var prepared = new Dictionary<string, Sequence>(StringComparer.Ordinal);
         foreach (var node in context.Nodes.OfType<LoadVisionFolderNodeModel>())
         {
@@ -38,12 +44,23 @@ public sealed class WorkflowVisionAcquisitionSession(IImageFileReader reader, IW
         }
         if (next is not null) await next.PrepareAsync(context, cancellationToken).ConfigureAwait(false);
 
-        // 冻结清单与游标归零只属于根运行。嵌套运行属于本轮内部：重置游标会让根运行重复消费
-        // 已经处理过的图像，重新冻结清单还会让运行中的文件列表中途变化。
-        if (context.ScopeKind != WorkflowRunScopeKind.Root)
-            return;
+        // 只有根运行会把候选清单变成生效清单，而根运行宿主的调用顺序是"先准备、后释放"，
+        // 因此这里暂存即可；嵌套运行同样会走到这里，但它不会触发 Release，候选自然被下一轮覆盖。
+        _pending = prepared;
+    }
 
-        _sequences = prepared;
+    /// <summary>启用本次准备产出的清单并归零游标，退役上一轮的文件序列。</summary>
+    /// <param name="cancellationToken">宿主取消本次运行时触发的令牌。</param>
+    /// <returns>清单切换完成时结束的异步操作。</returns>
+    public async ValueTask ReleasePreviousRunAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (next is IWorkflowRunResourceOwner nextOwner)
+            await nextOwner.ReleasePreviousRunAsync(cancellationToken).ConfigureAwait(false);
+        if (_pending is null)
+            return;
+        _sequences = _pending;
+        _pending = null;
     }
 
     /// <inheritdoc/>

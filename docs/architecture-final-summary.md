@@ -1,6 +1,6 @@
 # DP.WorkFlow 架构评审最终总结
 
-状态：**合并结论，取代以下三份文档**（最后更新 2026-09-21：AR-24 已完成 / AR-01 阶段 1 已修复 / AR-02、AR-27、AR-29 已修复 / AR-16 已缓解 / 图像采集Provider阶段A–E完成 / 新增 AR-27 至 AR-30）
+状态：**合并结论，取代以下三份文档**（最后更新 2026-09-21：AR-24 已完成 / AR-01 阶段 1、2 已修复 / AR-02、AR-27、AR-29 已修复 / AR-16 已缓解 / 图像采集Provider阶段A–E完成 / 新增 AR-27 至 AR-30）
 - `docs/architecture-smell-review.md`（依赖/内核/UI/构建异味）
 - `docs/architecture-review-and-roadmap.md`（AR-01..AR-12 + 阶段 A–D）
 - `docs/architecture-review-and-roadmap-critique.md`（对上一份的评审意见）
@@ -61,23 +61,28 @@
 > - **图像采集Provider阶段 E 完成**：第二个真实厂商 Provider 落地为 `DP.Vision.Basler`
 >   （官方 NuGet 包 `Basler.Pylon.NET.x64`，免费）。两个真实 Provider 可在同一进程组合并按
 >   SourceId 各自路由。阶段 F（`ExclusiveRun`/`Broadcast`）仍受外部依赖阻塞，在运行准备阶段被显式拒绝。
-> - 实测基线：`DP.Vision.sln` 650 例 0 失败；`DP.WorkFlow.sln` 811 例 0 失败、0 警告 0 错误。
+> - **AR-01 阶段 2 已完成**（2026-09-21）→ 新增 `IWorkflowRunResourceOwner`，
+>   破坏性清理整体移出 `PrepareAsync`。两个有状态实现（帧仓、文件夹采集会话）的 `PrepareAsync`
+>   现在只校验并产出候选状态；根宿主是唯一调用 `ReleasePreviousRunAsync` 的位置，
+>   嵌套调用点在**类型上拿不到**该接口。作用域判断从"运行期分支"变成"编译期不可达"。
+>   姊妹实例 AR-27 同步加固。阶段 3（RunScope 所有权令牌）仍待评估。
+> - 实测基线：`DP.Vision.sln` 650 例 0 失败；`DP.WorkFlow.sln` 817 例 0 失败、0 警告 0 错误。
 
 ### 1.2 四件最该先做的事
 
 1. ~~**AR-24 纳入版本控制**~~ — **已完成**（`8fdd174`）。它是其他一切修复的安全网，且 AR-11 与阶段 D 的全部内容以它为前提。
 2. ~~**AR-02 冻结语义**~~ — **已完成**。"校验失败"与"已冻结有效"在 API 上已可区分：失败不产生任何状态变更。
-3. ~~**AR-01 准备与资源所有权**~~ — **阶段 1 已完成**（`16f1c45`），**验收 4/5 条测试已补齐**（见 §10.5）；阶段 2 的接口拆分待评估。姊妹实例 AR-27 一并修复。
+3. ~~**AR-01 准备与资源所有权**~~ — **阶段 1/2 已完成**（`16f1c45`、2026-09-21），**验收 4/5 条测试已补齐**（见 §10.5）；阶段 3（RunScope 所有权令牌）待评估。姊妹实例 AR-27 一并修复并加固。
 4. **AR-17 快照热路径** — 无条件全量构造 + 与调度共用一把锁，是并发扩展的直接瓶颈。
 
-**下一个待办是 AR-17**（第 4 项）。另外 AR-01 阶段 2（接口拆分）与 AR-02 的姊妹语义（`WorkflowNodeHandlerCatalog.Freeze`
+**下一个待办是 AR-17**（第 4 项）。另外 AR-01 阶段 3（RunScope 所有权令牌）与 AR-02 的姊妹语义（`WorkflowNodeHandlerCatalog.Freeze`
 从不校验、无条件置位）仍待评估。
 
 ---
 
 ## 2. 运行契约与资源所有权
 
-### AR-01 / P0：运行准备与资源作用域混淆【阶段 1 已修复 · 阶段 2 待评估】
+### AR-01 / P0：运行准备与资源作用域混淆【阶段 1/2 已修复 · 阶段 3 待评估】
 
 **问题定位：不在实现里，在契约里。** `IWorkflowRunPreparationService` 的接口注释原文是：
 
@@ -153,12 +158,63 @@ Nodes.Process/Recovery/WorkflowWarningHandlerCoordinator.cs:55 ← 协调器兜�
 
 **未完成部分**：
 
-- 阶段 2（拆成 `IWorkflowRunPreparationService` 只校验 + `IWorkflowRunResourceOwner` 只释放）
-  尚未实施——这是把误用从"运行期 bug"变成"编译期错误"的关键一步。
 - `WorkflowJointRecoveryGroup` 的"一轮"语义仍未定义，当前按安全方向取 `Nested`。若确实需要干净起点，
   应由联合组在"协作开始"单点显式触发一次，而不是每个参与者各触发一次。
 - 生产路径端到端复现（验收第 4 条）仍未做：现有测试是构造性的，未走 `LoadVisionFileNode` 全链路。
 - 验收第 5 条（结束后租约按所有权恰好释放）尚无对应测试。
+
+---
+
+**阶段 2 已实施（2026-09-21）**：把"释放上一轮资源"从准备服务里**整体移出**，变成嵌套调用点在类型上拿不到的能力。
+
+阶段 1 的封堵靠"调用者自觉传对枚举"——枚举传错就退化。阶段 2 改为**类型上根本调不到**：
+
+```csharp
+public interface IWorkflowRunPreparationService   // 每个作用域都调用
+{
+    ValueTask PrepareAsync(WorkflowRunPreparationContext context, CancellationToken cancellationToken);
+}
+
+public interface IWorkflowRunResourceOwner        // 只有根运行宿主解析它
+{
+    ValueTask ReleasePreviousRunAsync(CancellationToken cancellationToken);
+}
+```
+
+| 角色 | 改动 |
+|---|---|
+| (b) 契约 | 新增 `IWorkflowRunResourceOwner`；`IWorkflowRunPreparationService` 注释改为"只校验与绑定准备，不释放任何资源" |
+| (c) 有状态实现 | `WorkflowVisionFrameScope` 与 `WorkflowVisionAcquisitionSession` 同时实现两个接口：`PrepareAsync` **只校验并产出候选状态**，`ReleasePreviousRunAsync` 才真正退役上一轮 |
+| (a) 根宿主 | `WorkflowRuntimeHost.RunCoreAsync` 是**唯一**调用 `ReleasePreviousRunAsync` 的位置，顺序为"先准备、后退役" |
+| (a) 嵌套调用点 | `WorkflowEngine`（恢复子流程）、`WorkflowJointRecoveryGroup`、`WorkflowWarningHandlerCoordinator` **不解析** `IWorkflowRunResourceOwner`，因此编译期就无法触发清理 |
+
+两个实现类的 `PrepareAsync` 现在**不再读取 `ScopeKind`**——作用域判断从"运行期分支"变成了"能不能拿到接口"。
+`ScopeKind` 暂时保留，因为阶段 3 还有其它运行级状态要迁入 RunScope 所有权（见下文补充审计）。
+
+`WorkflowVisionAcquisitionSession` 的候选清单暂存在 `_pending`：准备阶段只产出，`ReleasePreviousRunAsync` 才切换并归零游标。
+嵌套运行的 `PrepareAsync` 同样会覆盖 `_pending`，但它后面没有 `Release`，因此候选自然被下一轮根运行准备覆盖——不会污染生效清单。
+
+**红→绿证据**：新增/改造回归测试 5 条，修复前分别红于：
+
+- `准备阶段本身不得释放既有资源即使声明根作用域` —— `Assert.Throws<ObjectDisposedException>` 未抛出
+- `准备阶段本身不得启用新清单即使声明根作用域` —— `Assert.Throws() Failure: No exception was thrown`
+- `运行所有者释放上一轮保留的帧` / `根运行退役上一轮后重置文件夹游标` —— 新契约上的正向断言
+- `RunAsync_ReleasesPreviousRunAfterPreparationAndBeforeExecution` —— 宿主调用顺序（准备 → 退役 → 执行）
+
+**变异验证（两轮，各精确命中 5 例，撤销后复绿）**：
+
+| 变异 | 红灯 |
+|---|---|
+| 根宿主不再调用 `ReleasePreviousRunAsync` | `RunAsync_ReleasesPreviousRunAfterPreparationAndBeforeExecution`、`ShippedSample_IsRunnableAndRerunReleasesOldOwnedFrames`、`Preprocess_Region_Morphology_BlobSelectionAndColor_RoundTripAndRerun` |
+| 会话在 `PrepareAsync` 里直接启用候选清单（旧行为） | `准备阶段本身不得启用新清单即使声明根作用域`、`嵌套准备不得重置根运行的文件夹游标` |
+| `Clear()` 放回 `PrepareAsync` | `准备阶段本身不得释放既有资源即使声明根作用域`、`嵌套运行准备不得释放根运行已保留的帧`、`运行结束后仓仍持有租约下一轮根运行开始时恰好归零`、`处置子流程运行后父运行仍能消费原图`、`FrameScope_IsBoundedAndNewRunPreservesIndependentUiLease` |
+
+全量 **817 例 0 失败**，Debug 构建 0 警告 0 错误。
+
+**阶段 3 仍待做**：让根运行捕获独立的中立 RunScope 所有权令牌、`Nested` 从父 RunScope 继承同一令牌；
+让文件夹采集会话等运行级状态由每轮 RunScope 创建；表达"活动 → 已完成可查看 → 退役"，
+而不是"Run 结束即 Dispose"。**AR-27 与 AR-29 的语义不能再退回隐式约定**，因此在所有有状态准备实现
+迁入 RunScope 所有权之前，`WorkflowRunScopeKind` 不能删除。
 
 **后续审计补充**：当前FrameScope同时承担图像租约所有者、预览投影、准备期清理和最终释放四个角色；阶段2不能只拆`Retain/Capture`。`WorkflowRuntimeHost`也不创建或拥有FrameScope，“每Host一个”只是样例装配结果。完整方向是阶段2拆出仅根所有者可见的破坏性清理接口，阶段3让根运行捕获中立RunScope所有权令牌、Nested继承。通用Host不得直接依赖Vision工厂；同时不能在运行刚完成时立即释放，因为现有结果查看窗口要求租约保留到下一轮根运行或显式退役。完整约束见`docs/ar-01-fix-plan.md`阶段2/3补充审计。
 
@@ -189,8 +245,11 @@ AR-01 只修了帧仓，这条当时被列为"同源遗留"。本轮用确定性
 修复前红灯 `Expected: 3, Actual: 1`。
 
 **归因**：这是 AR-01 同一根因的第二个表现面，说明"契约缺少作用域维度"的影响范围**不止帧仓一处**。
-排查结论：目前只有这两个类型实现了 `IWorkflowRunPreparationService`，均已修正；
-但**根因（接口不表达作用域）仍在**，阶段 2 的接口拆分才能从结构上封住。
+排查结论：目前只有这两个类型实现了 `IWorkflowRunPreparationService`。
+
+**阶段 2 后已加固（2026-09-21）**：本类的游标重置同样移出了 `PrepareAsync`——准备阶段只枚举并暂存候选清单，
+`ReleasePreviousRunAsync` 才切换清单并归零游标。因此"嵌套运行重置父游标"不再依赖调用者传对 `ScopeKind`，
+而是嵌套调用点在类型上拿不到 `IWorkflowRunResourceOwner`。原 `1164725` 的 `Root` 分支判断已随之删除。
 
 ### AR-02 / P0：插件冻结具有失败后的"成功外观"【已修复】
 
@@ -869,7 +928,7 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 
 | 最终编号 | 来源 | 说明 |
 |---|---|---|
-| AR-01 | AR | 补充三处调用点与三层归因 |
+| AR-01 | AR | 补充三处调用点与三层归因；**阶段 2 已按此结论修复**（破坏性清理移出准备服务，改由根运行资源所有者承担） |
 | AR-02 | AR + S1-3 + C | 强化"子目录冻结不可逆"结论；**已按此结论修复**（先校验后发布） |
 | AR-03 | AR + S2-6 | 补充"受影响节点清单"待办 |
 | AR-04 | AR | 行号校正（StopAsync 实为 `:133`，ResetAsync `:231`） |
@@ -1002,8 +1061,11 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
    （`WorkflowEngine` 嵌套调用）声明的作用域——此前把 `WorkflowEngine` 改回 `Root` 时全部测试仍然绿灯，
    属于覆盖盲区。详见 §10.5。
 8. **另 2 个准备调用点是否需要声明级覆盖？** `WorkflowWarningHandlerCoordinator.cs:55` 与
-   `WorkflowJointRecoveryGroup.cs:150` 都传 `Nested`，但都没有测试锁定其声明。后者的"一轮"语义
-   尚未定论（见 `ar-01-fix-plan.md` §5），现在写断言会把待定行为固化成契约。建议与阶段 2 一并处理。
+   `WorkflowJointRecoveryGroup.cs:150` 都传 `Nested`，但都没有测试锁定其声明。**阶段 2 后风险已降低**：
+   这两处不解析 `IWorkflowRunResourceOwner`，因此在类型上无法触发清理；引擎的嵌套路径已有
+   `恢复子流程的准备请求声明嵌套作用域并携带父节点ID` 锁定"注册了资源所有者也不会被调用"。
+   残留问题只是 `ScopeKind` 枚举本身传错（当前无行为影响）。后者的"一轮"语义尚未定论
+   （见 `ar-01-fix-plan.md` §5），现在写断言会把待定行为固化成契约，因此仍留待阶段 3。
 
 ---
 

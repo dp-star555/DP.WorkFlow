@@ -3,12 +3,15 @@ namespace DP.WorkFlow;
 /// <summary>准备请求所属的运行作用域。</summary>
 public enum WorkflowRunScopeKind
 {
-    /// <summary>根运行：真正开始新一轮，允许释放上一轮运行留下的运行级资源。</summary>
+    /// <summary>
+    /// 根运行：真正开始新一轮。只有根运行宿主持有
+    /// <see cref="IWorkflowRunResourceOwner"/>，因此只有它能退役上一轮资源。
+    /// </summary>
     Root,
 
     /// <summary>
-    /// 根运行内部的嵌套运行（子流程、故障处置、联合参与者）：
-    /// 只做校验与绑定准备，不得释放任何既有资源——这些资源仍被根运行引用。
+    /// 根运行内部的嵌套运行（子流程、故障处置、联合参与者）：只做校验与绑定准备。
+    /// 其调用点在类型上拿不到 <see cref="IWorkflowRunResourceOwner"/>，既有资源保持被根运行引用。
     /// </summary>
     Nested
 }
@@ -28,18 +31,45 @@ public sealed record WorkflowRunPreparationContext(
     IServiceProvider? Services = null);
 
 /// <summary>
-/// 由运行宿主在根运行开始时、以及任何嵌套运行开始时调用。
-/// 实现者必须依据 <see cref="WorkflowRunPreparationContext.ScopeKind"/> 判断：
-/// 只有 <see cref="WorkflowRunScopeKind.Root"/> 才允许释放上一轮资源；
-/// <see cref="WorkflowRunScopeKind.Nested"/> 必须保持既有资源不变。
+/// 由运行宿主在根运行开始时、以及任何嵌套运行开始时调用，用于校验运行前提并准备计划节点绑定。
+/// <para>
+/// 本接口**只做校验与绑定准备，不得释放任何既有资源**：嵌套运行仍在引用它们。
+/// 释放上一轮资源是 <see cref="IWorkflowRunResourceOwner.ReleasePreviousRunAsync"/> 的职责，
+/// 而嵌套调用点在类型上拿不到那个接口。
+/// </para>
+/// <para>
+/// <see cref="WorkflowRunPreparationContext.ScopeKind"/> 仅供实现者做诊断与断言；
+/// 破坏性行为**不应**再依赖它——依赖"调用者传对枚举"拦不住误用，AR-01 阶段 1 之前正是那样。
+/// </para>
 /// </summary>
 public interface IWorkflowRunPreparationService
 {
-    /// <summary>在新建引擎开始执行首节点前准备运行级资源和全部计划节点绑定。</summary>
+    /// <summary>在新建引擎开始执行首节点前校验运行前提并准备全部计划节点绑定。</summary>
     /// <param name="context">本次已编译计划的递归节点快照与作用域声明。</param>
     /// <param name="cancellationToken">宿主取消本次运行时触发的令牌。</param>
-    /// <returns>资源释放、验证和绑定准备完成时结束的异步操作。</returns>
+    /// <returns>验证和绑定准备完成时结束的异步操作。</returns>
     ValueTask PrepareAsync(
         WorkflowRunPreparationContext context,
         CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// 释放上一轮运行留下的运行级资源。**只有运行的所有者可以调用**：
+/// 根运行宿主在完成 <see cref="IWorkflowRunPreparationService.PrepareAsync"/> 之后、新引擎执行首节点之前调用一次。
+/// <para>
+/// 之所以拆成独立接口而不是给准备请求再加一个标志位：嵌套调用点（子流程、故障处置、联合参与者）
+/// 在类型上就**拿不到**本接口，因此"清空了父运行仍在引用的资源"从运行期缺陷变成编译期错误。
+/// 依赖调用者自觉传对枚举是拦不住的——AR-01 阶段1 之前正是那样。
+/// </para>
+/// </summary>
+public interface IWorkflowRunResourceOwner
+{
+    /// <summary>
+    /// 退役上一轮资源并为新一轮让路。调用时机必须在
+    /// <see cref="IWorkflowRunPreparationService.PrepareAsync"/> 之后：准备阶段产出的候选状态（例如
+    /// 冻结后的文件夹清单）在这里才启用，因此"先准备、后释放"是契约的一部分。
+    /// </summary>
+    /// <param name="cancellationToken">宿主取消本次运行时触发的令牌。</param>
+    /// <returns>上一轮资源退役完成时结束的异步操作。</returns>
+    ValueTask ReleasePreviousRunAsync(CancellationToken cancellationToken);
 }

@@ -110,7 +110,9 @@ public partial class MainWindow : Window
             .Add<IWorkflowVisionFolderSource>(acquisition)
             .Add<IVisionAcquisition>(_visionAcquisition)
             .Add<IWorkflowVisionSourceCatalog>(_visionSources)
-            .Add<IWorkflowRunPreparationService>(_frameScope);
+            // 准备服务只做校验；退役上一轮资源是运行所有者的职责，只有根运行宿主持有它（AR-01 阶段2）。
+            .Add<IWorkflowRunPreparationService>(_frameScope)
+            .Add<IWorkflowRunResourceOwner>(_frameScope);
         recoveryDemo?.ConfigureServices(services, catalog, handlers, actions);
         _runtimeHost = new WorkflowRuntimeHost(catalog, handlers);
         _runtimeBinding = new WorkflowStudioRuntimeBinding(_runtimeHost, _workspace.Navigator)

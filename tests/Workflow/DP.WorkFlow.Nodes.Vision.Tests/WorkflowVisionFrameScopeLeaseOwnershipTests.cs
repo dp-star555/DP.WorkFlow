@@ -31,12 +31,17 @@ public sealed class WorkflowVisionFrameScopeLeaseOwnershipTests
             // 本轮结束后，仓仍持有帧与预览两份租约，供结果查看窗口使用。
             Assert.False(SlotReturned(pool), "运行结束后仓应当仍持有帧租约。");
 
-            // 下一轮根运行开始：仓释放上一轮全部租约，槽位随之归池。
+            // 下一轮根运行开始：运行所有者退役上一轮全部租约，槽位随之归池。
+            // AR-01 阶段2 起，"退役"是独立于准备的动作（IWorkflowRunResourceOwner），
+            // 准备阶段只校验，不再顺带清理。
             await scope.PrepareAsync(
                 new WorkflowRunPreparationContext(Array.Empty<IWorkflowNodeModel>(), WorkflowRunScopeKind.Root),
                 CancellationToken.None);
+            Assert.False(SlotReturned(pool), "准备阶段本身不得释放既有租约。");
 
-            Assert.True(SlotReturned(pool), "根运行开始后上一轮仓内租约必须全部释放。");
+            await scope.ReleasePreviousRunAsync(CancellationToken.None);
+
+            Assert.True(SlotReturned(pool), "根运行退役上一轮后仓内租约必须全部释放。");
         }
         finally { File.Delete(path); }
     }
@@ -98,7 +103,8 @@ public sealed class WorkflowVisionFrameScopeLeaseOwnershipTests
         var services = new WorkflowServiceProvider()
             .Add<IImageFileReader>(new PooledReader(pool))
             .Add<IWorkflowVisionFrameScope>(scope)
-            .Add<IWorkflowRunPreparationService>(scope);
+            .Add<IWorkflowRunPreparationService>(scope)
+            .Add<IWorkflowRunResourceOwner>(scope);
 
         var result = await new WorkflowEngine(
                 new WorkflowCompiler(catalog).Compile(document), handlers, new WorkflowContext(services))
