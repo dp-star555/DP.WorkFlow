@@ -71,6 +71,9 @@ public partial class MainWindow : Window
         var composition = new VisionAcquisitionMachineConfigurationComposer()
             .Compose(typeCatalog, cameras);
         _visionAcquisition = new VisionAcquisitionRuntime(composition);
+        // V2-3：设备连接属于软件生命周期，宿主在进入可运行状态前启动Runtime：
+        // 按ResourceKey真正打开设备；Required失败→NotReady，Optional失败→Degraded。
+        var runtimeState = _visionAcquisition.StartAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
         // 插件包整体加载失败（例如投放不完整、缺厂商程序集）必须出现在诊断里，
         // 否则界面只会显示"未安装"，把真实原因藏起来。
         var driverLoadFailure = driverModules.Failures.Count == 0
@@ -78,8 +81,14 @@ public partial class MainWindow : Window
             : "Driver Module 加载失败：" + string.Join(
                 "；",
                 driverModules.Failures.Select(failure => failure.AssemblyPath + " -> " + failure.Reason));
+        var runtimeFailure = runtimeState == EVisionRuntimeState.Ready
+            ? null
+            : $"采集运行时未就绪（{runtimeState}），部分或全部设备未连接。";
         var projectedSources = WorkflowVisionSourceCatalog.FromAcquisition(composition);
-        _visionSources = driverLoadFailure is null
+        var startupDiagnostic = string.Join(
+            " ",
+            new[] { driverLoadFailure, runtimeFailure }.Where(item => item is not null));
+        _visionSources = startupDiagnostic.Length == 0
             ? projectedSources
             : new WorkflowVisionSourceCatalog(projectedSources.Sources.Select(source =>
                 source.IsAvailable || source.Diagnostic is null
@@ -89,7 +98,7 @@ public partial class MainWindow : Window
                         source.ProviderId,
                         source.SharingPolicy,
                         source.IsAvailable,
-                        source.Diagnostic + " " + driverLoadFailure,
+                        source.Diagnostic + " " + startupDiagnostic,
                         source.AcquisitionMode)));
         _workspace = new WorkflowDocumentWorkspace(catalog);
         _workspace.New(recoveryDemo is null ? "视觉文件分析" : "异常恢复演示（仅软件模拟）");

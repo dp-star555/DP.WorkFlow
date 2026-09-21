@@ -112,14 +112,15 @@ public sealed class BufferedExternalRunScopeEndToEndTests
     }
 
     /// <summary>
-    /// 运行准备校验失败时设备根本没有被打开。
+    /// 运行准备校验失败时设备没有被布防。
     /// <para>
-    /// 这锁的是顺序：取得运行作用域（会打开设备并布防）必须晚于准备校验，
-    /// 否则一次注定失败的运行也会先把相机抢过来。
+    /// V2-3 语义：设备连接属于软件生命周期，Runtime Start 阶段已真实打开设备（OpenCount==1）；
+    /// 准备校验失败发生在根运行取得作用域之前，因此接收流不得布防（StreamStartCount==0）。
+    /// 这仍锁住顺序：布防必须晚于准备校验，否则一次注定失败的运行也会先把相机抢过来。
     /// </para>
     /// </summary>
     [Fact]
-    public async Task 运行准备校验失败时设备没有被打开()
+    public async Task 运行准备校验失败时设备没有被布防()
     {
         FakeStreamingDevice? device = null;
         var trigger = new TriggerHandler(() => Device(device), ("f31", 31));
@@ -133,8 +134,8 @@ public sealed class BufferedExternalRunScopeEndToEndTests
 
         Assert.Contains("BufferedExternal", failure.Message);
         Assert.Contains("曝光/增益", failure.Message);
-        Assert.Equal(0, runtime.Provider.OpenCount);
-        Assert.Null(device);
+        Assert.True(runtime.Provider.OpenCount == 1, "V2-3：设备由Runtime Start打开一次。");
+        Assert.True(runtime.Device!.StreamStartCount == 0, "准备校验失败时不得布防接收流。");
         Assert.Equal(0, trigger.ExecutionCount);
         Assert.Equal(0, sink.ExecutionCount);
     }
@@ -295,6 +296,9 @@ public sealed class BufferedExternalRunScopeEndToEndTests
                             byteBudget: 1024,
                             maximumFrameAge: TimeSpan.FromSeconds(30)))
                 }));
+            // V2-3：设备连接属于软件生命周期，Runtime构造后立即启动并打开设备；
+            // 根运行布防与节点采集都只复用会话设备。
+            Runtime.StartAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
         }
 
         public FakeStreamingProvider Provider { get; }
