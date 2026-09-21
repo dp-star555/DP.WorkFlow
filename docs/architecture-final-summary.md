@@ -61,7 +61,7 @@
 > - **图像采集Provider阶段 E 完成**：第二个真实厂商 Provider 落地为 `DP.Vision.Basler`
 >   （官方 NuGet 包 `Basler.Pylon.NET.x64`，免费）。两个真实 Provider 可在同一进程组合并按
 >   SourceId 各自路由。阶段 F（`ExclusiveRun`/`Broadcast`）仍受外部依赖阻塞，在运行准备阶段被显式拒绝。
-> - 实测基线：`DP.Vision.sln` 646 例 0 失败；`DP.WorkFlow.sln` 811 例 0 失败、0 警告 0 错误。
+> - 实测基线：`DP.Vision.sln` 650 例 0 失败；`DP.WorkFlow.sln` 811 例 0 失败、0 警告 0 错误。
 
 ### 1.2 四件最该先做的事
 

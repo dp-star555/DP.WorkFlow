@@ -553,7 +553,21 @@ ResourceKey
 
 阶段 E 厂商选型实测（2026-09-21，本机联网）：**Basler 是唯一提供官方 NuGet 包的工业相机厂商**——`Basler.Pylon.NET.x64` 无依赖、可从 nuget.org 直接还原、在 net48 与 net8.0-windows 下均编译通过；pylon 相机软件套装与 .NET API 均为免费软件，仅运行期需要安装 pylon 运行时。海康（Hikrobot）官方 SDK 只能从官网手工下载 MVS 客户端，nuget.org 上只有第三方非官方封装（`MvCameraControl.Net` 等，非厂商发布）；大华、大恒同理。因此第二个真实 Adapter 选择 Basler：它能在**没有相机、没有装 SDK** 的机器上完成全部契约与边界验证，只有真实出图路径需要现场验收。
 
-自动化实测（本机 Debug）：`DP.Vision.sln` **646 例 0 失败**（含 net48 与 net8.0 两套目标框架）；`DP.WorkFlow.sln` **811 例 0 失败**，构建 0 警告 0 错误。
+自动化实测（本机 Debug）：`DP.Vision.sln` **650 例 0 失败**（含 net48 与 net8.0 两套目标框架）；`DP.WorkFlow.sln` **811 例 0 失败**，构建 0 警告 0 错误。
+
+**插件包必须自包含厂商依赖（阶段D遗留缺陷，2026-09-21 修复）**：加载器用 `Assembly.GetExportedTypes()`
+发现入口，这要求插件程序集的引用全部可解析。阶段D的示例投放只拷了插件程序集本身，漏掉厂商程序集
+（HALCON 的 `halcondotnet.dll`、Basler 的 `Basler.Pylon.dll`），而 `ReferenceOutputAssembly="false"`
+恰好不会把厂商依赖带进宿主根目录——结果是**插件在运行时整包加载失败**，界面只会显示"Provider 未安装"。
+修复：投放目标改为按厂商输出目录的 `*.dll` 通配投放，**但排除宿主已提供的契约程序集**
+（`DP.Vision.dll`、`DP.Vision.Acquisition.Abstractions.dll`）——把契约放进插件包会让插件拿到第二份类型，
+与宿主的中立接口不是同一个类型，组合阶段必然失败。两个厂商测试工程各加一条回归：
+`PluginDirectory_ContainsVendorDependencies`（插件程序集的非框架、非宿主引用必须能在同目录找到）。
+示例的诊断信息也改为附带 `Failures` 的真实原因，不再只显示"未安装"。
+
+示例投放后的实测（在两个示例输出目录直接跑加载器）：两个插件包均加载成功、0 失败；
+`Camera.Top → dp.vision.halcon`（可用）、`Camera.Side → dp.vision.basler`（**已安装但缺 pylon 运行时**，
+给出带 ProviderId 的诊断），组合产出 2 个逻辑源，宿主根目录无任何厂商程序集。
 
 依赖关系：
 
@@ -818,6 +832,6 @@ Workflow     DP.WorkFlow.Nodes.Vision.Tests / VisionAcquisitionNodeTests、Workf
 | 5 Provider管理设备生命周期，Workflow只管理取得后的帧生命周期 | **已达成** |
 | 6 Kernel无Vision/厂商依赖，Provider无Workflow反向依赖 | **已达成**（有依赖边界回归用例） |
 | 7 HALCON不再由样例直接`new`成唯一Workflow采集能力 | **已达成**：示例只扫描插件目录，编译期不引用HALCON类型 |
-| 8 自动化矩阵通过，真实设备验收项单独签署 | **部分**：自动化矩阵通过（646 + 811 例）；真实设备、许可证、驱动与多进程独占仍需现场签署 |
+| 8 自动化矩阵通过，真实设备验收项单独签署 | **部分**：自动化矩阵通过（650 + 811 例）；真实设备、许可证、驱动与多进程独占仍需现场签署 |
 
 因此当前应表述为：**契约已建立、HALCON与Basler均已插件化、Workflow已切换逻辑Source、两个真实Provider已同进程组合；RunScope高级共享模式（阶段F）未完成，真实设备出图与现场指标未签署。**

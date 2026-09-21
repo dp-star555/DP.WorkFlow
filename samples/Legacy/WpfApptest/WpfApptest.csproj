@@ -6,15 +6,18 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <!-- 采集Provider插件包目录；目标框架必须与DP.Vision.Halcon的对应输出一致。 -->
-    <VisionAcquisitionPluginRoot>$(MSBuildThisFileDirectory)..\..\..\..\DP.Vision\src\DP.Vision.Halcon\</VisionAcquisitionPluginRoot>
+    <!-- 采集Provider插件包目录；目标框架必须与各厂商工程的对应输出一致。 -->
     <VisionAcquisitionPluginTfm>net8.0-windows</VisionAcquisitionPluginTfm>
+    <HalconPluginRoot>$(MSBuildThisFileDirectory)..\..\..\..\DP.Vision\src\DP.Vision.Halcon\</HalconPluginRoot>
+    <BaslerPluginRoot>$(MSBuildThisFileDirectory)..\..\..\..\DP.Vision\src\DP.Vision.Basler\</BaslerPluginRoot>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.Acquisition.Runtime\DP.Vision.Acquisition.Runtime.csproj" />
-    <!-- 只保证HALCON插件被构建并投放到插件目录；不加编译期引用，宿主因此无法在编译期选择具体Provider。 -->
+    <!-- 只保证两个厂商插件被构建并投放到插件目录；不加编译期引用，
+         宿主因此无法在编译期选择具体Provider（阶段D/E的验收项）。 -->
     <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.Halcon\DP.Vision.Halcon.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.Basler\DP.Vision.Basler.csproj" ReferenceOutputAssembly="false" Private="false" />
     <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.OpenCv\DP.Vision.OpenCv.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Kernel\DP.WorkFlow.Abstractions\DP.WorkFlow.Abstractions.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Kernel\DP.WorkFlow.Core\DP.WorkFlow.Core.csproj" />
@@ -38,15 +41,34 @@
     <Content Include="..\..\VisionData\vision-providers\**" Link="vision-providers\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- 把HALCON插件按包结构投放到plugins目录，使宿主只通过目录发现Provider。 -->
+  <!--
+    把厂商插件按包结构投放到 plugins/<pluginId>/，使宿主只通过目录发现Provider。
+
+    插件包必须自包含厂商依赖：加载器用 Assembly.GetExportedTypes() 发现入口，这要求插件程序集的
+    引用全部可解析（HALCON 需要 halcondotnet.dll，Basler 需要 Basler.Pylon.dll）。而
+    ReferenceOutputAssembly="false" 恰好不会把厂商依赖带进宿主根目录，所以这些文件必须显式投放。
+
+    但**不能**把宿主已提供的契约程序集（DP.Vision.dll、DP.Vision.Acquisition.Abstractions.dll）
+    放进插件包：那会让插件拿到第二份契约类型，与宿主的中立接口不是同一个类型，组合阶段必然失败。
+  -->
   <Target Name="StageVisionAcquisitionProviderPlugins" AfterTargets="Build">
     <ItemGroup>
-      <VisionAcquisitionProviderPayload Include="$(VisionAcquisitionPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Halcon.dll" />
-      <VisionAcquisitionProviderPayload Include="$(VisionAcquisitionPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Halcon.pdb" />
-      <VisionAcquisitionProviderPayload Include="$(VisionAcquisitionPluginRoot)plugin.json" />
+      <HalconProviderPayload Include="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\*.dll"
+                             Exclude="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.dll;$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.dll" />
+      <HalconProviderPayload Include="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\*.pdb"
+                             Exclude="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.pdb;$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.pdb" />
+      <HalconProviderPayload Include="$(HalconPluginRoot)plugin.json" />
+      <BaslerProviderPayload Include="$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\*.dll"
+                             Exclude="$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.dll;$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.dll" />
+      <BaslerProviderPayload Include="$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\*.pdb"
+                             Exclude="$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.pdb;$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.pdb" />
+      <BaslerProviderPayload Include="$(BaslerPluginRoot)plugin.json" />
     </ItemGroup>
-    <Copy SourceFiles="@(VisionAcquisitionProviderPayload)"
+    <Copy SourceFiles="@(HalconProviderPayload)"
           DestinationFolder="$(OutDir)plugins\dp.vision.halcon"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(BaslerProviderPayload)"
+          DestinationFolder="$(OutDir)plugins\dp.vision.basler"
           SkipUnchangedFiles="true" />
   </Target>
 </Project>

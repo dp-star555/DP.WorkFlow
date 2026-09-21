@@ -53,15 +53,24 @@ public partial class Form1 : Form
         // 2.1 机器配置：插件目录 + 公共Source绑定。工作流文档只保存SourceId，
         // 换机器时只改这里，不需要改流程文档，也不需要重新编译节点。
         // 宿主只认识 plugin.json 与中立插件契约，编译期不选择任何具体Provider。
+        // 两个逻辑源分属两家厂商（HALCON / Basler），由同一组合按SourceId路由到各自的设备。
         var providerPluginDirectory = Path.Combine(AppContext.BaseDirectory, "plugins");
         var providerPlugins = new VisionAcquisitionProviderPluginLoader()
             .Load(providerPluginDirectory, ReadProviderConfiguration);
         var sourceBindings = new[]
         {
-            new VisionAcquisitionSourceBinding("Camera.Top", "dp.vision.halcon", "top-camera", "camera:serial:DEMO0001")
+            new VisionAcquisitionSourceBinding("Camera.Top", "dp.vision.halcon", "top-camera", "camera:serial:DEMO0001"),
+            new VisionAcquisitionSourceBinding("Camera.Side", "dp.vision.basler", "side-camera", "camera:serial:DEMO-BASLER-0001")
         };
         _visionAcquisition = new VisionAcquisitionRuntime(
             new VisionAcquisitionProviderComposer().Compose(providerPlugins.Modules, sourceBindings));
+        // 插件包整体加载失败（例如投放不完整、缺厂商程序集）必须出现在诊断里，
+        // 否则界面只会显示"Provider 未安装"，把真实原因藏起来。
+        var pluginLoadFailure = providerPlugins.Failures.Count == 0
+            ? null
+            : "插件包加载失败：" + string.Join(
+                "；",
+                providerPlugins.Failures.Select(failure => failure.ManifestPath + " -> " + failure.Reason));
         _visionSources = new WorkflowVisionSourceCatalog(sourceBindings.Select(binding =>
         {
             var availability = providerPlugins.ProviderAvailability
@@ -73,6 +82,7 @@ public partial class Form1 : Form
                 isAvailable: availability?.IsAvailable ?? false,
                 diagnostic: availability is null
                     ? $"Provider {binding.ProviderId} 未安装：插件目录 {providerPluginDirectory} 中没有加载到该Provider。"
+                      + (pluginLoadFailure is null ? string.Empty : " " + pluginLoadFailure)
                     : availability.Diagnostic);
         }));
 
