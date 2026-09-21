@@ -51,7 +51,7 @@ public sealed class VisionAcquisitionNodeTests
     }
 
     [Fact]
-    public async Task 尚未实现的ExclusiveRun源在首节点前明确拒绝()
+    public async Task 主动采集源配置为ExclusiveRun时在首节点前明确拒绝()
     {
         using var rig = new Rig(sources: new[]
         {
@@ -60,8 +60,9 @@ public sealed class VisionAcquisitionNodeTests
 
         var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => rig.Host.RunAsync());
 
+        // ExclusiveRun 只对"相机长期布防"有意义；主动采集源逐次开关设备，靠操作级互斥协调。
         Assert.Contains("ExclusiveRun", failure.Message);
-        Assert.Contains("不能用进程内锁冒充", failure.Message);
+        Assert.Contains("主动采集源", failure.Message);
         Assert.Equal(0, rig.Acquisition.CaptureCount);
     }
 
@@ -113,12 +114,69 @@ public sealed class VisionAcquisitionNodeTests
         Assert.Equal(1, rig.Acquisition.CaptureCount);
     }
 
+    [Fact]
+    public async Task 缓冲源缺少根运行作用域所有者时在首节点前失败()
+    {
+        // 外部回调缓冲源需要"哪一根运行的帧"这一界定；没有作用域所有者就不会建立采集代次，
+        // 回调帧永远无法领取。与其让节点在领取处超时，不如在首节点之前说清楚缺什么。
+        using var rig = new Rig(
+            sources: new[] { Buffered("Camera.Top", "dp.vision.basler") },
+            registerRunScopeOwner: false);
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => rig.Host.RunAsync());
+
+        Assert.Contains("IWorkflowRunScopeOwner", failure.Message);
+        Assert.Contains("Camera.Top", failure.Message);
+        Assert.Equal(0, rig.Acquisition.CaptureCount);
+        Assert.Equal(0, rig.Sink.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task 缓冲源在首节点前拒绝节点级曝光覆盖()
+    {
+        // 相机正在长期布防出图；改写曝光会让已在途的帧参数不一致，因此运行前就拒绝，
+        // 而不是等设备已经打开、节点开始执行时才失败。
+        using var rig = new Rig(
+            sources: new[] { Buffered("Camera.Top", "dp.vision.basler") },
+            exposureMicroseconds: 1500);
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => rig.Host.RunAsync());
+
+        Assert.Contains("BufferedExternal", failure.Message);
+        Assert.Contains("曝光/增益", failure.Message);
+        Assert.Equal(0, rig.Acquisition.CaptureCount);
+        Assert.Equal(0, rig.Sink.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task 注册运行作用域所有者后缓冲源可以运行()
+    {
+        // 对照用例：证明上面两条不是"一律拒绝"，而是确实在校验缺失项。
+        using var rig = new Rig(
+            sources: new[] { Buffered("Camera.Top", "dp.vision.basler") },
+            registerRunScopeOwner: true);
+
+        var result = await rig.Host.RunAsync();
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(1, rig.RunScope.BeginCount);
+        Assert.Equal(1, rig.RunScope.DisposeCount);
+        Assert.Equal(1, rig.Acquisition.CaptureCount);
+        Assert.Equal("Camera.Top", rig.Acquisition.LastSourceId);
+    }
+
+    /// <summary>外部回调缓冲源：相机长期布防，帧由有界队列待领取。</summary>
+    private static WorkflowVisionSourceInfo Buffered(string sourceId, string providerId) =>
+        Source(sourceId, providerId, mode: EVisionAcquisitionMode.BufferedExternal);
+
     private static WorkflowVisionSourceInfo Source(
         string sourceId,
         string providerId,
         EVisionSourceSharingPolicy policy = EVisionSourceSharingPolicy.ExclusiveOperation,
         bool isAvailable = true,
-        string? diagnostic = null) => new(sourceId, providerId, policy, isAvailable, diagnostic);
+        string? diagnostic = null,
+        EVisionAcquisitionMode mode = EVisionAcquisitionMode.OnDemand) =>
+        new(sourceId, providerId, policy, isAvailable, diagnostic, mode);
 
     [Fact]
     public void 采集节点旧文档迁移为逻辑源与带单位参数()
@@ -159,10 +217,14 @@ public sealed class VisionAcquisitionNodeTests
         public Rig(
             string providerId = "dp.vision.halcon",
             IEnumerable<WorkflowVisionSourceInfo>? sources = null,
-            bool registerSourceCatalog = true)
+            bool registerSourceCatalog = true,
+            bool registerRunScopeOwner = false,
+            double? exposureMicroseconds = null,
+            double? gainDecibels = null)
         {
             Acquisition = new FakeVisionAcquisition(providerId);
             Sink = new SinkHandler();
+            RunScope = new FakeRunScopeOwner();
 
             var catalog = new WorkflowNodeCatalog()
                 .RegisterImageNodes()
@@ -172,7 +234,13 @@ public sealed class VisionAcquisitionNodeTests
                 .Register(Sink);
 
             var document = new WorkflowDocument { Name = "采集流程" };
-            var capture = new CaptureVisionFrameNodeModel { Id = "capture", Source = new VisionSourceReference("Camera.Top") };
+            var capture = new CaptureVisionFrameNodeModel
+            {
+                Id = "capture",
+                Source = new VisionSourceReference("Camera.Top"),
+                ExposureMicroseconds = exposureMicroseconds,
+                GainDecibels = gainDecibels
+            };
             var sink = new SinkNode { Id = "sink" };
             document.EntryNodeId = capture.Id;
             document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = capture });
@@ -190,6 +258,9 @@ public sealed class VisionAcquisitionNodeTests
                 .Add<IVisionAcquisition>(Acquisition);
             if (registerSourceCatalog)
                 services.Add<IWorkflowVisionSourceCatalog>(new WorkflowVisionSourceCatalog(sources ?? Array.Empty<WorkflowVisionSourceInfo>()));
+            // V1-C：只有根宿主解析运行作用域所有者；示例装配同样是"按需注册"。
+            if (registerRunScopeOwner)
+                services.Add<IWorkflowRunScopeOwner>(RunScope);
             Host = new WorkflowRuntimeHost(catalog, handlers);
             Host.Configure(document, new WorkflowContext(services));
         }
@@ -200,12 +271,42 @@ public sealed class VisionAcquisitionNodeTests
 
         public SinkHandler Sink { get; }
 
+        public FakeRunScopeOwner RunScope { get; }
+
         public WorkflowRuntimeHost Host { get; }
 
         public void Dispose()
         {
             Host.Dispose();
             FrameScope.Dispose();
+        }
+    }
+
+    /// <summary>只计数的根运行作用域所有者：验证宿主确实在首节点前取得、在运行后退役。</summary>
+    private sealed class FakeRunScopeOwner : IWorkflowRunScopeOwner
+    {
+        public int BeginCount;
+
+        public int DisposeCount;
+
+        public ValueTask<IWorkflowRunScopeLease> BeginRunAsync(Guid runId, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            BeginCount++;
+            return ValueTask.FromResult<IWorkflowRunScopeLease>(new Lease(this, runId));
+        }
+
+        private sealed class Lease(FakeRunScopeOwner owner, Guid runId) : IWorkflowRunScopeLease
+        {
+            public Guid RunId { get; } = runId;
+
+            public IReadOnlyList<string> OwnedResourceIds => Array.Empty<string>();
+
+            public ValueTask DisposeAsync()
+            {
+                owner.DisposeCount++;
+                return default;
+            }
         }
     }
 

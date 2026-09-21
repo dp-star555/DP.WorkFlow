@@ -266,10 +266,11 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
         }
     }
 
-    /// <summary>在线程池边界内执行可选运行准备与上一轮资源退役，然后启动本次引擎。</summary>
+    /// <summary>在线程池边界内执行可选运行准备、上一轮资源退役与本轮作用域取得，然后启动本次引擎。</summary>
     /// <param name="engine">本次运行新创建的引擎。</param>
     /// <param name="context">
-    /// 用于发现 <see cref="IWorkflowRunPreparationService"/> 与 <see cref="IWorkflowRunResourceOwner"/> 的上下文。
+    /// 用于发现 <see cref="IWorkflowRunPreparationService"/>、<see cref="IWorkflowRunResourceOwner"/>
+    /// 与 <see cref="IWorkflowRunScopeOwner"/> 的上下文。
     /// </param>
     /// <param name="plan">本次运行已经编译且与文档隔离的执行计划。</param>
     /// <param name="cancellationToken">宿主与调用方链接后的运行取消令牌。</param>
@@ -292,10 +293,26 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
         // 因此顺序必须是"先准备、后释放"；嵌套调用点不解析本接口，在类型上无法触发清理。
         if (context.Services.GetService(typeof(IWorkflowRunResourceOwner)) is IWorkflowRunResourceOwner owner)
             await owner.ReleasePreviousRunAsync(cancellationToken).ConfigureAwait(false);
-        var result = await engine.RunAsync(cancellationToken).ConfigureAwait(false);
-        lock (_syncRoot)
-            _lastRunResult = result;
-        return result;
+
+        // 本轮作用域取得必须晚于准备（校验未通过的运行不应该打开设备），
+        // 且早于首节点执行（外部回调必须在采集节点之前就能进入队列）。
+        IWorkflowRunScopeLease? runScope = null;
+        if (context.Services.GetService(typeof(IWorkflowRunScopeOwner)) is IWorkflowRunScopeOwner scopeOwner)
+            runScope = await scopeOwner.BeginRunAsync(Guid.NewGuid(), cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            var result = await engine.RunAsync(cancellationToken).ConfigureAwait(false);
+            lock (_syncRoot)
+                _lastRunResult = result;
+            return result;
+        }
+        finally
+        {
+            // 根运行退役：本轮的设备布防与未领取帧在这里归还；节点输出持有的是独立租约，不受影响。
+            if (runScope is not null)
+                await runScope.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private static IEnumerable<IWorkflowNodeModel> EnumerateNodes(WorkflowExecutionPlan plan)

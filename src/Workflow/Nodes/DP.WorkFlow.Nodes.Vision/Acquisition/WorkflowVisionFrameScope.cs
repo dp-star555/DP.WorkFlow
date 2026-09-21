@@ -202,6 +202,7 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
             ?? throw new InvalidOperationException(
                 "流程包含采集节点，但宿主没有发布逻辑源目录（IWorkflowVisionSourceCatalog）；"
                 + "无法在运行前校验Source绑定，禁止开始执行。");
+        var bufferedSources = new List<string>();
         foreach (var capture in captures)
         {
             var source = capture.Source
@@ -214,13 +215,38 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
                 throw new InvalidOperationException(
                     $"采集节点 {capture.Id} 的逻辑源 {source.SourceId} 当前不可用（Provider {info.ProviderId}）："
                     + (info.Diagnostic ?? "未提供原因。"));
+            // 参数不合法时同样在运行前拒绝，而不是等到设备已经打开之后。
+            var request = capture.CreateRequest();
+
+            if (info.AcquisitionMode == EVisionAcquisitionMode.BufferedExternal)
+            {
+                // 相机正在长期布防出图；改写曝光/增益会让已在途的帧参数不一致，因此运行前就拒绝，
+                // 而不是等节点执行时才失败——那时设备已经打开。
+                if (request.ExposureMicroseconds is not null || request.GainDecibels is not null)
+                    throw new InvalidOperationException(
+                        $"采集节点 {capture.Id} 的逻辑源 {source.SourceId} 是外部回调缓冲源（BufferedExternal），"
+                        + "不支持节点级曝光/增益覆盖；这些参数由机器 Source/Profile 固定，"
+                        + "请在机器配置里修改并重新发布，而不是逐节点覆盖。");
+                bufferedSources.Add(source.SourceId);
+                continue;
+            }
+
             if (info.SharingPolicy == EVisionSourceSharingPolicy.ExclusiveRun)
                 throw new InvalidOperationException(
-                    $"采集节点 {capture.Id} 的逻辑源 {source.SourceId} 配置为 ExclusiveRun；"
-                    + "该策略依赖根运行作用域所有权（AR-01阶段3），尚未实现，不能用进程内锁冒充。");
-            // 参数不合法时同样在运行前拒绝，而不是等到设备已经打开之后。
-            _ = capture.CreateRequest();
+                    $"采集节点 {capture.Id} 的逻辑源 {source.SourceId} 是主动采集源却配置为 ExclusiveRun；"
+                    + "ExclusiveRun 只用于外部回调缓冲源，主动采集源按操作级互斥协调。");
         }
+
+        if (bufferedSources.Count == 0)
+            return;
+
+        // 没有根运行作用域所有者就不会建立采集代次，回调帧永远无法领取。
+        // 与其让节点在领取处超时，不如在首节点之前说清楚缺什么。
+        if (context.Services?.GetService(typeof(IWorkflowRunScopeOwner)) is null)
+            throw new InvalidOperationException(
+                $"流程使用了外部回调缓冲源（{string.Join("、", bufferedSources.OrderBy(id => id, StringComparer.Ordinal))}），"
+                + "但宿主没有注册根运行作用域所有者（IWorkflowRunScopeOwner）；"
+                + "没有它就不会在首节点之前布防并建立采集代次，回调帧永远无法领取。");
     }
 
     /// <summary>使用者结束借用后释放；并行持有者须保留独立租约。</summary>

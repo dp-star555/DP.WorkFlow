@@ -130,6 +130,83 @@ public sealed class WorkflowRuntimeHostTests
     }
 
     [Fact]
+    public async Task RunAsync_AcquiresRunScopeAfterReleaseAndDisposesItAfterExecution()
+    {
+        var events = new List<string>();
+        var owner = new TestRunOwner(() => events.Add("prepare"), () => events.Add("release"));
+        var scope = new TestRunScopeOwner(() => events.Add("begin"), () => events.Add("dispose"));
+        var services = new WorkflowServiceProvider()
+            .Add<IWorkflowRunPreparationService>(owner)
+            .Add<IWorkflowRunResourceOwner>(owner)
+            .Add<IWorkflowRunScopeOwner>(scope);
+        var node = new HostTestNode { Id = "Node" };
+        var canvasDocument = new WorkflowDocument { Name = "RunScope" };
+        canvasDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        using var host = new WorkflowRuntimeHost(
+            new WorkflowNodeCatalog().Register<HostTestNode>(),
+            new WorkflowNodeHandlerCatalog().Register(new CountingHostTestHandler(() => events.Add("execute"))));
+        canvasDocument.EntryNodeId = node.Id;
+        host.Configure(canvasDocument, new WorkflowContext(services));
+
+        Assert.True((await host.RunAsync()).Success);
+        Assert.True((await host.RunAsync()).Success);
+
+        // 取得必须晚于准备（校验不过的运行不该打开设备），早于首节点（外部回调要在采集节点之前进队列），
+        // 退役必须在引擎返回之后（本轮图像已交给节点输出，但设备布防要收回来）。
+        Assert.Equal(
+            new[]
+            {
+                "prepare", "release", "begin", "execute", "dispose",
+                "prepare", "release", "begin", "execute", "dispose"
+            },
+            events);
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotAcquireRunScopeWhenHostHasNoScopeOwner()
+    {
+        var events = new List<string>();
+        var preparation = new TestRunPreparation(_ => events.Add("prepare"));
+        // 只注册准备服务：宿主不得凭空推断"有准备服务就有运行作用域"。
+        var services = new WorkflowServiceProvider().Add<IWorkflowRunPreparationService>(preparation);
+        var node = new HostTestNode { Id = "Node" };
+        var canvasDocument = new WorkflowDocument { Name = "NoRunScope" };
+        canvasDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        using var host = new WorkflowRuntimeHost(
+            new WorkflowNodeCatalog().Register<HostTestNode>(),
+            new WorkflowNodeHandlerCatalog().Register(new CountingHostTestHandler(() => events.Add("execute"))));
+        canvasDocument.EntryNodeId = node.Id;
+        host.Configure(canvasDocument, new WorkflowContext(services));
+
+        Assert.True((await host.RunAsync()).Success);
+
+        Assert.Equal(new[] { "prepare", "execute" }, events);
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotExecuteWhenRunScopeAcquisitionFails()
+    {
+        var executed = false;
+        // 例如采集运行时已经有另一根运行持有同一资源：冲突必须在首节点之前暴露。
+        var scope = new TestRunScopeOwner(() => throw new InvalidOperationException("已有其他根运行持有该资源。"));
+        var services = new WorkflowServiceProvider().Add<IWorkflowRunScopeOwner>(scope);
+        var node = new HostTestNode { Id = "Node" };
+        var canvasDocument = new WorkflowDocument { Name = "ScopeConflict" };
+        canvasDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        using var host = new WorkflowRuntimeHost(
+            new WorkflowNodeCatalog().Register<HostTestNode>(),
+            new WorkflowNodeHandlerCatalog().Register(new CountingHostTestHandler(() => executed = true)));
+        canvasDocument.EntryNodeId = node.Id;
+        host.Configure(canvasDocument, new WorkflowContext(services));
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => host.RunAsync());
+
+        Assert.Contains("已有其他根运行持有该资源", failure.Message);
+        Assert.False(executed, "取得运行作用域失败时不得执行任何节点。");
+        Assert.Equal(0, scope.DisposeCount);
+    }
+
+    [Fact]
     public async Task RunPreparation_ReceivesRootAndNestedPlanNodes()
     {
         IReadOnlyList<string>? preparedNodeIds = null;
@@ -263,6 +340,47 @@ public sealed class WorkflowRuntimeHostTests
             cancellationToken.ThrowIfCancellationRequested();
             onRelease();
             return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>根运行作用域所有者替身；用来验证取得时机、退役时机与"失败即不执行"。</summary>
+    private sealed class TestRunScopeOwner : IWorkflowRunScopeOwner
+    {
+        private readonly Action _onBegin;
+        private readonly Action? _onDispose;
+
+        public TestRunScopeOwner(Action onBegin, Action? onDispose = null)
+        {
+            _onBegin = onBegin;
+            _onDispose = onDispose;
+        }
+
+        /// <summary>取得次数；嵌套运行必须保持为 0 增量。</summary>
+        public int BeginCount { get; private set; }
+
+        /// <summary>租约释放次数。</summary>
+        public int DisposeCount { get; private set; }
+
+        public ValueTask<IWorkflowRunScopeLease> BeginRunAsync(Guid runId, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _onBegin();
+            BeginCount++;
+            return ValueTask.FromResult<IWorkflowRunScopeLease>(new Lease(this, runId));
+        }
+
+        private sealed class Lease(TestRunScopeOwner owner, Guid runId) : IWorkflowRunScopeLease
+        {
+            public Guid RunId { get; } = runId;
+
+            public IReadOnlyList<string> OwnedResourceIds => Array.Empty<string>();
+
+            public ValueTask DisposeAsync()
+            {
+                owner.DisposeCount++;
+                owner._onDispose?.Invoke();
+                return default;
+            }
         }
     }
 

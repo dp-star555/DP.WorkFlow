@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup><Using Include="Xunit" /></ItemGroup>
+  <ItemGroup>
+    <!--
+      本项目是 DP.WorkFlow 里唯一同时看得见"真实采集运行时"与"工作流根运行宿主"的地方：
+      它的存在就是为了验证两者接线之后的端到端行为（ACQUISITION_RUNTIME_V1.md 的 V1-C）。
+      采集节点工程本身只引用 Acquisition.Abstractions——生产侧的依赖方向不受本项目影响，
+      被禁止的仍然是 DP.Vision.Acquisition.Runtime → DP.WorkFlow 的反向引用。
+    -->
+    <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision\DP.WorkFlow.Nodes.Vision.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Kernel\DP.WorkFlow.Runtime\DP.WorkFlow.Runtime.csproj" />
+    <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.Acquisition.Runtime\DP.Vision.Acquisition.Runtime.csproj" />
+  </ItemGroup>
+</Project>

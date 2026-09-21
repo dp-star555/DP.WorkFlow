@@ -125,6 +125,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DP.WorkFlow.Process.UI.WinF
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DP.WorkFlow.Process.UI.Wpf", "src\Workflow\Studio\DP.WorkFlow.Process.UI.Wpf\DP.WorkFlow.Process.UI.Wpf.csproj", "{908E3113-7ACD-465F-BB65-179A63E10699}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DP.WorkFlow.Nodes.Vision.Acquisition.Tests", "tests\Workflow\DP.WorkFlow.Nodes.Vision.Acquisition.Tests\DP.WorkFlow.Nodes.Vision.Acquisition.Tests.csproj", "{36B15C0F-92BE-4B57-8962-7A816369314A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -675,6 +677,18 @@ Global
 		{908E3113-7ACD-465F-BB65-179A63E10699}.Release|x64.Build.0 = Release|Any CPU
 		{908E3113-7ACD-465F-BB65-179A63E10699}.Release|x86.ActiveCfg = Release|Any CPU
 		{908E3113-7ACD-465F-BB65-179A63E10699}.Release|x86.Build.0 = Release|Any CPU
+		{36B15C0F-92BE-4B57-8962-7A816369314A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{36B15C0F-92BE-4B57-8962-7A816369314A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{36B15C0F-92BE-4B57-8962-7A816369314A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{36B15C0F-92BE-4B57-8962-7A816369314A}.Debug|x64.Build.0 = Debug|Any CPU
+		{36B15C0F-92BE-4B57-8962-7A816369314A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{36B15C0F-92BE-4B57-8962-7A816369314A}.Debug|x86.Build.0 = Debug|Any CPU
+		{36B15C0F-92BE-4B57-8962-7A816369314A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{36B15C0F-92BE-4B57-8962-7A816369314A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{36B15C0F-92BE-4B57-8962-7A816369314A}.Release|x64.ActiveCfg = Release|Any CPU
+		{36B15C0F-92BE-4B57-8962-7A816369314A}.Release|x64.Build.0 = Release|Any CPU
+		{36B15C0F-92BE-4B57-8962-7A816369314A}.Release|x86.ActiveCfg = Release|Any CPU
+		{36B15C0F-92BE-4B57-8962-7A816369314A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -737,5 +751,6 @@ Global
 		{4F1087D7-0E59-4407-9213-1DBEA5F52151} = {44000000-0000-0000-0000-000000000001}
 		{83A4A372-7E87-40A0-825C-BCA1D822F1E8} = {11000000-0000-0000-0000-000000000005}
 		{908E3113-7ACD-465F-BB65-179A63E10699} = {11000000-0000-0000-0000-000000000005}
+		{36B15C0F-92BE-4B57-8962-7A816369314A} = {44000000-0000-0000-0000-000000000001}
 	EndGlobalSection
 EndGlobal

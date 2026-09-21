@@ -14,6 +14,7 @@ public sealed class WorkflowRunPreparationScopeDeclarationTests
     public async Task 恢复子流程的准备请求声明嵌套作用域并携带父节点ID()
     {
         var preparation = new RecordingPreparation();
+        var scope = new CountingRunScopeOwner();
         var faulty = new FlakyNode { Id = "faulty", Title = "故障一次" };
         var treat = new TreatNode { Id = "treat", Title = "处置" };
 
@@ -35,7 +36,10 @@ public sealed class WorkflowRunPreparationScopeDeclarationTests
             .Add<IWorkflowFaultRecoveryCoordinator>(new SubflowRecoveryCoordinator(subflow, catalog, handlers))
             .Add<IWorkflowRunPreparationService>(preparation)
             // 故意把资源所有者一并注册：即使它在容器里可达，嵌套调用点也不得解析并调用它。
-            .Add<IWorkflowRunResourceOwner>(preparation);
+            .Add<IWorkflowRunResourceOwner>(preparation)
+            // 运行作用域所有者同理：嵌套运行不得重新取得所有权（否则会重置采集代次，
+            // 让父运行的未领取帧变成"上一代"而被清退）。
+            .Add<IWorkflowRunScopeOwner>(scope);
 
         var result = await new WorkflowEngine(
                 new WorkflowCompiler(catalog).Compile(document), handlers, new WorkflowContext(services),
@@ -49,6 +53,8 @@ public sealed class WorkflowRunPreparationScopeDeclarationTests
         // AR-01 阶段2：退役上一轮资源是根运行宿主的专属动作。引擎的嵌套路径不解析
         // IWorkflowRunResourceOwner，因此这里必须一次都没有发生——这是"父资源只由父释放"的类型级保证。
         Assert.Equal(0, preparation.ReleaseCount);
+        // V1-C：引擎侧只有根宿主解析 IWorkflowRunScopeOwner；引擎自身（含嵌套路径）一次都不解析。
+        Assert.Equal(0, scope.BeginCount);
     }
 
     /// <summary>
@@ -92,6 +98,27 @@ public sealed class WorkflowRunPreparationScopeDeclarationTests
             cancellationToken.ThrowIfCancellationRequested();
             ReleaseCount++;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>只计数的运行作用域所有者；引擎路径必须保持 0 次取得。</summary>
+    private sealed class CountingRunScopeOwner : IWorkflowRunScopeOwner
+    {
+        public int BeginCount { get; private set; }
+
+        public ValueTask<IWorkflowRunScopeLease> BeginRunAsync(Guid runId, CancellationToken cancellationToken)
+        {
+            BeginCount++;
+            return ValueTask.FromResult<IWorkflowRunScopeLease>(new Lease(runId));
+        }
+
+        private sealed class Lease(Guid runId) : IWorkflowRunScopeLease
+        {
+            public Guid RunId { get; } = runId;
+
+            public IReadOnlyList<string> OwnedResourceIds => Array.Empty<string>();
+
+            public ValueTask DisposeAsync() => default;
         }
     }
 

@@ -828,10 +828,10 @@ Workflow     DP.WorkFlow.Nodes.Vision.Tests / VisionAcquisitionNodeTests、Workf
 | 1 Workflow文档只引用逻辑SourceId | **已达成** |
 | 2 至少两个Provider同进程组合，其中至少一个真实硬件Provider；最终要求两个真实Provider | **已达成**：真实 HALCON Provider + 真实 Basler Provider 同进程组合并按SourceId路由（`CrossVendorProviderCoexistenceTests`） |
 | 3 Provider候选失败不污染正式组合 | **已达成** |
-| 4 同物理设备并发访问有确定性策略和诊断 | **部分**：`ExclusiveOperation` 与 `Serialized` 已实现并有诊断；`ExclusiveRun`/`Broadcast` 显式拒绝，待 AR-01 阶段3 |
+| 4 同物理设备并发访问有确定性策略和诊断 | **部分**：`ExclusiveOperation` 与 `Serialized` 已实现并有诊断；`ExclusiveRun` 已按根运行作用域所有权实现（V1-C：宿主在首节点之前取得、运行结束时退役），但只对缓冲源有效，主动采集源声明它会在运行前被拒绝；`Broadcast` 仍待真实连续流需求 |
 | 5 Provider管理设备生命周期，Workflow只管理取得后的帧生命周期 | **已达成** |
 | 6 Kernel无Vision/厂商依赖，Provider无Workflow反向依赖 | **已达成**（有依赖边界回归用例） |
 | 7 HALCON不再由样例直接`new`成唯一Workflow采集能力 | **已达成**：示例只扫描插件目录，编译期不引用HALCON类型 |
-| 8 自动化矩阵通过，真实设备验收项单独签署 | **部分**：自动化矩阵通过（650 + 817 例）；真实设备、许可证、驱动与多进程独占仍需现场签署 |
+| 8 自动化矩阵通过，真实设备验收项单独签署 | **部分**：自动化矩阵通过（752 + 834 例）；真实设备、许可证、驱动与多进程独占仍需现场签署 |
 
-因此当前应表述为：**契约已建立、HALCON与Basler均已插件化、Workflow已切换逻辑Source、两个真实Provider已同进程组合；RunScope高级共享模式（阶段F）未完成，真实设备出图与现场指标未签署。**
+因此当前应表述为：**契约已建立、HALCON与Basler均已插件化、Workflow已切换逻辑Source、两个真实Provider已同进程组合、`ExclusiveRun` 已按根运行作用域所有权落地；`Broadcast` 未实现，真实设备出图与现场指标未签署。**

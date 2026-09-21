@@ -18,6 +18,8 @@ $root = Split-Path -Parent $PSScriptRoot
 # 每次都跑的项目：不依赖任何控件库。
 $projects = @(
     'tests/Workflow/DP.WorkFlow.Nodes.Vision.Tests/DP.WorkFlow.Nodes.Vision.Tests.csproj',
+    # 跨层端到端：真实采集运行时 + 工作流根运行宿主（V1-C）。
+    'tests/Workflow/DP.WorkFlow.Nodes.Vision.Acquisition.Tests/DP.WorkFlow.Nodes.Vision.Acquisition.Tests.csproj',
     'tests/Platform/ScriptEngine.Tests/ScriptEngine.Tests.csproj',
     'tests/Platform/ScriptEngine.Workspaces.Tests/ScriptEngine.Workspaces.Tests.csproj',
     'tests/Workflow/DP.WorkFlow.Core.Tests/DP.WorkFlow.Core.Tests.csproj',

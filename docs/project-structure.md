@@ -176,4 +176,13 @@ dotnet test tests/Workflow/DP.WorkFlow.UI.Windows.Tests -c Debug --filter "Categ
 > **新增测试项目时务必同步 `tools/Test-DPWorkFlow.ps1` 的清单。**
 > `ScriptEngine.Windows.Tests`（38 例）与 `ScriptEngine.Workspaces.Tests`（26 例）曾长期不在脚本清单里，
 > 因此从未被官方入口执行过——只有 `dotnet test DP.WorkFlow.sln` 会跑到它们。
-> 现在 `-Suite All` 的总数（817）与 `dotnet test DP.WorkFlow.sln` 完全一致，可据此核对清单是否漏项。
+> 现在 `-Suite All` 的总数（834）与 `dotnet test DP.WorkFlow.sln` 完全一致，可据此核对清单是否漏项。
+>
+> 核对时要看**运行条目数**（17），不要只看总数：`dotnet test` 在解决方案级别偶尔会漏跑某个多 TFM
+> 工程的一个目标框架（例如 `ScriptEngine.Windows.Tests` 只跑 net48、少 19 例），此时总数会对不上。
+> 单项工程的 `dotnet test` 不受影响，脚本按工程逐个调用，因此以脚本的总数为准。
+
+`tests/Workflow/DP.WorkFlow.Nodes.Vision.Acquisition.Tests` 是**跨层**测试项目：它是
+`DP.WorkFlow` 里唯一同时引用真实 `DP.Vision.Acquisition.Runtime` 与工作流宿主的地方，
+用来验证"外部回调缓冲源"的根运行接线（V1-C）。生产侧的依赖方向不受影响——
+采集节点工程仍只引用 `Acquisition.Abstractions`。

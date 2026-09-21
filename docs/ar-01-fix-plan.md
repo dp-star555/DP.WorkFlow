@@ -1,6 +1,6 @@
 # AR-01 修复方案：运行准备与资源作用域
 
-状态：**阶段 1、2 已实施；阶段 3 待实施**。本文保留阶段 1 的历史方案与验收，并补充后续架构审计结论。
+状态：**阶段 1、2 已实施；阶段 3 的所有权令牌机制已落地（采集深化 V1-C），其余部分待实施**。本文保留阶段 1 的历史方案与验收，并补充后续架构审计结论。
 
 ---
 
@@ -582,5 +582,11 @@ Object name: 'ImageBuffer'.
 - 阶段 3：根运行捕获中立 RunScope 所有权令牌，`Nested` 从父 RunScope 继承；
   文件夹采集会话等运行级状态由每轮 RunScope 创建；表达"活动 → 已完成可查看 → 退役"，
   而不是"Run 结束即 Dispose"。
+  **其中"中立所有权令牌"这一半已由图像采集深化 V1-C 落地**（2026-09-21）：
+  `IWorkflowRunScopeOwner` + `IWorkflowRunScopeLease` 位于 Kernel，视觉侧只提供
+  `VisionAcquisitionRunScope` 适配；根宿主是唯一解析它的位置，`Nested` 在类型上拿不到。
+  仍未做的是"文件夹采集会话与帧仓的运行级状态也迁入 RunScope，并让 `WorkflowRunScopeKind` 退场"。
+  注意两者的释放时机**故意不同**：采集侧的作用域（设备布防）在引擎返回后立即退役，
+  而帧仓/结果查看窗口仍走 `IWorkflowRunResourceOwner` 的"下一轮才开始退役"。
 - `WorkflowJointRecoveryGroup` 的"一轮"语义（§5）。
 - 生产路径端到端复现（§10 验收第 4 条）仍是构造性的，未走 `LoadVisionFileNode` 全链路。

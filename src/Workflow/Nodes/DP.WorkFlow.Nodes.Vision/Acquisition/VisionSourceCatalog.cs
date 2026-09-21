@@ -14,13 +14,18 @@ public sealed record WorkflowVisionSourceInfo
     /// <param name="sharingPolicy">该源在物理资源上的并发协调策略。</param>
     /// <param name="isAvailable">Provider是否已就绪且该源当前可采集。</param>
     /// <param name="diagnostic">不可用原因；可用时为空。</param>
+    /// <param name="acquisitionMode">
+    /// 该源的采集时序；决定采集节点能否做节点级参数覆盖。
+    /// 追加在末尾，使既有的五参位置调用行为不变。
+    /// </param>
     /// <exception cref="ArgumentException">标识为空或仅包含空白字符。</exception>
     public WorkflowVisionSourceInfo(
         string sourceId,
         string providerId,
         EVisionSourceSharingPolicy sharingPolicy,
         bool isAvailable = true,
-        string? diagnostic = null)
+        string? diagnostic = null,
+        EVisionAcquisitionMode acquisitionMode = EVisionAcquisitionMode.OnDemand)
     {
         if (string.IsNullOrWhiteSpace(sourceId))
             throw new ArgumentException("逻辑源标识不能为空。", nameof(sourceId));
@@ -29,6 +34,7 @@ public sealed record WorkflowVisionSourceInfo
         SourceId = sourceId.Trim();
         ProviderId = providerId.Trim();
         SharingPolicy = sharingPolicy;
+        AcquisitionMode = acquisitionMode;
         IsAvailable = isAvailable;
         Diagnostic = string.IsNullOrWhiteSpace(diagnostic) ? null : diagnostic.Trim();
     }
@@ -41,6 +47,12 @@ public sealed record WorkflowVisionSourceInfo
 
     /// <summary>该源在物理资源上的并发协调策略。</summary>
     public EVisionSourceSharingPolicy SharingPolicy { get; }
+
+    /// <summary>
+    /// 该源的采集时序：主动采集（节点到达后采集）或外部回调缓冲（相机长期布防，节点稍后领取）。
+    /// 缓冲源需要根运行作用域所有权，且不接受节点级曝光/增益覆盖。
+    /// </summary>
+    public EVisionAcquisitionMode AcquisitionMode { get; }
 
     /// <summary>Provider是否已就绪且该源当前可采集。</summary>
     public bool IsAvailable { get; }

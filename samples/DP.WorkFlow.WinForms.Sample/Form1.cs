@@ -83,7 +83,9 @@ public partial class Form1 : Form
                 diagnostic: availability is null
                     ? $"Provider {binding.ProviderId} 未安装：插件目录 {providerPluginDirectory} 中没有加载到该Provider。"
                       + (pluginLoadFailure is null ? string.Empty : " " + pluginLoadFailure)
-                    : availability.Diagnostic);
+                    : availability.Diagnostic,
+                // 采集时序必须随绑定一起发布：运行前校验靠它决定能否做节点级参数覆盖。
+                acquisitionMode: binding.AcquisitionMode);
         }));
 
         // 3. 创建新文档
@@ -158,7 +160,10 @@ public partial class Form1 : Form
             .Add<IWorkflowRecoveryService>(new DemoRecoveryService())
             // 准备服务只做校验；退役上一轮资源是运行所有者的职责，只有根运行宿主持有它（AR-01 阶段2）。
             .Add<IWorkflowRunPreparationService>(_frameScope)
-            .Add<IWorkflowRunResourceOwner>(_frameScope);
+            .Add<IWorkflowRunResourceOwner>(_frameScope)
+            // 本轮作用域取得：外部回调缓冲源要在采集节点之前布防。桥接是 Kernel 与采集侧之间唯一的连接点，
+            // 嵌套调用点不解析 IWorkflowRunScopeOwner，因此结构上无法重新布防或清空父运行队列。
+            .Add<IWorkflowRunScopeOwner>(new VisionAcquisitionRunScope(_visionAcquisition));
         recoveryDemo?.ConfigureServices(services, _nodeCatalog, handlers, actions);
         _runtimeContext = new WorkflowContext(services);
         _runtimeHost = new WorkflowRuntimeHost(_nodeCatalog, handlers);
