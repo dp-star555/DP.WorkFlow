@@ -832,6 +832,6 @@ Workflow     DP.WorkFlow.Nodes.Vision.Tests / VisionAcquisitionNodeTests、Workf
 | 5 Provider管理设备生命周期，Workflow只管理取得后的帧生命周期 | **已达成** |
 | 6 Kernel无Vision/厂商依赖，Provider无Workflow反向依赖 | **已达成**（有依赖边界回归用例） |
 | 7 HALCON不再由样例直接`new`成唯一Workflow采集能力 | **已达成**：示例只扫描插件目录，编译期不引用HALCON类型 |
-| 8 自动化矩阵通过，真实设备验收项单独签署 | **部分**：自动化矩阵通过（806 + 834 例，DP.Vision 侧需补 `HALCONROOT` 才是完整口径）；真实设备、许可证、驱动与多进程独占仍需现场签署 |
+| 8 自动化矩阵通过，真实设备验收项单独签署 | **部分**：自动化矩阵通过（960 + 834 例，DP.Vision 侧需补 `HALCONROOT` 才是完整口径）；真实设备、许可证、驱动与多进程独占仍需现场签署 |
 
 因此当前应表述为：**契约已建立、HALCON与Basler均已插件化、Workflow已切换逻辑Source、两个真实Provider已同进程组合、`ExclusiveRun` 已按根运行作用域所有权落地；`Broadcast` 未实现，真实设备出图与现场指标未签署。**

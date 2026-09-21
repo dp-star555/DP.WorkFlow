@@ -78,8 +78,18 @@
 >   `ImageGrabbed` 回调边界内复制为中立图像、回调内异常绝不抛回 SDK 线程、释放先停流再等在途回调退出；
 >   `VisionResourceSession.Complete(failure)` 现在把会话标为 `Faulted`，使"断线"表现为带原因的故障态。
 >   **真实相机现场验收（断线/重连/停流时序、外部触发、长时间吞吐）仍待做**，不能用假相机替代。
-> - 实测基线：`DP.Vision.sln` **806 例** 0 失败（含 HALCON 启用时的条件编译用例；
->   此前记录的 752 是缺 `HALCONROOT` 时的口径）；`DP.WorkFlow.sln` **834 例** 0 失败、0 警告 0 错误。
+> - **图像采集深化 V1-E（HALCON 真实流式 Adapter）软件结构验收已完成**（2026-09-21）→
+>   与 pylon 相反，**HALCON 没有事件回调**，只有阻塞式异步抓取，因此采集循环、线程所有权、
+>   停止等待与"停流后不得再交付"全部由会话**自建**：`HalconStreamSession` 启动一条后台采集线程跑
+>   `grab_image_async` 循环，`AbortGrab`（`do_abort_grab`，尽力而为）后等线程退出；交付与采集同线程，
+>   故"等线程退出"即"等在途交付退出"。故障分成三类而不混：抓取超时（5322）只计诊断继续等下一轮、
+>   许可证类 → `VisionProviderUnavailableException`、图像采集类 → `VisionDeviceOfflineException`。
+>   顺带修掉一个既有缺陷：`KeepCurrent` 原被写成打开参数 `'false'`，会把硬件触发相机**显式改成自由运行**。
+>   `HalconNeutralFrames.Copy` 成为唯一像素落地实现，OnDemand 与长连接共用。
+>   **真实相机现场验收（`do_abort_grab` 支持情况、取流频率上限、断线重连、长时间吞吐）仍待做。**
+> - 实测基线：`DP.Vision.sln` **960 例** 0 失败（6 个工程 × 双 TFM，12 个运行条目；含 HALCON 启用时的
+>   条件编译用例，此前记录的 752 是缺 `HALCONROOT` 时的口径）；`DP.WorkFlow.sln` **834 例** 0 失败、
+>   0 警告 0 错误。
 
 ### 1.2 四件最该先做的事
 
