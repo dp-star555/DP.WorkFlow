@@ -75,7 +75,7 @@ handlers.Register(
 
 当前没有视觉 Profile/Provider 候选选择器、旧 Importer 或独立 vision 分组装载器；采集侧宿主装配的是中立入口 `IVisionAcquisition`，具体厂商Provider由插件目录发现，运行中不自动故障切换。目录 Freeze 不是服务容器 Freeze，宿主必须保证运行中不更换实例。
 
-多厂商采集没有恢复旧Workflow Profile/Provider/Importer，而是在独立DP.Vision侧建立了采集Provider Module、不可变Provider组合和机器级逻辑Source绑定；Workflow Vision节点只消费统一采集入口。`DP.Vision.Halcon` 与 `DP.Vision.Basler` 各自发布 `plugin.json` 并作为正式插件被目录发现，`ICameraCapture` 已退回为 DP.Vision 内部的设备适配细节，不再是工作流能力契约。接口、候选发布、硬件生命周期、迁移阶段和验收矩阵见[图像采集Provider实施基线](vision-acquisition-providers.md)：阶段A–E已完成（两个真实厂商Provider可在同一进程组合并按SourceId路由），阶段F（RunScope与高级共享模式）受外部依赖阻塞。完整现有示例见[视觉使用说明](nodes/new-vision-file-pipeline.md)。
+多厂商采集没有恢复旧Workflow Profile/Provider/Importer，而是在独立DP.Vision侧建立了采集Provider Module、不可变Provider组合和机器级逻辑Source绑定；Workflow Vision节点只消费统一采集入口。`DP.Vision.Halcon` 与 `DP.Vision.Basler` 各自发布 `plugin.json` 并作为正式插件被目录发现。旧 `ICameraCapture`/`CameraCaptureOptions` 已随旧设备适配路径删除（并加了架构测试禁止复发），采集只有 `IVisionAcquisition` 一条路径。接口、候选发布、硬件生命周期、迁移阶段和验收矩阵见[图像采集Provider实施基线](vision-acquisition-providers.md)：阶段A–E已完成（两个真实厂商Provider可在同一进程组合并按SourceId路由），阶段F（RunScope与高级共享模式）受外部依赖阻塞。完整现有示例见[视觉使用说明](nodes/new-vision-file-pipeline.md)。
 
 ## Studio Module
 

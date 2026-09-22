@@ -76,7 +76,7 @@ var result = await host.RunAsync();
 
 宿主不得在运行中更换能力实例。当前使用固定服务装配，不提供Profile候选选择或执行异常后换后端。
 
-真实设备可注册独立 `DP.Vision.Halcon.HalconCameraCapture`；CameraId为`接口名|设备名`，不经过任何旧相机Adapter。仅在`IsSdkEnabled`为true时注册；缺少能力在运行前失败，离线设备、驱动或许可证错误在实际打开时失败。该实现每次采集打开/关闭设备，不宣称长连接或高帧率；曝光/触发、取消及SDK部署边界见[HALCON说明](../../../DP.Vision/src/DP.Vision.Halcon/README.md)。
+真实相机不由 Workflow 侧注册实现类，而是由 `DP.Vision.Acquisition.Runtime` 扫描插件目录发现 Provider 插件：`DP.Vision.Halcon` 与 `DP.Vision.Basler` 各自发布 `plugin.json`，工作流文档只保存逻辑 `SourceId`，机器配置负责把 `SourceId` 绑到 `ProviderId` + `ProviderBindingId` + `ResourceKey`。采集节点只声明中立入口 `IVisionAcquisition`，不感知厂商。缺 SDK/运行时的机器在首节点之前就失败（HALCON 是编译期 `HalconStreamCameras.IsSdkEnabled`，Basler 是原生运行时健康探测），离线设备、驱动或许可证错误在实际打开时失败。设备跨布防复用同一句柄，主动单次采集与外部回调缓冲源共用它，只在释放时关闭；曝光/触发、取消及SDK部署边界见[HALCON说明](../../../DP.Vision/src/DP.Vision.Halcon/README.md)。旧 `ICameraCapture`/`HalconCameraCapture` 路径已删除。
 
 平台Studio扩展：
 

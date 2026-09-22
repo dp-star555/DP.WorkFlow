@@ -1,10 +1,21 @@
 # 图像采集 Provider：实施设计与验收基线
 
-状态：**Proposed，尚未实施**  
+状态：**已实施完毕，本文转为设计归档**（阶段 A–E 已完成；深化 V1、连接架构 V2 也已落地）
 适用范围：相机/采集卡等硬件图像源；文件和文件夹读取继续使用独立契约。  
-目的：作为后续实现、代码评审和验收的对照基线。本文明确区分“当前事实”“目标状态”和“延期能力”。
+目的：保留实施当初的设计动机、取舍与验收矩阵，供追溯"为什么长成这样"。本文明确区分"当前事实""目标状态"和"延期能力"。
 
-## 1. 当前事实
+> **阅读提示：本文记录的是迁移过程中的形状，不是当前现状。**
+> 文中"当前事实""旧形态""迁移步骤"等小节描述的是**改造前**的链路与分期计划，
+> 其中出现的 `ICameraCapture`、`HalconCameraCapture` 等类型**已经删除**，仅作为对照保留。
+> 需要当前有效状态请看：
+> - 采集连接架构 V2 的实施状态与验收证据 → `DP.Vision/ACQUISITION_CONNECTION_V2_STATUS.md`
+> - 采集深化 V1（流式长连接、帧窗口、故障语义） → `DP.Vision/ACQUISITION_RUNTIME_V1.md`
+> - 插件体系与依赖方向 → `docs/plugin-architecture.md`
+> - 当前源码形态与最小用法 → `docs/nodes/new-vision-file-pipeline.md`
+
+## 1. 当前事实（迁移前基线，历史）
+
+> 本节是**实施前的**链路快照，用来对照改造幅度。当前链路见本文顶部"阅读提示"列出的状态文档。
 
 当前正式链路为：
 
@@ -626,7 +637,7 @@ ResourceKey
 
 厂商差异被显式处理，而不是抹平：
 
-- **缺 SDK 的时机不同**。HALCON 的 SDK 缺失是编译期问题（未找到 `halcondotnet.dll` 就不编译采集实现），因此 `HalconCameraCapture.IsSdkEnabled` 是编译期开关；Basler 的托管程序集随 NuGet 包还原、编译期一定在，缺的是**原生运行时**，因此健康探测改为检查进程能否解析 `PylonBase_v10.dll`。两者都必须让采集节点在首节点执行前失败，而不是等到采集时抛原生异常（Basler 缺运行时直接调 API 会抛 `SEHException`）。
+- **缺 SDK 的时机不同**。HALCON 的 SDK 缺失是编译期问题（未找到 `halcondotnet.dll` 就不编译采集实现），因此 `HalconStreamCameras.IsSdkEnabled` 是编译期开关；Basler 的托管程序集随 NuGet 包还原、编译期一定在，缺的是**原生运行时**，因此健康探测改为检查进程能否解析 `PylonBase_v10.dll`。两者都必须让采集节点在首节点执行前失败，而不是等到采集时抛原生异常（Basler 缺运行时直接调 API 会抛 `SEHException`）。
 - **设备选择器语义不同**。HALCON 用 `接口名|设备名`；Basler 用 `SerialNumber` 或 `UserDefinedName`，且必须且只能给出一个——两个都给无法判断以哪个为准，都不给会匹配到任意一台。
 - **像素格式落地规则不同**。Basler 的格式映射表（`BaslerPixelFormats`）是**纯逻辑、不依赖 SDK**，因此可以在没有相机、甚至没有 pylon 运行时的机器上被完整验证；映射之外的格式一律拒绝，特别是不把 10/12/16 位彩色静默降位到 8 位。
 - **触发表达能力不同**。HALCON Adapter 无法表达软件触发，因此明确拒绝；Basler 能表达，于是支持 `Software`，但对 `External` 要求私有配置声明 `triggerSource`，否则明确拒绝而不是沿用设备当前设置。
