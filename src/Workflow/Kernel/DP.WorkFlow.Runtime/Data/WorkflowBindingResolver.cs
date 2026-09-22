@@ -290,13 +290,13 @@ internal sealed record WorkflowInputBindingResult<T>(
 /// <param name="SourceKind">来源类别：Literal、NodeOutput 或 PublicData。</param>
 /// <param name="SourceNodeId">节点输出来源的节点 ID；其他来源为空。</param>
 /// <param name="PublicDataKey">公共数据来源的键；其他来源为空。</param>
-/// <param name="MemberPath">成员路径；固定值来源为空。</param>
+/// <param name="SourceOutputKey">来源输出键：成员路径，绑定整个根值时统一为 <c>$</c>；固定值来源为空。</param>
 /// <param name="TargetType">目标输入类型的完整名称。</param>
 internal sealed record WorkflowBindingSourceDescriptor(
     string SourceKind,
     string? SourceNodeId,
     string? PublicDataKey,
-    string? MemberPath,
+    string? SourceOutputKey,
     string TargetType)
 {
     /// <summary>从输入配置构造来源描述，不执行实际解析。</summary>

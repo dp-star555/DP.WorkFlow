@@ -273,8 +273,8 @@ public sealed class WorkflowRunRecordingEventTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            // 使用命名重载解析输入，使引擎记录 InputResolved 并带上来来源输出序号。
-            var value = context.ResolveInput(nameof(BindingNodeModel.Source), node.Source);
+            // 普通 ResolveInput 由绑定阶段冻结的输入槽元数据自动识别 InputKey，Handler 不手写输入名。
+            var value = context.ResolveInput(node.Source);
             return ValueTask.FromResult(NodeExecutionResult.Continue(WorkflowPorts.Success, value));
         }
     }

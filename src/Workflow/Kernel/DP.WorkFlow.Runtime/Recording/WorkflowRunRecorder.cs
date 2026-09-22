@@ -45,6 +45,9 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
     private int _emptyDrainCount;
     private string? _lastError;
     private DateTimeOffset? _lastFailureAt;
+    private long _diagnosticCount;
+    private string? _lastDiagnostic;
+    private DateTimeOffset? _lastDiagnosticAt;
     private DateTimeOffset _lastHealthNotification = DateTimeOffset.MinValue;
     private E_WorkflowRecordingHealth _health = E_WorkflowRecordingHealth.Healthy;
     private volatile bool _stopping;
@@ -137,7 +140,7 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
             AppendToWindow(recorded);
             _recordedCount++;
 
-            flush = writeMode == WorkflowEventWriteMode.Durable;
+            flush = writeMode == WorkflowEventWriteMode.FlushRequested;
             if (_sink is null)
                 return new WorkflowRunEventReceipt(true, recorded.Sequence, false);
 
@@ -358,6 +361,29 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
         }
     }
 
+    /// <inheritdoc />
+    public void ReportDegraded(string message)
+    {
+        // fail-open：诊断报告不得抛异常，也不得把已经 Failed 的链路伪造成 Degraded。
+        WorkflowRecordingHealth? notification = null;
+        lock (_healthSync)
+        {
+            _diagnosticCount++;
+            _lastDiagnostic = message ?? string.Empty;
+            _lastDiagnosticAt = DateTimeOffset.UtcNow;
+            if (_health == E_WorkflowRecordingHealth.Healthy)
+                _health = E_WorkflowRecordingHealth.Degraded;
+            var now = DateTimeOffset.UtcNow;
+            if (now - _lastHealthNotification >= _options.HealthNotificationInterval)
+            {
+                _lastHealthNotification = now;
+                notification = BuildHealthLocked();
+            }
+        }
+        if (notification is not null)
+            RaiseHealthChanged(notification);
+    }
+
     private void ReportFailure(string message)
     {
         WorkflowRecordingHealth? notification = null;
@@ -401,7 +427,10 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
         Interlocked.Read(ref _failedWriteCount),
         Interlocked.Read(ref _lastConfirmedSequence),
         _lastError,
-        _lastFailureAt);
+        _lastFailureAt,
+        Interlocked.Read(ref _diagnosticCount),
+        _lastDiagnostic,
+        _lastDiagnosticAt);
 
     private void RaiseHealthChanged(WorkflowRecordingHealth health)
     {

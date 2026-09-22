@@ -144,7 +144,7 @@ public sealed record WorkflowRunEventDraft(
 /// <summary>表示 Recorder 接受一条事件草稿后的结果。</summary>
 /// <param name="Accepted">事件是否已进入有界队列或内存窗口。</param>
 /// <param name="Sequence">分配给该事件的 Run 内序号；未接受时为零。</param>
-/// <param name="FlushRequested">是否因 Durable 优先级请求了立即推送。</param>
+/// <param name="FlushRequested">是否因 FlushRequested 优先级请求了立即推送。</param>
 /// <param name="Error">未接受时的原因；接受时为空。</param>
 public sealed record WorkflowRunEventReceipt(
     bool Accepted,

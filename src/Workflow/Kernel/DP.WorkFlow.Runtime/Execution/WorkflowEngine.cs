@@ -11,6 +11,7 @@ public sealed partial class WorkflowEngine
     private readonly WorkflowExecutionPlan _plan;
     private readonly WorkflowBoundExecutionPlan _boundPlan;
     private readonly WorkflowExecutionOptions _options;
+    private readonly WorkflowOutputValueExtractor _outputValueExtractor;
     private readonly AsyncManualResetEvent _resumeGate = new();
     private readonly object _stateSync = new();
     private readonly HashSet<string> _externalHoldReasons = new(StringComparer.Ordinal);
@@ -76,6 +77,7 @@ public sealed partial class WorkflowEngine
         Context = context ?? new WorkflowContext();
         _options = options ?? new WorkflowExecutionOptions();
         _options.Validate();
+        _outputValueExtractor = new WorkflowOutputValueExtractor(_options.Recording.MaxOutputProperties);
     }
 
     /// <summary>获取运行上下文。</summary>

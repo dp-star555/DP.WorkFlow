@@ -5,8 +5,10 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     private readonly WorkflowContext _context;
     private readonly Action<IWorkflowNodeModel, string, string?, IReadOnlyDictionary<string, object?>?, WorkflowEventWriteMode> _traceWriter;
     private readonly Action<WorkflowRunEventDraft, WorkflowEventWriteMode> _eventRecorder;
+    private readonly Action<string> _degradedReporter;
     private readonly Func<WorkflowExecutionPlan, WorkflowContext, CancellationToken, Task<WorkflowRunResult>> _childRunner;
     private readonly WorkflowExecutionPlan? _childDefinition;
+    private readonly WorkflowNodeInputMap _inputMap;
     private readonly Dictionary<string, object> _pendingVariableWrites = new(StringComparer.Ordinal);
     private readonly HashSet<string> _pendingVariableRemovals = new(StringComparer.Ordinal);
     private readonly Dictionary<string, object> _pendingPublicDataWrites = new(StringComparer.Ordinal);
@@ -17,16 +19,20 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     /// <param name="node">当前节点配置。</param>
     /// <param name="executionIdentity">当前 Run、Token、Scope 和执行次数身份。</param>
     /// <param name="childDefinition">复合节点的可选编译后子定义。</param>
+    /// <param name="inputLayout">绑定阶段冻结的输入槽元数据；用于自动识别普通输入键。</param>
     /// <param name="traceWriter">将节点自定义步骤按推送优先级写回父引擎的委托。</param>
     /// <param name="eventRecorder">将数据血缘等结构化事件写回父引擎的委托。</param>
+    /// <param name="degradedReporter">报告记录元数据降级的委托；不得抛出异常或改变节点结果。</param>
     /// <param name="childRunner">在父引擎监管下启动子引擎的委托。</param>
     public WorkflowNodeExecutionContext(
         WorkflowContext context,
         IWorkflowNodeModel node,
         WorkflowExecutionIdentity executionIdentity,
         WorkflowExecutionPlan? childDefinition,
+        WorkflowNodeInputLayout inputLayout,
         Action<IWorkflowNodeModel, string, string?, IReadOnlyDictionary<string, object?>?, WorkflowEventWriteMode> traceWriter,
         Action<WorkflowRunEventDraft, WorkflowEventWriteMode> eventRecorder,
+        Action<string> degradedReporter,
         Func<WorkflowExecutionPlan, WorkflowContext, CancellationToken, Task<WorkflowRunResult>> childRunner)
     {
         _context = context;
@@ -35,7 +41,10 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
         _childDefinition = childDefinition;
         _traceWriter = traceWriter;
         _eventRecorder = eventRecorder;
+        _degradedReporter = degradedReporter;
         _childRunner = childRunner;
+        // 执行计划每次返回新的节点快照，因此引用映射必须按本次执行建立，不进入全局状态。
+        _inputMap = inputLayout.Bind(node);
     }
 
     public IWorkflowNodeModel Node { get; }
@@ -128,34 +137,70 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
         return existed;
     }
 
-    public T? ResolveInput<T>(WorkflowInput<T> input) =>
-        new WorkflowBindingResolver(_context, ExecutionIdentity).Resolve(input);
-
-    public T? ResolveInput<T>(string inputName, WorkflowInput<T> input)
+    public T? ResolveInput<T>(WorkflowInput<T> input)
     {
         ArgumentNullException.ThrowIfNull(input);
+        // 用引用映射把"Handler 实际传入的输入实例"定位回它的公开属性名；查不到说明是动态输入。
+        var inputKey = _inputMap.TryGetKey(input, out var key) ? key : null;
+        var metadataStatus = inputKey is null
+            ? WorkflowInputMetadataStatus.Unresolved
+            : WorkflowInputMetadataStatus.Automatic;
+        return ResolveAndRecord(input, inputKey, metadataStatus);
+    }
+
+    public T? ResolveDynamicInput<T>(string inputKey, WorkflowInput<T> input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        if (string.IsNullOrWhiteSpace(inputKey))
+            throw new ArgumentException("动态输入键不能为空白。", nameof(inputKey));
+        return ResolveAndRecord(input, inputKey.Trim(), WorkflowInputMetadataStatus.ExplicitDynamic);
+    }
+
+    private T? ResolveAndRecord<T>(WorkflowInput<T> input, string? inputKey, string metadataStatus)
+    {
         var descriptor = WorkflowBindingSourceDescriptor.From(input);
         try
         {
             var resolution = new WorkflowBindingResolver(_context, ExecutionIdentity).ResolveWithSource(input);
             RecordInputResolved(
-                inputName,
+                inputKey,
+                metadataStatus,
                 descriptor,
                 resolution.SourceNodeId,
                 resolution.SourceOutputSequence,
                 resolution.Value,
                 null);
+            ReportUnresolvedInputIfNeeded(metadataStatus);
             return resolution.Value;
         }
         catch (Exception exception)
         {
-            RecordInputResolved(inputName, descriptor, descriptor.SourceNodeId, null, null, exception.Message);
+            // 记录失败诊断不得覆盖绑定解析的原始异常。
+            RecordInputResolved(
+                inputKey,
+                metadataStatus,
+                descriptor,
+                descriptor.SourceNodeId,
+                null,
+                null,
+                exception.Message);
+            ReportUnresolvedInputIfNeeded(metadataStatus);
             throw;
         }
     }
 
+    private void ReportUnresolvedInputIfNeeded(string metadataStatus)
+    {
+        if (metadataStatus != WorkflowInputMetadataStatus.Unresolved)
+            return;
+        // 输入仍然正常解析；这里只让"无法自动识别"在 RecordingHealth 上可见，不改变节点结果。
+        _degradedReporter(
+            $"节点 {Node.Id}/{Node.NodeType} 的输入未识别出普通输入槽，已按 Unresolved 记录数据血缘。");
+    }
+
     private void RecordInputResolved(
-        string inputName,
+        string? inputKey,
+        string metadataStatus,
         WorkflowBindingSourceDescriptor descriptor,
         string? sourceNodeId,
         long? sourceOutputSequence,
@@ -172,12 +217,13 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
                 ExecutionIdentity,
                 Data: new Dictionary<string, object?>
                 {
-                    ["InputName"] = inputName,
+                    ["InputKey"] = inputKey,
+                    ["InputMetadataStatus"] = metadataStatus,
                     ["SourceKind"] = descriptor.SourceKind,
                     ["SourceNodeId"] = sourceNodeId,
+                    ["SourceOutputKey"] = descriptor.SourceOutputKey,
                     ["SourceOutputSequence"] = sourceOutputSequence,
                     ["PublicDataKey"] = descriptor.PublicDataKey,
-                    ["MemberPath"] = descriptor.MemberPath,
                     ["TargetType"] = descriptor.TargetType,
                     ["ResolvedValueSummary"] = resolvedValue
                 }),

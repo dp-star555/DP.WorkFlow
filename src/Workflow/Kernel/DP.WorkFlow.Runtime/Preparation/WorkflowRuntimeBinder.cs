@@ -30,11 +30,22 @@ public sealed class WorkflowRuntimeBinder
             pair => pair.Key,
             pair => pair.Value.RequiredCapabilities,
             StringComparer.Ordinal);
+        // 输入槽元数据必须与处理器绑定同时建立：重复输入实例、重复键和 getter 失败都要在 Run 开始前失败。
+        var inputLayouts = plan.NodeIds.ToDictionary(
+            nodeId => nodeId,
+            nodeId =>
+            {
+                var node = plan.GetNodeOrThrow(nodeId);
+                var layout = WorkflowNodeInputLayout.Discover(node.GetType());
+                layout.Bind(node);
+                return layout;
+            },
+            StringComparer.Ordinal);
         var children = plan.ChildPlans.ToDictionary(
             pair => pair.Key,
             pair => Bind(pair.Value),
             StringComparer.Ordinal);
-        return new WorkflowBoundExecutionPlan(plan, handlers, requirements, children);
+        return new WorkflowBoundExecutionPlan(plan, handlers, requirements, inputLayouts, children);
     }
 }
 
@@ -43,12 +54,14 @@ public sealed class WorkflowBoundExecutionPlan
 {
     private readonly IReadOnlyDictionary<string, IWorkflowNodeHandler> _handlers;
     private readonly IReadOnlyDictionary<string, IReadOnlyList<WorkflowRuntimeCapabilityRequirement>> _requirements;
+    private readonly IReadOnlyDictionary<string, WorkflowNodeInputLayout> _inputLayouts;
     private readonly IReadOnlyDictionary<string, WorkflowBoundExecutionPlan> _childPlans;
 
     internal WorkflowBoundExecutionPlan(
         WorkflowExecutionPlan plan,
         IDictionary<string, IWorkflowNodeHandler> handlers,
         IDictionary<string, IReadOnlyList<WorkflowRuntimeCapabilityRequirement>> requirements,
+        IDictionary<string, WorkflowNodeInputLayout> inputLayouts,
         IDictionary<string, WorkflowBoundExecutionPlan> childPlans)
     {
         Plan = plan ?? throw new ArgumentNullException(nameof(plan));
@@ -59,6 +72,8 @@ public sealed class WorkflowBoundExecutionPlan
                 pair => pair.Key,
                 pair => (IReadOnlyList<WorkflowRuntimeCapabilityRequirement>)pair.Value.ToArray(),
                 StringComparer.Ordinal));
+        _inputLayouts = new ReadOnlyDictionary<string, WorkflowNodeInputLayout>(
+            new Dictionary<string, WorkflowNodeInputLayout>(inputLayouts, StringComparer.Ordinal));
         _childPlans = new ReadOnlyDictionary<string, WorkflowBoundExecutionPlan>(
             new Dictionary<string, WorkflowBoundExecutionPlan>(childPlans, StringComparer.Ordinal));
     }
@@ -89,4 +104,13 @@ public sealed class WorkflowBoundExecutionPlan
         _childPlans.TryGetValue(nodeId, out var child)
             ? child
             : throw new KeyNotFoundException($"执行计划中没有节点 {nodeId} 的绑定子计划。");
+
+    /// <summary>Gets the input-slot layout frozen for a node during binding.</summary>
+    /// <param name="nodeId">Stable node ID.</param>
+    /// <returns>The immutable input-slot layout for this node type.</returns>
+    /// <remarks>仅 Runtime 内部使用；不暴露给 Studio、Persistence 或节点插件。</remarks>
+    internal WorkflowNodeInputLayout GetInputLayout(string nodeId) =>
+        _inputLayouts.TryGetValue(nodeId, out var layout)
+            ? layout
+            : throw new KeyNotFoundException($"执行计划中没有节点 {nodeId} 的输入槽布局。");
 }

@@ -97,7 +97,7 @@ public sealed partial class WorkflowEngine
                     },
                     message,
                     new Dictionary<string, object?> { ["State"] = terminalState.ToString() }),
-                WorkflowEventWriteMode.Durable);
+                WorkflowEventWriteMode.FlushRequested);
             await recorder.CompleteAsync(new WorkflowRunCompletion(terminalState, message, Elapsed)).ConfigureAwait(false);
         }
         catch
@@ -182,11 +182,25 @@ public sealed partial class WorkflowEngine
         _recorder.HealthChanged += OnRecordingHealthChanged;
         _recorder.Record(
             WorkflowRunEventDraft.Lifecycle("RunStarted", "流程开始执行。"),
-            WorkflowEventWriteMode.Durable);
+            WorkflowEventWriteMode.FlushRequested);
     }
 
     private void OnRecordingHealthChanged(WorkflowRecordingHealth health) =>
         SafeInvoke(RecordingHealthChanged, health);
+
+    /// <summary>报告一次不改变节点结果的记录元数据降级；记录链路未启动时静默忽略。</summary>
+    /// <param name="message">面向诊断的说明。</param>
+    private void ReportRecordingDegraded(string message)
+    {
+        try
+        {
+            _recorder?.ReportDegraded(message);
+        }
+        catch
+        {
+            // 降级报告属于可观测性，绝不能改变节点执行或 Run 终态。
+        }
+    }
 
     private void SetTerminalState(E_WorkflowExecutionState state, string? message)
     {

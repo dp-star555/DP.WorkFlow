@@ -6,13 +6,15 @@
 
 快照收口：`WorkflowRuntimeSnapshot` 删除完整 `Faults`/`NodeOutputs`，改为 `CurrentFault`/`CurrentRecovery`；子流程状态拆为 `ActiveChildWorkflows` + `LatestChildWorkflowByParentNode`，完成后每个父节点只保留最近一次快照；已完成 ParallelScope 与已完成子流程不再永久留在实时集合。绑定与恢复语义未改变。
 
-记录链路：新增 `IWorkflowRunRecorder`/`IWorkflowRunEventSink`、`WorkflowRunEvent` 系列类型、`WorkflowTracePayloadEncoder` 和 `WorkflowRunRecordingOptions`。引擎统一分配 Run 内序号，接入 Run/Node/Fault/Recovery 事件，原 Trace 最近窗口迁移到 Recorder；新增命名输入解析重载记录 `InputResolved`、`OutputCommitted` 及变量和公共数据提交摘要。Runtime 只向顶层注入的 Sink 推送，不预先绑定 SQL/SQLite/文件；查询、清理与保留策略由顶层 Adapter 负责。
+记录链路：新增 `IWorkflowRunRecorder`/`IWorkflowRunEventSink`、`WorkflowRunEvent` 系列类型、`WorkflowTracePayloadEncoder` 和 `WorkflowRunRecordingOptions`。引擎统一分配 Run 内序号，接入 Run/Node/Fault/Recovery 事件，原 Trace 最近窗口迁移到 Recorder；记录 `InputResolved`、`OutputCommitted` 及变量和公共数据提交摘要。Runtime 只向顶层注入的 Sink 推送，不预先绑定 SQL/SQLite/文件；查询、清理与保留策略由顶层 Adapter 负责。
 
-记录完全 fail-open：`RunStarted`、Durable 推送和 Flush 失败都不改变节点调度与 Run 终态，只更新 `RecordingHealth`、失败计数并通知宿主。有界内存窗口与待推送队列始终淘汰最老数据，不因旧记录保护期拒绝最新记录，更不阻塞流程。**现实取舍：因为记录不能阻塞运行，Runtime 无法保证闪退前最后几条事件一定已落盘，崩溃持久性取决于顶层 Sink 的实现和实际确认进度。**
+数据血缘自动化：绑定阶段按节点类型建立输入槽元数据（`WorkflowNodeInputLayout`，含子计划递归），普通 `ResolveInput<T>(WorkflowInput<T>)` 自动识别稳定输入键并记录 `InputKey`/`InputMetadataStatus`/`SourceKind`/`SourceOutputKey`/`SourceOutputSequence`，内置 Handler 不再手写输入名；动态映射与集合元素改用显式逃生口 `ResolveDynamicInput(inputKey, input)`；无法识别的输入仍正常解析，只把 `RecordingHealth` 降为 `Degraded`（独立的 `DiagnosticCount`，不伪装成 Sink 写入失败）。`OutputCommitted` 由 `WorkflowOutputValueExtractor` 自动提取稳定输出键：标量与资源根值统一 `$`，普通结果 DTO 展开第一层公开属性，单个 getter 失败或超过 `MaxOutputProperties` 只降级诊断而不改变已提交输出。`WorkflowEventWriteMode.Durable` 改名 `FlushRequested`，不再暗示同步持久化。
 
-验收：新增 `WorkflowRunRecorderTests`（序号单调、有界窗口/队列、Durable 立即调度、非阻塞、健康状态与通知、收尾 Flush）、`WorkflowTracePayloadEncoderTests`（摘要/引用编码、截断标记、敏感脱敏、编码失败吸收）和 `WorkflowRunRecordingEventTests`（生命周期与单调序号、并行 Token/Scope、循环 ExecutionCount/LoopIteration、`InputResolved.SourceOutputSequence`、失败不产生 `OutputCommitted`、快照不随历史增长）。全量构建 0 警告 0 错误，除预先存在的 WPF 动画/DPI 偶发失败外全部通过。
+记录完全 fail-open：`RunStarted`、FlushRequested 推送和 Flush 失败都不改变节点调度与 Run 终态，只更新 `RecordingHealth`、失败计数并通知宿主。有界内存窗口与待推送队列始终淘汰最老数据，不因旧记录保护期拒绝最新记录，更不阻塞流程。**现实取舍：因为记录不能阻塞运行，Runtime 无法保证闪退前最后几条事件一定已落盘，崩溃持久性取决于顶层 Sink 的实现和实际确认进度。**
 
-**边界：**阶段 D 只新增命名重载与 `ResolveWithSource`，内置节点仍用旧 `ResolveInput<T>(WorkflowInput<T>)`，完整输入血缘迁移需单独安排；阶段 F（Studio 实时覆盖层与分页 Reader、按节点/类型/Case 查询）与顶层保存 Adapter 未在本次实现；§20 的 100,000 次循环基准与 Adapter 子进程崩溃持久性测试属于基准/Adapter 侧验证。
+验收：新增 `WorkflowRunRecorderTests`（序号单调、有界窗口/队列、FlushRequested 立即调度、非阻塞、健康状态与通知、收尾 Flush）、`WorkflowRunBatchPushTests`（批次封箱、立即刷意图归属、通知粒度、按批次淘汰）、`WorkflowTracePayloadEncoderTests`（摘要/引用编码、截断标记、敏感脱敏、编码失败吸收）、`WorkflowRunRecordingEventTests`（生命周期与单调序号、并行 Token/Scope、循环 ExecutionCount/LoopIteration、失败不产生 `OutputCommitted`、快照不随历史增长）、`WorkflowNodeInputLayoutTests`（输入槽发现顺序、继承属性、忽略嵌套/集合/索引器、同实例歧义拒绝、子计划递归）、`WorkflowOutputValueExtractorTests`（标量 `$`、DTO 第一层、不递归、集合/二进制/流不展开、getter 失败、超限截断）、`WorkflowRunRecordingLineageTests`（自动 InputKey、根绑定 `$`、Literal/PublicData、显式动态键、未识别降级、失败保留原异常、标量与 DTO 输出键）和 `WorkflowVisionOutputRecordingTests`（真实 `ImageFrame` 只记录 FrameId 不记录像素）。全量构建 0 警告 0 错误；Runtime 72、Core 46、Standard 63、Composite 7、Motion 12、Process 56、Vision 44 全绿。
+
+**边界：**阶段 F（Studio 实时覆盖层与分页 Reader、按节点/类型/Case 查询）与顶层保存 Adapter 未在本次实现；§20 的 100,000 次循环基准与 Adapter 子进程崩溃持久性测试属于基准/Adapter 侧验证；实施细节 §14 明确不处理的 Sink 超时/熔断/永久挂起、Ready 淘汰竞态与"阻塞期间独立推进 100ms 封包"仍未做。
 
 ## 前轮：联合恢复协议与处置步骤原操作继续
 

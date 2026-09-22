@@ -11,7 +11,7 @@ public interface IWorkflowRunRecorder : IAsyncDisposable
 {
     /// <summary>提交一条事件草稿并立即返回，不等待外部 Sink。</summary>
     /// <param name="event">未分配序号和未编码 Payload 的事件草稿。</param>
-    /// <param name="writeMode">推送优先级；Durable 会触发立即调度，但不阻塞调用方。</param>
+    /// <param name="writeMode">推送优先级；FlushRequested 会触发立即封包和调度，但不阻塞调用方。</param>
     /// <returns>分配后的序号以及是否请求了立即推送。</returns>
     WorkflowRunEventReceipt Record(
         WorkflowRunEventDraft @event,
@@ -24,6 +24,16 @@ public interface IWorkflowRunRecorder : IAsyncDisposable
 
     /// <summary>获取当前记录健康状态。</summary>
     WorkflowRecordingHealth Health { get; }
+
+    /// <summary>
+    /// 报告一次"记录内容不完整"的降级诊断，例如无法自动识别输入槽或输出属性 getter 失败。
+    /// </summary>
+    /// <param name="message">面向诊断的说明。</param>
+    /// <remarks>
+    /// 本方法不得抛出异常，也不得改变工作流结果；它只累计独立的诊断计数、
+    /// 把健康状态从 Healthy 降为 Degraded，并按 <see cref="WorkflowRunRecordingOptions.HealthNotificationInterval"/> 节流通知宿主。
+    /// </remarks>
+    void ReportDegraded(string message);
 
     /// <summary>记录健康状态变化时发生；宿主据此暴露记录链路故障。</summary>
     event Action<WorkflowRecordingHealth>? HealthChanged;

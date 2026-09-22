@@ -333,14 +333,17 @@ AlgorithmCompleted
 
 ### 8.1 输出提交
 
-节点输出正式进入 Run Output Store 后记录 `OutputCommitted`：
+节点输出正式进入 Run Output Store 后记录 `OutputCommitted`。事件 Payload 把输出值展开到顶层稳定键，而不是塞进一个字典值（否则统一编码器只会留下"n 项"摘要）：
 
 ```text
 OutputExecutionSequence
 OutputType
-ValueSummary
-ArtifactReference（可选）
+OutputKeys              （只用于枚举稳定键）
+OutputValue.$           （标量或不可展开根值）
+OutputValue.<Property>  （结果 DTO 的第一层公开属性）
 ```
+
+输出键不得由 Handler 在记录调用处重复手写。结果 DTO 使用公开输出属性的稳定名称；标量根输出使用统一键 `$`。例如结果对象的 `Output = 10` 自动记录为 `OutputValue.Output = 10`，绑定整个标量时记录为 `OutputValue.$ = 10`。图像、二进制、Stream、句柄和其他资源对象仍只提取明确身份及必要摘要，不能因自动键值提取而递归序列化完整内容；单个属性 getter 失败只记录 `[读取失败]` 摘要并降级诊断，其他键继续提取。超过 `MaxOutputProperties` 时按属性名顺序截断并记录降级诊断。
 
 失败尝试不产生 `OutputCommitted`。
 
@@ -361,26 +364,39 @@ ResolvedValueSummary
 
 节点输出来源必须记录 `SourceOutputSequence`，否则循环和重复执行时无法确认消费者使用了来源节点的哪次输出。
 
-### 8.3 接口演进
+### 8.3 自动输入槽识别
 
-当前 `ResolveInput<T>(WorkflowInput<T>)` 没有稳定输入名称。实施时优先增加明确名称或配置路径：
+普通 Handler 保持自然调用：
 
 ```csharp
-T? ResolveInput<T>(string inputName, WorkflowInput<T> input);
+T? ResolveInput<T>(WorkflowInput<T> input);
 ```
 
-迁移期可保留旧重载，但旧重载产生的事件只能记录绑定键和目标类型，不能伪造输入名称。内置节点应全部迁移到命名重载。
+不得要求每个 Handler 重复手写 `ResolveInput("Left", node.Left)`。目标输入键本来已经存在于节点模型的 `WorkflowInput<T>` 属性中，重复字符串可能与真实属性漂移或写错。
 
-绑定解析器需要返回或回调来源信息，不能只返回最终值。建议内部结果包含：
+编译或绑定阶段应从冻结节点模型建立输入槽元数据：
 
 ```text
-ResolvedValue
-SourceKind
-SourceOutputIdentity/Sequence
-BindingKey
+InputKey：节点模型中 WorkflowInput<T> 属性的稳定名称
+ValueType
+对应当前冻结模型输入实例的访问计划
 ```
 
-该来源信息仅在 Runtime 内部使用，不扩大普通节点 Handler 的负担。
+ExecutionContext 根据当前节点及传入的 `WorkflowInput<T>` 自动定位输入槽，并记录：
+
+```text
+TargetNodeId
+InputKey
+SourceKind
+SourceNodeId
+SourceOutputKey/MemberPath
+SourceOutputSequence
+ResolvedValueSummary
+```
+
+来源节点与来源输出键直接来自 `WorkflowBindingKey.NodeId` 和 `MemberPath`，不由 Handler 重复指定。绑定解析器返回 `ResolvedValue`、`SourceKind`、`SourceOutputIdentity/Sequence` 和 `BindingKey`，来源信息仅在 Runtime 内部使用。
+
+显式命名重载只作为动态输入、集合输入或无法从静态节点属性唯一识别时的逃生口，不是普通内置节点的默认迁移路径。同一个 `WorkflowInput` 实例若被多个输入槽复用并造成歧义，应在编译时拒绝或要求显式动态键。
 
 ## 9. Trace Payload 规则
 
@@ -461,7 +477,7 @@ Hash（确有分析价值时）
 public enum WorkflowEventWriteMode
 {
     Buffered,
-    Durable
+    FlushRequested
 }
 ```
 
@@ -476,9 +492,9 @@ public enum WorkflowEventWriteMode
 - 重复进度；
 - 非关键性能采样。
 
-#### Durable
+#### FlushRequested
 
-`Durable` 在本设计中表示“高优先级、要求 Recorder 立即安排 Flush”，不是 Engine 执行前置条件。事件进入 Recorder 后，工作流继续运行；外部 Sink 在独立写入路径中确认或失败。
+`FlushRequested` 在本设计中表示“高优先级、要求 Recorder 立即安排 Flush”，不是 Engine 执行前置条件。事件进入 Recorder 后，工作流继续运行；外部 Sink 在独立写入路径中确认或失败。
 
 适用：
 
@@ -513,7 +529,7 @@ Recorder 以“已封装批次”而不是单条事件作为后台队列和 Sink
 ```text
 当前批次达到 128 条
 从批次第一条事件起经过 100ms
-追加了一条 Durable 事件
+追加了一条 FlushRequested 事件
 Run 结束
 宿主正常关闭
 ```
@@ -521,7 +537,7 @@ Run 结束
 具体语义：
 
 - 达到 128 条时，封装一个恰好包含 128 条事件的批次；第 129 条进入新批次。
-- Durable 事件先按 Sequence 追加到当前批次，再立即封装整个批次。因此已有 20 条 Buffered 后出现一条 Durable 时，产生包含 21 条事件且要求立即 Flush 的批次。
+- FlushRequested 事件先按 Sequence 追加到当前批次，再立即封装整个批次。因此已有 20 条 Buffered 后出现一条 FlushRequested 时，产生包含 21 条事件且要求立即 Flush 的批次。
 - 100ms 从空批次收到第一条事件时开始计算，后续事件不得延后该批次的截止时间，避免持续低频输入永远不推送。
 - Run 结束和宿主正常关闭会封装非空尾批次，并请求尽力 Flush。
 - 空批次永远不会入队或调用 Sink。
@@ -530,7 +546,7 @@ Run 结束
 
 通知表达“至少有一个完整批次可处理”，不是事件计数。无论一个批次包含 1 条还是 128 条事件，每个批次只入队一次；不得因待发送事件数持续大于 128 而按后续每条事件重复累计 Semaphore 唤醒。
 
-Durable 批次不得越过更早的批次乱序发送。它只要求立即封装、立即调度，并在该批次到达 Sink 时携带 `requestImmediateFlush = true`；不改变 fail-open，也不表示 Workflow 已等待外部持久化确认。
+FlushRequested 批次不得越过更早的批次乱序发送。它只要求立即封装、立即调度，并在该批次到达 Sink 时携带 `requestImmediateFlush = true`；不改变 fail-open，也不表示 Workflow 已等待外部持久化确认。
 
 待发送容量按事件数核算。容量不足时从已封装待发送批次的队首开始淘汰最老批次并累计准确的丢失事件数，为最新批次腾出空间；不得淘汰正在写入 Sink 的批次，也不得阻塞 Workflow。至少保留最新一个批次：容量小于单批容量时不做无意义的清空。
 
@@ -540,7 +556,7 @@ Durable 批次不得越过更早的批次乱序发送。它只要求立即封装
 
 - 未配置外部 Sink：流程正常运行，只保留 Recorder 的有界内存最近窗口。
 - `RunStarted` 推送失败：记录健康状态变为异常并通知宿主，Run 仍然启动。
-- Durable 推送失败：返回失败 Receipt、累计计数并通知宿主，节点和流程继续原业务路径。
+- FlushRequested 推送失败：返回失败 Receipt、累计计数并通知宿主，节点和流程继续原业务路径。
 - Buffered 队列达到上限：丢弃最老的待推送低等级事件，为最新事件腾出空间；不得无界增长，也不得阻塞流程。
 - Sink 持续失败：使用独立的健康事件或宿主回调报告，不能依赖同一个失败 Sink 记录自身故障。
 - 正常停止：尽力 Flush；Flush 失败不改变已经得到的 Run 终态。
@@ -587,6 +603,8 @@ public interface IWorkflowRunRecorder : IAsyncDisposable
 
     WorkflowRecordingHealth Health { get; }
 
+    void ReportDegraded(string message);
+
     ValueTask CompleteAsync(
         WorkflowRunCompletion completion,
         CancellationToken cancellationToken);
@@ -599,9 +617,11 @@ public interface IWorkflowRunRecorder : IAsyncDisposable
 - 串行化多分支事件顺序；
 - Payload 编码；
 - 最近事件窗口；
-- Buffered 批量和 Durable 立即调度；
+- Buffered 批量和 FlushRequested 立即调度；
 - 独立 Sink 写入循环与尽力 Flush；
-- 健康状态和失败计数。
+- 健康状态、Sink 失败计数和独立的元数据降级诊断计数。
+
+`ReportDegraded` 用于自动输入槽识别或输出摘要失败这类"记录内容不完整"的情况：它不抛异常、把 `Healthy` 降为 `Degraded`、累计独立的 `DiagnosticCount`，并按 `HealthNotificationInterval` 节流通知宿主；它不写回可能已经故障的 Sink，也不伪装成 Sink 写入失败。
 
 ### 12.2 顶层 Event Sink seam
 
@@ -675,7 +695,7 @@ LastKnownNodeId
 ```text
 创建 RunId
 初始化运行工作集
-以 Durable 优先级记录 RunStarted
+以 FlushRequested 优先级记录 RunStarted
 若后续 Sink 推送失败则更新 RecordingHealth 并通知宿主
 发布首个 RuntimeSnapshot
 开始调度
@@ -693,7 +713,7 @@ Record NodeStarted
 创建本次 ExecutionContext
 ```
 
-普通 `NodeStarted` 使用 Buffered；设备节点的关键命令边界使用 Durable 优先推送。任何推送失败都不改变节点执行结果。
+普通 `NodeStarted` 使用 Buffered；设备节点的关键命令边界使用 FlushRequested 优先推送。任何推送失败都不改变节点执行结果。
 
 ### 16.3 输入解析
 
@@ -709,7 +729,7 @@ Record InputResolved
 ### 16.4 节点内部步骤
 
 ```text
-Handler/Operation 调用 Trace，并按需要标记 Buffered 或 Durable
+Handler/Operation 调用 Trace，并按需要标记 Buffered 或 FlushRequested
 Recorder 立即形成独立事件并进入有界队列
 ```
 
@@ -761,7 +781,7 @@ RecoveryRejected / RecoveryApplied / RecoveryStopped
 停止产生新节点事件
 清理 Pending Operations
 确定真实 Run 终态
-尝试 Durable 推送 Run terminal event
+尝试 FlushRequested 推送 Run terminal event
 Recorder 尽力 Complete/Flush
 发布最终 RuntimeSnapshot
 ```
@@ -774,7 +794,7 @@ Recorder 尽力 Complete/Flush
 
 - 同一个 Run 的 Sequence 唯一；
 - Sink 收到的批次按 Sequence 排序；
-- Durable 事件触发立即调度，并与它之前已接受的 Buffered 事件按 Sequence 一起推送；工作流不等待 Sink 确认；
+- FlushRequested 事件触发立即调度，并与它之前已接受的 Buffered 事件按 Sequence 一起推送；工作流不等待 Sink 确认；
 - 不用 Sequence 推导不存在的业务因果。
 
 并行真实因果还依赖：
@@ -831,10 +851,11 @@ Buffered 队列容量
 
 ### 阶段 D：数据血缘
 
-- 增加命名输入解析接口。
 - BindingResolver 返回来源身份。
-- 记录 `InputResolved` 和 `OutputCommitted`。
-- 记录成功提交的变量和公共数据变更摘要。
+- 编译或绑定阶段建立稳定输入槽元数据，普通 `ResolveInput(input)` 自动识别目标输入键。
+- 显式命名接口只保留给动态或无法唯一识别的输入。
+- `OutputCommitted` 自动提取稳定输出键与安全摘要。
+- 记录 `InputResolved`、`OutputCommitted` 和成功提交的数据键变化。
 
 ### 阶段 E：顶层保存 Adapter（独立安排）
 
@@ -852,20 +873,22 @@ Buffered 队列容量
 
 ### 实施状态（2026-09-22）
 
-已完成阶段 A–D 与阶段 E 的 Runtime 侧交付：
+已完成阶段 A–E 的 Runtime 部分（含阶段 D 数据血缘）：
 
 - 阶段 A：`WorkflowRuntimeSnapshot` 已删除完整 `Faults`/`NodeOutputs`，改为 `CurrentFault`/`CurrentRecovery`，子流程状态拆为 `ActiveChildWorkflows` + `LatestChildWorkflowByParentNode`；已完成 ParallelScope 与已完成子流程不再永久留在实时集合，绑定与恢复语义未改变。
-- 阶段 B/C/D：新增 `IWorkflowRunRecorder`、`IWorkflowRunEventSink`、`WorkflowRunEvent` 系列类型、`WorkflowTracePayloadEncoder` 和 `WorkflowRunRecordingOptions`；引擎统一分配 Run 内序号，接入 Run/Node/Fault/Recovery 事件，原有 Trace 最近窗口迁移到 Recorder，并新增命名输入解析重载记录 `InputResolved`、`OutputCommitted` 以及变量和公共数据提交摘要。
+- 阶段 B/C：新增 `IWorkflowRunRecorder`、`IWorkflowRunEventSink`、`WorkflowRunEvent` 系列类型、`WorkflowTracePayloadEncoder` 和 `WorkflowRunRecordingOptions`；引擎统一分配 Run 内序号，接入 Run/Node/Fault/Recovery 事件，原有 Trace 最近窗口迁移到 Recorder，并记录 `OutputCommitted` 以及变量和公共数据提交摘要。
+- 阶段 D：绑定阶段按节点类型建立输入槽元数据（`WorkflowNodeInputLayout`），普通 `ResolveInput<T>(WorkflowInput<T>)` 自动识别稳定输入键并记录 `InputKey`/`InputMetadataStatus`/`SourceKind`/`SourceOutputKey`/`SourceOutputSequence`；动态或集合输入改用显式逃生口 `ResolveDynamicInput(inputKey, input)`；无法识别的输入仍正常解析，只把 `RecordingHealth` 降为 `Degraded`。`OutputCommitted` 由 `WorkflowOutputValueExtractor` 自动提取稳定输出键：标量和资源根值统一 `$`，普通结果 DTO 展开第一层公开属性，单个 getter 失败或属性超限只降级诊断。不把内置节点机械迁移到手写名称重载。
 - 阶段 E：Runtime 只向顶层注入的 `IWorkflowRunEventSink` 推送，不在 Runtime 中预先绑定 SQL/SQLite/文件；查询、清理和保留策略由顶层 Adapter 负责。
-- 记录链路完全 fail-open：`RunStarted`、Durable 推送与 Flush 失败都不改变节点调度和 Run 终态，只更新 `RecordingHealth`、失败计数并通知宿主。
-- 阶段 B 的推送颗粒度已按 §10.3 落地为批次级：前台在 `_recordSync` 短临界区内把当前批次分离成不可变批次入队，后台只消费完整批次；封箱条件为满 128 条、批次首条事件起 100ms、追加 Durable 事件、Run 结束与宿主正常关闭。Durable 的立即刷意图随批次携带（不再是全局标记位），通知按批次而不是按事件计数，待发送容量按事件数核算但淘汰单位是整批。公开契约未变。
-- 验收：§20 的 Snapshot、Event、崩溃与可靠性、Payload 条目已由 `WorkflowRunRecorderTests`、`WorkflowRunBatchPushTests`、`WorkflowTracePayloadEncoderTests` 和 `WorkflowRunRecordingEventTests` 覆盖。
+- 记录链路完全 fail-open：`RunStarted`、FlushRequested 推送与 Flush 失败都不改变节点调度和 Run 终态，只更新 `RecordingHealth`、失败计数并通知宿主。
+- 阶段 B 的推送颗粒度已按 §10.3 落地为批次级：前台在 `_recordSync` 短临界区内把当前批次分离成不可变批次入队，后台只消费完整批次；封箱条件为满 128 条、批次首条事件起 100ms、追加 FlushRequested 事件、Run 结束与宿主正常关闭。FlushRequested 的立即刷意图随批次携带（不再是全局标记位），通知按批次而不是按事件计数，待发送容量按事件数核算但淘汰单位是整批。公开契约未变。
+- `WorkflowEventWriteMode.Durable` 已改名为 `FlushRequested`，明确它只要求立即封包和 Sink Flush，不承诺同步持久化。
+- 验收：`WorkflowRunRecorderTests`、`WorkflowRunBatchPushTests`、`WorkflowTracePayloadEncoderTests`、`WorkflowRunRecordingEventTests`、`WorkflowNodeInputLayoutTests`、`WorkflowOutputValueExtractorTests`、`WorkflowRunRecordingLineageTests` 和 `WorkflowVisionOutputRecordingTests` 覆盖 §20 的 Snapshot、Event、崩溃与可靠性、Payload 条目以及实施细节 §13 的血缘验收标准。
 
 尚未完成（后续工作）：
 
-- 阶段 D 只新增命名重载与 `ResolveWithSource`；内置节点仍使用旧 `ResolveInput<T>(WorkflowInput<T>)`，把内置节点迁移到命名重载以产生完整输入血缘需单独安排。
 - 阶段 F（Studio 实时覆盖层与分页 Reader、按节点/事件类型/故障 Case 查询）和顶层保存 Adapter 未在本次实现。
 - §20 中「100,000 次循环基准」和「具体 Adapter 强制终止子进程的崩溃持久性测试」属于基准与 Adapter 侧验证，未在本次执行。
+- 实施细节 §14 明确不验收的事项仍未处理：Sink 写入超时/熔断/永久挂起、Ready 队列淘汰竞态、Sink 阻塞期间独立推进 100ms 封包、操作员身份审计和完整 NodeVersion 迁移体系。
 
 ## 20. 验收标准
 
@@ -890,9 +913,9 @@ Buffered 队列容量
 - 测试 Sink 能收到按 Sequence 排序的事件批次；空批次永远不会写入 Sink。
 - 第 128 条事件封装一个 128 条批次，第 129 条进入新批次；Sink 阻塞时也不会按第 129 条及后续每条事件累计空唤醒。
 - 一批未满 128 条时，从首条事件起达到 100ms 会封装当前批次，后续输入不会无限延后截止时间。
-- 已有 20 条 Buffered 后追加一条 Durable，会封装一个包含 21 条事件且请求立即 Flush 的批次。
-- Durable 事件会触发立即封包和调度，不越过此前已接受的批次，并保持全局 Sequence 顺序。
-- 事件记录调用不等待外部 Sink；RunStarted、Durable 和 Flush 失败时，Workflow 的节点调度和最终结果不受影响。
+- 已有 20 条 Buffered 后追加一条 FlushRequested，会封装一个包含 21 条事件且请求立即 Flush 的批次。
+- FlushRequested 事件会触发立即封包和调度，不越过此前已接受的批次，并保持全局 Sequence 顺序。
+- 事件记录调用不等待外部 Sink；RunStarted、FlushRequested 和 Flush 失败时，Workflow 的节点调度和最终结果不受影响。
 - Sink 失败会更新 RecordingHealth、失败计数并通知宿主。
 - Buffered 队列有明确上限；满时淘汰最老事件，不会无限占用内存。
 - 正常停止会尽力 Flush 已接受事件。
@@ -908,9 +931,9 @@ Buffered 队列容量
 
 ## 21. 已确认政策
 
-1. 记录采用 fail-open：`RunStarted`、Durable 推送或 Flush 失败都不能阻止、Fault 或改变 Workflow 运行。
-2. Durable 优先级用于 Run 生命周期、设备命令关键边界、故障和恢复；普通步骤使用 Buffered。Durable 只触发立即调度，Workflow 不等待外部持久化确认。
-3. Recorder 以前台不可变批次作为推送颗粒度：默认满 128 条或从首条事件起达到 100ms 时封包；Durable 事件先加入当前批次再立即封包，Run 结束也封装尾批次。后台只消费完整批次，不按单事件累计唤醒。
+1. 记录采用 fail-open：`RunStarted`、FlushRequested 推送或 Flush 失败都不能阻止、Fault 或改变 Workflow 运行。
+2. FlushRequested 优先级用于 Run 生命周期、设备命令关键边界、故障和恢复；普通步骤使用 Buffered。FlushRequested 只触发立即调度，Workflow 不等待外部持久化确认。
+3. Recorder 以前台不可变批次作为推送颗粒度：默认满 128 条或从首条事件起达到 100ms 时封包；FlushRequested 事件先加入当前批次再立即封包，Run 结束也封装尾批次。后台只消费完整批次，不按单事件累计唤醒。
 4. Runtime 不直接决定 SQL、SQLite 或文件；只向顶层配置的 Event Sink 推送。
 5. 有界窗口和有界存储始终优先保留最新数据，容量不足时淘汰最老数据，不因保护期拒绝新记录。
 6. 图像、二进制和复杂对象只记录明确标识及必要摘要，不记录完整内容。

@@ -57,14 +57,17 @@ public sealed class BlockNodeHandler : WorkflowNodeHandler<BlockNodeModel>
         {
             object? value = mapping.Source switch
             {
-                E_BlockInputSource.Literal => parentContext.ResolveInput(
+                E_BlockInputSource.Literal => parentContext.ResolveDynamicInput(
+                    mapping.TargetVariableName,
                     WorkflowInput<object?>.FromLiteral(mapping.LiteralValue)),
                 E_BlockInputSource.ParentVariable =>
                     parentContext.TryGetVariable<object>(mapping.ParentVariableName, out var variable)
                         ? variable
                         : throw new KeyNotFoundException($"父变量 {mapping.ParentVariableName} 不存在。"),
                 E_BlockInputSource.ParentNodeBinding when mapping.ParentBinding.HasValue =>
-                    parentContext.ResolveInput(WorkflowInput<object?>.FromBinding(mapping.ParentBinding.Value)),
+                    parentContext.ResolveDynamicInput(
+                        mapping.TargetVariableName,
+                        WorkflowInput<object?>.FromBinding(mapping.ParentBinding.Value)),
                 E_BlockInputSource.ParentNodeBinding =>
                     throw new InvalidOperationException($"输入映射 {mapping.TargetVariableName} 缺少 ParentBinding。"),
                 _ => throw new NotSupportedException($"不支持的 Block 输入来源：{mapping.Source}。")

@@ -227,7 +227,7 @@ public sealed partial class WorkflowEngine
                     ["Attempt"] = request.Attempt,
                     ["FaultNodeId"] = request.FaultNodeId
                 }),
-            WorkflowEventWriteMode.Durable);
+            WorkflowEventWriteMode.FlushRequested);
         PublishSnapshot();
     }
 
@@ -253,7 +253,7 @@ public sealed partial class WorkflowEngine
                         pair.Key.NodeId,
                         ExecutionIdentity: identity,
                         Data: new Dictionary<string, object?> { ["ExceptionType"] = fault.ExceptionType }),
-                    WorkflowEventWriteMode.Durable);
+                    WorkflowEventWriteMode.FlushRequested);
             }
         }
     }

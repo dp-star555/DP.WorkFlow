@@ -1,7 +1,7 @@
 namespace DP.WorkFlow.Tests;
 
 /// <summary>
-/// §20验收：Recorder 的统一序号、有界队列、Durable 调度、fail-open 与健康状态。
+/// §20验收：Recorder 的统一序号、有界队列、FlushRequested 调度、fail-open 与健康状态。
 /// 记录链路不得阻塞节点调度，也不得把外部写入失败传播成工作流故障。
 /// </summary>
 public sealed class WorkflowRunRecorderTests
@@ -72,7 +72,7 @@ public sealed class WorkflowRunRecorderTests
     }
 
     [Fact]
-    public async Task DurableEvent_TriggersImmediateDispatchBeforeBufferedInterval()
+    public async Task FlushRequestedEvent_TriggersImmediateDispatchBeforeBufferedInterval()
     {
         var sink = new CollectingSink();
         var options = new WorkflowRunRecordingOptions
@@ -83,12 +83,12 @@ public sealed class WorkflowRunRecorderTests
         await using var recorder = new WorkflowRunRecorder(Guid.NewGuid(), "立即", 64, options);
 
         var receipt = recorder.Record(
-            WorkflowRunEventDraft.Lifecycle("RunStarted"), WorkflowEventWriteMode.Durable);
+            WorkflowRunEventDraft.Lifecycle("RunStarted"), WorkflowEventWriteMode.FlushRequested);
 
         Assert.True(receipt.FlushRequested);
         Assert.True(
             await sink.WaitForFirstWriteAsync(TimeSpan.FromSeconds(2)),
-            "Durable 事件必须在远早于 Buffered 间隔的时间内触发推送。");
+            "FlushRequested 事件必须在远早于 Buffered 间隔的时间内触发推送。");
         Assert.Contains(sink.Events, item => item.EventType == "RunStarted");
     }
 
@@ -105,7 +105,7 @@ public sealed class WorkflowRunRecorderTests
 
         var watch = System.Diagnostics.Stopwatch.StartNew();
         for (var index = 0; index < 50; index++)
-            recorder.Record(WorkflowRunEventDraft.Lifecycle("Step" + index), WorkflowEventWriteMode.Durable);
+            recorder.Record(WorkflowRunEventDraft.Lifecycle("Step" + index), WorkflowEventWriteMode.FlushRequested);
         watch.Stop();
 
         Assert.True(
@@ -133,7 +133,7 @@ public sealed class WorkflowRunRecorderTests
                 notifications.Add(health);
         };
 
-        recorder.Record(WorkflowRunEventDraft.Lifecycle("RunStarted"), WorkflowEventWriteMode.Durable);
+        recorder.Record(WorkflowRunEventDraft.Lifecycle("RunStarted"), WorkflowEventWriteMode.FlushRequested);
         // 宿主通知与状态更新在同一失败路径上完成；等待通知到达，避免与后台推送线程竞态。
         await WaitUntilAsync(() =>
         {
@@ -161,7 +161,7 @@ public sealed class WorkflowRunRecorderTests
         var recorder = new WorkflowRunRecorder(Guid.NewGuid(), "收尾", 64, options);
 
         recorder.Record(WorkflowRunEventDraft.Lifecycle("RunStarted"));
-        recorder.Record(WorkflowRunEventDraft.Lifecycle("RunCompleted"), WorkflowEventWriteMode.Durable);
+        recorder.Record(WorkflowRunEventDraft.Lifecycle("RunCompleted"), WorkflowEventWriteMode.FlushRequested);
         await recorder.CompleteAsync(
             new WorkflowRunCompletion(E_WorkflowExecutionState.Completed, "完成", TimeSpan.Zero));
         await recorder.DisposeAsync();

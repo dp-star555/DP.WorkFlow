@@ -36,6 +36,9 @@ public sealed class WorkflowRunRecordingOptions
     /// <summary>获取或设置集合值在摘要中展开的最大项数。</summary>
     public int MaxCollectionItems { get; set; } = 32;
 
+    /// <summary>获取或设置单个输出 DTO 自动提取的最大公开属性个数；超出部分截断并记录降级诊断。</summary>
+    public int MaxOutputProperties { get; set; } = 32;
+
     /// <summary>验证所有上限可用于启动记录。</summary>
     /// <exception cref="ArgumentOutOfRangeException">容量、批量或长度上限非正，或等待时间为负。</exception>
     internal void Validate()
@@ -56,6 +59,8 @@ public sealed class WorkflowRunRecordingOptions
             throw new ArgumentOutOfRangeException(nameof(MaxStringLength));
         if (MaxCollectionItems <= 0)
             throw new ArgumentOutOfRangeException(nameof(MaxCollectionItems));
+        if (MaxOutputProperties <= 0)
+            throw new ArgumentOutOfRangeException(nameof(MaxOutputProperties));
     }
 }
 
@@ -80,8 +85,15 @@ public enum E_WorkflowRecordingHealth
 /// <param name="DroppedCount">因内存窗口或待推送队列容量上限淘汰的最老事件累计数。</param>
 /// <param name="FailedWriteCount">外部 Sink 写入或刷新失败的累计次数。</param>
 /// <param name="LastConfirmedSequence">外部 Sink 已确认的最大事件序号；无 Sink 时为零。</param>
-/// <param name="LastError">最近一次失败原因。</param>
-/// <param name="LastFailureAt">最近一次失败的 UTC 时间。</param>
+/// <param name="LastError">最近一次 Sink 失败原因。</param>
+/// <param name="LastFailureAt">最近一次 Sink 失败的 UTC 时间。</param>
+/// <param name="DiagnosticCount">自动元数据或输出摘要降级的累计次数；与 Sink 失败分开计数。</param>
+/// <param name="LastDiagnostic">最近一次降级诊断说明。</param>
+/// <param name="LastDiagnosticAt">最近一次降级诊断的 UTC 时间。</param>
+/// <remarks>
+/// 降级诊断（<paramref name="DiagnosticCount"/>）表示记录内容不完整，例如无法自动识别输入槽或输出属性 getter 失败；
+/// 它不代表 Sink 写入失败，因此与 <paramref name="FailedWriteCount"/> 分开统计。
+/// </remarks>
 public sealed record WorkflowRecordingHealth(
     E_WorkflowRecordingHealth State,
     long RecordedCount,
@@ -89,7 +101,10 @@ public sealed record WorkflowRecordingHealth(
     long FailedWriteCount,
     long LastConfirmedSequence,
     string? LastError,
-    DateTimeOffset? LastFailureAt)
+    DateTimeOffset? LastFailureAt,
+    long DiagnosticCount = 0,
+    string? LastDiagnostic = null,
+    DateTimeOffset? LastDiagnosticAt = null)
 {
     /// <summary>获取表示尚未发生任何失败的共享健康状态。</summary>
     public static WorkflowRecordingHealth Initial { get; } = new(

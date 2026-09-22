@@ -112,10 +112,12 @@ public sealed class FitVisionRobustLineNodeHandler : WorkflowNodeHandler<FitVisi
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
         var coordinates = node.ResolveCoordinates(frame, context);
         var points = new List<PointD>();
-        foreach (var binding in node.Samples)
+        for (var index = 0; index < node.Samples.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var sample = context.ResolveInput(binding) ?? throw new InvalidOperationException("采样为空。");
+            // 集合元素不是节点模型的顶层输入属性，必须用显式动态键，不能伪装成静态输入槽。
+            var sample = context.ResolveDynamicInput($"Samples[{index}]", node.Samples[index])
+                ?? throw new InvalidOperationException("采样为空。");
             if (sample.FrameId != frame.FrameId) throw new InvalidOperationException("禁止混合不同帧的卡尺证据。");
             foreach (var edge in sample.Edges)
             {

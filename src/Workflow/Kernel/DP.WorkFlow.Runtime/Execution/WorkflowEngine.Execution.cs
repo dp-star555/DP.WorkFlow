@@ -100,8 +100,10 @@ public sealed partial class WorkflowEngine
                 node,
                 identity,
                 _plan.ChildPlans.TryGetValue(node.Id, out var childDefinition) ? childDefinition : null,
+                _boundPlan.GetInputLayout(node.Id),
                 (traceNode, step, message, data, writeMode) => WriteTrace(traceNode, identity, step, message, data, writeMode),
                 (draft, writeMode) => RecordRunEvent(draft, writeMode),
+                ReportRecordingDegraded,
                 (plan, childContext, childCancellation) =>
                     RunChildWorkflowAsync(node, identity, plan, childContext, childCancellation));
             var operationKey = (token.TokenId, node.Id);
@@ -247,19 +249,28 @@ public sealed partial class WorkflowEngine
         WorkflowExecutionIdentity identity,
         WorkflowNodeOutput output)
     {
-        // 只记录正式提交的输出身份和摘要；图像和二进制由编码器转换为引用，不写入完整内容。
+        // 输出键由提交值自动提取，Handler 不再手写；图像和二进制由编码器转换为引用，不写入完整内容。
+        var extracted = _outputValueExtractor.Extract(output.Value);
+        foreach (var diagnostic in extracted.Diagnostics)
+            ReportRecordingDegraded(diagnostic);
+
+        // 输出值展开到 Payload 顶层稳定键；不能作为普通字典值交给编码器，否则会被压缩成"n 项"摘要。
+        var data = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["OutputExecutionSequence"] = output.ExecutionSequence,
+            ["OutputType"] = extracted.OutputType,
+            ["OutputKeys"] = extracted.Values.Keys.ToArray()
+        };
+        foreach (var pair in extracted.Values)
+            data["OutputValue." + pair.Key] = pair.Value;
+
         RecordRunEvent(new WorkflowRunEventDraft(
             WorkflowRunEventCategory.DataFlow,
             "OutputCommitted",
             NodeId: node.Id,
             NodeType: node.NodeType,
             ExecutionIdentity: identity,
-            Data: new Dictionary<string, object?>
-            {
-                ["OutputExecutionSequence"] = output.ExecutionSequence,
-                ["OutputType"] = output.Value?.GetType().FullName,
-                ["ValueSummary"] = output.Value
-            }));
+            Data: data));
     }
 
     private int GetNextNodeExecutionCount(string nodeId)

@@ -2,7 +2,7 @@ namespace DP.WorkFlow.Tests;
 
 /// <summary>
 /// §20「崩溃与可靠性」的批次级验收：Recorder 以"前台不可变批次"而不是单条事件作为推送颗粒度。
-/// 这些用例保护封箱条件、Durable 立即刷意图的归属、通知粒度以及按批次核算的待发送容量。
+/// 这些用例保护封箱条件、FlushRequested 立即刷意图的归属、通知粒度以及按批次核算的待发送容量。
 /// </summary>
 public sealed class WorkflowRunBatchPushTests
 {
@@ -36,7 +36,7 @@ public sealed class WorkflowRunBatchPushTests
     }
 
     [Fact]
-    public async Task Durable_AppendsToCurrentBatch_ThenSealsWholeBatchWithImmediateFlush()
+    public async Task FlushRequested_AppendsToCurrentBatch_ThenSealsWholeBatchWithImmediateFlush()
     {
         var sink = new RecordingSink();
         var options = new WorkflowRunRecordingOptions
@@ -49,7 +49,7 @@ public sealed class WorkflowRunBatchPushTests
 
         for (var index = 0; index < 20; index++)
             recorder.Record(WorkflowRunEventDraft.Lifecycle("Buffered" + index));
-        recorder.Record(WorkflowRunEventDraft.Lifecycle("RunCompleted"), WorkflowEventWriteMode.Durable);
+        recorder.Record(WorkflowRunEventDraft.Lifecycle("RunCompleted"), WorkflowEventWriteMode.FlushRequested);
 
         await WaitUntilAsync(() => sink.Batches.Count >= 1);
 
@@ -59,7 +59,7 @@ public sealed class WorkflowRunBatchPushTests
     }
 
     [Fact]
-    public async Task Durable_KeepsImmediateFlushIntent_WhenConsumerIsBusyWithEarlierBatch()
+    public async Task FlushRequested_KeepsImmediateFlushIntent_WhenConsumerIsBusyWithEarlierBatch()
     {
         var sink = new RecordingSink(holdFirstWrite: true);
         var options = new WorkflowRunRecordingOptions
@@ -73,21 +73,21 @@ public sealed class WorkflowRunBatchPushTests
         for (var index = 0; index < 128; index++)
             recorder.Record(WorkflowRunEventDraft.Lifecycle("Buffered" + index));
 
-        // 消费者已经进入第一批的写入并被 Sink 卡住，此时 Durable 事件到达。
+        // 消费者已经进入第一批的写入并被 Sink 卡住，此时 FlushRequested 事件到达。
         await WaitUntilAsync(() => sink.Batches.Count >= 1);
         Assert.Equal(128, sink.Batches[0].Events.Count);
 
-        recorder.Record(WorkflowRunEventDraft.Lifecycle("RunCompleted"), WorkflowEventWriteMode.Durable);
+        recorder.Record(WorkflowRunEventDraft.Lifecycle("RunCompleted"), WorkflowEventWriteMode.FlushRequested);
         sink.ReleaseWrite();
 
         await WaitUntilAsync(() => sink.Batches.Count >= 2);
 
-        // 立即刷意图必须跟着"含有该 Durable 事件的批次"走，不能被更早的批次吞掉。
-        var durableEvent = Assert.Single(sink.Batches[1].Events);
-        Assert.Equal("RunCompleted", durableEvent.EventType);
+        // 立即刷意图必须跟着"含有该 FlushRequested 事件的批次"走，不能被更早的批次吞掉。
+        var flushRequestedEvent = Assert.Single(sink.Batches[1].Events);
+        Assert.Equal("RunCompleted", flushRequestedEvent.EventType);
         Assert.True(
             sink.Batches[1].RequestImmediateFlush,
-            "Durable 的立即刷意图必须绑定到含该事件的批次，而不是全局标记位。");
+            "FlushRequested 的立即刷意图必须绑定到含该事件的批次，而不是全局标记位。");
     }
 
     [Fact]

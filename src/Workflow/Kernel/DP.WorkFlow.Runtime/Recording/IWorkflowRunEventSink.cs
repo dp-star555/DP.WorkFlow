@@ -11,7 +11,7 @@ public interface IWorkflowRunEventSink
 {
     /// <summary>写入一批按序号升序排列的运行事件。</summary>
     /// <param name="events">同一 Run 内按 <see cref="WorkflowRunEvent.Sequence"/> 升序排列的事件。</param>
-    /// <param name="requestImmediateFlush">是否由 Durable 事件或 Run 收尾触发，要求实现尽快落盘。</param>
+    /// <param name="requestImmediateFlush">是否由 FlushRequested 事件或 Run 收尾触发，要求实现尽快落盘。</param>
     /// <param name="cancellationToken">Recorder 释放时取消写入的令牌；正常 Run 结束不会取消它。</param>
     /// <returns>Sink 是否确认接收；失败原因用于健康状态报告。</returns>
     ValueTask<WorkflowRunEventWriteResult> WriteAsync(

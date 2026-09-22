@@ -355,7 +355,7 @@ public sealed class RecoveryV1Tests
             {
                 try
                 {
-                    context.ResolveInput(WorkflowInput<int>.FromBinding(new WorkflowBindingKey(node.Id, "$")));
+                    context.ResolveDynamicInput("Probe", WorkflowInput<int>.FromBinding(new WorkflowBindingKey(node.Id, "$")));
                     SawStaleOutput = true;
                 }
                 catch (WorkflowBindingException) { }
