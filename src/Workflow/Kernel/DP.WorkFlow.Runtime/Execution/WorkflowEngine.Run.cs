@@ -180,7 +180,8 @@ public sealed partial class WorkflowEngine
             _parentRunId,
             _parentExecution);
         _recorder.HealthChanged += OnRecordingHealthChanged;
-        _recorder.Record(
+        // 与后续事件一样走 fail-open 入口：RunStarted 的记录失败不得让 Run 在启动阶段就 Fault。
+        TryRecordRunEvent(
             WorkflowRunEventDraft.Lifecycle("RunStarted", "流程开始执行。"),
             WorkflowEventWriteMode.FlushRequested);
     }

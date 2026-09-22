@@ -1,3 +1,5 @@
+using System.Collections;
+
 namespace DP.WorkFlow.Tests;
 
 /// <summary>
@@ -133,6 +135,33 @@ public sealed class WorkflowRunRecordingEventTests
         Assert.Null(snapshot.CurrentRecovery);
     }
 
+    [Fact]
+    public async Task TraceDataThatCannotBeEnumerated_DoesNotFaultTheRun()
+    {
+        var sink = new CollectingSink();
+        var document = new WorkflowDocument { Name = "记录异常", EntryNodeId = "Trace" };
+        var canvas = document.CanvasProjection;
+        canvas.Nodes.Add(new WorkflowCanvasNode { Node = new ThrowingTraceNodeModel { Id = "Trace", Title = "抛异常跟踪" } });
+        canvas.Nodes.Add(new WorkflowCanvasNode { Node = new EndNodeModel { Id = "End", Title = "结束" } });
+        canvas.Connections.Add(Connect("Trace", WorkflowPorts.Success, "End"));
+        var engine = CreateEngine(document, EmptyServices(), sink, startNodeId: "Trace");
+
+        var result = await engine.RunAsync();
+
+        // 记录链路必须完全 fail-open：调用方自定义跟踪数据自身无法枚举时，
+        // 异常不得穿过 Recorder 把节点变成 Fault。
+        Assert.True(result.Success, result.Message);
+        Assert.DoesNotContain(sink.Events, item => item.EventType == "NodeFailed");
+        Assert.Equal("RunCompleted", sink.Events[^1].EventType);
+        // 失败被记为记录降级（可观测），而不是静默吞掉。
+        var health = engine.RecordingHealth;
+        Assert.Equal(E_WorkflowRecordingHealth.Degraded, health.State);
+        Assert.True(health.DiagnosticCount > 0);
+        Assert.NotNull(health.LastDiagnostic);
+        // 降级不得伪装成 Sink 写入失败。
+        Assert.Equal(0L, health.FailedWriteCount);
+    }
+
     private static IServiceProvider EmptyServices() =>
         new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(
             new WorkflowActionRegistry()
@@ -155,6 +184,12 @@ public sealed class WorkflowRunRecordingEventTests
                 {
                     WorkflowPortDescriptor.Input(maxConnections: int.MaxValue),
                     WorkflowPortDescriptor.Output()
+                }))
+            .Register(WorkflowNodeDescriptor.Create<ThrowingTraceNodeModel>(
+                ports: new[]
+                {
+                    WorkflowPortDescriptor.Input(maxConnections: int.MaxValue),
+                    WorkflowPortDescriptor.Output()
                 }));
         document.EntryNodeId = startNodeId;
         var definition = new WorkflowCompiler(catalog).Compile(document);
@@ -164,7 +199,8 @@ public sealed class WorkflowRunRecordingEventTests
             .Register(new LoopNodeHandler())
             .Register(new ParallelAllNodeHandler())
             .Register(new WaitAllInputsCompletedNodeHandler())
-            .Register(new BindingNodeHandler());
+            .Register(new BindingNodeHandler())
+            .Register(new ThrowingTraceNodeHandler());
         var options = new WorkflowExecutionOptions
         {
             Recording = new WorkflowRunRecordingOptions { Sink = sink }
@@ -277,6 +313,47 @@ public sealed class WorkflowRunRecordingEventTests
             var value = context.ResolveInput(node.Source);
             return ValueTask.FromResult(NodeExecutionResult.Continue(WorkflowPorts.Success, value));
         }
+    }
+
+    [WorkflowNode("Test.RecordingThrowingTrace")]
+    private sealed class ThrowingTraceNodeModel : WorkflowNodeModel
+    {
+        public override string NodeType => "Test.RecordingThrowingTrace";
+    }
+
+    private sealed class ThrowingTraceNodeHandler : WorkflowNodeHandler<ThrowingTraceNodeModel>
+    {
+        protected override ValueTask<NodeExecutionResult> ExecuteAsync(
+            ThrowingTraceNodeModel node,
+            IWorkflowNodeExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            // 节点完全正常：只是它提供的跟踪数据在记录阶段无法被枚举。
+            context.Trace("Step", "跟踪数据无法枚举。", new ThrowingDictionary());
+            return ValueTask.FromResult(NodeExecutionResult.Continue(WorkflowPorts.Success));
+        }
+    }
+
+    /// <summary>枚举器直接抛异常的只读字典；模拟调用方自定义数据结构在记录时失效。</summary>
+    private sealed class ThrowingDictionary : IReadOnlyDictionary<string, object?>
+    {
+        public object? this[string key] => throw new NotSupportedException();
+
+        public IEnumerable<string> Keys => throw new NotSupportedException();
+
+        public IEnumerable<object?> Values => throw new NotSupportedException();
+
+        public int Count => 1;
+
+        public bool ContainsKey(string key) => throw new NotSupportedException();
+
+        public bool TryGetValue(string key, out object? value) => throw new NotSupportedException();
+
+        public IEnumerator<KeyValuePair<string, object?>> GetEnumerator() =>
+            throw new InvalidOperationException("跟踪数据无法枚举。");
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private sealed class CollectingSink : IWorkflowRunEventSink

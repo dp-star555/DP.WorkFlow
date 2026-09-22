@@ -47,6 +47,19 @@ public sealed class WorkflowOutputValueExtractorTests
     }
 
     [Fact]
+    public void Extract_ObjectWithoutPublicProperties_FallsBackToDollarKey()
+    {
+        var result = new WorkflowOutputValueExtractor(32).Extract(new OpaqueResult());
+
+        // 不可展开对象也必须至少有一个稳定键，否则"每个已提交输出都有稳定键值"不成立：
+        // 空属性表会得到 OutputKeys=[] 且没有任何 OutputValue.*。
+        Assert.Equal("$", Assert.Single(result.Values).Key);
+        Assert.IsType<OpaqueResult>(result.Values["$"]);
+        Assert.Equal(typeof(OpaqueResult).FullName, result.OutputType);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
     public void Extract_NonExpandableRootValuesUseDollarKey()
     {
         var extractor = new WorkflowOutputValueExtractor(32);
@@ -118,5 +131,10 @@ public sealed class WorkflowOutputValueExtractorTests
         public int B => 2;
 
         public int C => 3;
+    }
+
+    /// <summary>没有公开可读属性的不透明结果；既不是标量也不是集合，只能回退到根键。</summary>
+    private sealed class OpaqueResult
+    {
     }
 }

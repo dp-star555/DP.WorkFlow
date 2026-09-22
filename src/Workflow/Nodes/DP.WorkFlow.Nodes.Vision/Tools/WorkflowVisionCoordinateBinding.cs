@@ -18,8 +18,13 @@ public sealed class WorkflowVisionCoordinateBinding
     internal LocatedCoordinateSystem Resolve(IWorkflowNodeExecutionContext context, ImageFrame frame)
     {
         if (!IsValid) throw new InvalidOperationException("定位坐标系绑定或制作身份缺失。");
-        var system = context.ResolveInput(System) ?? throw new InvalidOperationException("本帧未定位，不能沿用旧坐标系。");
+        // System 是嵌套对象属性（Node.Coordinates.System），不是节点模型的顶层输入槽，
+        // 自动槽发现匹配不到它，因此必须用显式动态键，否则正常节点会被误判为记录降级。
+        var system = context.ResolveDynamicInput(DynamicInputKey, System) ?? throw new InvalidOperationException("本帧未定位，不能沿用旧坐标系。");
         system.Validate(frame, CoordinateSystemId, TemplateSignature);
         return system;
     }
+
+    /// <summary>嵌套定位坐标系绑定的稳定动态输入键；与节点模型的嵌套路径一致。</summary>
+    internal const string DynamicInputKey = "Coordinates.System";
 }

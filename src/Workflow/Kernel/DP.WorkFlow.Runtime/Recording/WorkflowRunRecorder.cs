@@ -410,7 +410,9 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
         WorkflowRecordingHealth? notification = null;
         lock (_healthSync)
         {
-            if (_health == E_WorkflowRecordingHealth.Healthy)
+            // 只有 Failed → Degraded 才是真正的状态变化。Healthy 和 Degraded 下写入成功都不改变状态，
+            // 因此不得重复通知宿主：否则 Degraded 期间每个成功批次都会推一条完全相同的健康通知。
+            if (_health != E_WorkflowRecordingHealth.Failed)
                 return;
             _health = E_WorkflowRecordingHealth.Degraded;
             _lastHealthNotification = DateTimeOffset.UtcNow;

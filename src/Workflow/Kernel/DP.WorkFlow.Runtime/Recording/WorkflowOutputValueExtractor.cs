@@ -19,7 +19,8 @@ internal sealed record WorkflowOutputValueSet(
 /// </summary>
 /// <remarks>
 /// <para>标量、二进制、集合、字典、流、原生句柄和异常等根值统一使用 <c>$</c>，不做属性展开；
-/// 其他普通结果 DTO 只提取第一层公开可读属性，不递归展开未知对象。</para>
+/// 其他普通结果 DTO 只提取第一层公开可读属性，不递归展开未知对象。
+/// 没有任何公开可读属性的对象同样回退到 <c>$</c>，保证每个已提交输出都至少有一个稳定键。</para>
 /// <para>提取器不负责序列化：属性值继续交给 <see cref="WorkflowTracePayloadEncoder"/>，
 /// 由统一策略决定标量、摘要还是引用，因此图像、像素和句柄不会因为自动键值提取而被完整持久化。</para>
 /// </remarks>
@@ -54,6 +55,14 @@ internal sealed class WorkflowOutputValueExtractor
 
         var outputType = output!.GetType();
         var properties = _plans.GetOrAdd(outputType, static type => BuildPlan(type));
+        if (properties.Length == 0)
+        {
+            // 没有任何公开可读属性的对象（不透明结果、只有字段、只有非公开成员）无法展开成属性键。
+            // 回退到根键，保证"每个已提交输出都至少有一个稳定键"，由统一编码器给出类型摘要。
+            var opaqueValues = new Dictionary<string, object?>(StringComparer.Ordinal) { [RootKey] = output };
+            return new WorkflowOutputValueSet(outputType.FullName, opaqueValues, Array.Empty<string>());
+        }
+
         var values = new Dictionary<string, object?>(StringComparer.Ordinal);
         var diagnostics = new List<string>();
         foreach (var property in properties)

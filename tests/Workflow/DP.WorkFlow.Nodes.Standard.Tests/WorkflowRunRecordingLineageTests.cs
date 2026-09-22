@@ -219,6 +219,27 @@ public sealed class WorkflowRunRecordingLineageTests
         Assert.Equal(typeof(ProducerResult).FullName, committed.Data["OutputType"].Text);
     }
 
+    [Fact]
+    public async Task OutputCommitted_ObjectWithoutPublicPropertiesFallsBackToDollarKey()
+    {
+        var sink = new CollectingSink();
+        var engine = CreateEngine(
+            BuildDocument(new ProducerNodeModel { Id = "Producer", Output = new OpaquePayload() }, startNodeId: "Producer"),
+            sink);
+
+        var result = await engine.RunAsync();
+
+        Assert.True(result.Success, result.Message);
+        var committed = Assert.Single(sink.Events, item => item.EventType == "OutputCommitted");
+        // 不可展开对象也必须给出稳定键：否则 OutputKeys 为空且没有任何 OutputValue.*，
+        // "每个已提交输出都有稳定键值"就不成立。
+        Assert.Equal(new[] { "$" }, committed.Data!["OutputKeys"].Text!.Split(", "));
+        Assert.Equal(typeof(OpaquePayload).FullName, committed.Data["OutputType"].Text);
+        var opaque = committed.Data["OutputValue.$"];
+        Assert.Equal(WorkflowTraceValueKind.Summary, opaque.Kind);
+        Assert.Equal(typeof(OpaquePayload).FullName, opaque.TypeName);
+    }
+
     private static WorkflowEngine CreateEngine(
         WorkflowDocument document,
         IWorkflowRunEventSink sink,
@@ -264,6 +285,11 @@ public sealed class WorkflowRunRecordingLineageTests
     }
 
     private sealed record ProducerResult(int Value, bool Success);
+
+    /// <summary>没有公开可读属性的不透明输出；用于验证回退到根键。</summary>
+    private sealed class OpaquePayload
+    {
+    }
 
     private sealed record PublicPayload(int Count);
 

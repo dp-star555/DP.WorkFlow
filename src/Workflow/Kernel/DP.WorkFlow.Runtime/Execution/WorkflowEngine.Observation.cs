@@ -153,7 +153,33 @@ public sealed partial class WorkflowEngine
 
     /// <summary>向 Recorder 提交一条事件草稿；未配置记录器时静默忽略，绝不改变运行结果。</summary>
     private void RecordRunEvent(WorkflowRunEventDraft draft, WorkflowEventWriteMode writeMode = WorkflowEventWriteMode.Buffered) =>
-        _recorder?.Record(draft, writeMode);
+        TryRecordRunEvent(draft, writeMode);
+
+    /// <summary>
+    /// 提交一条事件并吸收记录链路的任何异常。
+    /// </summary>
+    /// <remarks>
+    /// 记录链路必须完全 fail-open：调用方提供的结构化数据、Payload 编码和批次推送都可能抛异常，
+    /// 这些异常一旦穿过节点执行就会把 Run 变成 Fault，违反"记录异常不改变 Workflow 业务结果"。
+    /// 这里只降级记录健康度，并把失败事件当作"未记录"返回空回执。
+    /// </remarks>
+    /// <param name="draft">待提交的事件草稿。</param>
+    /// <param name="writeMode">写入模式。</param>
+    /// <returns>成功时的事件回执；记录失败或未配置记录器时为 <see langword="null"/>。</returns>
+    private WorkflowRunEventReceipt? TryRecordRunEvent(
+        WorkflowRunEventDraft draft,
+        WorkflowEventWriteMode writeMode = WorkflowEventWriteMode.Buffered)
+    {
+        try
+        {
+            return _recorder?.Record(draft, writeMode);
+        }
+        catch (Exception exception)
+        {
+            ReportRecordingDegraded($"记录 {draft.EventType} 事件失败：{exception.Message}");
+            return null;
+        }
+    }
 
     private void WriteTrace(
         IWorkflowNodeModel node,
@@ -163,7 +189,7 @@ public sealed partial class WorkflowEngine
         IReadOnlyDictionary<string, object?>? data,
         WorkflowEventWriteMode writeMode = WorkflowEventWriteMode.Buffered)
     {
-        var receipt = _recorder?.Record(WorkflowRunEventDraft.Trace(step, node, identity, message, data), writeMode);
+        var receipt = TryRecordRunEvent(WorkflowRunEventDraft.Trace(step, node, identity, message, data), writeMode);
         SafeInvoke(NodeTrace, new WorkflowTraceEntry(
             receipt?.Sequence ?? 0,
             DateTimeOffset.UtcNow,
@@ -171,12 +197,27 @@ public sealed partial class WorkflowEngine
             node.NodeType,
             step,
             message,
-            data is null
-                ? null
-                : new ReadOnlyDictionary<string, object?>(
-                    new Dictionary<string, object?>(data, StringComparer.Ordinal)),
+            TryCopyTraceData(data),
             identity.TokenId,
             Array.AsReadOnly(identity.ScopeIds.ToArray())));
+    }
+
+    /// <summary>复制一份跟踪数据快照；数据自身的枚举异常不得改变节点执行结果。</summary>
+    /// <param name="data">调用方提供的结构化跟踪数据。</param>
+    /// <returns>副本；数据为空或无法枚举时为 <see langword="null"/>。</returns>
+    private static IReadOnlyDictionary<string, object?>? TryCopyTraceData(IReadOnlyDictionary<string, object?>? data)
+    {
+        if (data is null)
+            return null;
+        try
+        {
+            return new ReadOnlyDictionary<string, object?>(
+                new Dictionary<string, object?>(data, StringComparer.Ordinal));
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static void SafeInvoke<T>(Action<T>? handlers, T argument)

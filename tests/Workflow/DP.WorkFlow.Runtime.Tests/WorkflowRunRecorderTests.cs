@@ -150,6 +150,43 @@ public sealed class WorkflowRunRecorderTests
     }
 
     [Fact]
+    public async Task SuccessfulWritesWhileDegraded_NotifyHostOnlyOnce()
+    {
+        var sink = new FailFirstThenSucceedSink("外部存储暂时不可用。");
+        var options = new WorkflowRunRecordingOptions
+        {
+            Sink = sink,
+            HealthNotificationInterval = TimeSpan.Zero
+        };
+        await using var recorder = new WorkflowRunRecorder(Guid.NewGuid(), "降级通知", 64, options);
+        var notifications = new List<WorkflowRecordingHealth>();
+        recorder.HealthChanged += health =>
+        {
+            lock (notifications)
+                notifications.Add(health);
+        };
+
+        // 第一次写入失败 → Failed，这是状态变化，必须通知一次。
+        recorder.Record(WorkflowRunEventDraft.Lifecycle("RunStarted"), WorkflowEventWriteMode.FlushRequested);
+        await WaitUntilAsync(() => recorder.Health.State == E_WorkflowRecordingHealth.Failed);
+
+        // 之后每次写入都成功；每次成功都会调用 MarkConfirmed。
+        for (var i = 0; i < 6; i++)
+            recorder.Record(WorkflowRunEventDraft.Lifecycle("NodeStarted"), WorkflowEventWriteMode.FlushRequested);
+        await WaitUntilAsync(() => recorder.Health.State == E_WorkflowRecordingHealth.Degraded);
+        await WaitUntilAsync(() => sink.WriteCount >= 7);
+
+        var snapshot = notifications.ToArray();
+        // Degraded 不是"每次写入成功"都会发生的状态变化：只有 Failed → Degraded 那一次算变化。
+        // 否则 Degraded 期间每个成功批次都会推一条完全相同的通知，随批次数量无限增长。
+        Assert.Single(snapshot, item => item.State == E_WorkflowRecordingHealth.Degraded);
+        Assert.Equal(2, snapshot.Length);
+        // 写入确实持续成功，说明上面的单次通知不是"后续写入根本没发生"造成的。
+        Assert.True(sink.SuccessCount >= 6);
+        Assert.Equal(E_WorkflowRecordingHealth.Degraded, recorder.Health.State);
+    }
+
+    [Fact]
     public async Task CompleteAsync_FlushesAcceptedEventsInSequenceOrder()
     {
         var sink = new CollectingSink();
@@ -262,6 +299,29 @@ public sealed class WorkflowRunRecorderTests
             bool requestImmediateFlush,
             CancellationToken cancellationToken) =>
             ValueTask.FromResult(WorkflowRunEventWriteResult.Failed(error));
+
+        public ValueTask FlushAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+    }
+
+    /// <summary>第一次写入失败、之后一直成功；用于验证 Failed → Degraded 只通知一次。</summary>
+    private sealed class FailFirstThenSucceedSink(string error) : IWorkflowRunEventSink
+    {
+        private int _writeCount;
+        private int _successCount;
+
+        public int WriteCount => Volatile.Read(ref _writeCount);
+        public int SuccessCount => Volatile.Read(ref _successCount);
+
+        public ValueTask<WorkflowRunEventWriteResult> WriteAsync(
+            IReadOnlyList<WorkflowRunEvent> events,
+            bool requestImmediateFlush,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _writeCount) == 1)
+                return ValueTask.FromResult(WorkflowRunEventWriteResult.Failed(error));
+            Interlocked.Increment(ref _successCount);
+            return ValueTask.FromResult(WorkflowRunEventWriteResult.Success);
+        }
 
         public ValueTask FlushAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }

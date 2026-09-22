@@ -213,6 +213,77 @@ public sealed class VisionCoordinatePipelineTests
         Assert.True(page.CanEdit); Assert.True(page.SupportsRegions); Assert.True(page.CanBindCoordinates);
     }
 
+    [Fact]
+    public async Task CoordinateBoundVisionNodes_RecordAutomaticFrameAndDynamicNestedInputs()
+    {
+        using var data = new Images();
+        var document = data.Pipeline();
+        var sink = new CollectingSink();
+        using var scope = new WorkflowVisionFrameScope();
+        using var host = new WorkflowRuntimeHost(
+            new WorkflowNodeCatalog().RegisterImageNodes(),
+            new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers(),
+            new WorkflowExecutionOptions { Recording = new WorkflowRunRecordingOptions { Sink = sink } });
+        host.Configure(document, new WorkflowContext(Services(scope)));
+
+        var run = await host.RunAsync();
+
+        Assert.True(run.Success, run.Message);
+        var inputs = sink.Events.Where(item => item.EventType == "InputResolved").ToArray();
+        Assert.NotEmpty(inputs);
+        // 顶层输入槽（Frame）自动取属性名；嵌套输入（Coordinates.System）走显式动态键。
+        var frameInput = Assert.Single(inputs, item => item.Data!["InputKey"].Text == "Frame" && item.NodeId == "blob");
+        Assert.Equal("Automatic", frameInput.Data!["InputMetadataStatus"].Text);
+        Assert.Equal("NodeOutput", frameInput.Data["SourceKind"].Text);
+        Assert.Equal("scene", frameInput.Data["SourceNodeId"].Text);
+        // 管线里每个带坐标系绑定的节点都必须恰好产出一条嵌套动态槽：一条不少，也一条不多。
+        var boundNodeIds = document.CanvasProjection.Nodes
+            .Select(item => item.Node).OfType<AnalyzeVisionFrameNodeModel>()
+            .Where(node => node.Coordinates is not null)
+            .Select(node => node.Id).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        Assert.NotEmpty(boundNodeIds);
+        var nestedInputs = inputs.Where(item => item.Data!["InputKey"].Text == "Coordinates.System").ToArray();
+        Assert.Equal(boundNodeIds, nestedInputs.Select(item => item.NodeId ?? string.Empty).OrderBy(id => id, StringComparer.Ordinal).ToArray());
+        Assert.All(nestedInputs, item => Assert.Equal("ExplicitDynamic", item.Data!["InputMetadataStatus"].Text));
+        var nestedInput = Assert.Single(nestedInputs, item => item.NodeId == "blob");
+        Assert.Equal("NodeOutput", nestedInput.Data!["SourceKind"].Text);
+        Assert.Equal("pose", nestedInput.Data["SourceNodeId"].Text);
+        Assert.Equal("CoordinateSystem", nestedInput.Data["SourceOutputKey"].Text);
+        // 关键不变式：这条管线里每个输入都有稳定键，不得出现任何未识别降级。
+        Assert.DoesNotContain(inputs, item => item.Data!["InputMetadataStatus"].Text == "Unresolved");
+        // 因此带坐标系绑定的正常 Vision 节点不会把记录健康度误降级。
+        var health = host.Engine!.RecordingHealth;
+        Assert.Equal(E_WorkflowRecordingHealth.Healthy, health.State);
+        Assert.Equal(0L, health.DiagnosticCount);
+    }
+
+    private sealed class CollectingSink : IWorkflowRunEventSink
+    {
+        private readonly object _sync = new();
+        private readonly List<WorkflowRunEvent> _events = new();
+
+        public IReadOnlyList<WorkflowRunEvent> Events
+        {
+            get
+            {
+                lock (_sync)
+                    return _events.OrderBy(item => item.Sequence).ToArray();
+            }
+        }
+
+        public ValueTask<WorkflowRunEventWriteResult> WriteAsync(
+            IReadOnlyList<WorkflowRunEvent> events,
+            bool requestImmediateFlush,
+            CancellationToken cancellationToken)
+        {
+            lock (_sync)
+                _events.AddRange(events);
+            return ValueTask.FromResult(WorkflowRunEventWriteResult.Success);
+        }
+
+        public ValueTask FlushAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+    }
+
     private sealed class ExternalAreaNode : AnalyzeVisionFrameNodeModel
     {
         public override string NodeType => "External.Area";
