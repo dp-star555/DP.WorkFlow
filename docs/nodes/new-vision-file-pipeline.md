@@ -76,7 +76,7 @@ var result = await host.RunAsync();
 
 宿主不得在运行中更换能力实例。当前使用固定服务装配，不提供Profile候选选择或执行异常后换后端。
 
-真实相机不由 Workflow 侧注册实现类，而是由 `DP.Vision.Acquisition.Runtime` 扫描插件目录发现 Provider 插件：`DP.Vision.Halcon` 与 `DP.Vision.Basler` 各自发布 `plugin.json`，工作流文档只保存逻辑 `SourceId`，机器配置负责把 `SourceId` 绑到 `ProviderId` + `ProviderBindingId` + `ResourceKey`。采集节点只声明中立入口 `IVisionAcquisition`，不感知厂商。缺 SDK/运行时的机器在首节点之前就失败（HALCON 是编译期 `HalconStreamCameras.IsSdkEnabled`，Basler 是原生运行时健康探测），离线设备、驱动或许可证错误在实际打开时失败。设备跨布防复用同一句柄，主动单次采集与外部回调缓冲源共用它，只在释放时关闭；曝光/触发、取消及SDK部署边界见[HALCON说明](../../../DP.Vision/src/DP.Vision.Halcon/README.md)。旧 `ICameraCapture`/`HalconCameraCapture` 路径已删除。
+真实相机不由 Workflow 侧注册实现类，而是由 `DP.Vision.Acquisition.Runtime` 扫描插件目录发现采集 Driver Module：`DP.Vision.Halcon` 与 `DP.Vision.Basler` 各自实现 `IVisionAcquisitionDriverModule`（按公开类型发现，不读 Manifest，也不随包投放 `plugin.json`），工作流文档只保存逻辑 `SourceId`，机器配置负责把 `SourceId` 绑到 `ProviderId` + `ProviderBindingId` + `ResourceKey`。采集节点只声明中立入口 `IVisionAcquisition`，不感知厂商。缺 SDK/运行时的机器在首节点之前就失败（HALCON 是编译期 `HalconStreamCameras.IsSdkEnabled`，Basler 是原生运行时健康探测，两者都经可选接口 `IVisionAcquisitionDriverModuleHealth` 在类型目录冻结时上报，使源被标记为不可用），离线设备、驱动或许可证错误在实际打开时失败。设备跨布防复用同一句柄，主动单次采集与外部回调缓冲源共用它，只在释放时关闭；曝光/触发、取消及SDK部署边界见[HALCON说明](../../../DP.Vision/src/DP.Vision.Halcon/README.md)。旧 `ICameraCapture`/`HalconCameraCapture` 路径已删除。
 
 平台Studio扩展：
 

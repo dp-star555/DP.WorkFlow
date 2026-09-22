@@ -8,10 +8,18 @@
 > 文中"当前事实""旧形态""迁移步骤"等小节描述的是**改造前**的链路与分期计划，
 > 其中出现的 `ICameraCapture`、`HalconCameraCapture` 等类型**已经删除**，仅作为对照保留。
 > 需要当前有效状态请看：
+> - **采集当前形态、不变式、验收状态与待办（唯一入口）** → `DP.Vision/ACQUISITION_STATUS.md`
 > - 采集连接架构 V2 的实施状态与验收证据 → `DP.Vision/ACQUISITION_CONNECTION_V2_STATUS.md`
 > - 采集深化 V1（流式长连接、帧窗口、故障语义） → `DP.Vision/ACQUISITION_RUNTIME_V1.md`
 > - 插件体系与依赖方向 → `docs/plugin-architecture.md`
 > - 当前源码形态与最小用法 → `docs/nodes/new-vision-file-pipeline.md`
+>
+> **另注（2026-09-22，优化项 Phase B-2）**：本文描述的**旧采集 Provider 插件路径已经删除**——
+> `IVisionAcquisitionProviderPlugin`、`IVisionAcquisitionProviderHealth`、
+> `VisionAcquisitionProviderPluginLoader` 与厂商 `*AcquisitionProviderPlugin` / 两家 `plugin.json`
+> 均已移除（DP.Vision `337604e`）。发现改为扫描公开 `IVisionAcquisitionDriverModule` 类型，
+> 健康检查迁到可选的 `IVisionAcquisitionDriverModuleHealth`；设备配置统一来自机器配置的
+> `deviceSettings`（DP.Vision `a8da196`）。因此下文凡以插件 Manifest 为中心的描述都只作历史对照。
 
 ## 1. 当前事实（迁移前基线，历史）
 

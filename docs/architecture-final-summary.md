@@ -53,7 +53,8 @@
 > - **AR-29 已修复**（`10ac31a`）→ 预览改为"已提交输出的派生投影"，
 >   由成功提交事件发布、输出失效时同步撤销，不再由 Handler 提前 Publish。
 > - **图像采集Provider改造阶段 A–D 完成**（`10ac31a`）：公共契约与运行时落在 DP.Vision，
->   Workflow 改用逻辑 SourceId + `IVisionAcquisition`，HALCON 以 `plugin.json` 插件形式被目录发现。
+>   Workflow 改用逻辑 SourceId + `IVisionAcquisition`，HALCON 以插件形式被目录发现
+  （2026-09-22 收口：发现改为扫描公开 `IVisionAcquisitionDriverModule` 类型，`plugin.json` 已删除）。
 >   详见 `docs/vision-acquisition-providers.md` §13 状态表。
 > - **AR-16 已缓解**（`e04f4e0`）：`DP.Vision` 原本只有 `.gitignore` 而没有 `.git`，源码与测试
 >   完全不在版本控制下。已建立仓库并做基线提交（291 文件，纯本地，无远端，与 DP.WorkFlow 一致），

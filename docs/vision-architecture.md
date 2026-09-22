@@ -40,11 +40,11 @@ DP.WorkFlow.Vision.UI           隔离编辑模型、同帧预览、ROI事务
 
 ## 相机与验证边界
 
-`DP.Vision.Halcon` 直接通过 HFramegrabber 获取真实图像并复制为中立租约，`DP.Vision.Basler` 通过 pylon 的 `Camera`/`PixelDataConverter` 做同样的事；两者都没有旧设备服务 Adapter。当前按请求打开/关闭；宿主装配的是中立采集入口 `IVisionAcquisition`，工作流文档只保存逻辑SourceId，厂商设备选择串（HALCON 的 `接口名|设备名`、Basler 的序列号或用户自定义名）已经收回到Provider私有配置里，不再进入文档。
+`DP.Vision.Halcon` 直接通过 HFramegrabber 获取真实图像并复制为中立租约，`DP.Vision.Basler` 通过 pylon 的 `Camera`/`PixelDataConverter` 做同样的事；两者都没有旧设备服务 Adapter。当前按请求打开/关闭；宿主装配的是中立采集入口 `IVisionAcquisition`，工作流文档只保存逻辑SourceId，厂商设备选择串（HALCON 的 `接口名|设备名`、Basler 的序列号或用户自定义名）已经收回到**机器配置的 `deviceSettings`** 里——由各 Provider 的解析器解析一次、结果随公共绑定带到打开设备，不再进入工作流文档。
 
-采集Provider已经插件化：`DP.Vision.Halcon` 与 `DP.Vision.Basler` 各自发布 `plugin.json` 并实现 `IVisionAcquisitionProviderPlugin`，宿主只扫描插件目录即可发现它们，编译期不引用任何厂商类型；Provider组合采用"候选贡献→完整验证→一次发布"，设备按物理ResourceKey协调 `ExclusiveOperation` 与 `Serialized` 两种策略。两个真实厂商Provider可以在同一进程组合并按SourceId各自路由（`DP.Vision.Acquisition.Integration.Tests`）。完整接口、阶段和验收矩阵见[图像采集Provider实施基线](vision-acquisition-providers.md)。
+采集Provider已经插件化：`DP.Vision.Halcon` 与 `DP.Vision.Basler` 各自实现 `IVisionAcquisitionDriverModule`，宿主**扫描插件目录、按公开类型发现**（不读 Manifest，也不再有 `plugin.json`），编译期不引用任何厂商类型；插件可用性（缺 SDK / 缺原生运行时）由可选的 `IVisionAcquisitionDriverModuleHealth` 在类型目录冻结时上报，**只决定该插件的源是否产生绑定，不进目录身份**——同一份部署在不同机器上目录身份一致。Provider组合采用"候选贡献→完整验证→一次发布"，设备按物理ResourceKey协调 `ExclusiveOperation` 与 `Serialized` 两种策略。两个真实厂商Provider可以在同一进程组合并按SourceId各自路由（`DP.Vision.Acquisition.Integration.Tests`）。完整接口、阶段和验收矩阵见[图像采集Provider实施基线](vision-acquisition-providers.md)。
 
-厂商差异被显式处理而不是抹平：HALCON 的 SDK 缺失是编译期问题（`HalconStreamCameras.IsSdkEnabled`），Basler 的托管程序集随 NuGet 包还原、缺的是**原生运行时**，因此健康探测改为检查进程能否解析 `PylonBase_v10.dll`。两者都让采集节点在首节点执行前失败。
+厂商差异被显式处理而不是抹平：HALCON 的 SDK 缺失是编译期问题（`HalconStreamCameras.IsSdkEnabled`），Basler 的托管程序集随 NuGet 包还原、缺的是**原生运行时**，因此健康探测改为检查进程能否解析 `PylonBase_v10.dll`。两者都由同一个可选健康接口上报，结论在类型目录冻结时记录，使引用这些源的节点在首节点执行前就带上不可用诊断，而不是等到采集时才失败。
 
 仍未完成：依赖运行作用域所有权的 `ExclusiveRun` 和需要真实连续流需求的 `Broadcast`（阶段F）；两者当前在运行准备阶段被显式拒绝，不用进程内锁冒充。真实出图路径（打开设备、写参数、抓图、像素转换）只能在装有厂商运行时与相机的现场验收。
 
