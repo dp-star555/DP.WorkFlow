@@ -64,11 +64,15 @@ internal sealed class FakeStreamingProvider : IVisionAcquisitionProvider
     public int OpenCount => Volatile.Read(ref _openCount);
 
     /// <inheritdoc/>
-    public ValueTask<IVisionAcquisitionDevice> OpenAsync(string providerBindingId, CancellationToken cancellationToken)
+    public ValueTask<IVisionAcquisitionDevice> OpenAsync(
+        VisionAcquisitionProviderBinding binding,
+        CancellationToken cancellationToken)
     {
+        if (binding is null)
+            throw new ArgumentNullException(nameof(binding));
         cancellationToken.ThrowIfCancellationRequested();
         Interlocked.Increment(ref _openCount);
-        var device = new FakeStreamingDevice(new VisionDeviceIdentity(ProviderId, providerBindingId, ResourceKey));
+        var device = new FakeStreamingDevice(new VisionDeviceIdentity(ProviderId, binding.ProviderBindingId, ResourceKey));
         _onDeviceCreated(device);
         return new ValueTask<IVisionAcquisitionDevice>(device);
     }
