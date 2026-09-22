@@ -49,6 +49,9 @@
 
     但**不能**把宿主已提供的契约程序集（DP.Vision.dll、DP.Vision.Acquisition.Abstractions.dll）
     放进插件包：那会让插件拿到第二份契约类型，与宿主的中立接口不是同一个类型，组合阶段必然失败。
+
+    插件包**不投放 plugin.json**：发现依据是"程序集里存在实现 IVisionAcquisitionDriverModule 的
+    公开类型"，Manifest 不是加载依据。留一个没人读的 Manifest 只会让人以为它还在生效。
   -->
   <Target Name="StageVisionAcquisitionProviderPlugins" AfterTargets="Build">
     <ItemGroup>
@@ -56,12 +59,10 @@
                              Exclude="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.dll;$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.dll" />
       <HalconProviderPayload Include="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\*.pdb"
                              Exclude="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.pdb;$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.pdb" />
-      <HalconProviderPayload Include="$(HalconPluginRoot)plugin.json" />
       <BaslerProviderPayload Include="$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\*.dll"
                              Exclude="$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.dll;$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.dll" />
       <BaslerProviderPayload Include="$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\*.pdb"
                              Exclude="$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.pdb;$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.pdb" />
-      <BaslerProviderPayload Include="$(BaslerPluginRoot)plugin.json" />
     </ItemGroup>
     <Copy SourceFiles="@(HalconProviderPayload)"
           DestinationFolder="$(OutDir)plugins\dp.vision.halcon"
