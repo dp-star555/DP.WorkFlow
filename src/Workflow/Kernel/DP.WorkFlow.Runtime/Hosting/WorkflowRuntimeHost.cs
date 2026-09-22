@@ -19,6 +19,8 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
     private readonly HashSet<string> _externalHoldReasons = new(StringComparer.Ordinal);
     private bool _manualPauseRequested;
     private bool _disposed;
+    private Action<WorkflowRuntimeSnapshot>? _snapshotChanged;
+    private bool _engineSnapshotSubscribed;
 
     /// <summary>初始化负责定义编译和引擎生命周期的运行宿主。</summary>
     /// <param name="nodeCatalog">编译期使用的节点类型和端口目录。</param>
@@ -60,8 +62,33 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
     /// <summary>引擎实例变化时发生。</summary>
     public event Action<WorkflowEngine>? EngineChanged;
 
-    /// <summary>运行快照变化时发生。</summary>
-    public event Action<WorkflowRuntimeSnapshot>? SnapshotChanged;
+    /// <summary>
+    /// 运行快照变化时发生。
+    /// </summary>
+    /// <remarks>
+    /// AR-17：引擎只在**真的有人订阅**时才构造快照，所以宿主也只在自身存在订阅者时才向引擎订阅。
+    /// 否则宿主会永久持有一个空转的引擎订阅，使"无订阅者不构造"在最常见的宿主路径上失效。
+    /// 用自定义访问器（而不是字段式事件）是为了让运行中订阅/退订也能立即生效。
+    /// </remarks>
+    public event Action<WorkflowRuntimeSnapshot>? SnapshotChanged
+    {
+        add
+        {
+            lock (_syncRoot)
+            {
+                _snapshotChanged += value;
+                UpdateEngineSnapshotSubscriptionLocked();
+            }
+        }
+        remove
+        {
+            lock (_syncRoot)
+            {
+                _snapshotChanged -= value;
+                UpdateEngineSnapshotSubscriptionLocked();
+            }
+        }
+    }
 
     /// <inheritdoc />
     public void Configure(WorkflowDocument document, WorkflowContext? context = null)
@@ -106,7 +133,6 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
             _runCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             createdEngine = new WorkflowEngine(_boundPlan, _context, _executionOptions);
             AttachEngineLocked(createdEngine);
-            _engine = createdEngine;
             _lastRunResult = null;
             if (_manualPauseRequested)
                 createdEngine.Pause();
@@ -325,19 +351,40 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
             yield return node;
     }
 
+    /// <summary>接管本次运行新建的引擎，并按当前订阅者数量决定是否接收它的快照。</summary>
+    /// <param name="engine">本次运行新创建的引擎。</param>
     private void AttachEngineLocked(WorkflowEngine engine)
     {
-        engine.SnapshotChanged += OnEngineSnapshotChanged;
+        _engine = engine;
+        UpdateEngineSnapshotSubscriptionLocked();
     }
 
     private void DetachEngineLocked()
     {
-        if (_engine is not null)
+        if (_engine is not null && _engineSnapshotSubscribed)
+        {
             _engine.SnapshotChanged -= OnEngineSnapshotChanged;
+            _engineSnapshotSubscribed = false;
+        }
+    }
+
+    /// <summary>把"宿主是否有订阅者"同步到"引擎是否被订阅"；两个方向都必须幂等。</summary>
+    private void UpdateEngineSnapshotSubscriptionLocked()
+    {
+        if (_engine is null)
+            return;
+        var shouldSubscribe = _snapshotChanged is not null;
+        if (shouldSubscribe == _engineSnapshotSubscribed)
+            return;
+        if (shouldSubscribe)
+            _engine.SnapshotChanged += OnEngineSnapshotChanged;
+        else
+            _engine.SnapshotChanged -= OnEngineSnapshotChanged;
+        _engineSnapshotSubscribed = shouldSubscribe;
     }
 
     private void OnEngineSnapshotChanged(WorkflowRuntimeSnapshot snapshot) =>
-        SafeInvoke(SnapshotChanged, snapshot);
+        SafeInvoke(_snapshotChanged, snapshot);
 
     private void EnsureNotRunningLocked()
     {

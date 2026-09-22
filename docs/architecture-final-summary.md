@@ -91,17 +91,31 @@
 > - 实测基线：`DP.Vision.sln` **960 例** 0 失败（6 个工程 × 双 TFM，12 个运行条目；含 HALCON 启用时的
 >   条件编译用例，此前记录的 752 是缺 `HALCONROOT` 时的口径）；`DP.WorkFlow.sln` **834 例** 0 失败、
 >   0 警告 0 错误。
+>
+> **进展（2026-09-22）**
+> - **AR-17 阶段 1 已修复**：`PublishSnapshot` 在**无订阅者时不再构造快照**，宿主改为"仅当自身有订阅者时
+>   才向引擎订阅"，`GetRuntimeSnapshot` 去掉隐藏副作用成为纯查询，并删除 `WorkflowRunState` 上
+>   **零读者的写死镜像** `LatestSnapshot` / `ExecutionState` / `Publish`。
+>   新增 7 例回归（`WorkflowSnapshotPublicationTests`），其中 4 例在未修复代码上实测变红。
+>   **阶段 2（合并发布）与阶段 3（投影复杂度/线程）未做**，且本文档原先给出的"分锁"建议经核对**无效**，
+>   已在 AR-17 一节改写并说明理由。
+> - **AR-09 的前提已更正**：现行快照**不含**输出历史，原"快照成本随输出历史增长"不成立，该条需重新评估。
+> - 实测基线更新：`DP.WorkFlow.sln` **914 例** 0 失败（17 个运行条目）。解决方案级运行偶发 1 例
+>   `ModernControlBehaviorTests.ValidationToolTipRendersCompleteShortSuccessMessage` 失败，
+>   单独跑该工程/该类 **353 / 227 例全绿** → 属 AR-28 记录的抖动，不判定回归。
 
 ### 1.2 四件最该先做的事
 
 1. ~~**AR-24 纳入版本控制**~~ — **已完成**（`8fdd174`）。它是其他一切修复的安全网，且 AR-11 与阶段 D 的全部内容以它为前提。
 2. ~~**AR-02 冻结语义**~~ — **已完成**。"校验失败"与"已冻结有效"在 API 上已可区分：失败不产生任何状态变更。
 3. ~~**AR-01 准备与资源所有权**~~ — **阶段 1/2 已完成**（`16f1c45`、2026-09-21），**验收 4/5 条测试已补齐**（见 §10.5）；阶段 3 的**所有权令牌机制已由采集深化 V1-C 落地**（`IWorkflowRunScopeOwner`），但"其余运行级状态迁入 RunScope + `WorkflowRunScopeKind` 退场"仍待评估。姊妹实例 AR-27 一并修复并加固。
-4. **AR-17 快照热路径** — 无条件全量构造 + 与调度共用一把锁，是并发扩展的直接瓶颈。
+4. **AR-17 快照热路径** — **阶段 1 已完成**（2026-09-22，"无订阅者不构造"贯穿宿主与引擎，
+并解除 `RunState` 写死镜像耦合）。**阶段 2/3 待做**：合并发布需要先改掉把它写成契约的那条用例；
+投影复杂度改造（写时复制 / 异步投影）**应以 §20 基准为前提**，不先做重构。
 
-**下一个待办是 AR-17**（第 4 项）。另外 AR-01 阶段 3 剩余的运行级状态迁移（文件夹采集会话、帧仓、
-`WorkflowRunScopeKind` 退场）与 AR-02 的姊妹语义（`WorkflowNodeHandlerCatalog.Freeze`
-从不校验、无条件置位）仍待评估。
+**下一个待办**：AR-17 阶段 2/3 需先补基准（与 AR-09 合并评估）；AR-01 阶段 3 剩余的运行级状态迁移
+（文件夹采集会话、帧仓、`WorkflowRunScopeKind` 退场）与 AR-02 的姊妹语义
+（`WorkflowNodeHandlerCatalog.Freeze` 从不校验、无条件置位）仍待评估。
 
 ---
 
@@ -385,26 +399,113 @@ type.IsValueType || value is string or Type or Uri or Version
 
 ## 4. 监控与性能
 
-### AR-17 / P1：快照在热路径上无条件全量构造，且与调度共用锁【代码推导】
+### AR-17 / P1：快照在热路径上无条件全量构造，且与调度共用锁【阶段 1 已修复 · 算法改造待基准】
+
+> **行号已校正**：`WorkflowEngine` 已拆为 partial，本文档原先引用的 `:785-786` / `:193-230` 不再对应。
+> 现值：`PublishSnapshot` 在 `Execution/WorkflowEngine.Observation.cs:151`（阶段 1 后已改写），
+> `GetRuntimeSnapshot` 在同文件 `:11-51`。
 
 ```csharp
 private void PublishSnapshot(string? message = null) =>
-    SafeInvoke(SnapshotChanged, GetRuntimeSnapshot(message));   // WorkflowEngine.cs:785-786
+    SafeInvoke(SnapshotChanged, GetRuntimeSnapshot(message));   // 阶段 1 之前的写法
 ```
 
-`GetRuntimeSnapshot()`（`:193-230`）在 `lock (_stateSync)` 内用 LINQ `ToDictionary` 构造 4 个只读字典并复制 `Faults` 与 `NodeOutputs`。三个叠加问题：
+`GetRuntimeSnapshot()` 在 `lock (_stateSync)` 内构造 **5 个只读字典**（节点、并行作用域、活动 Token、
+活动子流程、最近子流程）加 2 个数组（活动节点、Hold 原因）。
+**它并不复制 `Faults` 或 `NodeOutputs`**——快照按设计不携带随运行增长的历史（见 AR-09 的更正）。
+三个叠加问题：
 
 1. **无订阅者也构造**：`SafeInvoke` 对 null 处理器有保护，但实参**提前求值**——没有订阅者时仍付出全量分配；
-2. **每节点两次**：`MarkNodeStarted`（`:733`）与 `MarkNodeFinished`（`:766`）各发布一次，并行分支内每个节点都触发；
-3. **与调度共用一把锁**：`GetRuntimeSnapshot` 立刻重入 `_stateSync`，并行分支在此排队。
+2. **每节点两次**：`MarkNodeStarted`（`Observation.cs:115`）与 `MarkNodeFinished`（`:148`）各发布一次，并行分支内每个节点都触发；
+3. **与调度共用一把锁**：`GetRuntimeSnapshot` 重入 `_stateSync`，并行分支在此排队。
 
-配合 `MarkNodeFinished`（`:757-763`）每次清空并重建 `_activeNodeIds`（O(活动令牌数)），整体呈现 **O(节点数 × 令牌数) 的分配与锁竞争**。
+配合 `MarkNodeFinished` 每次清空并重建 `_activeNodeIds`（O(活动令牌数)），整体呈现
+**O(节点数 × 令牌数) 的分配与锁竞争**。
 
-**建议**：投影职责独立为 `RunStateProjector`；**无订阅者不构造**，有订阅者时按阈值合并发布；调度状态与投影状态**分锁**。
+**原建议**：投影职责独立为 `RunStateProjector`；无订阅者不构造，有订阅者时按阈值合并发布；调度状态与投影状态分锁。
+
+#### 阶段 1 已落地（2026-09-22）：无订阅者不构造
+
+四项改动，缺一不可：
+
+| # | 改动 | 位置 |
+|---|---|---|
+| 1 | `GetRuntimeSnapshot` 去掉隐藏副作用 `RunState.Publish(snapshot)`，成为**纯查询** | `WorkflowEngine.Observation.cs` |
+| 2 | 删除 `WorkflowRunState` 上**零读者的写死镜像** `LatestSnapshot` / `ExecutionState` / `Publish` | `Execution/WorkflowRunState.cs` |
+| 3 | `PublishSnapshot` 先读委托再判断，**无订阅者直接返回** | `WorkflowEngine.Observation.cs` |
+| 4 | 宿主改为**仅当自身有订阅者时才向引擎订阅**（自定义事件访问器） | `Hosting/WorkflowRuntimeHost.cs` |
+
+**为什么第 2 项是第 3 项的前提**：`RunState.Publish` 会把快照写进 `RunState`，而
+`WorkflowRunState.ExecutionState` 是 `WorkflowEngine._state` 的**延迟镜像**（只在发布时刷新）。
+如果只是"无订阅者不构造"而不解除这层耦合，`ExecutionState` 就变成"有时更新、有时不更新"的陷阱状态。
+全仓检索（`src/`、`tests/`、`samples/`、`tools/`）确认 `LatestSnapshot` 与 `ExecutionState`
+**没有任何读取方**，`Publish` 是它们唯一的写入方，因此三者一并删除。
+轮询入口本来就有：`WorkflowRuntimeHost.GetSnapshot()`。
+
+**为什么第 4 项不可省**：`WorkflowRuntimeHost` 原先无条件订阅引擎的 `SnapshotChanged`，
+于是"引擎有没有订阅者"这个判断在生产路径上**永远为真**——第 3 项只在裸引擎（测试、无宿主批处理）生效。
+宿主改为按自身订阅者数量同步订阅后，门控才真正贯穿"宿主 + 引擎"两层。
+
+**观测点**：`WorkflowRuntimeSnapshot.Sequence` 只在一次构造里自增一次，所以
+"整轮运行结束后第一次显式取快照拿到的序号是 1"与"运行期间一次都没有构造过快照"等价。
+分配次数与锁等待时间在本仓**不可观测**，因此没有用它们做断言。
+
+**回归测试** `tests/Workflow/DP.WorkFlow.Runtime.Tests/WorkflowSnapshotPublicationTests.cs`（7 例）：
+
+| 用例 | 保护的不变式 |
+|---|---|
+| `无订阅者时不构造快照` | 裸引擎：整轮运行零构造 |
+| `宿主无订阅者时不构造快照` | 宿主路径同样零构造（第 4 项的判据） |
+| `宿主订阅后立即退订则不再构造快照` | 订阅/退订对称，不留残留订阅 |
+| `运行中退订后引擎不再构造快照` | 运行中退订**立即生效**（第 4 项用自定义访问器的原因） |
+| `有订阅者时每个状态迁移各发布一次快照` | **反向契约**：2 节点链恰好 7 次（运行开始 1 + 每节点 2 + 终态 1 + 收尾 1） |
+| `宿主有订阅者时按序收到快照` | 订阅者仍然按序收到，且含终态快照 |
+| `运行中订阅后立即开始收到快照` | 运行中订阅**立即生效** |
+
+四个"零构造"用例在未修复代码上全部变红（实测：期望 1、实际 8；退订用例期望 3、实际 8）。
+
+#### 仍未落地，以及为什么原建议需要改写
+
+**① "每节点两次发布"不是缺陷。** 两次分别对应"节点开始"与"节点结束"，是 UI 显示"当前执行到哪个节点"
+所需的最小信息量。原建议的"按阈值合并发布"会**丢弃状态迁移**，而现有用例
+`SlowSnapshotObserver_IsExcludedFromSingleNodeExecutionTime` 的
+`result.Elapsed >= 60ms` 下界正是建立在"每次迁移都发布"之上（2 节点 = 7 次 × 15ms）。
+也就是说**"一次迁移一次发布"已经被测试写成了契约**。要合并必须先有显式的 opt-in 设计，
+并同时改写这条契约，不能顺手改掉。
+
+**② "调度状态与投影状态分锁"按原样做不会降低竞争。** 实测 `_stateSync` 保护的是：
+投影状态（`_nodeRuntime`、`_parallelScopes`、`_activeTokens`、`_activeNodeIds`、`_currentNodeId`、
+`_externalHoldReasons`、`_activeChildWorkflows`、`_latestChildWorkflowByParentNode`）
+**加上**运行控制状态（`_state`、`_runStopwatch`、`_terminalMessage`、`_currentFault`、
+`_currentRecovery`、`_manualPauseRequested`、`_activeChildEngines`）
+**加上**调度安全上限（`_totalNodeExecutions`、`_nodeExecutionCounts`，即无限循环保护）。
+
+竞争的真实形状是：**写投影状态的人（`MarkNodeStarted`）和读整份投影的人（`GetRuntimeSnapshot`）
+需要同一份数据**，所以把它们拆到两把锁上，两者仍然互相等待。更关键的是——
+`PublishSnapshot` 是在**调度线程上同步执行**的（`MarkNodeStarted` → `PublishSnapshot` → `GetRuntimeSnapshot`），
+所以即使锁拆开了，调度线程照样要为这次 O(节点数) 构造买单。
+**分锁解决不了这个问题。**
+
+真正能降低总量的是**改变构造本身的复杂度**（例如把投影状态改为持久化不可变结构 + 写时复制，
+使读取成为 O(1)、把 O(节点数) 从"每次发布"移到"每次写"），或**改变发布线程**（异步投影）。
+两者都是契约级改造，且"到底值不值得"需要先有测量——见 AR-09 与 §20 基准计划。
+**在没有基准之前做这类改造，等于用一次高风险重构换一个未经验证的收益。**
+
+**③ 子引擎的发布尚未门控。** `WorkflowEngine.Children.cs:41` 让父引擎无条件订阅每个子引擎，
+因为父引擎的快照里要包含子流程状态。要让"无订阅者不构造"覆盖子引擎，必须先有一个
+"父引擎在被订阅时按需物化子流程投影"的设计（当前 `_activeChildWorkflows` 是**由子引擎的快照流填充的**）。
+本阶段不动这一处。
 
 ### AR-09 / P1：快照成本随输出历史增长【结构性性能风险】
 
 `Execution/WorkflowRunState.cs` 的 `NodeOutputs => _nodeOutputHistory.ToArray()`（每次访问复制全部历史）；`WorkflowEngine.cs:193,785` 构建快照包含完整输出历史，节点状态变化频繁发布。Studio 合并接收到的快照**发生在构建之后**。
+
+> **更正（2026-09-22，随 AR-17 阶段 1 核对）**：现行 `GetRuntimeSnapshot`（`WorkflowEngine.Observation.cs:11-51`）
+> **不包含输出历史**——它只投影节点、并行作用域、活动 Token、子流程状态与 Hold 原因。
+> 所以"快照成本随输出历史增长"这条**在当前代码上不成立**；真实存在的是
+> `WorkflowRunState.NodeOutputs` 这个属性每次访问都 `ToArray()` 复制全部历史（本段第一句），
+> 其风险取决于调用频率。原引用的行号已失效（`WorkflowEngine` 已拆 partial）。
+> 本条的等级与后续动作需要重新评估，不宜再按"快照含历史"的前提推进。
 
 长运行中若每次新增输出都反复复制全部历史，累计复制工作可接近二次增长。`MaxNodeExecutions` 不是大对象、历史保留或发布频率预算。
 
@@ -916,7 +1017,7 @@ AR-04 ──→ AR-05        监管需要先有受监管的生命周期
 AR-07 ──→ AR-10        手势层需要命令入口做落点
 AR-01 ←→ AR-06         共享"所有权契约"，应合并设计再分别实现
 AR-02 ∥ AR-03          相互独立，可并行
-AR-17 ∥ AR-19          投影拆分后可一并处理
+AR-17 ∥ AR-19          阶段 1 已落地；阶段 2/3 与 AR-09 同批，需先有基准
 ```
 
 ---
@@ -962,7 +1063,7 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
 | AR-14 | S2-1 | — |
 | AR-15 | S2-2 + S2-4 + S4-1 + S4-2 | 合并平台耦合、sln、TFM |
 | AR-16 | S2-3 | **已缓解**：DP.Vision 已建仓并做基线提交（`e04f4e0`，291 文件）；跨仓源码引用无版本锁定仍未解决 |
-| AR-17 | S1-4 | — |
+| AR-17 | S1-4 | **阶段 1 已修复**（2026-09-22）：无订阅者不构造 + 解除 `RunState` 写死镜像 + 宿主按订阅者惰性订阅；阶段 2/3 待基准。原"分锁"建议经核对无效，已改写 |
 | AR-18 | S3-2 | — |
 | AR-19 | S3-4 | — |
 | AR-20 | S3-5 | — |
@@ -1093,6 +1194,17 @@ AR-17 ∥ AR-19          投影拆分后可一并处理
    `恢复子流程的准备请求声明嵌套作用域并携带父节点ID` 锁定"注册了资源所有者也不会被调用"。
    残留问题只是 `ScopeKind` 枚举本身传错（当前无行为影响）。后者的"一轮"语义尚未定论
    （见 `ar-01-fix-plan.md` §5），现在写断言会把待定行为固化成契约，因此仍留待阶段 3。
+9. **AR-17 阶段 2/3 的取舍需要测量数据**（2026-09-22 新增）。三件事都缺前提，不宜凭推导开工：
+   - **合并发布**会丢弃状态迁移，而"一次迁移一次发布"已被
+     `SlowSnapshotObserver_IsExcludedFromSingleNodeExecutionTime` 的 60ms 下界写成契约。
+     要合并必须先决定"哪些订阅者可以接受合并"（opt-in 设计），并同时改写该契约。
+   - **投影复杂度改造**（写时复制 / 异步投影）会把 O(节点数) 从读路径移到写路径，总量不变，
+     只有读多写少时才划算——**需要先有真实图规模与发布频率的基准**（与 AR-09 同批）。
+   - **子引擎发布门控**需要先设计"父引擎在被订阅时按需物化子流程投影"，
+     因为 `_activeChildWorkflows` 当前是**由子引擎快照流填充的**，不是可独立求值的投影。
+   - 另需确认：**是否有仓库外的消费者**读取 `WorkflowEngine.RunState`。
+     本次删除 `LatestSnapshot` / `ExecutionState` / `Publish` 的依据是"仓内零读者"，
+     两个仓库都是纯本地仓库、无外部包消费，因此判定安全；若将来对外发版需重新评估。
 
 ---
 

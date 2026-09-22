@@ -30,24 +30,10 @@ public sealed class WorkflowRunState
     private readonly ConcurrentDictionary<long, ParallelScopeVisibility> _parallelScopes = new();
     private readonly ConcurrentDictionary<long, byte> _invalidatedOutputs = new();
     private readonly List<WorkflowRecoveryEvent> _recoveryEvents = new();
-    private WorkflowRuntimeSnapshot? _latestSnapshot;
     private long _nodeExecutionSequence;
 
     /// <summary>Gets the identity of this run.</summary>
     public Guid RunId { get; private set; }
-
-    /// <summary>Gets the latest published execution state.</summary>
-    public E_WorkflowExecutionState ExecutionState { get; private set; } = E_WorkflowExecutionState.Idle;
-
-    /// <summary>Gets the latest immutable monitoring snapshot, or null before the first publication.</summary>
-    public WorkflowRuntimeSnapshot? LatestSnapshot
-    {
-        get
-        {
-            lock (_syncRoot)
-                return _latestSnapshot;
-        }
-    }
 
     /// <summary>Gets all successfully committed node outputs in execution order.</summary>
     public IReadOnlyList<WorkflowNodeOutput> NodeOutputs => _nodeOutputHistory.ToArray();
@@ -93,8 +79,6 @@ public sealed class WorkflowRunState
         lock (_syncRoot)
         {
             RunId = runId;
-            ExecutionState = E_WorkflowExecutionState.Running;
-            _latestSnapshot = null;
             _faults.Clear();
             _invalidatedOutputs.Clear();
             _recoveryEvents.Clear();
@@ -112,16 +96,6 @@ public sealed class WorkflowRunState
         ArgumentNullException.ThrowIfNull(fault);
         lock (_syncRoot)
             _faults.Add(fault);
-    }
-
-    internal void Publish(WorkflowRuntimeSnapshot snapshot)
-    {
-        ArgumentNullException.ThrowIfNull(snapshot);
-        lock (_syncRoot)
-        {
-            _latestSnapshot = snapshot;
-            ExecutionState = snapshot.ExecutionState;
-        }
     }
 
     internal bool TryGetLatestNodeOutput(string nodeId, out WorkflowNodeOutput? output)

@@ -8,6 +8,11 @@ public sealed partial class WorkflowEngine
     /// <summary>获取当前运行状态的深层集合快照。</summary>
     /// <param name="message">可选的快照触发原因或终态说明。</param>
     /// <returns>包含活动 Token、节点最近状态、并行进度和子流程状态的不可变快照；不携带随运行增长的历史。</returns>
+    /// <remarks>
+    /// 这是**纯查询**：不改变引擎状态，也不把结果写回 <see cref="WorkflowRunState"/>。
+    /// 需要"每次状态迁移自动取快照"的调用方应订阅 <see cref="SnapshotChanged"/>；
+    /// 这里不保留"最近一次快照"的缓存，因为宿主侧的轮询入口是 <c>WorkflowRuntimeHost.GetSnapshot()</c>。
+    /// </remarks>
     public WorkflowRuntimeSnapshot GetRuntimeSnapshot(string? message = null)
     {
         WorkflowRuntimeSnapshot snapshot;
@@ -46,7 +51,6 @@ public sealed partial class WorkflowEngine
                 _currentFault,
                 _currentRecovery);
         }
-        RunState.Publish(snapshot);
         return snapshot;
     }
 
@@ -148,8 +152,22 @@ public sealed partial class WorkflowEngine
         PublishSnapshot(message);
     }
 
-    private void PublishSnapshot(string? message = null) =>
-        SafeInvoke(SnapshotChanged, GetRuntimeSnapshot(message));
+    /// <summary>
+    /// 在状态迁移后向订阅者发布一份新快照；**没有订阅者时直接返回，不构造快照**。
+    /// </summary>
+    /// <remarks>
+    /// AR-17：发布点落在节点开始/结束这类热路径上，一次全量构造是 O(节点数)。
+    /// <c>SafeInvoke</c> 虽然对空处理器有保护，但实参是提前求值的，所以必须在调用之前判断。
+    /// 这里先把委托读进局部变量再判断，避免"判断为空、调用前又被订阅"的撕裂。
+    /// </remarks>
+    /// <param name="message">快照携带的触发原因或终态说明。</param>
+    private void PublishSnapshot(string? message = null)
+    {
+        var handlers = SnapshotChanged;
+        if (handlers is null)
+            return;
+        SafeInvoke(handlers, GetRuntimeSnapshot(message));
+    }
 
     /// <summary>向 Recorder 提交一条事件草稿；未配置记录器时静默忽略，绝不改变运行结果。</summary>
     private void RecordRunEvent(WorkflowRunEventDraft draft, WorkflowEventWriteMode writeMode = WorkflowEventWriteMode.Buffered) =>
