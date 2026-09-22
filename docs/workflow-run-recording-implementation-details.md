@@ -14,7 +14,7 @@
 | 2 输入槽元数据 | `Runtime/Preparation/WorkflowNodeInputLayout.cs`、`WorkflowRuntimeBinder.Bind`、`WorkflowBoundExecutionPlan.GetInputLayout` |
 | 3 自动 InputResolved | `WorkflowNodeExecutionContext.ResolveInput`/`ResolveDynamicInput`、`IWorkflowRunRecorder.ReportDegraded`、`WorkflowRecordingHealth.DiagnosticCount` |
 | 4 自动输出键值 | `Runtime/Recording/WorkflowOutputValueExtractor.cs`、`WorkflowEngine.RecordOutputCommitted`、`WorkflowRunRecordingOptions.MaxOutputProperties` |
-| 5 内置节点回归 | 仅 `BlockNodeHandler`（映射目标名）和 `FitVisionRobustLineNodeHandler`（`Samples[i]` 集合元素）改用显式动态键，其余内置节点保持普通 `ResolveInput(input)` |
+| 5 内置节点回归 | 仅 `BlockNodeHandler`（映射目标名）和 `FitVisionRobustLineNodeHandler`（`Samples[i]` 集合元素）改用显式动态键，其余内置节点保持普通 `ResolveInput(input)`；第三处生产使用点 `WorkflowVisionCoordinateBinding` 见下方评审修正轮 |
 
 实施中发现并修正的一处偏差：反射 `GetProperties` 对 `new` 隐藏的同名属性只返回最派生一个，因此 `Discover` 改为沿继承链逐层 `DeclaredOnly` 读取，override 链视为同一个槽，真正隐藏同名基类属性才判定为重复稳定键。
 
@@ -23,6 +23,25 @@
 `WorkflowRunRecordingAxisIntegrationTests`（Motion `AxisActionNode` 绑定槽 + 公共数据血缘）、
 `WorkflowRunRecordingRobotIntegrationTests`（Process `WaferRobotMoveNode` 三个绑定槽互不混淆）。
 三例集成测试均已用"强制丢弃自动识别结果"的变异确认变红，不是碰巧通过。
+
+实施后经评审修正第二处偏差：Vision 的嵌套定位坐标系绑定 `Node.Coordinates.System` 最初写成 `ResolveInput(System)`，
+但 `System` 是**嵌套对象属性**、不在顶层槽发现范围内，必然 `Unresolved` 并把正常节点误标 `Degraded`；
+现改为 `ResolveDynamicInput("Coordinates.System", System)`。因此显式动态键的**生产**使用点共三处
+（`BlockNodeHandler`、`FitVisionRobustLineNodeHandler`、`WorkflowVisionCoordinateBinding`），
+`Coordinates.System` 是全仓唯一的嵌套输入。
+
+同轮修正的另三处：`MarkConfirmed` 只在 `Failed -> Degraded` 时通知宿主（原先在 Degraded 期间每个成功批次
+都重复推送同一条通知，并绕过 `HealthNotificationInterval`）；`WorkflowOutputValueExtractor` 对无公开可读
+属性的输出回退根键 `$`（原先返回空 `OutputKeys`）；引擎侧新增 `TryRecordRunEvent` 统一入口，
+使调用方 `Trace` 数据的枚举异常不再让节点 Fault。
+
+评审修正轮新增 5 例，并全部用变异确认变红（还原到缺陷态即红，还原后与备份 `diff` 一致）：
+`CoordinateBoundVisionNodes_RecordAutomaticFrameAndDynamicNestedInputs`（真实 OpenCV 管线；`Frame` 槽
+Automatic、`Coordinates.System` 槽 ExplicitDynamic，且**每个**带坐标绑定的节点恰好一条动态槽、
+全管线无 `Unresolved`、`Health=Healthy` 且 `DiagnosticCount=0`）、`SuccessfulWritesWhileDegraded_NotifyHostOnlyOnce`、
+`Extract_ObjectWithoutPublicProperties_FallsBackToDollarKey`、
+`OutputCommitted_ObjectWithoutPublicPropertiesFallsBackToDollarKey`、
+`TraceDataThatCannotBeEnumerated_DoesNotFaultTheRun`。
 
 ## 1. 本轮目标
 
@@ -484,6 +503,10 @@ void ReportDegraded(string message);
 - 复用现有 `HealthNotificationInterval` 节流宿主通知；
 - 不写回同一个可能故障的 Sink 作为唯一告警路径。
 
+宿主通知只在**健康状态发生变化**时发出。Sink 写入成功时调用 `MarkConfirmed`：它只把 `Failed` 恢复为
+`Degraded` 并通知一次；`Healthy` 与 `Degraded` 下的成功写入既不改变状态也不通知，否则 Degraded 期间
+每个成功批次都会推一条内容完全相同的通知，并绕过 `HealthNotificationInterval` 的节流。
+
 若不希望扩大 `IWorkflowRunRecorder`，可以增加 Runtime 内部诊断接口，但不要通过具体类型转换调用 `WorkflowRunRecorder`。
 
 ## 10. 写入模式改名
@@ -576,13 +599,16 @@ FlushRequested = 先加入当前批次，再立即封包；该批次到达 Sink 
 - 成员绑定记录 `SourceOutputKey=Output`；
 - 解析失败保留原异常，同时产生失败诊断事件；
 - 动态输入记录 `InputMetadataStatus=ExplicitDynamic`；
-- 未识别输入正常解析，Health 变为 Degraded，Workflow 不 Fault。
+- 未识别输入正常解析，Health 变为 Degraded，Workflow 不 Fault；
+- Degraded 期间连续成功写入不重复通知宿主（宿主通知只在健康状态变化时发出一次）；
+- 调用方 `Trace` 数据的枚举器抛异常时 Run 仍完成、节点不 Fault，只降 `Degraded` 且不计入 `FailedWriteCount`。
 
 ### 12.3 自动输出测试
 
 必须覆盖：
 
 - 标量输出记录 `OutputValue.$`；
+- 无公开可读属性的对象（不透明结果、只有字段或非公开成员）同样回退 `OutputValue.$`，不产生空 `OutputKeys`；
 - null 输出记录 `$=null`；
 - DTO 第一层属性自动成为键；
 - 属性顺序稳定；
@@ -600,7 +626,7 @@ FlushRequested = 先加入当前批次，再立即封包；该批次到达 Sink 
 - Standard：`StringCompareNode`；
 - Motion：一个 Axis 绑定输入节点；
 - Process：一个 Robot 或 ProductFlow 节点；
-- Vision：一个 Frame 输入节点。
+- Vision：一个 Frame 输入节点（含嵌套坐标绑定 `Coordinates.System` 的节点，覆盖显式动态键与"不得出现 `Unresolved`"的不变式）。
 
 测试不得在 Handler 中添加手写 InputKey；必须通过现有普通 `ResolveInput(input)` 获得事件。
 
@@ -613,7 +639,7 @@ FlushRequested = 先加入当前批次，再立即封包；该批次到达 Sink 
 3. NodeOutput 输入能关联到准确的 `SourceOutputSequence` 和 `SourceOutputKey`。
 4. Literal 和 PublicData 输入同样可查询。
 5. `OutputCommitted` 自动提供稳定输出键和值摘要。
-6. 标量输出统一使用 `$`。
+6. 标量输出与无公开可读属性的对象统一使用 `$`。
 7. 图像、二进制、集合和资源对象不被完整序列化。
 8. 输入元数据或输出摘要失败不改变 Workflow 业务结果。
 9. `WorkflowEventWriteMode` 不再使用会暗示同步持久化的 `Durable` 名称。

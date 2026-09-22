@@ -644,6 +644,8 @@ public interface IWorkflowRunEventSink
 - Sink 由顶层宿主注入，可以为空。
 - SQL、文件和远程分析系统都是宿主 Adapter，不进入 Runtime 核心设计。
 - Sink 返回失败时 Recorder 更新健康状态并通知宿主，但不向 Engine 抛出会改变流程结果的异常。
+- 宿主通知只在**健康状态发生变化**时发出：Sink 恢复写入只把 `Failed` 回到 `Degraded` 并通知一次，
+  `Degraded` 期间的成功写入既不改变状态也不重复通知，避免按批次刷出内容完全相同的通知。
 - Runtime 不暴露数据库事务、连接、文件句柄和查询实现。
 - 外部系统若需要查询接口，由对应 Adapter 自己提供，不强塞进工作流执行接口。
 
@@ -877,9 +879,9 @@ Buffered 队列容量
 
 - 阶段 A：`WorkflowRuntimeSnapshot` 已删除完整 `Faults`/`NodeOutputs`，改为 `CurrentFault`/`CurrentRecovery`，子流程状态拆为 `ActiveChildWorkflows` + `LatestChildWorkflowByParentNode`；已完成 ParallelScope 与已完成子流程不再永久留在实时集合，绑定与恢复语义未改变。
 - 阶段 B/C：新增 `IWorkflowRunRecorder`、`IWorkflowRunEventSink`、`WorkflowRunEvent` 系列类型、`WorkflowTracePayloadEncoder` 和 `WorkflowRunRecordingOptions`；引擎统一分配 Run 内序号，接入 Run/Node/Fault/Recovery 事件，原有 Trace 最近窗口迁移到 Recorder，并记录 `OutputCommitted` 以及变量和公共数据提交摘要。
-- 阶段 D：绑定阶段按节点类型建立输入槽元数据（`WorkflowNodeInputLayout`），普通 `ResolveInput<T>(WorkflowInput<T>)` 自动识别稳定输入键并记录 `InputKey`/`InputMetadataStatus`/`SourceKind`/`SourceOutputKey`/`SourceOutputSequence`；动态或集合输入改用显式逃生口 `ResolveDynamicInput(inputKey, input)`；无法识别的输入仍正常解析，只把 `RecordingHealth` 降为 `Degraded`。`OutputCommitted` 由 `WorkflowOutputValueExtractor` 自动提取稳定输出键：标量和资源根值统一 `$`，普通结果 DTO 展开第一层公开属性，单个 getter 失败或属性超限只降级诊断。不把内置节点机械迁移到手写名称重载。
+- 阶段 D：绑定阶段按节点类型建立输入槽元数据（`WorkflowNodeInputLayout`），普通 `ResolveInput<T>(WorkflowInput<T>)` 自动识别稳定输入键并记录 `InputKey`/`InputMetadataStatus`/`SourceKind`/`SourceOutputKey`/`SourceOutputSequence`；动态或集合输入改用显式逃生口 `ResolveDynamicInput(inputKey, input)`；无法识别的输入仍正常解析，只把 `RecordingHealth` 降为 `Degraded`。`OutputCommitted` 由 `WorkflowOutputValueExtractor` 自动提取稳定输出键：标量和资源根值统一 `$`，普通结果 DTO 展开第一层公开属性，单个 getter 失败或属性超限只降级诊断。不把内置节点机械迁移到手写名称重载。嵌套对象属性（如 Vision 定位绑定的 `Node.Coordinates.System`）不在自动发现范围内，必须走显式动态键，否则正常节点会被误判 `Unresolved` 并降级。
 - 阶段 E：Runtime 只向顶层注入的 `IWorkflowRunEventSink` 推送，不在 Runtime 中预先绑定 SQL/SQLite/文件；查询、清理和保留策略由顶层 Adapter 负责。
-- 记录链路完全 fail-open：`RunStarted`、FlushRequested 推送与 Flush 失败都不改变节点调度和 Run 终态，只更新 `RecordingHealth`、失败计数并通知宿主。
+- 记录链路完全 fail-open：`RunStarted`、FlushRequested 推送与 Flush 失败都不改变节点调度和 Run 终态，只更新 `RecordingHealth`、失败计数并通知宿主。引擎侧统一经 `TryRecordRunEvent` 提交，调用方 `Trace` 数据的枚举异常也在此被吸收，不会让节点 Fault。
 - 阶段 B 的推送颗粒度已按 §10.3 落地为批次级：前台在 `_recordSync` 短临界区内把当前批次分离成不可变批次入队，后台只消费完整批次；封箱条件为满 128 条、批次首条事件起 100ms、追加 FlushRequested 事件、Run 结束与宿主正常关闭。FlushRequested 的立即刷意图随批次携带（不再是全局标记位），通知按批次而不是按事件计数，待发送容量按事件数核算但淘汰单位是整批。公开契约未变。
 - `WorkflowEventWriteMode.Durable` 已改名为 `FlushRequested`，明确它只要求立即封包和 Sink Flush，不承诺同步持久化。
 - 验收：`WorkflowRunRecorderTests`、`WorkflowRunBatchPushTests`、`WorkflowTracePayloadEncoderTests`、`WorkflowRunRecordingEventTests`、`WorkflowNodeInputLayoutTests`、`WorkflowOutputValueExtractorTests`、`WorkflowRunRecordingLineageTests`、`WorkflowVisionOutputRecordingTests`，以及实施细节 §12.4 的三例真实节点集成测试（`WorkflowRunRecordingNodeIntegrationTests`、`WorkflowRunRecordingAxisIntegrationTests`、`WorkflowRunRecordingRobotIntegrationTests`）覆盖 §20 的 Snapshot、Event、崩溃与可靠性、Payload 条目以及实施细节 §13 的血缘验收标准。
