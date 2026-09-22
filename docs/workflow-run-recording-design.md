@@ -504,17 +504,35 @@ void Trace(
 
 该调用只完成事件规范化和进入有界 Recorder 队列，不等待外部 Sink。这样记录延迟和失败不会成为设备命令或节点执行的前置条件。
 
-### 10.3 已确定的批量策略
+### 10.3 已确定的批次级推送策略
 
-Buffered Sink 使用以下默认刷新条件，满足任一条件立即推送：
+Recorder 以“已封装批次”而不是单条事件作为后台队列和 Sink 调用的最小颗粒度。内部维护一个尚未封装的 `CurrentBatch`；事件仍在进入 Recorder 时统一分配 Run 内 Sequence，并按 Sequence 追加到该批次。
+
+满足以下任一条件时，Recorder 在短临界区内原子地分离当前批次，并立即创建新的空 `CurrentBatch`，后续事件不会追加到已经封装的批次：
 
 ```text
-最长等待 100ms
-达到 128 条
-遇到 Durable 事件
+当前批次达到 128 条
+从批次第一条事件起经过 100ms
+追加了一条 Durable 事件
 Run 结束
 宿主正常关闭
 ```
+
+具体语义：
+
+- 达到 128 条时，封装一个恰好包含 128 条事件的批次；第 129 条进入新批次。
+- Durable 事件先按 Sequence 追加到当前批次，再立即封装整个批次。因此已有 20 条 Buffered 后出现一条 Durable 时，产生包含 21 条事件且要求立即 Flush 的批次。
+- 100ms 从空批次收到第一条事件时开始计算，后续事件不得延后该批次的截止时间，避免持续低频输入永远不推送。
+- Run 结束和宿主正常关闭会封装非空尾批次，并请求尽力 Flush。
+- 空批次永远不会入队或调用 Sink。
+
+后台只有一个批次消费者，按批次中首个 Sequence 的顺序调用 Sink。Sink 较慢时，Workflow 仍可继续向新的 `CurrentBatch` 写入并封装后续批次；不得在组包临界区内调用 Sink。
+
+通知表达“至少有一个完整批次可处理”，不是事件计数。无论一个批次包含 1 条还是 128 条事件，每个批次只入队一次；不得因待发送事件数持续大于 128 而按后续每条事件重复累计 Semaphore 唤醒。
+
+Durable 批次不得越过更早的批次乱序发送。它只要求立即封装、立即调度，并在该批次到达 Sink 时携带 `requestImmediateFlush = true`；不改变 fail-open，也不表示 Workflow 已等待外部持久化确认。
+
+待发送容量按事件数核算。容量不足时从已封装待发送批次的队首开始淘汰最老批次并累计准确的丢失事件数，为最新批次腾出空间；不得淘汰正在写入 Sink 的批次，也不得阻塞 Workflow。至少保留最新一个批次：容量小于单批容量时不做无意义的清空。
 
 ### 10.4 记录失败语义
 
@@ -840,7 +858,8 @@ Buffered 队列容量
 - 阶段 B/C/D：新增 `IWorkflowRunRecorder`、`IWorkflowRunEventSink`、`WorkflowRunEvent` 系列类型、`WorkflowTracePayloadEncoder` 和 `WorkflowRunRecordingOptions`；引擎统一分配 Run 内序号，接入 Run/Node/Fault/Recovery 事件，原有 Trace 最近窗口迁移到 Recorder，并新增命名输入解析重载记录 `InputResolved`、`OutputCommitted` 以及变量和公共数据提交摘要。
 - 阶段 E：Runtime 只向顶层注入的 `IWorkflowRunEventSink` 推送，不在 Runtime 中预先绑定 SQL/SQLite/文件；查询、清理和保留策略由顶层 Adapter 负责。
 - 记录链路完全 fail-open：`RunStarted`、Durable 推送与 Flush 失败都不改变节点调度和 Run 终态，只更新 `RecordingHealth`、失败计数并通知宿主。
-- 验收：§20 的 Snapshot、Event、崩溃与可靠性、Payload 条目已由 `WorkflowRunRecorderTests`、`WorkflowTracePayloadEncoderTests` 和 `WorkflowRunRecordingEventTests` 覆盖。
+- 阶段 B 的推送颗粒度已按 §10.3 落地为批次级：前台在 `_recordSync` 短临界区内把当前批次分离成不可变批次入队，后台只消费完整批次；封箱条件为满 128 条、批次首条事件起 100ms、追加 Durable 事件、Run 结束与宿主正常关闭。Durable 的立即刷意图随批次携带（不再是全局标记位），通知按批次而不是按事件计数，待发送容量按事件数核算但淘汰单位是整批。公开契约未变。
+- 验收：§20 的 Snapshot、Event、崩溃与可靠性、Payload 条目已由 `WorkflowRunRecorderTests`、`WorkflowRunBatchPushTests`、`WorkflowTracePayloadEncoderTests` 和 `WorkflowRunRecordingEventTests` 覆盖。
 
 尚未完成（后续工作）：
 
@@ -868,8 +887,11 @@ Buffered 队列容量
 
 ### 崩溃与可靠性
 
-- 测试 Sink 能收到按 Sequence 排序的事件批次。
-- Durable 事件会触发立即调度，并保持此前接受事件的 Sequence 顺序。
+- 测试 Sink 能收到按 Sequence 排序的事件批次；空批次永远不会写入 Sink。
+- 第 128 条事件封装一个 128 条批次，第 129 条进入新批次；Sink 阻塞时也不会按第 129 条及后续每条事件累计空唤醒。
+- 一批未满 128 条时，从首条事件起达到 100ms 会封装当前批次，后续输入不会无限延后截止时间。
+- 已有 20 条 Buffered 后追加一条 Durable，会封装一个包含 21 条事件且请求立即 Flush 的批次。
+- Durable 事件会触发立即封包和调度，不越过此前已接受的批次，并保持全局 Sequence 顺序。
 - 事件记录调用不等待外部 Sink；RunStarted、Durable 和 Flush 失败时，Workflow 的节点调度和最终结果不受影响。
 - Sink 失败会更新 RecordingHealth、失败计数并通知宿主。
 - Buffered 队列有明确上限；满时淘汰最老事件，不会无限占用内存。
@@ -888,7 +910,7 @@ Buffered 队列容量
 
 1. 记录采用 fail-open：`RunStarted`、Durable 推送或 Flush 失败都不能阻止、Fault 或改变 Workflow 运行。
 2. Durable 优先级用于 Run 生命周期、设备命令关键边界、故障和恢复；普通步骤使用 Buffered。Durable 只触发立即调度，Workflow 不等待外部持久化确认。
-3. Buffered 默认每 100ms 或 128 条推送一次，Durable 事件和 Run 结束也触发推送。
+3. Recorder 以前台不可变批次作为推送颗粒度：默认满 128 条或从首条事件起达到 100ms 时封包；Durable 事件先加入当前批次再立即封包，Run 结束也封装尾批次。后台只消费完整批次，不按单事件累计唤醒。
 4. Runtime 不直接决定 SQL、SQLite 或文件；只向顶层配置的 Event Sink 推送。
 5. 有界窗口和有界存储始终优先保留最新数据，容量不足时淘汰最老数据，不因保护期拒绝新记录。
 6. 图像、二进制和复杂对象只记录明确标识及必要摘要，不记录完整内容。

@@ -6,8 +6,11 @@ namespace DP.WorkFlow;
 /// 单个 Run 的事件记录深模块：分配序号、编码 Payload、维护最近窗口并向顶层 Sink 推送。
 /// </summary>
 /// <remarks>
-/// <para>记录链路完全 fail-open：<see cref="Record"/> 只把事件放入有界队列就返回，
+/// <para>记录链路完全 fail-open：<see cref="Record"/> 只把事件追加到当前批次就返回，
 /// 外部 Sink 的写入、刷新和失败都在独立路径中处理，不会阻塞节点调度或改变 Run 终态。</para>
+/// <para>推送颗粒度是"已封装批次"而不是单条事件：前台在短临界区内把当前批次分离成不可变批次，
+/// 后台只消费完整批次，通知也按批次而不是按事件计数。因此唤醒次数与批次数量同阶，
+/// 不会因为 Sink 变慢而随事件条数累积。</para>
 /// <para>因为记录不能阻塞运行，Runtime 无法保证进程闪退前最后几条事件一定已落盘；
 /// 崩溃持久性只覆盖顶层 Sink 已经确认的事件，取决于 Sink 实现和实际确认进度。</para>
 /// </remarks>
@@ -23,8 +26,9 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
     private readonly IWorkflowRunEventSink? _sink;
     private readonly WorkflowTracePayloadEncoder _encoder;
     private readonly ConcurrentQueue<WorkflowRunEvent> _window = new();
-    private readonly ConcurrentQueue<WorkflowRunEvent> _pending = new();
-    private readonly SemaphoreSlim _signal = new(0);
+    private readonly List<WorkflowRunEvent> _currentBatch = new();
+    private readonly ConcurrentQueue<SealedBatch> _ready = new();
+    private readonly SemaphoreSlim _batchReady = new(0);
     private readonly CancellationTokenSource _writeCancellation = new();
     private readonly object _recordSync = new();
     private readonly object _healthSync = new();
@@ -35,7 +39,10 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
     private long _droppedCount;
     private long _failedWriteCount;
     private long _lastConfirmedSequence;
-    private int _flushRequested;
+    private DateTimeOffset _currentBatchStartedAt;
+    private bool _currentBatchFlush;
+    private int _readyEventCount;
+    private int _emptyDrainCount;
     private string? _lastError;
     private DateTimeOffset? _lastFailureAt;
     private DateTimeOffset _lastHealthNotification = DateTimeOffset.MinValue;
@@ -90,6 +97,12 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
         }
     }
 
+    /// <summary>
+    /// 获取后台消费者被唤醒但没有可写入批次的累计次数。
+    /// 这是记录链路的资源诊断：它只应随批次数量增长，不应随事件条数增长。
+    /// </summary>
+    internal int EmptyDrainCount => Volatile.Read(ref _emptyDrainCount);
+
     /// <inheritdoc />
     public WorkflowRunEventReceipt Record(
         WorkflowRunEventDraft @event,
@@ -125,17 +138,33 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
             _recordedCount++;
 
             flush = writeMode == WorkflowEventWriteMode.Durable;
-            if (flush)
-                Interlocked.Exchange(ref _flushRequested, 1);
-            if (_sink is not null)
+            if (_sink is null)
+                return new WorkflowRunEventReceipt(true, recorded.Sequence, false);
+
+            var notify = false;
+            if (_currentBatch.Count == 0)
             {
-                _pending.Enqueue(recorded);
-                TrimPending();
-                if (flush || _pending.Count >= _options.BufferedBatchSize)
-                    _signal.Release();
-                _loop ??= Task.Run(RunLoopAsync);
+                // 截止时间锚定在批次的第一条事件上；后续事件不得延后它。
+                _currentBatchStartedAt = DateTimeOffset.UtcNow;
+                notify = true;
             }
+
+            _currentBatch.Add(recorded);
+            if (flush)
+                _currentBatchFlush = true;
+
+            if (flush || _currentBatch.Count >= _options.BufferedBatchSize)
+            {
+                SealCurrentBatchLocked();
+                notify = true;
+            }
+
+            // 通知是"至少有一个批次需要处理"，不是事件计数：同一批次最多两次唤醒。
+            if (notify)
+                _batchReady.Release();
+            _loop ??= Task.Run(RunLoopAsync);
         }
+
         return new WorkflowRunEventReceipt(true, recorded.Sequence, flush);
     }
 
@@ -159,7 +188,7 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
             return;
 
         _stopping = true;
-        _signal.Release();
+        _batchReady.Release();
         await WaitForLoopAsync(_options.CompletionFlushTimeout).ConfigureAwait(false);
 
         if (_sink is null || _writeCancellation.IsCancellationRequested)
@@ -184,11 +213,11 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
             return;
         _disposed = true;
         _stopping = true;
-        _signal.Release();
+        _batchReady.Release();
         await WaitForLoopAsync(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
         _writeCancellation.Cancel();
         _writeCancellation.Dispose();
-        _signal.Dispose();
+        _batchReady.Dispose();
     }
 
     private async Task WaitForLoopAsync(TimeSpan timeout)
@@ -208,48 +237,101 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
 
     private async Task RunLoopAsync()
     {
-        var interval = _options.BufferedFlushInterval;
         while (!_stopping)
         {
             try
             {
-                await _signal.WaitAsync(interval).ConfigureAwait(false);
+                await _batchReady.WaitAsync(NextWaitTimeout()).ConfigureAwait(false);
             }
             catch (ObjectDisposedException)
             {
                 return;
             }
+
             if (_stopping)
                 break;
-            await PushPendingAsync(Interlocked.Exchange(ref _flushRequested, 0) == 1).ConfigureAwait(false);
+
+            SealDueBatch();
+            await DrainReadyBatchesAsync().ConfigureAwait(false);
         }
-        await PushPendingAsync(true).ConfigureAwait(false);
+
+        // Run 结束或宿主正常关闭：封装非空尾批次并尽力送出。
+        lock (_recordSync)
+            SealCurrentBatchLocked();
+        await DrainReadyBatchesAsync().ConfigureAwait(false);
     }
 
-    private async Task PushPendingAsync(bool immediate)
+    private TimeSpan NextWaitTimeout()
+    {
+        lock (_recordSync)
+        {
+            if (_currentBatch.Count == 0)
+                return Timeout.InfiniteTimeSpan;
+
+            var remaining = _currentBatchStartedAt + _options.BufferedFlushInterval - DateTimeOffset.UtcNow;
+            return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+        }
+    }
+
+    private void SealDueBatch()
+    {
+        lock (_recordSync)
+        {
+            if (_currentBatch.Count == 0)
+                return;
+            if (DateTimeOffset.UtcNow - _currentBatchStartedAt < _options.BufferedFlushInterval)
+                return;
+            SealCurrentBatchLocked();
+        }
+    }
+
+    private void SealCurrentBatchLocked()
+    {
+        if (_currentBatch.Count == 0)
+            return;
+
+        var sealedBatch = new SealedBatch(_currentBatch.ToArray(), _currentBatchFlush);
+        _currentBatch.Clear();
+        _currentBatchFlush = false;
+        _currentBatchStartedAt = default;
+        _ready.Enqueue(sealedBatch);
+        Interlocked.Add(ref _readyEventCount, sealedBatch.Events.Count);
+        TrimReadyBatches();
+    }
+
+    private void TrimReadyBatches()
+    {
+        // 容量按事件数核算，淘汰单位却是整批：始终为最新批次腾出空间，绝不淘汰正在写入的批次
+        // （它已经出队），也绝不阻塞流程。至少保留最新一个批次，避免容量小于单批时清空队列。
+        while (Volatile.Read(ref _readyEventCount) > _options.PendingQueueCapacity && _ready.Count > 1)
+        {
+            if (!_ready.TryDequeue(out var evicted))
+                break;
+            Interlocked.Add(ref _readyEventCount, -evicted.Events.Count);
+            Interlocked.Add(ref _droppedCount, evicted.Events.Count);
+        }
+    }
+
+    private async Task DrainReadyBatchesAsync()
     {
         var sink = _sink;
         if (sink is null || _writeCancellation.IsCancellationRequested)
             return;
 
-        var firstBatch = true;
-        while (true)
+        var drained = false;
+        while (_ready.TryDequeue(out var batch))
         {
-            var batch = new List<WorkflowRunEvent>(_options.BufferedBatchSize);
-            while (batch.Count < _options.BufferedBatchSize && _pending.TryDequeue(out var item))
-                batch.Add(item);
-            if (batch.Count == 0)
-                return;
-
+            Interlocked.Add(ref _readyEventCount, -batch.Events.Count);
+            drained = true;
             try
             {
                 var result = await sink
-                    .WriteAsync(batch, firstBatch && immediate, _writeCancellation.Token)
+                    .WriteAsync(batch.Events, batch.RequestImmediateFlush, _writeCancellation.Token)
                     .ConfigureAwait(false);
                 if (result is null || !result.Succeeded)
                     ReportFailure(result?.Error ?? "运行事件写入未确认。");
                 else
-                    MarkConfirmed(batch[^1].Sequence);
+                    MarkConfirmed(batch.Events[^1].Sequence);
             }
             catch (OperationCanceledException) when (_writeCancellation.IsCancellationRequested)
             {
@@ -259,8 +341,10 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
             {
                 ReportFailure("写入运行事件失败：" + exception.Message);
             }
-            firstBatch = false;
         }
+
+        if (!drained)
+            Interlocked.Increment(ref _emptyDrainCount);
     }
 
     private void AppendToWindow(WorkflowRunEvent @event)
@@ -269,17 +353,6 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
         while (_window.Count > _windowCapacity)
         {
             if (!_window.TryDequeue(out _))
-                break;
-            Interlocked.Increment(ref _droppedCount);
-        }
-    }
-
-    private void TrimPending()
-    {
-        // 有界队列始终为最新事件腾出空间：容量不足时淘汰最老数据，绝不阻塞流程。
-        while (_pending.Count > _options.PendingQueueCapacity)
-        {
-            if (!_pending.TryDequeue(out _))
                 break;
             Interlocked.Increment(ref _droppedCount);
         }
@@ -347,4 +420,6 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
             }
         }
     }
+
+    private sealed record SealedBatch(IReadOnlyList<WorkflowRunEvent> Events, bool RequestImmediateFlush);
 }
