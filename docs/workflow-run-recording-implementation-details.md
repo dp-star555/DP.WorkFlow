@@ -18,7 +18,11 @@
 
 实施中发现并修正的一处偏差：反射 `GetProperties` 对 `new` 隐藏的同名属性只返回最派生一个，因此 `Discover` 改为沿继承链逐层 `DeclaredOnly` 读取，override 链视为同一个槽，真正隐藏同名基类属性才判定为重复稳定键。
 
-测试：`WorkflowNodeInputLayoutTests`（§12.1）、`WorkflowOutputValueExtractorTests`（§12.3 提取规则）、`WorkflowRunRecordingLineageTests`（§12.2 引擎级血缘）、`WorkflowVisionOutputRecordingTests`（§12.3 图像根输出）。
+测试：`WorkflowNodeInputLayoutTests`（§12.1）、`WorkflowOutputValueExtractorTests`（§12.3 提取规则）、`WorkflowRunRecordingLineageTests`（§12.2 引擎级血缘）、`WorkflowVisionOutputRecordingTests`（§12.3 图像根输出），
+以及 §12.4 真实节点集成：`WorkflowRunRecordingNodeIntegrationTests`（Standard `StringCompareNode` 两个输入槽自动键 + 上游成员血缘）、
+`WorkflowRunRecordingAxisIntegrationTests`（Motion `AxisActionNode` 绑定槽 + 公共数据血缘）、
+`WorkflowRunRecordingRobotIntegrationTests`（Process `WaferRobotMoveNode` 三个绑定槽互不混淆）。
+三例集成测试均已用"强制丢弃自动识别结果"的变异确认变红，不是碰巧通过。
 
 ## 1. 本轮目标
 
