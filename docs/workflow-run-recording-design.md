@@ -882,7 +882,7 @@ Buffered 队列容量
 - 记录链路完全 fail-open：`RunStarted`、FlushRequested 推送与 Flush 失败都不改变节点调度和 Run 终态，只更新 `RecordingHealth`、失败计数并通知宿主。
 - 阶段 B 的推送颗粒度已按 §10.3 落地为批次级：前台在 `_recordSync` 短临界区内把当前批次分离成不可变批次入队，后台只消费完整批次；封箱条件为满 128 条、批次首条事件起 100ms、追加 FlushRequested 事件、Run 结束与宿主正常关闭。FlushRequested 的立即刷意图随批次携带（不再是全局标记位），通知按批次而不是按事件计数，待发送容量按事件数核算但淘汰单位是整批。公开契约未变。
 - `WorkflowEventWriteMode.Durable` 已改名为 `FlushRequested`，明确它只要求立即封包和 Sink Flush，不承诺同步持久化。
-- 验收：`WorkflowRunRecorderTests`、`WorkflowRunBatchPushTests`、`WorkflowTracePayloadEncoderTests`、`WorkflowRunRecordingEventTests`、`WorkflowNodeInputLayoutTests`、`WorkflowOutputValueExtractorTests`、`WorkflowRunRecordingLineageTests` 和 `WorkflowVisionOutputRecordingTests` 覆盖 §20 的 Snapshot、Event、崩溃与可靠性、Payload 条目以及实施细节 §13 的血缘验收标准。
+- 验收：`WorkflowRunRecorderTests`、`WorkflowRunBatchPushTests`、`WorkflowTracePayloadEncoderTests`、`WorkflowRunRecordingEventTests`、`WorkflowNodeInputLayoutTests`、`WorkflowOutputValueExtractorTests`、`WorkflowRunRecordingLineageTests`、`WorkflowVisionOutputRecordingTests`，以及实施细节 §12.4 的三例真实节点集成测试（`WorkflowRunRecordingNodeIntegrationTests`、`WorkflowRunRecordingAxisIntegrationTests`、`WorkflowRunRecordingRobotIntegrationTests`）覆盖 §20 的 Snapshot、Event、崩溃与可靠性、Payload 条目以及实施细节 §13 的血缘验收标准。
 
 尚未完成（后续工作）：
 
