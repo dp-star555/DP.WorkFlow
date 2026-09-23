@@ -1,4 +1,5 @@
 using DP.Vision;
+using DP.Vision.Acquisition;
 using DP.Vision.Algorithms;
 using DP.Vision.OpenCv;
 using DP.Vision.UI;
@@ -223,11 +224,41 @@ public sealed class NewVisionCompletionTests
     }
 
     [Fact]
+    public void VisionSourceChoices_FilterCandidatesByAcquisitionKind()
+    {
+        var catalog = new WorkflowVisionSourceCatalog(new[]
+        {
+            new WorkflowVisionSourceInfo("Camera.Area", "dp.vision.halcon", EVisionSourceSharingPolicy.ExclusiveOperation,
+                kind: EVisionAcquisitionKind.AreaScan),
+            new WorkflowVisionSourceInfo("Camera.Line", "dp.vision.halcon", EVisionSourceSharingPolicy.ExclusiveOperation,
+                kind: EVisionAcquisitionKind.LineScan),
+            // 宿主没有声明形态：不猜成面阵或线扫，两个列表都保留并明确标注。
+            new WorkflowVisionSourceInfo("Camera.Legacy", "dp.vision.halcon", EVisionSourceSharingPolicy.ExclusiveOperation),
+            new WorkflowVisionSourceInfo("Camera.Broken", "dp.vision.halcon", EVisionSourceSharingPolicy.ExclusiveOperation,
+                isAvailable: false, diagnostic: "HALCON SDK 未部署。", kind: EVisionAcquisitionKind.AreaScan)
+        });
+        var provider = WorkflowVisionSourceChoices.CreateProvider(catalog);
+
+        var area = provider(WorkflowPropertyEditorKeys.VisionAreaSource, nameof(CaptureAreaFrameNodeModel.Source));
+        Assert.Equal(
+            new[] { "Camera.Area", "Camera.Broken（不可用：HALCON SDK 未部署。）", "Camera.Legacy（采集类型未声明）" },
+            area.Select(choice => choice.Label));
+        // 候选提交的是逻辑标识而不是显示文本：不可用源被选中时仍应绑定到它的SourceId。
+        Assert.All(area, choice => Assert.IsType<VisionSourceReference>(choice.Value));
+
+        var line = provider(WorkflowPropertyEditorKeys.VisionLineScanSource, nameof(CaptureLineScanFrameNodeModel.Source));
+        Assert.Equal(new[] { "Camera.Legacy（采集类型未声明）", "Camera.Line" }, line.Select(choice => choice.Label));
+
+        // 只回答节点真正声明的键；其它键没有候选，编辑器退回文本输入。
+        Assert.Empty(provider("SomethingElse", "Source"));
+    }
+
+    [Fact]
     public async Task DuplicatePreviewIdentityAcrossSubplans_IsRejectedBeforeRunning()
     {
         using var frames = new WorkflowVisionFrameScope();
         var context = new WorkflowRunPreparationContext(new IWorkflowNodeModel[]
-        { new LoadVisionFileNodeModel { Id = "same" }, new CaptureVisionFrameNodeModel { Id = "same" } },
+        { new LoadVisionFileNodeModel { Id = "same" }, new CaptureAreaFrameNodeModel { Id = "same" } },
             WorkflowRunScopeKind.Root);
         await Assert.ThrowsAsync<InvalidOperationException>(() => frames.PrepareAsync(context, default).AsTask());
     }

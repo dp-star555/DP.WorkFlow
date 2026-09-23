@@ -485,7 +485,8 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
 
     /// <summary>判断属性是否声明了候选编辑器；该键允许作用在非字符串的取值对象上。</summary>
     private static bool IsChoiceEditor(WorkflowPropertyEditorAttribute? propertyEditor) =>
-        string.Equals(propertyEditor?.EditorKey, WorkflowPropertyEditorKeys.VisionSource, StringComparison.Ordinal);
+        propertyEditor?.EditorKey is WorkflowPropertyEditorKeys.VisionAreaSource
+            or WorkflowPropertyEditorKeys.VisionLineScanSource;
 
     /// <summary>
     /// 解析候选值。宿主提供者抛错时退回文本编辑而不是让整个属性面板不可用；

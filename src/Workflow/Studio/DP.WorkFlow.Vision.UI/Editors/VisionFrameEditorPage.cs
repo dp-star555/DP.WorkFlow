@@ -14,7 +14,8 @@ public sealed class VisionFrameEditorPageProvider(IWorkflowVisionPreviewSource? 
     public string ExtensionId => RendererKey;
     /// <inheritdoc/>
     public bool CanProvide(WorkflowNodeEditorContext context) => context.Node is AnalyzeVisionFrameNodeModel
-        or LoadVisionFileNodeModel or LoadVisionFolderNodeModel or CaptureVisionFrameNodeModel;
+        or LoadVisionFileNodeModel or LoadVisionFolderNodeModel
+        or CaptureAreaFrameNodeModel or CaptureLineScanFrameNodeModel;
     /// <inheritdoc/>
     public IEnumerable<WorkflowNodeEditorPageDescriptor> CreatePages(WorkflowNodeEditorContext context)
     {

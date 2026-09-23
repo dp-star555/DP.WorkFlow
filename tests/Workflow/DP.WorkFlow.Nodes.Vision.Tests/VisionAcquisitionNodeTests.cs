@@ -105,7 +105,8 @@ public sealed class VisionAcquisitionNodeTests
     [Fact]
     public async Task 采集节点只要求中立采集入口而不是裸相机能力()
     {
-        // 只注册IVisionAcquisition：如果采集节点仍声明ICameraCapture，能力预检会直接失败。
+        // 只注册IVisionAcquisition：采集节点一旦另外声明任何"直接抓一帧"的能力契约，能力预检就会失败。
+        // 旧 ICameraCapture 已经删除，这条断言守住的是"采集只有 Provider 插件一条路径"这个不变式。
         using var rig = new Rig(sources: new[] { Source("Camera.Top", "dp.vision.halcon") });
 
         var result = await rig.Host.RunAsync();
@@ -175,12 +176,90 @@ public sealed class VisionAcquisitionNodeTests
         EVisionSourceSharingPolicy policy = EVisionSourceSharingPolicy.ExclusiveOperation,
         bool isAvailable = true,
         string? diagnostic = null,
-        EVisionAcquisitionMode mode = EVisionAcquisitionMode.OnDemand) =>
-        new(sourceId, providerId, policy, isAvailable, diagnostic, mode);
+        EVisionAcquisitionMode mode = EVisionAcquisitionMode.OnDemand,
+        EVisionAcquisitionKind? kind = null) =>
+        new(sourceId, providerId, policy, isAvailable, diagnostic, mode, kind);
+
+    /// <summary>面阵源：形态已声明，面阵节点可绑定、线扫节点必须拒绝。</summary>
+    private static WorkflowVisionSourceInfo AreaSource(string sourceId, string providerId) =>
+        Source(sourceId, providerId, kind: EVisionAcquisitionKind.AreaScan);
+
+    /// <summary>线扫源：形态已声明，线扫节点可绑定、面阵节点必须拒绝。</summary>
+    private static WorkflowVisionSourceInfo LineSource(string sourceId, string providerId) =>
+        Source(sourceId, providerId, kind: EVisionAcquisitionKind.LineScan);
 
     [Fact]
-    public void 采集节点旧文档迁移为逻辑源与带单位参数()
+    public async Task 线扫节点输出与面阵节点相同的中立ImageFrame()
     {
+        // 两个节点只在参数绑定和候选过滤上分开；执行主干和输出必须完全一致，
+        // 否则同一条流程会因为"选了面阵还是线扫"而产生不同的下游语义。
+        using var rig = new Rig(
+            sources: new[] { LineSource("Camera.Line", "dp.vision.halcon") },
+            captureNode: new CaptureLineScanFrameNodeModel
+            { Id = "capture", Source = new VisionSourceReference("Camera.Line") });
+
+        var result = await rig.Host.RunAsync();
+
+        Assert.True(result.Success, result.Message);
+        var output = Assert.Single(rig.Host.Engine!.RunState.NodeOutputs, item => item.NodeId == "capture");
+        var frame = Assert.IsType<ImageFrame>(output.Value);
+        Assert.Equal("capture-1", frame.FrameId);
+        Assert.Equal(1, rig.Acquisition.CaptureCount);
+        Assert.Equal("Camera.Line", rig.Acquisition.LastSourceId);
+    }
+
+    [Fact]
+    public async Task 面阵节点绑定线扫源时在首节点前拒绝()
+    {
+        using var rig = new Rig(
+            sources: new[] { LineSource("Camera.Line", "dp.vision.halcon") },
+            captureNode: new CaptureAreaFrameNodeModel
+            { Id = "capture", Source = new VisionSourceReference("Camera.Line") });
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => rig.Host.RunAsync());
+
+        Assert.Contains("只能绑定面阵源", failure.Message);
+        Assert.Contains("线扫源", failure.Message);
+        Assert.Contains("Camera.Line", failure.Message);
+        // 跨类型绑定在运行前就拒绝：设备没有被打开，下游也没有执行。
+        Assert.Equal(0, rig.Acquisition.CaptureCount);
+        Assert.Equal(0, rig.Sink.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task 线扫节点绑定面阵源时在首节点前拒绝()
+    {
+        using var rig = new Rig(
+            sources: new[] { AreaSource("Camera.Top", "dp.vision.halcon") },
+            captureNode: new CaptureLineScanFrameNodeModel
+            { Id = "capture", Source = new VisionSourceReference("Camera.Top") });
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => rig.Host.RunAsync());
+
+        Assert.Contains("只能绑定线扫源", failure.Message);
+        Assert.Contains("面阵源", failure.Message);
+        Assert.Equal(0, rig.Acquisition.CaptureCount);
+    }
+
+    [Fact]
+    public async Task 形态未声明的源不做类型拒绝()
+    {
+        // 宿主没有发布可判定的形态时不猜测：面阵节点仍然可以绑定，
+        // 否则V1组合或对应Type未安装的机器会连既有流程都跑不起来。
+        using var rig = new Rig(sources: new[] { Source("Camera.Top", "dp.vision.halcon") });
+
+        var result = await rig.Host.RunAsync();
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(1, rig.Acquisition.CaptureCount);
+    }
+
+    [Fact]
+    public void 旧采集节点类型未注册时按未知节点保真保留配置()
+    {
+        // V2 用面阵/线扫两个强类型节点取代了旧的 Vision.CaptureFrame，不再提供兼容迁移器。
+        // 旧文档必须仍然能打开：节点降级为 Unknown 并逐字保留原始配置，
+        // 由用户自行改成新节点，而不是在持久化层猜测"它应该是面阵还是线扫"。
         var catalog = new WorkflowNodeCatalog().RegisterImageNodes();
         var store = new DP.WorkFlow.Persistence.Json.WorkflowDocumentJsonStore(catalog);
         const string json = """
@@ -202,14 +281,16 @@ public sealed class VisionAcquisitionNodeTests
         """;
 
         var loaded = store.Deserialize(json);
-        var node = Assert.IsType<CaptureVisionFrameNodeModel>(Assert.Single(loaded.Document.CanvasProjection.Nodes).Node);
+        var node = Assert.Single(loaded.Document.CanvasProjection.Nodes).Node;
+        var unknown = Assert.IsType<DP.WorkFlow.Persistence.Json.UnknownWorkflowNodeModel>(node);
 
-        Assert.Equal("GigEVision2|cam-top", node.Source!.SourceId);
-        Assert.Equal(1200, node.ExposureMicroseconds);
-        // 旧实现用0表示"保持设备当前设置"；新契约必须留空，不能把0当成有效物理量。
-        Assert.Null(node.GainDecibels);
-        Assert.Equal(EVisionTriggerMode.External, node.TriggerMode);
-        Assert.Contains(loaded.Migration.Warnings, warning => warning.Contains("CameraId"));
+        Assert.Equal("Vision.CaptureFrame", unknown.NodeType);
+        // 原始字段一个都不能丢：不迁移、不解释、不猜测。
+        Assert.Equal("GigEVision2|cam-top", unknown.RawConfig.GetProperty("CameraId").GetString());
+        Assert.Equal(1200, unknown.RawConfig.GetProperty("Exposure").GetDouble());
+        Assert.Equal(0, unknown.RawConfig.GetProperty("Gain").GetDouble());
+        Assert.True(unknown.RawConfig.GetProperty("Triggered").GetBoolean());
+        Assert.Contains(loaded.Migration.Warnings, warning => warning.Contains("Vision.CaptureFrame"));
     }
 
     private sealed class Rig : IDisposable
@@ -220,7 +301,8 @@ public sealed class VisionAcquisitionNodeTests
             bool registerSourceCatalog = true,
             bool registerRunScopeOwner = false,
             double? exposureMicroseconds = null,
-            double? gainDecibels = null)
+            double? gainDecibels = null,
+            IWorkflowNodeModel? captureNode = null)
         {
             Acquisition = new FakeVisionAcquisition(providerId);
             Sink = new SinkHandler();
@@ -234,13 +316,10 @@ public sealed class VisionAcquisitionNodeTests
                 .Register(Sink);
 
             var document = new WorkflowDocument { Name = "采集流程" };
-            var capture = new CaptureVisionFrameNodeModel
-            {
-                Id = "capture",
-                Source = new VisionSourceReference("Camera.Top"),
-                ExposureMicroseconds = exposureMicroseconds,
-                GainDecibels = gainDecibels
-            };
+            // 默认用面阵节点；线扫场景由调用方传入已经绑定好线扫源的节点。
+            var capture = captureNode ?? new CaptureAreaFrameNodeModel
+            { Id = "capture", Source = new VisionSourceReference("Camera.Top") };
+            ApplyPhysicalOverrides(capture, exposureMicroseconds, gainDecibels);
             var sink = new SinkNode { Id = "sink" };
             document.EntryNodeId = capture.Id;
             document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = capture });
@@ -274,6 +353,24 @@ public sealed class VisionAcquisitionNodeTests
         public FakeRunScopeOwner RunScope { get; }
 
         public WorkflowRuntimeHost Host { get; }
+
+        /// <summary>两个节点模型不共享基类，因此这里按实际类型写参数；不覆盖时保持留空语义。</summary>
+        private static void ApplyPhysicalOverrides(IWorkflowNodeModel capture, double? exposureMicroseconds, double? gainDecibels)
+        {
+            if (exposureMicroseconds is null && gainDecibels is null)
+                return;
+            switch (capture)
+            {
+                case CaptureAreaFrameNodeModel area:
+                    area.ExposureMicroseconds = exposureMicroseconds;
+                    area.GainDecibels = gainDecibels;
+                    break;
+                case CaptureLineScanFrameNodeModel line:
+                    line.ExposureMicroseconds = exposureMicroseconds;
+                    line.GainDecibels = gainDecibels;
+                    break;
+            }
+        }
 
         public void Dispose()
         {

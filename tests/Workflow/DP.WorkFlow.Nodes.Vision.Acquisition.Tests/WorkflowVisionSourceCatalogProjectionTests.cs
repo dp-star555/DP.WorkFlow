@@ -32,8 +32,33 @@ public sealed class WorkflowVisionSourceCatalogProjectionTests
         Assert.Null(source.Diagnostic);
         Assert.Equal(EVisionAcquisitionMode.OnDemand, source.AcquisitionMode);
         Assert.Equal(EVisionSourceSharingPolicy.ExclusiveOperation, source.SharingPolicy);
+        // V2-5：形态必须来自Type声明，面阵与线扫节点的候选过滤都依赖它；不能在这里被抹成空。
+        Assert.Equal(EVisionAcquisitionKind.AreaScan, source.Kind);
         Assert.True(catalog.TryGet("Camera.Top", out _));
         Assert.False(catalog.TryGet("Camera.Missing", out _));
+    }
+
+    /// <summary>线扫Type投影为线扫形态，不会被默认成面阵。</summary>
+    [Fact]
+    public void 线扫Type投影为线扫形态()
+    {
+        var composition = Compose(
+            new[]
+            {
+                new VisionAcquisitionCameraDefinition(
+                    "Camera.Line",
+                    TypeId,
+                    1,
+                    false,
+                    new VisionAcquisitionConnectionPolicy(),
+                    inbox: null,
+                    "{\"serialNumber\":\"SN-2\"}")
+            },
+            kind: EVisionAcquisitionKind.LineScan);
+
+        var catalog = WorkflowVisionSourceCatalog.FromAcquisition(composition);
+
+        Assert.Equal(EVisionAcquisitionKind.LineScan, Assert.Single(catalog.Sources).Kind);
     }
 
     /// <summary>未安装Type被保真投影为不可用条目，诊断保留，不丢失。</summary>
@@ -61,14 +86,19 @@ public sealed class WorkflowVisionSourceCatalogProjectionTests
         Assert.Contains("未安装", source.Diagnostic);
     }
 
-    private static VisionAcquisitionProviderComposition Compose(params VisionAcquisitionCameraDefinition[] cameras)
+    private static VisionAcquisitionProviderComposition Compose(
+        params VisionAcquisitionCameraDefinition[] cameras) => Compose(cameras, EVisionAcquisitionKind.AreaScan);
+
+    private static VisionAcquisitionProviderComposition Compose(
+        VisionAcquisitionCameraDefinition[] cameras,
+        EVisionAcquisitionKind kind)
     {
         var catalog = new VisionAcquisitionTypeCatalogComposer().Compose(
-            new IVisionAcquisitionDriverModule[] { new TestDriverModule() });
+            new IVisionAcquisitionDriverModule[] { new TestDriverModule(kind) });
         return new VisionAcquisitionMachineConfigurationComposer().Compose(catalog, cameras);
     }
 
-    private sealed class TestDriverModule : IVisionAcquisitionDriverModule
+    private sealed class TestDriverModule(EVisionAcquisitionKind kind) : IVisionAcquisitionDriverModule
     {
         public string ExtensionId => "dp.vision.test.driver";
 
@@ -77,9 +107,9 @@ public sealed class WorkflowVisionSourceCatalogProjectionTests
                 TypeId,
                 "dp.vision.test",
                 "1.0.0",
-                EVisionAcquisitionKind.AreaScan,
+                kind,
                 1,
-                "测试面阵",
+                "测试采集Type",
                 new VisionAcquisitionTypeCapabilities(
                     SupportsFreeRun: true,
                     SupportsSoftwareTrigger: true,

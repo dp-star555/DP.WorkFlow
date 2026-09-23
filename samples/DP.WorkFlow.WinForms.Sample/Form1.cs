@@ -112,7 +112,8 @@ public partial class Form1 : Form
                         source.SharingPolicy,
                         source.IsAvailable,
                         source.Diagnostic + " " + startupDiagnostic,
-                        source.AcquisitionMode)));
+                        source.AcquisitionMode,
+                        source.Kind)));
 
         // 3. 创建新文档
         _workspace.New(recoveryDemo is null ? "新版视觉文件分析" : "异常恢复演示（仅软件模拟）");
@@ -128,13 +129,9 @@ public partial class Form1 : Form
         workflowStudioControl1.NodeEditorExtensions.Register(
             new VisionWinFormsStudioExtension()
             { FrameSource = _frameScope, FileReader = fileReader });
-        // 采集节点的"逻辑图像源"从本机已发布的源里选，避免手写出机器上不存在的标识。
-        workflowStudioControl1.Properties.ChoiceProvider = (editorKey, _) =>
-            string.Equals(editorKey, WorkflowPropertyEditorKeys.VisionSource, StringComparison.Ordinal)
-                ? _visionSources.Sources.Select(source => new WorkflowPropertyChoice(
-                    source.IsAvailable ? source.SourceId : $"{source.SourceId}（不可用：{source.Diagnostic}）",
-                    new VisionSourceReference(source.SourceId))).ToArray()
-                : Array.Empty<WorkflowPropertyChoice>();
+        // 采集节点的"逻辑图像源"从本机已发布的源里选，避免手写出机器上不存在的标识；
+        // 面阵节点与线扫节点各看各的采集类型，不能互相选到对方的源。
+        workflowStudioControl1.Properties.ChoiceProvider = WorkflowVisionSourceChoices.CreateProvider(_visionSources);
 
         // 5. 注册宿主运行能力；节点和 Handler 已由上面的 Runtime Module 成组注册。
         var actions = new WorkflowActionRegistry()

@@ -4,6 +4,7 @@ using DP.Vision.Algorithms;
 using DP.Vision.OpenCv;
 using DP.WorkFlow;
 using DP.WorkFlow.UI;
+using DP.WorkFlow.Vision.UI;
 using DP.WorkFlow.Vision.UI.Wpf;
 using DP.WorkFlow.OperatorUI.Wpf;
 using DP.WorkFlow.Samples;
@@ -99,7 +100,8 @@ public partial class MainWindow : Window
                         source.SharingPolicy,
                         source.IsAvailable,
                         source.Diagnostic + " " + startupDiagnostic,
-                        source.AcquisitionMode)));
+                        source.AcquisitionMode,
+                        source.Kind)));
         _workspace = new WorkflowDocumentWorkspace(catalog);
         _workspace.New(recoveryDemo is null ? "视觉文件分析" : "异常恢复演示（仅软件模拟）");
         if (recoveryDemo is null) WorkflowImageDemo.PopulateProcessing(_workspace.Navigator!.RootSession);
@@ -111,13 +113,8 @@ public partial class MainWindow : Window
         Studio.Workspace = _workspace;
         Studio.NodeEditorExtensions.Register(new VisionWpfStudioExtension
         { FrameSource = _frameScope, FileReader = fileReader });
-        // 采集节点的"逻辑图像源"从本机已发布的源里选。
-        Studio.Properties.ChoiceProvider = (editorKey, _) =>
-            string.Equals(editorKey, WorkflowPropertyEditorKeys.VisionSource, StringComparison.Ordinal)
-                ? _visionSources.Sources.Select(source => new WorkflowPropertyChoice(
-                    source.IsAvailable ? source.SourceId : $"{source.SourceId}（不可用：{source.Diagnostic}）",
-                    new VisionSourceReference(source.SourceId))).ToArray()
-                : Array.Empty<WorkflowPropertyChoice>();
+        // 采集节点的"逻辑图像源"从本机已发布的源里选；面阵节点与线扫节点各看各的采集类型。
+        Studio.Properties.ChoiceProvider = WorkflowVisionSourceChoices.CreateProvider(_visionSources);
         var actions = new WorkflowActionRegistry();
         var services = new WorkflowServiceProvider()
             .Add<IWorkflowOperatorService>(_operatorService)

@@ -21,6 +21,11 @@ public sealed record WorkflowVisionSourceInfo
     /// 该源的采集时序；决定采集节点能否做节点级参数覆盖。
     /// 追加在末尾，使既有的五参位置调用行为不变。
     /// </param>
+    /// <param name="kind">
+    /// 该源的采集几何形态；决定面阵节点与线扫节点各能绑定哪些源。
+    /// 为空表示宿主没有发布可判定的形态（V1 组合、第三方装配或对应Type未安装），
+    /// 此时不猜测为面阵或线扫，由运行前校验放行并留给操作员判断。
+    /// </param>
     /// <exception cref="ArgumentException">标识为空或仅包含空白字符。</exception>
     public WorkflowVisionSourceInfo(
         string sourceId,
@@ -28,7 +33,8 @@ public sealed record WorkflowVisionSourceInfo
         EVisionSourceSharingPolicy sharingPolicy,
         bool isAvailable = true,
         string? diagnostic = null,
-        EVisionAcquisitionMode acquisitionMode = EVisionAcquisitionMode.OnDemand)
+        EVisionAcquisitionMode acquisitionMode = EVisionAcquisitionMode.OnDemand,
+        EVisionAcquisitionKind? kind = null)
     {
         if (string.IsNullOrWhiteSpace(sourceId))
             throw new ArgumentException("逻辑源标识不能为空。", nameof(sourceId));
@@ -38,6 +44,7 @@ public sealed record WorkflowVisionSourceInfo
         ProviderId = providerId.Trim();
         SharingPolicy = sharingPolicy;
         AcquisitionMode = acquisitionMode;
+        Kind = kind;
         IsAvailable = isAvailable;
         Diagnostic = string.IsNullOrWhiteSpace(diagnostic) ? null : diagnostic.Trim();
     }
@@ -56,6 +63,13 @@ public sealed record WorkflowVisionSourceInfo
     /// 缓冲源需要根运行作用域所有权，且不接受节点级曝光/增益覆盖。
     /// </summary>
     public EVisionAcquisitionMode AcquisitionMode { get; }
+
+    /// <summary>
+    /// 该源的采集几何形态；为空表示宿主未发布可判定的形态。
+    /// 面阵节点只能绑定 <see cref="EVisionAcquisitionKind.AreaScan"/> 源，线扫节点只能绑定
+    /// <see cref="EVisionAcquisitionKind.LineScan"/> 源；为空时不做类型拒绝。
+    /// </summary>
+    public EVisionAcquisitionKind? Kind { get; }
 
     /// <summary>Provider是否已就绪且该源当前可采集。</summary>
     public bool IsAvailable { get; }
@@ -122,7 +136,8 @@ public sealed class WorkflowVisionSourceCatalog : IWorkflowVisionSourceCatalog
                 entry.SharingPolicy,
                 entry.IsAvailable,
                 entry.Diagnostic,
-                entry.AcquisitionMode)));
+                entry.AcquisitionMode,
+                entry.Kind)));
     }
 
     /// <inheritdoc/>

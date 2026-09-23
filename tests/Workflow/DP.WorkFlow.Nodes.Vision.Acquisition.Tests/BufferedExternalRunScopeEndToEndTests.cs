@@ -205,8 +205,8 @@ public sealed class BufferedExternalRunScopeEndToEndTests
             .Register(sink);
 
         var document = new WorkflowDocument { Name = "主流程" };
-        var firstCapture = new CaptureVisionFrameNodeModel { Id = "capture1", Source = new VisionSourceReference(SourceId) };
-        var secondCapture = new CaptureVisionFrameNodeModel { Id = "capture2", Source = new VisionSourceReference(SourceId) };
+        var firstCapture = new CaptureAreaFrameNodeModel { Id = "capture1", Source = new VisionSourceReference(SourceId) };
+        var secondCapture = new CaptureAreaFrameNodeModel { Id = "capture2", Source = new VisionSourceReference(SourceId) };
         document.EntryNodeId = trigger.Node.Id;
         foreach (var node in new IWorkflowNodeModel[] { trigger.Node, firstCapture, faultNode, secondCapture, sink.Node })
             document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
@@ -261,7 +261,7 @@ public sealed class BufferedExternalRunScopeEndToEndTests
     {
         var document = new WorkflowDocument { Name = "缓冲采集流程" };
         var trigger = new TriggerNode { Id = triggerId };
-        var capture = new CaptureVisionFrameNodeModel { Id = captureId, Source = new VisionSourceReference(SourceId) };
+        var capture = new CaptureAreaFrameNodeModel { Id = captureId, Source = new VisionSourceReference(SourceId) };
         var sink = new SinkNode { Id = sinkId };
         document.EntryNodeId = trigger.Id;
         foreach (var node in new IWorkflowNodeModel[] { trigger, capture, sink })
@@ -334,7 +334,7 @@ public sealed class BufferedExternalRunScopeEndToEndTests
             if (exposureMicroseconds is not null)
             {
                 foreach (var node in document.CanvasProjection.Nodes
-                    .Select(item => item.Node).OfType<CaptureVisionFrameNodeModel>())
+                    .Select(item => item.Node).OfType<CaptureAreaFrameNodeModel>())
                     node.ExposureMicroseconds = exposureMicroseconds;
             }
 

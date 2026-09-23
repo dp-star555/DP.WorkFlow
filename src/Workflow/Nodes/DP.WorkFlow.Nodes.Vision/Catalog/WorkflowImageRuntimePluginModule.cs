@@ -30,7 +30,8 @@ public static class WorkflowImageNodes
         return catalog
             .Register(WorkflowNodeDescriptor.Create<LoadVisionFileNodeModel, ImageFrame>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<LoadVisionFolderNodeModel, ImageFrame>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<CaptureVisionFrameNodeModel, ImageFrame>(ports: ports))
+            .Register(WorkflowNodeDescriptor.Create<CaptureAreaFrameNodeModel, ImageFrame>(ports: ports))
+            .Register(WorkflowNodeDescriptor.Create<CaptureLineScanFrameNodeModel, ImageFrame>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<AnalyzeVisionBlobsNodeModel, BlobAnalysisResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<AnalyzeVisionColorNodeModel, ColorAnalysisResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<MeasureVisionEdgesNodeModel, EdgeMeasurementResult>(ports: ports))
@@ -59,7 +60,9 @@ public static class WorkflowImageNodes
             .Register(new LoadVisionFileNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IImageFileReader>(), frames)
             .Register(new LoadVisionFolderNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFolderSource>(), frames)
             // 采集节点只声明中立采集入口：Provider选择、连接复用、互斥和来源元数据都由采集运行时隐藏。
-            .Register(new CaptureVisionFrameNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IVisionAcquisition>(), frames)
+            // 面阵与线扫只在参数绑定和候选过滤上分开，能力要求与输出完全一致。
+            .Register(new CaptureAreaFrameNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IVisionAcquisition>(), frames)
+            .Register(new CaptureLineScanFrameNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IVisionAcquisition>(), frames)
             .Register(new AnalyzeVisionBlobsNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IBlobAnalyzer>())
             .Register(new AnalyzeVisionColorNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IColorAnalyzer>())
             .Register(new MeasureVisionEdgesNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IEdgeMeasurer>())

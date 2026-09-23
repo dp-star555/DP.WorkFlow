@@ -153,7 +153,7 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
         var duplicate = context.Nodes.Where(n => n is AnalyzeVisionFrameNodeModel or LoadVisionFileNodeModel
-                or LoadVisionFolderNodeModel or CaptureVisionFrameNodeModel)
+                or LoadVisionFolderNodeModel or CaptureAreaFrameNodeModel or CaptureLineScanFrameNodeModel)
             .GroupBy(n => n.Id, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1);
         if (duplicate is not null)
             throw new InvalidOperationException($"新版视觉预览节点ID跨子文档重复：{duplicate.Key}；不能把不同节点的图像合并到同一预览槽。");
@@ -191,11 +191,11 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
 
     /// <summary>
     /// 运行前校验采集节点的逻辑源绑定。这里不是最终互斥——真正取得设备使用权仍然只能在执行采集时
-    /// 由Acquisition Runtime原子完成；此处只保证"源不存在"这类配置错误不会拖到首节点之后才暴露。
+    /// 由Acquisition Runtime原子完成；此处只保证"源不存在""源类型不匹配"这类配置错误不会拖到首节点之后才暴露。
     /// </summary>
     private static void ValidateCaptureNodes(WorkflowRunPreparationContext context)
     {
-        var captures = context.Nodes.OfType<CaptureVisionFrameNodeModel>().ToArray();
+        var captures = CaptureCandidates(context.Nodes).ToArray();
         if (captures.Length == 0)
             return;
         var catalog = context.Services?.GetService(typeof(IWorkflowVisionSourceCatalog)) as IWorkflowVisionSourceCatalog
@@ -206,15 +206,23 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
         foreach (var capture in captures)
         {
             var source = capture.Source
-                ?? throw new InvalidOperationException($"采集节点 {capture.Id} 未配置逻辑图像源。");
+                ?? throw new InvalidOperationException($"采集节点 {capture.NodeId} 未配置逻辑图像源。");
             if (!catalog.TryGet(source.SourceId, out var info) || info is null)
                 throw new InvalidOperationException(
-                    $"采集节点 {capture.Id} 的逻辑源 {source.SourceId} 未在当前机器配置中发布；"
+                    $"采集节点 {capture.NodeId} 的逻辑源 {source.SourceId} 未在当前机器配置中发布；"
                     + "Provider失败时不会自动尝试其他源。");
             if (!info.IsAvailable)
                 throw new InvalidOperationException(
-                    $"采集节点 {capture.Id} 的逻辑源 {source.SourceId} 当前不可用（Provider {info.ProviderId}）："
+                    $"采集节点 {capture.NodeId} 的逻辑源 {source.SourceId} 当前不可用（Provider {info.ProviderId}）："
                     + (info.Diagnostic ?? "未提供原因。"));
+            // 面阵与线扫的整图语义不同，跨类型绑定在这里就拒绝：等到Provider才发现只会表现成
+            // "图能取回来但内容不对"这类更难查的现象。Kind 为空表示宿主没有发布可判定的形态，
+            // 此时不猜测为面阵或线扫，放行并把判定留给操作员。
+            if (info.Kind is not null && info.Kind != capture.RequiredKind)
+                throw new InvalidOperationException(
+                    $"采集节点 {capture.NodeId} 只能绑定{DescribeKind(capture.RequiredKind)}源，"
+                    + $"但逻辑源 {source.SourceId} 是{DescribeKind(info.Kind.Value)}源；"
+                    + "面阵与线扫的整图语义不同，禁止跨类型绑定：请改选匹配的源，或改用对应类型的采集节点。");
             // 参数不合法时同样在运行前拒绝，而不是等到设备已经打开之后。
             var request = capture.CreateRequest();
 
@@ -224,7 +232,7 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
                 // 而不是等节点执行时才失败——那时设备已经打开。
                 if (request.ExposureMicroseconds is not null || request.GainDecibels is not null)
                     throw new InvalidOperationException(
-                        $"采集节点 {capture.Id} 的逻辑源 {source.SourceId} 是外部回调缓冲源（BufferedExternal），"
+                        $"采集节点 {capture.NodeId} 的逻辑源 {source.SourceId} 是外部回调缓冲源（BufferedExternal），"
                         + "不支持节点级曝光/增益覆盖；这些参数由机器 Source/Profile 固定，"
                         + "请在机器配置里修改并重新发布，而不是逐节点覆盖。");
                 bufferedSources.Add(source.SourceId);
@@ -233,7 +241,7 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
 
             if (info.SharingPolicy == EVisionSourceSharingPolicy.ExclusiveRun)
                 throw new InvalidOperationException(
-                    $"采集节点 {capture.Id} 的逻辑源 {source.SourceId} 是主动采集源却配置为 ExclusiveRun；"
+                    $"采集节点 {capture.NodeId} 的逻辑源 {source.SourceId} 是主动采集源却配置为 ExclusiveRun；"
                     + "ExclusiveRun 只用于外部回调缓冲源，主动采集源按操作级互斥协调。");
         }
 
@@ -248,6 +256,44 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
                 + "但宿主没有注册根运行作用域所有者（IWorkflowRunScopeOwner）；"
                 + "没有它就不会在首节点之前布防并建立采集代次，回调帧永远无法领取。");
     }
+
+    /// <summary>按节点类型收集采集校验输入；面阵与线扫各自声明自己要求的源形态。</summary>
+    private static IEnumerable<CaptureCandidate> CaptureCandidates(IReadOnlyList<IWorkflowNodeModel> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            switch (node)
+            {
+                case CaptureAreaFrameNodeModel area:
+                    yield return new CaptureCandidate(area.Id, area.Source, EVisionAcquisitionKind.AreaScan, area.CreateRequest);
+                    break;
+                case CaptureLineScanFrameNodeModel line:
+                    yield return new CaptureCandidate(line.Id, line.Source, EVisionAcquisitionKind.LineScan, line.CreateRequest);
+                    break;
+            }
+        }
+    }
+
+    private static string DescribeKind(EVisionAcquisitionKind kind) => kind switch
+    {
+        EVisionAcquisitionKind.AreaScan => "面阵",
+        EVisionAcquisitionKind.LineScan => "线扫",
+        _ => kind.ToString()
+    };
+
+    /// <summary>一次采集校验的最小输入。</summary>
+    /// <param name="NodeId">节点身份。</param>
+    /// <param name="Source">节点绑定的逻辑源；未绑定时为空。</param>
+    /// <param name="RequiredKind">该节点类型要求的源几何形态。</param>
+    /// <param name="CreateRequest">
+    /// 延迟构造采集请求：源绑定错误必须先于参数范围错误暴露，
+    /// 否则操作员先看到"超时必须为正值"，而真正的问题是源根本不存在。
+    /// </param>
+    private readonly record struct CaptureCandidate(
+        string NodeId,
+        VisionSourceReference? Source,
+        EVisionAcquisitionKind RequiredKind,
+        Func<VisionCaptureRequest> CreateRequest);
 
     /// <summary>使用者结束借用后释放；并行持有者须保留独立租约。</summary>
     public void Dispose()
