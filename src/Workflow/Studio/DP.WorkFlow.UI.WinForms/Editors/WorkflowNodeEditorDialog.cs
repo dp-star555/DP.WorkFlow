@@ -25,8 +25,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
 {
     /// <summary>节点编辑事务模型；无参设计器实例中为空。</summary>
     private WorkflowNodeEditorModel? _model;
-    private readonly ListBox _navigation = new() { Visible = false };
-    private readonly Dictionary<string, Control> _controls = new(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, IWorkflowWinFormsNodeEditorPageRenderer> _renderers =
         new Dictionary<string, IWorkflowWinFormsNodeEditorPageRenderer>(StringComparer.Ordinal);
     private Action<IWorkflowBlockMappingNode>? _editMappings;
@@ -177,23 +175,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     }
 
     /// <summary>
-    /// 兼容旧页面导航模式的延迟加载入口。当前自适应布局通常直接平铺特殊页面，
-    /// 但保留该方法便于以后在窄屏模式恢复页面导航。
-    /// </summary>
-    private void ShowSelectedPage()
-    {
-        if (_navigation.SelectedItem is not EditorPageItem item) return;
-        workspacePanel.Controls.Clear();
-        if (!_controls.TryGetValue(item.Page.PageId, out var control))
-        {
-            control = CreatePageControl(item.Page);
-            control.Dock = DockStyle.Fill;
-            _controls.Add(item.Page.PageId, control);
-        }
-        workspacePanel.Controls.Add(control);
-    }
-
-    /// <summary>
     /// 将 UI 无关页面描述转换为 WinForms 控件。宿主 Renderer 优先于内置 PageKind，
     /// 因而视觉、厂商工具等模块可以替换默认页面而不修改本窗口。
     /// </summary>
@@ -262,20 +243,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         Dock = DockStyle.Fill,
         Page = page
     };
-
-    /// <summary>更新Diagnostics。</summary>
-    /// <param name="page">“page”参数。</param>
-    /// <param name="text">要显示或处理的文本。</param>
-    /// <param name="list">“list”参数。</param>
-    private static void UpdateDiagnostics(WorkflowScriptEditorPageModel page, string text, ListBox list)
-    {
-        list.BeginUpdate();
-        list.Items.Clear();
-        var diagnostics = page.GetDiagnostics(text);
-        if (diagnostics.Count == 0) list.Items.Add("✓ 未发现脚本诊断。");
-        else foreach (var diagnostic in diagnostics) list.Items.Add(diagnostic);
-        list.EndUpdate();
-    }
 
     /// <summary>创建Diagnostics。</summary>
     private static Control CreateDiagnostics(WorkflowScriptEditorPageModel page)

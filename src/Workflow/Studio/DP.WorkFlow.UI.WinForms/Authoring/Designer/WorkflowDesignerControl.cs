@@ -1592,92 +1592,11 @@ public sealed partial class WorkflowDesignerControl : Control
         first.X <= second.X + second.Width && first.X + first.Width >= second.X
         && first.Y <= second.Y + second.Height && first.Y + first.Height >= second.Y;
 
-    /// <summary>调整路径以避开与其相交的节点障碍物。</summary>
-    /// <param name="route">“route”参数。</param>
-    /// <param name="connection">目标连接。</param>
-    private IReadOnlyList<WorkflowPoint> AvoidNodeObstacles(
-        IReadOnlyList<WorkflowPoint> route,
-        WorkflowConnectionModel connection)
-    {
-        if (_session is null || route.Count < 4)
-            return route;
-        var obstacles = _session.Canvas.Nodes
-            .Where(node => node.Node.Id != connection.FromNodeId && node.Node.Id != connection.ToNodeId)
-            .Select(node => Expand(WorkflowDesignerGeometry.GetNodeScreenRect(_session, node), 14))
-            .ToArray();
-        if (!obstacles.Any(obstacle => route.Zip(route.Skip(1)).Any(pair => SegmentCrossesRect(pair.First, pair.Second, obstacle))))
-            return route;
-
-        var start = route[0];
-        var startLead = route[1];
-        var endLead = route[^2];
-        var end = route[^1];
-        var horizontal = Math.Abs(endLead.X - startLead.X) >= Math.Abs(endLead.Y - startLead.Y);
-        if (horizontal)
-        {
-            var left = Math.Min(startLead.X, endLead.X);
-            var right = Math.Max(startLead.X, endLead.X);
-            var corridor = obstacles.Where(rect => rect.X <= right && rect.X + rect.Width >= left).ToArray();
-            if (corridor.Length == 0) return route;
-            var top = corridor.Min(rect => rect.Y) - 12;
-            var bottom = corridor.Max(rect => rect.Y + rect.Height) + 12;
-            var y = Math.Abs(startLead.Y - top) + Math.Abs(endLead.Y - top)
-                <= Math.Abs(startLead.Y - bottom) + Math.Abs(endLead.Y - bottom) ? top : bottom;
-            return Compact(new[]
-            {
-                start, startLead, new WorkflowPoint(startLead.X, y),
-                new WorkflowPoint(endLead.X, y), endLead, end
-            });
-        }
-        else
-        {
-            var top = Math.Min(startLead.Y, endLead.Y);
-            var bottom = Math.Max(startLead.Y, endLead.Y);
-            var corridor = obstacles.Where(rect => rect.Y <= bottom && rect.Y + rect.Height >= top).ToArray();
-            if (corridor.Length == 0) return route;
-            var left = corridor.Min(rect => rect.X) - 12;
-            var right = corridor.Max(rect => rect.X + rect.Width) + 12;
-            var x = Math.Abs(startLead.X - left) + Math.Abs(endLead.X - left)
-                <= Math.Abs(startLead.X - right) + Math.Abs(endLead.X - right) ? left : right;
-            return Compact(new[]
-            {
-                start, startLead, new WorkflowPoint(x, startLead.Y),
-                new WorkflowPoint(x, endLead.Y), endLead, end
-            });
-        }
-    }
-
     /// <summary>向四周扩展矩形。</summary>
     /// <param name="rect">目标矩形。</param>
     /// <param name="amount">矩形扩展量。</param>
     private static WorkflowDesignerRect Expand(WorkflowDesignerRect rect, double amount) =>
         new(rect.X - amount, rect.Y - amount, rect.Width + amount * 2, rect.Height + amount * 2);
-
-    /// <summary>判断正交线段是否穿过矩形内部。</summary>
-    /// <param name="first">第一个坐标或矩形。</param>
-    /// <param name="second">第二个坐标或矩形。</param>
-    /// <param name="rect">目标矩形。</param>
-    private static bool SegmentCrossesRect(WorkflowPoint first, WorkflowPoint second, WorkflowDesignerRect rect)
-    {
-        if (Math.Abs(first.Y - second.Y) < 0.1)
-            return first.Y > rect.Y && first.Y < rect.Y + rect.Height
-                && Math.Max(first.X, second.X) > rect.X
-                && Math.Min(first.X, second.X) < rect.X + rect.Width;
-        if (Math.Abs(first.X - second.X) < 0.1)
-            return first.X > rect.X && first.X < rect.X + rect.Width
-                && Math.Max(first.Y, second.Y) > rect.Y
-                && Math.Min(first.Y, second.Y) < rect.Y + rect.Height;
-        return false;
-    }
-
-    /// <summary>移除路径中连续重复的坐标。</summary>
-    /// <param name="points">路径点集合。</param>
-    private static IReadOnlyList<WorkflowPoint> Compact(IEnumerable<WorkflowPoint> points)
-    {
-        var result = new List<WorkflowPoint>();
-        foreach (var point in points) AddDistinct(result, point);
-        return result;
-    }
 
     /// <summary>构建包含可选手工拐点的基础正交折线路径。</summary>
     /// <param name="start">路径起点。</param>

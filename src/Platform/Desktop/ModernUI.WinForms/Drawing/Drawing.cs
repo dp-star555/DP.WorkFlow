@@ -91,15 +91,6 @@ public sealed class GdiCanvas : IDisposable
 
     public void Dispose() => _graphics.Restore(_state);
 
-    private static TextFormatFlags ToFlags(ContentAlignment alignment) => alignment switch
-    {
-        ContentAlignment.MiddleLeft => TextFormatFlags.Left | TextFormatFlags.VerticalCenter,
-        ContentAlignment.MiddleRight => TextFormatFlags.Right | TextFormatFlags.VerticalCenter,
-        ContentAlignment.TopLeft => TextFormatFlags.Left | TextFormatFlags.Top,
-        ContentAlignment.TopCenter => TextFormatFlags.HorizontalCenter | TextFormatFlags.Top,
-        ContentAlignment.TopRight => TextFormatFlags.Right | TextFormatFlags.Top,
-        _ => TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
-    };
 }
 
 internal static class ModernFocusVisual

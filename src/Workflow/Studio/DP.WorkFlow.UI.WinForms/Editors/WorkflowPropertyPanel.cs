@@ -445,21 +445,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         return button;
     }
 
-    /// <summary>建立仅供分类和说明定位使用的逻辑属性树。</summary>
-    private void BuildPropertyTree(IReadOnlyList<WorkflowPropertyEntry> entries)
-    {
-        foreach (var category in entries.GroupBy(entry => entry.Category, StringComparer.Ordinal))
-        {
-            var categoryNode = new TreeNode(category.Key);
-            foreach (var entry in category)
-                categoryNode.Nodes.Add(new TreeNode(entry.DisplayName) { Tag = entry });
-            _propertyTree.Nodes.Add(categoryNode);
-            categoryNode.Expand();
-        }
-        if (_propertyTree.Nodes.Count > 0 && _propertyTree.Nodes[0].Nodes.Count > 0)
-            _propertyTree.SelectedNode = _propertyTree.Nodes[0].Nodes[0];
-    }
-
     /// <summary>为可隐藏的动态输出端口追加复选框，并在提交时同步清理失效连线。</summary>
     private void AddOutputPortVisibilityEditors()
     {

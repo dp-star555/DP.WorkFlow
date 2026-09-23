@@ -29,7 +29,6 @@ public sealed class WorkflowNodeEditorWindow : Window
     private readonly WorkflowNodeEditorModel _model;
     private readonly ContentControl _host;
     private readonly ListBox _navigation;
-    private readonly Dictionary<string, FrameworkElement> _elements = new(StringComparer.Ordinal);
     private readonly IReadOnlyDictionary<string, IWorkflowWpfNodeEditorPageRenderer> _renderers;
     private readonly Action<IWorkflowBlockMappingNode>? _editMappings;
 
@@ -175,18 +174,6 @@ public sealed class WorkflowNodeEditorWindow : Window
         }
     }
 
-    /// <summary>显示Selected Page。</summary>
-    private void ShowSelectedPage()
-    {
-        if (_navigation.SelectedItem is not EditorPageItem item) return;
-        if (!_elements.TryGetValue(item.Page.PageId, out var element))
-        {
-            element = CreatePageElement(item.Page);
-            _elements.Add(item.Page.PageId, element);
-        }
-        _host.Content = element;
-    }
-
     /// <summary>创建Page Element。</summary>
     private FrameworkElement CreatePageElement(WorkflowNodeEditorPageDescriptor page)
     {
@@ -254,15 +241,6 @@ public sealed class WorkflowNodeEditorWindow : Window
     {
         Page = page
     };
-
-    /// <summary>更新Diagnostics。</summary>
-    private static void UpdateDiagnostics(WorkflowScriptEditorPageModel page, string script, ListBox list)
-    {
-        list.Items.Clear();
-        var diagnostics = page.GetDiagnostics(script);
-        if (diagnostics.Count == 0) list.Items.Add("✓ 未发现脚本诊断。");
-        else foreach (var diagnostic in diagnostics) list.Items.Add(diagnostic);
-    }
 
     /// <summary>创建Diagnostics。</summary>
     private static FrameworkElement CreateDiagnostics(WorkflowScriptEditorPageModel page)

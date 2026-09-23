@@ -251,18 +251,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     private void ShowDetails(WorkflowPropertyEntry entry) =>
         _details.Text = $"{entry.DisplayName}\n{entry.Description}\n属性：{entry.Name}    类型：{entry.ValueType.Name}";
 
-    /// <summary>构建Property Tree。</summary>
-    private void BuildPropertyTree(IReadOnlyList<WorkflowPropertyEntry> entries)
-    {
-        foreach (var category in entries.GroupBy(entry => entry.Category, StringComparer.Ordinal))
-        {
-            var categoryItem = new TreeViewItem { Header = category.Key, IsExpanded = true };
-            foreach (var entry in category)
-                categoryItem.Items.Add(new TreeViewItem { Header = entry.DisplayName, Tag = entry });
-            _propertyTree.Items.Add(categoryItem);
-        }
-    }
-
     /// <summary>添加Output Port Visibility Editors。</summary>
     private void AddOutputPortVisibilityEditors()
     {

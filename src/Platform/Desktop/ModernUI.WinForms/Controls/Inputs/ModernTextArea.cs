@@ -353,7 +353,6 @@ public sealed class ModernTextArea : ModernInput
         });
     }
 
-    private const int EditGetFormattingRectangle = 0x00B2;
     private const int EditGetLineCount = 0x00BA;
     // EM_SETRECT repaints after changing the formatting rectangle. EM_SETRECTNP (0xB4)
     // left the old wrapped final line visible until the next wheel/scroll message.
