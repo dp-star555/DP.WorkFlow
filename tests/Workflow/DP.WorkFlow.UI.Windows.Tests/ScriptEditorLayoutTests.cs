@@ -539,7 +539,9 @@ class Demo
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        Assert.True(thread.Join(TimeSpan.FromSeconds(15)), "UI 布局测试超时。");
+        Assert.True(thread.Join(TimeSpan.FromSeconds(UiTestThread.JoinBudgetSeconds)),
+            $"UI 布局测试超时（{UiTestThread.JoinBudgetSeconds}s）。" +
+            "注意：超时只放弃等待，被测线程仍在后台运行，后续用例可能因此受到桌面状态干扰。");
         Assert.Null(failure);
     }
 }

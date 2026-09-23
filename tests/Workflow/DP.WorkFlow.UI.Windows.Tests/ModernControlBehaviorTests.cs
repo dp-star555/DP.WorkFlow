@@ -6309,7 +6309,9 @@ public sealed class ModernControlBehaviorTests
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        Assert.True(thread.Join(TimeSpan.FromSeconds(8)), "WinForms behavior test timed out.");
+        Assert.True(thread.Join(TimeSpan.FromSeconds(UiTestThread.JoinBudgetSeconds)),
+            $"WinForms behavior test timed out after {UiTestThread.JoinBudgetSeconds}s. " +
+            "注意：超时只放弃等待，被测线程仍在后台运行，后续用例可能因此受到桌面状态干扰。");
         Assert.Null(failure);
     }
 }

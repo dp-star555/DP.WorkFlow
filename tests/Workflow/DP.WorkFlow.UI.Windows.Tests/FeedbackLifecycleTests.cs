@@ -193,17 +193,34 @@ public sealed class FeedbackLifecycleTests
             {
                 ModernUiSettings.AnimationsEnabled = false;
                 using var owner = CreateOwner();
-                using var message = ModernMessage.Info(owner, "Waiting", 240);
-                PumpFor(110);
+
+                // 这条用例的判定量是**墙钟**：倒计时按真实时间走，而"推进"靠 PumpFor。
+                // 原实现的余量只有 240-110=130ms —— 机器被占满时一次 130ms 的停顿（GC、
+                // 其他测试宿主）就会让消息在最小化之前自行关闭，产生与代码无关的红。
+                // 现在把生命周期拉长到 1500ms，并且每一步的余量都写成显式常量，
+                // 使"暂停计时"这一断言的余量从 130ms 提升到秒级。
+                const int lifetimeMilliseconds = 1500;
+                const int elapsedBeforeMinimize = 250;   // 剩余 1250ms
+                const int minimizedPump = 3000;          // 最小化期间推 3000ms ≫ 剩余 1250ms
+                const int restorePollBudget = 3000;      // 还原后应重新计时并在 1250ms 左右关闭
+
+                using var message = ModernMessage.Info(owner, "Waiting", lifetimeMilliseconds);
+                PumpFor(elapsedBeforeMinimize);
+                Assert.False(((Form)message).IsDisposed,
+                    $"{elapsedBeforeMinimize}ms 时消息不应已关闭（生命周期 {lifetimeMilliseconds}ms）。");
+
                 owner.WindowState = FormWindowState.Minimized;
                 Application.DoEvents();
-                PumpFor(300);
-                Assert.False(((Form)message).IsDisposed);
+                PumpFor(minimizedPump);
+                Assert.False(((Form)message).IsDisposed,
+                    $"最小化期间计时必须暂停：推了 {minimizedPump}ms，而剩余预算只有 " +
+                    $"{lifetimeMilliseconds - elapsedBeforeMinimize}ms。");
 
                 owner.WindowState = FormWindowState.Normal;
                 Application.DoEvents();
-                PumpFor(170);
-                Assert.True(((Form)message).IsDisposed);
+                Assert.True(PumpUntil(() => ((Form)message).IsDisposed, restorePollBudget),
+                    $"还原后应恢复计时并在约 {lifetimeMilliseconds - elapsedBeforeMinimize}ms 内关闭，" +
+                    $"但 {restorePollBudget}ms 内仍未关闭。");
             }
             finally { ModernUiSettings.AnimationsEnabled = previousAnimations; }
         });
@@ -408,6 +425,22 @@ public sealed class FeedbackLifecycleTests
         }
     }
 
+    /// <summary>
+    /// 有界等待某个可观察条件成立。用于"最终会发生"的断言：
+    /// 既不像固定时长那样在慢机器上提前判定，也不像无限等待那样在缺陷时挂死。
+    /// </summary>
+    private static bool PumpUntil(Func<bool> condition, int milliseconds)
+    {
+        var until = DateTime.UtcNow.AddMilliseconds(milliseconds);
+        while (DateTime.UtcNow < until)
+        {
+            if (condition()) return true;
+            Application.DoEvents();
+            Thread.Sleep(10);
+        }
+        return condition();
+    }
+
     private static void RunInSta(Action action)
     {
         Exception? failure = null;
@@ -418,7 +451,9 @@ public sealed class FeedbackLifecycleTests
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        Assert.True(thread.Join(TimeSpan.FromSeconds(8)), "Feedback lifecycle test timed out.");
+        Assert.True(thread.Join(TimeSpan.FromSeconds(UiTestThread.JoinBudgetSeconds)),
+            $"Feedback lifecycle test timed out after {UiTestThread.JoinBudgetSeconds}s. " +
+            "注意：超时只放弃等待，被测线程仍在后台运行，后续用例可能因此受到桌面状态干扰。");
         Assert.Null(failure);
     }
 }

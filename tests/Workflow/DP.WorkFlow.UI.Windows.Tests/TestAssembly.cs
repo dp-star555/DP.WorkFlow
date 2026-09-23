@@ -51,6 +51,13 @@ internal static class UiTestDpiBaseline
 /// <summary>Creates STA test threads with a deterministic DPI context even when vstest reuses an aware host process.</summary>
 internal static class UiTestThread
 {
+    /// <summary>
+    /// 单个行为用例的线程预算。原为 8 秒，但本套件里有"按墙钟推进若干次消息泵"的用例，
+    /// 机器被占满时一次 8 秒的 join 会先于被测行为到期，产生"超时"这种**假失败**；
+    /// 放宽到 30 秒只是把诊断阈值挪出噪声区，真正挂死的用例仍会被判定。
+    /// </summary>
+    internal const int JoinBudgetSeconds = 30;
+
     internal static Thread Create(ThreadStart action)
     {
         ArgumentNullException.ThrowIfNull(action);
@@ -70,7 +77,13 @@ internal static class UiTestThread
             }
             finally { System.Windows.Forms.WindowsFormsSynchronizationContext.AutoInstall = autoInstall; }
             action();
-        });
+        })
+        {
+            // 关键：超时的用例线程会**继续运行**——join 只放弃等待，不终止线程。
+            // 前台线程会拖住测试宿主进程直到它自己结束，把一次失败放大成"整轮挂住"；
+            // 后台线程让宿主仍能正常退出，失败保持为一次可归因的失败。
+            IsBackground = true
+        };
     }
 }
 
