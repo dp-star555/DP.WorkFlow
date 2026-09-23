@@ -72,6 +72,7 @@
 
   <ItemGroup>
     <Compile Include="..\VisionData\WorkflowImageDemo.cs" Link="WorkflowImageDemo.cs" />
+    <Compile Include="..\VisionData\SampleVisionHost.cs" Link="SampleVisionHost.cs" />
     <Compile Include="..\Recovery\WorkflowRecoveryDemo.cs" Link="WorkflowRecoveryDemo.cs" />
     <Content Include="..\VisionData\demo.pgm" Link="VisionData\demo.pgm" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

@@ -1,6 +1,3 @@
-using DP.Vision.Acquisition;
-using DP.Vision.Algorithms;
-using DP.Vision.OpenCv;
 using DP.WorkFlow;
 using DP.WorkFlow.UI;
 using DP.WorkFlow.UI.WinForms;
@@ -18,9 +15,7 @@ public partial class Form1 : Form
     private readonly WorkflowRuntimeHost _runtimeHost;
     private readonly WorkflowStudioRuntimeBinding _runtimeBinding;
     private readonly WorkflowContext _runtimeContext;
-    private readonly WorkflowVisionFrameScope _frameScope;
-    private readonly VisionAcquisitionRuntime _visionAcquisition;
-    private readonly WorkflowVisionSourceCatalog _visionSources;
+    private readonly SampleVisionHost _vision;
     private readonly WorkflowWinFormsOperatorService _operatorService;
     private bool _closing;
     private bool _runtimeResourcesDisposed;
@@ -44,94 +39,24 @@ public partial class Form1 : Form
         if (recoveryDemo is not null) plugins.Register(recoveryDemo);
         plugins.Freeze();
 
-        // 2. 创建文档工作区
+        // 2. 创建文档工作区与视觉宿主（采集插件、机器配置与图像源目录见 SampleVisionHost）
         _workspace = new WorkflowDocumentWorkspace(_nodeCatalog);
-        var fileReader = new OpenCvImageFileReader();
-        var acquisition = new WorkflowVisionAcquisitionSession(fileReader);
-        _frameScope = new WorkflowVisionFrameScope(acquisition);
-
-        // 2.1 V2 机器配置：插件自动发现 + 版本化CameraDefinition。工作流文档只保存SourceId，
-        // 换机器时只改这里，不需要改流程文档，也不需要重新编译节点。
-        // 宿主只按插件目录自动发现Driver Module，编译期不选择任何具体Provider。
-        // 公共层只解释sourceId/acquisitionType/connection等字段；deviceSettings由对应Plugin解析，
-        // 生成内部绑定、规范资源键与进入CompositionId的私有配置摘要。
-        const string machineConfigurationJson = """
-            [
-              {
-                "sourceId": "Camera.Top",
-                "acquisitionType": "dp.acquisition.halcon.area",
-                "settingsVersion": 1,
-                "connection": { "openOnApplicationStart": true, "transferStart": "PerRequest" },
-                "deviceSettings": {
-                  "interfaceName": "GigEVision2",
-                  "deviceName": "cam-top",
-                  "serialNumber": "DEMO0001"
-                }
-              },
-              {
-                "sourceId": "Camera.Side",
-                "acquisitionType": "dp.acquisition.basler.area",
-                "settingsVersion": 1,
-                "connection": { "openOnApplicationStart": true, "transferStart": "PerRequest" },
-                "deviceSettings": { "serialNumber": "DEMO-BASLER-0001" }
-              }
-            ]
-            """;
-        var providerPluginDirectory = Path.Combine(AppContext.BaseDirectory, "plugins");
-        var driverModules = new VisionAcquisitionDriverModuleLoader().Load(providerPluginDirectory);
-        var typeCatalog = new VisionAcquisitionTypeCatalogComposer().Compose(driverModules.Modules);
-        var cameras = VisionAcquisitionMachineConfigurationParser.Parse(machineConfigurationJson);
-        var composition = new VisionAcquisitionMachineConfigurationComposer()
-            .Compose(typeCatalog, cameras);
-        _visionAcquisition = new VisionAcquisitionRuntime(composition);
-        // V2-3：设备连接属于软件生命周期，宿主在进入可运行状态前启动Runtime：
-        // 按ResourceKey真正打开设备；Required失败→NotReady，Optional失败→Degraded。
-        var runtimeState = _visionAcquisition.StartAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
-        // 插件包整体加载失败（例如投放不完整、缺厂商程序集）必须出现在诊断里，
-        // 否则界面只会显示"未安装"，把真实原因藏起来。
-        var driverLoadFailure = driverModules.Failures.Count == 0
-            ? null
-            : "Driver Module 加载失败：" + string.Join(
-                "；",
-                driverModules.Failures.Select(failure => failure.AssemblyPath + " -> " + failure.Reason));
-        var runtimeFailure = runtimeState == EVisionRuntimeState.Ready
-            ? null
-            : $"采集运行时未就绪（{runtimeState}），部分或全部设备未连接。";
-        var projectedSources = WorkflowVisionSourceCatalog.FromAcquisition(composition);
-        var startupDiagnostic = string.Join(
-            " ",
-            new[] { driverLoadFailure, runtimeFailure }.Where(item => item is not null));
-        _visionSources = startupDiagnostic.Length == 0
-            ? projectedSources
-            : new WorkflowVisionSourceCatalog(projectedSources.Sources.Select(source =>
-                source.IsAvailable || source.Diagnostic is null
-                    ? source
-                    : new WorkflowVisionSourceInfo(
-                        source.SourceId,
-                        source.ProviderId,
-                        source.SharingPolicy,
-                        source.IsAvailable,
-                        source.Diagnostic + " " + startupDiagnostic,
-                        source.AcquisitionMode,
-                        source.Kind)));
+        _vision = new SampleVisionHost();
 
         // 3. 创建新文档
         _workspace.New(recoveryDemo is null ? "新版视觉文件分析" : "异常恢复演示（仅软件模拟）");
         if (recoveryDemo is null) WorkflowImageDemo.PopulateProcessing(_workspace.Navigator!.RootSession);
         else recoveryDemo.Populate(_workspace.Navigator!.RootSession);
-        _workspace.Navigator!.RootSession.PublicDataCatalog
-            .Register<DP.Vision.ImageFrame>("VisionFrame", "显式发布的图像帧", "视觉数据")
-            .Register<BlobAnalysisResult>("VisionBlobs", "显式发布的连通域事实", "视觉数据")
-            .Register<ColorAnalysisResult>("VisionColor", "显式发布的颜色事实", "视觉数据");
+        SampleVisionHost.RegisterPublicData(_workspace.Navigator!.RootSession);
 
         // 4. 连接到设计器控件
         workflowStudioControl1.Workspace = _workspace;
         workflowStudioControl1.NodeEditorExtensions.Register(
             new VisionWinFormsStudioExtension()
-            { FrameSource = _frameScope, FileReader = fileReader });
+            { FrameSource = _vision.FrameScope, FileReader = _vision.FileReader });
         // 采集节点的"逻辑图像源"从本机已发布的源里选，避免手写出机器上不存在的标识；
         // 面阵节点与线扫节点各看各的采集类型，不能互相选到对方的源。
-        workflowStudioControl1.Properties.ChoiceProvider = WorkflowVisionSourceChoices.CreateProvider(_visionSources);
+        workflowStudioControl1.Properties.ChoiceProvider = WorkflowVisionSourceChoices.CreateProvider(_vision.Sources);
 
         // 5. 注册宿主运行能力；节点和 Handler 已由上面的 Runtime Module 成组注册。
         var actions = new WorkflowActionRegistry()
@@ -151,22 +76,7 @@ public partial class Form1 : Form
                 cancellationToken.ThrowIfCancellationRequested();
                 return ValueTask.FromResult(false);
             });
-        var services = new WorkflowServiceProvider()
-            .Add<IImageFileReader>(fileReader)
-            .Add<IBlobAnalyzer>(new OpenCvBlobAnalyzer())
-            .Add<IImagePreprocessor>(new OpenCvImagePreprocessor())
-            .Add<IRegionProcessor>(new OpenCvRegionProcessor())
-            .Add<IBlobSelector>(new BlobSelector())
-            .Add<ICaliperMeasurer>(new CaliperMeasurer())
-            .Add<IRobustLineFitter>(new RobustLineFitter())
-            .Add<IColorAnalyzer>(new RgbColorAnalyzer())
-            .Add<IEdgeMeasurer>(new OpenCvEdgeMeasurer())
-            .Add<ITemplateLocator>(new OpenCvTemplateLocator())
-            .Add<ITemplatePoseLocator>(new OpenCvTemplatePoseLocator())
-            .Add<IWorkflowVisionFrameScope>(_frameScope)
-            .Add<IWorkflowVisionFolderSource>(acquisition)
-            .Add<IVisionAcquisition>(_visionAcquisition)
-            .Add<IWorkflowVisionSourceCatalog>(_visionSources)
+        var services = _vision.AddServices(new WorkflowServiceProvider())
             .Add<IWorkflowActionRegistry>(actions)
             .Add<IWorkflowConditionRegistry>(conditions)
             .Add<IWorkflowSignalService>(new WorkflowSignalService())
@@ -180,13 +90,7 @@ public partial class Form1 : Form
             .Add<IWorkflowProcessService>(new DemoProcessService())
             .Add<IWorkflowProductFlowService>(new DemoProductFlowService())
             .Add<IWorkflowWaferRobotService>(new DemoWaferRobotService())
-            .Add<IWorkflowRecoveryService>(new DemoRecoveryService())
-            // 准备服务只做校验；退役上一轮资源是运行所有者的职责，只有根运行宿主持有它（AR-01 阶段2）。
-            .Add<IWorkflowRunPreparationService>(_frameScope)
-            .Add<IWorkflowRunResourceOwner>(_frameScope)
-            // 本轮作用域取得：外部回调缓冲源要在采集节点之前布防。桥接是 Kernel 与采集侧之间唯一的连接点，
-            // 嵌套调用点不解析 IWorkflowRunScopeOwner，因此结构上无法重新布防或清空父运行队列。
-            .Add<IWorkflowRunScopeOwner>(new VisionAcquisitionRunScope(_visionAcquisition));
+            .Add<IWorkflowRecoveryService>(new DemoRecoveryService());
         recoveryDemo?.ConfigureServices(services, _nodeCatalog, handlers, actions);
         _runtimeContext = new WorkflowContext(services);
         _runtimeHost = new WorkflowRuntimeHost(_nodeCatalog, handlers);
@@ -239,7 +143,7 @@ public partial class Form1 : Form
             try { await _runtimeHost.StopAsync(); }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
             // 设备会话必须异步释放；放在这里等待，避免在同步释放路径上阻塞UI线程。
-            try { await _visionAcquisition.DisposeAsync(); }
+            try { await _vision.Acquisition.DisposeAsync(); }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
             DisposeRuntimeResources();
             BeginInvoke(new Action(Close));
@@ -264,7 +168,7 @@ public partial class Form1 : Form
         _operatorService.Dispose();
         _runtimeBinding.Dispose();
         _runtimeHost.Dispose();
-        _frameScope.Dispose();
+        _vision.FrameScope.Dispose();
         _workspace.Dispose();
     }
 }
