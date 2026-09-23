@@ -98,7 +98,6 @@ internal static class WorkflowPropertyChineseMetadata
 
     /// <summary>根据属性名称推断中文分类。</summary>
     /// <param name="name">名称。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static string ResolveCategory(string name)
     {
         if (name is "Id" or "Title") return "基本信息";

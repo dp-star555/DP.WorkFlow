@@ -55,9 +55,6 @@ public sealed class WorkflowDiagnosticsControl : UserControl
 
     public bool CanRun => _model?.CanRun == true;
 
-    /// <summary>处理“Configuration Changed”事件。</summary>
-    /// <param name="dependencyObject">“dependencyObject”参数。</param>
-    /// <param name="e">事件参数。</param>
     private static void OnConfigurationChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs e) =>
         ((WorkflowDiagnosticsControl)dependencyObject).RecreateModel();
 
@@ -83,9 +80,6 @@ public sealed class WorkflowDiagnosticsControl : UserControl
         _model = null;
     }
 
-    /// <summary>处理“Model Changed”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnModelChanged(object? sender, EventArgs e)
     {
         if (Dispatcher.CheckAccess())
@@ -97,9 +91,6 @@ public sealed class WorkflowDiagnosticsControl : UserControl
     /// <summary>刷新Items。</summary>
     private void RefreshItems() => _list.ItemsSource = _model?.Items;
 
-    /// <summary>处理“Double Click”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (_list.SelectedItem is WorkflowDiagnosticItem item)
@@ -107,10 +98,6 @@ public sealed class WorkflowDiagnosticsControl : UserControl
     }
 
     /// <summary>创建并冻结指定 RGB 颜色的 WPF 画刷。</summary>
-    /// <param name="red">“red”参数。</param>
-    /// <param name="green">“green”参数。</param>
-    /// <param name="blue">“blue”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static SolidColorBrush Brush(byte red, byte green, byte blue)
     {
         var brush = new SolidColorBrush(Color.FromRgb(red, green, blue));

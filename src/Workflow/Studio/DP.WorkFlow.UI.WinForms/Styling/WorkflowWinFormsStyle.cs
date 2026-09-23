@@ -4,16 +4,6 @@ namespace DP.WorkFlow.UI.WinForms;
 internal static class WorkflowWinFormsStyle
 {
     /// <summary>保存 WinForms 工作流界面的颜色调色板。</summary>
-    /// <param name="Window">“Window”参数。</param>
-    /// <param name="Surface">“Surface”参数。</param>
-    /// <param name="Control">“Control”参数。</param>
-    /// <param name="Border">“Border”参数。</param>
-    /// <param name="Text">“Text”参数。</param>
-    /// <param name="MutedText">“MutedText”参数。</param>
-    /// <param name="Accent">“Accent”参数。</param>
-    /// <param name="Selection">“Selection”参数。</param>
-    /// <param name="SelectionText">“SelectionText”参数。</param>
-    /// <param name="Grid">“Grid”参数。</param>
     internal readonly record struct Palette(
         Color Window,
         Color Surface,
@@ -39,7 +29,6 @@ internal static class WorkflowWinFormsStyle
         Color.FromArgb(67, 67, 70));
 
     /// <summary>应用。</summary>
-    /// <param name="root">“root”参数。</param>
     internal static void Apply(Control root)
     {
         var palette = Get();
@@ -47,8 +36,6 @@ internal static class WorkflowWinFormsStyle
     }
 
     /// <summary>应用Control。</summary>
-    /// <param name="control">“control”参数。</param>
-    /// <param name="palette">“palette”参数。</param>
     private static void ApplyControl(Control control, Palette palette)
     {
         // 自绘现代控件拥有自己的完整主题树，外层宿主不能再递归改写其内部原生控件。
@@ -119,8 +106,6 @@ internal static class WorkflowWinFormsStyle
     }
 
     /// <summary>应用Tree Nodes。</summary>
-    /// <param name="nodes">“nodes”参数。</param>
-    /// <param name="palette">“palette”参数。</param>
     private static void ApplyTreeNodes(TreeNodeCollection nodes, Palette palette)
     {
         foreach (TreeNode node in nodes)
@@ -131,8 +116,6 @@ internal static class WorkflowWinFormsStyle
     }
 
     /// <summary>应用Grid。</summary>
-    /// <param name="grid">“grid”参数。</param>
-    /// <param name="palette">“palette”参数。</param>
     private static void ApplyGrid(DataGridView grid, Palette palette)
     {
         grid.BackgroundColor = palette.Surface;

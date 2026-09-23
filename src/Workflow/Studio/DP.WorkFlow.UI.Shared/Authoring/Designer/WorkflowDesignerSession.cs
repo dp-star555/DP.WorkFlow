@@ -102,7 +102,6 @@ public sealed class WorkflowDesignerSession
 
     /// <summary>将画布坐标吸附到当前设计栅格。</summary>
     /// <param name="point">目标坐标。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public WorkflowPoint SnapPoint(WorkflowPoint point) => SnapToGrid
         ? new WorkflowPoint(Math.Round(point.X / 24) * 24, Math.Round(point.Y / 24) * 24)
         : point;
@@ -110,7 +109,6 @@ public sealed class WorkflowDesignerSession
     /// <summary>按节点中心点吸附位置，避免不同尺寸节点无法居中对齐。</summary>
     /// <param name="node">目标画布节点或节点模型。</param>
     /// <param name="position">目标坐标或相对位置。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public WorkflowPoint SnapNodePosition(WorkflowCanvasNode node, WorkflowPoint position)
     {
         ArgumentNullException.ThrowIfNull(node);
@@ -151,7 +149,6 @@ public sealed class WorkflowDesignerSession
     /// <summary>选择或切换一个节点。</summary>
     /// <param name="nodeId">节点标识。</param>
     /// <param name="additive">是否保留现有选择并增选。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool SelectNode(string nodeId, bool additive = false)
     {
         if (!Canvas.Nodes.Any(item => item.Node.Id == nodeId))
@@ -191,7 +188,6 @@ public sealed class WorkflowDesignerSession
 
     /// <summary>选择连接并清除节点选择。</summary>
     /// <param name="connection">目标连接。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool SelectConnection(WorkflowConnectionModel? connection)
     {
         if (connection is not null && !Canvas.Connections.Contains(connection))
@@ -227,7 +223,6 @@ public sealed class WorkflowDesignerSession
     public event EventHandler<WorkflowDesignerChangedEventArgs>? Changed;
 
     /// <summary>返回按分类和显示名称排序的工具箱项目。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public IReadOnlyList<WorkflowToolboxItem> GetToolboxItems() => Catalog.Snapshot().Values
         .Select(descriptor => new WorkflowToolboxItem(
             descriptor.NodeType,
@@ -242,7 +237,6 @@ public sealed class WorkflowDesignerSession
     /// <param name="nodeType">节点类型键。</param>
     /// <param name="x">横坐标。</param>
     /// <param name="y">纵坐标。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public WorkflowCanvasNode AddNode(string nodeType, double x, double y)
     {
         var descriptor = Catalog.GetOrThrow(nodeType);
@@ -296,7 +290,6 @@ public sealed class WorkflowDesignerSession
     /// <param name="connection">目标连接。</param>
     /// <param name="inputSide">插入节点输入端口应使用的边。</param>
     /// <param name="outputSide">插入节点输出端口应使用的边。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public WorkflowCanvasNode? AddNodeOnConnection(
         string nodeType,
         double x,
@@ -378,7 +371,6 @@ public sealed class WorkflowDesignerSession
 
     /// <summary>删除节点及其全部连接。</summary>
     /// <param name="nodeId">节点标识。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool RemoveNode(string nodeId)
     {
         var canvasNode = Canvas.Nodes.FirstOrDefault(item => item.Node.Id == nodeId);
@@ -440,7 +432,6 @@ public sealed class WorkflowDesignerSession
     /// <param name="nodeId">节点标识。</param>
     /// <param name="x">横坐标。</param>
     /// <param name="y">纵坐标。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool MoveNode(string nodeId, double x, double y)
     {
         var item = Canvas.Nodes.FirstOrDefault(node => node.Node.Id == nodeId);
@@ -461,7 +452,6 @@ public sealed class WorkflowDesignerSession
 
     /// <summary>以单个 Undo 操作移动多个节点。</summary>
     /// <param name="positions">节点标识到目标位置的映射。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool MoveNodes(IReadOnlyDictionary<string, WorkflowPoint> positions)
     {
         ArgumentNullException.ThrowIfNull(positions);
@@ -505,7 +495,6 @@ public sealed class WorkflowDesignerSession
     }
 
     /// <summary>删除全部选中节点，并作为一次 Undo 操作。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool RemoveSelectedNodes()
     {
         var selected = new HashSet<string>(_selectedNodeIds, StringComparer.Ordinal);
@@ -541,7 +530,6 @@ public sealed class WorkflowDesignerSession
     }
 
     /// <summary>复制当前单选或框选节点，以及选中节点之间的内部连接。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool CopySelection()
     {
         var selected = new HashSet<string>(_selectedNodeIds, StringComparer.Ordinal);
@@ -568,7 +556,6 @@ public sealed class WorkflowDesignerSession
     }
 
     /// <summary>粘贴最近复制的节点，并将整组内容偏移一个栅格。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public IReadOnlyList<WorkflowCanvasNode> PasteSelection()
     {
         string? json;
@@ -625,7 +612,6 @@ public sealed class WorkflowDesignerSession
 
     /// <summary>按指定方式对齐选中节点。</summary>
     /// <param name="alignment">对齐方式。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool AlignSelectedNodes(WorkflowNodeAlignment alignment)
     {
         var nodes = Canvas.Nodes.Where(item => _selectedNodeIds.Contains(item.Node.Id)).ToArray();
@@ -653,7 +639,6 @@ public sealed class WorkflowDesignerSession
 
     /// <summary>在首尾节点之间等距分布选中节点。</summary>
     /// <param name="distribution">分布方向。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool DistributeSelectedNodes(WorkflowNodeDistribution distribution)
     {
         var nodes = Canvas.Nodes.Where(item => _selectedNodeIds.Contains(item.Node.Id)).ToArray();
@@ -682,7 +667,6 @@ public sealed class WorkflowDesignerSession
     /// <summary>按连接方向执行稳定的分层自动布局。</summary>
     /// <param name="layerSpacing">自动布局的层间距。</param>
     /// <param name="nodeSpacing">同层节点间距。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool AutoLayout(double layerSpacing = 260, double nodeSpacing = 110)
     {
         if (Canvas.Nodes.Count == 0)
@@ -728,7 +712,6 @@ public sealed class WorkflowDesignerSession
     /// <param name="toPort">目标输入端口键。</param>
     /// <param name="fromSide">源连接端点所在边。</param>
     /// <param name="toSide">目标连接端点所在边。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public WorkflowConnectionModel Connect(
         string fromNodeId,
         string fromPort,
@@ -793,7 +776,6 @@ public sealed class WorkflowDesignerSession
     /// <param name="connection">目标连接。</param>
     /// <param name="index">目标元素索引。</param>
     /// <param name="point">目标坐标。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool MoveConnectionWaypoint(
         WorkflowConnectionModel connection,
         int index,
@@ -818,7 +800,6 @@ public sealed class WorkflowDesignerSession
     /// <summary>删除一个手工路径点。</summary>
     /// <param name="connection">目标连接。</param>
     /// <param name="index">目标元素索引。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool RemoveConnectionWaypoint(WorkflowConnectionModel connection, int index)
     {
         ValidateConnection(connection);
@@ -836,7 +817,6 @@ public sealed class WorkflowDesignerSession
     /// <summary>设置连线标签沿路径的位置，并记录一次可撤销操作。</summary>
     /// <param name="connection">目标连接。</param>
     /// <param name="position">目标坐标或相对位置。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool SetConnectionLabelPosition(WorkflowConnectionModel connection, double position)
     {
         ValidateConnection(connection);
@@ -852,7 +832,6 @@ public sealed class WorkflowDesignerSession
 
     /// <summary>删除连接。</summary>
     /// <param name="connection">目标连接。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool RemoveConnection(WorkflowConnectionModel connection)
     {
         ArgumentNullException.ThrowIfNull(connection);
@@ -1038,19 +1017,16 @@ public sealed class WorkflowDesignerSession
 
     /// <summary>获取节点最近运行状态。</summary>
     /// <param name="nodeId">节点标识。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public E_NodeState GetNodeState(string nodeId) =>
         GetNodeRuntimeInfo(nodeId)?.State ?? E_NodeState.Idle;
 
     /// <summary>获取节点最近一次执行的运行信息。</summary>
     /// <param name="nodeId">节点标识。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public WorkflowNodeRuntimeInfo? GetNodeRuntimeInfo(string nodeId) =>
         _runtimeSnapshot?.Nodes.TryGetValue(nodeId, out var info) == true ? info : null;
 
     /// <summary>获取当前停留在指定节点的活动 Token ID。</summary>
     /// <param name="nodeId">节点标识。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public IReadOnlyList<long> GetActiveTokenIds(string nodeId) =>
         _runtimeSnapshot?.ActiveTokens.Values
             .Where(token => string.Equals(token.CurrentNodeId, nodeId, StringComparison.Ordinal))
@@ -1110,7 +1086,6 @@ public sealed class WorkflowDesignerSession
     }
 
     /// <summary>撤销最近一次文档操作。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool Undo()
     {
         if (!_undo.TryPop(out var operation))
@@ -1122,7 +1097,6 @@ public sealed class WorkflowDesignerSession
     }
 
     /// <summary>重做最近一次撤销操作。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool Redo()
     {
         if (!_redo.TryPop(out var operation))
@@ -1136,7 +1110,6 @@ public sealed class WorkflowDesignerSession
     /// <summary>获取节点指定方向且在设计器中启用的端口。</summary>
     /// <param name="nodeId">节点标识。</param>
     /// <param name="direction">端口方向或路径方向。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public IReadOnlyList<WorkflowPortDescriptor> GetPorts(string nodeId, WorkflowPortDirection direction)
     {
         var canvasNode = GetCanvasNodeOrThrow(nodeId);
@@ -1149,7 +1122,6 @@ public sealed class WorkflowDesignerSession
     /// <summary>获取节点声明的全部端口，包括在设计器中禁用的输出端口。</summary>
     /// <param name="nodeId">节点标识。</param>
     /// <param name="direction">端口方向或路径方向。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public IReadOnlyList<WorkflowPortDescriptor> GetDeclaredPorts(string nodeId, WorkflowPortDirection direction)
     {
         var node = GetCanvasNodeOrThrow(nodeId).Node;
@@ -1162,7 +1134,6 @@ public sealed class WorkflowDesignerSession
     /// <param name="nodeId">节点标识。</param>
     /// <param name="portKey">端口键。</param>
     /// <param name="visible">是否显示端口。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool SetOutputPortVisible(string nodeId, string portKey, bool visible)
     {
         var node = GetCanvasNodeOrThrow(nodeId);
@@ -1266,7 +1237,6 @@ public sealed class WorkflowDesignerSession
 
     /// <summary>查找指定画布节点；不存在时抛出异常。</summary>
     /// <param name="nodeId">节点标识。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private WorkflowCanvasNode GetCanvasNodeOrThrow(string nodeId) =>
         Canvas.Nodes.FirstOrDefault(item => item.Node.Id == nodeId)
         ?? throw new KeyNotFoundException($"画布中不存在节点 {nodeId}。");
@@ -1274,7 +1244,6 @@ public sealed class WorkflowDesignerSession
     /// <summary>清理连接拐点，移除重复点和不必要的共线点。</summary>
     /// <param name="points">路径点或候选点集合。</param>
     /// <param name="tolerance">比较或命中测试允许的误差。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static WorkflowPoint[] NormalizeWaypoints(
         IEnumerable<WorkflowPoint> points,
         double tolerance = 6)
@@ -1317,14 +1286,12 @@ public sealed class WorkflowDesignerSession
     /// <param name="first">第一个值或坐标。</param>
     /// <param name="second">第二个值或坐标。</param>
     /// <param name="tolerance">比较或命中测试允许的误差。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static bool NearlyEqual(WorkflowPoint first, WorkflowPoint second, double tolerance = 0.001) =>
         Math.Abs(first.X - second.X) <= tolerance && Math.Abs(first.Y - second.Y) <= tolerance;
 
     /// <summary>计算两个点之间的欧氏距离。</summary>
     /// <param name="first">第一个值或坐标。</param>
     /// <param name="second">第二个值或坐标。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static double Distance(WorkflowPoint first, WorkflowPoint second) =>
         Math.Sqrt(Math.Pow(first.X - second.X, 2) + Math.Pow(first.Y - second.Y, 2));
 
@@ -1353,7 +1320,6 @@ public sealed class WorkflowDesignerSession
     /// <param name="node">目标画布节点或节点模型。</param>
     /// <param name="portKey">端口键。</param>
     /// <param name="direction">端口方向或路径方向。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private WorkflowPortDescriptor GetPortOrThrow(
         IWorkflowNodeModel node,
         string portKey,
@@ -1406,7 +1372,6 @@ public sealed class WorkflowDesignerSession
 
     /// <summary>根据垂直边上的最大端口数计算节点所需高度。</summary>
     /// <param name="maximumVerticalPorts">节点任一垂直边上的最大端口数量。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static double CalculateRequiredNodeHeight(int maximumVerticalPorts) => Math.Max(
         WorkflowDesignerGeometry.MinimumNodeHeight,
         WorkflowDesignerGeometry.HeaderHeight + WorkflowDesignerGeometry.NodeBodyVerticalPadding
@@ -1414,14 +1379,12 @@ public sealed class WorkflowDesignerSession
 
     /// <summary>根据节点类型生成画布内不重复的节点标识。</summary>
     /// <param name="nodeType">节点类型键。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private string CreateUniqueNodeId(string nodeType) =>
         CreateUniqueNodeId(nodeType, new HashSet<string>(Canvas.Nodes.Select(item => item.Node.Id), StringComparer.Ordinal));
 
     /// <summary>根据节点类型生成画布内不重复的节点标识。</summary>
     /// <param name="nodeType">节点类型键。</param>
     /// <param name="reserved">已经占用、不可重复使用的标识集合。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static string CreateUniqueNodeId(string nodeType, IReadOnlySet<string> reserved)
     {
         var prefix = new string(nodeType.Where(char.IsLetterOrDigit).ToArray());

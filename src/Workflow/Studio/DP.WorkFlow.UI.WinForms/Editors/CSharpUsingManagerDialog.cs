@@ -46,7 +46,6 @@ internal sealed partial class CSharpUsingManagerDialog : Form
     }
 
     /// <summary>使用已有 using 集合初始化运行时窗口。</summary>
-    /// <returns>返回处理结果。</returns>
     public CSharpUsingManagerDialog(IEnumerable<string> namespaces) : this()
     {
         ArgumentNullException.ThrowIfNull(namespaces);
@@ -81,7 +80,6 @@ internal sealed partial class CSharpUsingManagerDialog : Form
     }
 
     /// <summary>执行 Replace Items 相关处理。</summary>
-    /// <param name="items">“items”参数。</param>
     private void ReplaceItems(IEnumerable<string> items)
     {
         var selected = _imports.SelectedItem as string;
@@ -94,7 +92,6 @@ internal sealed partial class CSharpUsingManagerDialog : Form
 
     /// <summary>执行 Normalize 相关处理。</summary>
     /// <param name="value">要转换或设置的值。</param>
-    /// <returns>返回处理结果。</returns>
     private static string Normalize(string? value)
     {
         var result = value?.Trim() ?? string.Empty;
@@ -104,7 +101,6 @@ internal sealed partial class CSharpUsingManagerDialog : Form
     }
 
     /// <summary>执行 All 相关处理。</summary>
-    /// <returns>返回处理结果。</returns>
     private static bool IsValidNamespace(string value) => value.Length > 0 && value.Split('.').All(segment =>
         segment.Length > 0 && (char.IsLetter(segment[0]) || segment[0] == '_')
         && segment.Skip(1).All(character => char.IsLetterOrDigit(character) || character == '_'));

@@ -228,9 +228,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         _model = null;
     }
 
-    /// <summary>处理“Model Changed”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnModelChanged(object? sender, EventArgs e)
     {
         if (IsDisposed || _editing)
@@ -449,7 +446,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>建立仅供分类和说明定位使用的逻辑属性树。</summary>
-    /// <param name="entries">“entries”参数。</param>
     private void BuildPropertyTree(IReadOnlyList<WorkflowPropertyEntry> entries)
     {
         foreach (var category in entries.GroupBy(entry => entry.Category, StringComparer.Ordinal))
@@ -494,7 +490,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>创建Column Header。</summary>
-    /// <returns>返回处理结果。</returns>
     private Control CreateColumnHeader()
     {
         var header = new TableLayoutPanel
@@ -510,8 +505,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>创建标准“属性名称/值”两列表格行，并递归连接参数说明事件。</summary>
-    /// <param name="entry">“entry”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private Control CreatePropertyRow(WorkflowPropertyEntry entry)
     {
         var row = new TableLayoutPanel
@@ -544,8 +537,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     /// 按显式 EditorKey 和共享层推断出的 EditorKind 选择具体 WinForms 编辑器。
     /// 这里是新增普通参数编辑器时最主要的平台扩展入口。
     /// </summary>
-    /// <param name="entry">“entry”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private Control CreateEditor(WorkflowPropertyEntry entry)
     {
         if (entry.EditorKind == WorkflowPropertyEditorKind.ReadOnly)
@@ -605,8 +596,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>创建候选编辑器：只允许从宿主已发布的候选集中选择，避免手写出机器上不存在的标识。</summary>
-    /// <param name="entry">“entry”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private Control CreateChoiceEditor(WorkflowPropertyEntry entry)
     {
         var combo = EditorCombo();
@@ -621,8 +610,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>创建Path Editor。</summary>
-    /// <param name="entry">“entry”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private Control CreatePathEditor(WorkflowPropertyEntry entry)
     {
         var text = EditorText(Convert.ToString(entry.Value) ?? string.Empty);
@@ -674,7 +661,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>执行 Edit Script 相关处理。</summary>
-    /// <param name="entry">“entry”参数。</param>
     private void EditScript(WorkflowPropertyEntry entry)
     {
         var page = WorkflowScriptEditorPageModel.CreateBuffer(Convert.ToString(entry.Value));
@@ -739,7 +725,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>执行 Edit Structured Value 相关处理。</summary>
-    /// <param name="entry">“entry”参数。</param>
     private void EditStructuredValue(WorkflowPropertyEntry entry)
     {
         if (WorkflowCollectionTableModel.TryCreate(entry, out var table) && table is not null)
@@ -777,8 +762,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>执行 Edit Collection Table 相关处理。</summary>
-    /// <param name="table">“table”参数。</param>
-    /// <param name="displayName">“displayName”参数。</param>
     private void EditCollectionTable(WorkflowCollectionTableModel table, string displayName)
     {
         using var grid = new DataGridView
@@ -822,8 +805,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     /// 创建 WorkflowInput&lt;T&gt; 编辑器：左侧选择 Literal/Binding，右侧显示固定值编辑器
     /// 或强类型树形绑定按钮。切换到绑定模式时立即打开绑定选择窗口。
     /// </summary>
-    /// <param name="entry">“entry”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private Control CreateWorkflowInputEditor(WorkflowPropertyEntry entry)
     {
         var panel = new TableLayoutPanel
@@ -905,8 +886,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>统一执行参数转换、错误提示和可选界面重建，避免各编辑器重复异常处理。</summary>
-    /// <param name="action">“action”参数。</param>
-    /// <param name="rebuild">“rebuild”参数。</param>
     private void TryEdit(Action action, bool rebuild = false)
     {
         if (_building)
@@ -947,7 +926,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     /// <summary>创建Category。</summary>
     /// <param name="category">“category”参数。</param>
     /// <param name="count">分类中当前可见的参数数量。</param>
-    /// <returns>返回处理结果。</returns>
     private Control CreateCategory(string category, int count)
     {
         var button = new Button
@@ -979,8 +957,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>执行 Matches Search 相关处理。</summary>
-    /// <param name="entry">“entry”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private bool MatchesSearch(WorkflowPropertyEntry entry)
     {
         var search = _search.Text.Trim();
@@ -993,13 +969,10 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>显示Details。</summary>
-    /// <param name="entry">“entry”参数。</param>
     private void ShowDetails(WorkflowPropertyEntry entry) =>
         _details.Text = $"{entry.DisplayName}  ·  {entry.ValueType.Name}\r\n{(string.IsNullOrWhiteSpace(entry.Description) ? "暂无参数说明。" : entry.Description)}\r\n内部名称：{entry.Name}";
 
     /// <summary>递归连接参数行及所有子编辑器，使点击任意位置都能更新底部说明。</summary>
-    /// <param name="control">“control”参数。</param>
-    /// <param name="entry">“entry”参数。</param>
     private void WireDetailsEvents(Control control, WorkflowPropertyEntry entry)
     {
         void Select()
@@ -1050,7 +1023,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     };
 
     /// <summary>执行 Editor Combo 相关处理。</summary>
-    /// <returns>返回处理结果。</returns>
     private ModernSelect EditorCombo() => new()
     {
         Dock = DockStyle.Fill,

@@ -15,8 +15,6 @@ public sealed class WorkflowBlockMappingEditorWindow : Window
     private readonly ObservableCollection<OutputItem> _outputs;
 
     /// <summary>初始化复合块输入输出映射编辑窗口。</summary>
-    /// <param name="model">“model”参数。</param>
-    /// <param name="startNodeId">“startNodeId”参数。</param>
     public WorkflowBlockMappingEditorWindow(WorkflowBlockMappingEditorModel model, string startNodeId)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
@@ -57,8 +55,6 @@ public sealed class WorkflowBlockMappingEditorWindow : Window
     }
 
     /// <summary>创建Input Grid。</summary>
-    /// <param name="candidates">“candidates”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private DataGrid CreateInputGrid(IReadOnlyList<WorkflowBindingCandidate> candidates)
     {
         var grid = Grid();
@@ -71,8 +67,6 @@ public sealed class WorkflowBlockMappingEditorWindow : Window
     }
 
     /// <summary>创建Output Grid。</summary>
-    /// <param name="candidates">“candidates”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private DataGrid CreateOutputGrid(IReadOnlyList<WorkflowBindingCandidate> candidates)
     {
         var grid = Grid();
@@ -112,10 +106,6 @@ public sealed class WorkflowBlockMappingEditorWindow : Window
     }
 
     /// <summary>执行 With Commands 相关处理。</summary>
-    /// <param name="grid">“grid”参数。</param>
-    /// <param name="add">“add”参数。</param>
-    /// <param name="remove">“remove”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static FrameworkElement WithCommands(DataGrid grid, Action add, Action remove)
     {
         var addButton = Button("添加");
@@ -133,8 +123,6 @@ public sealed class WorkflowBlockMappingEditorWindow : Window
     }
 
     /// <summary>删除Selected。</summary>
-    /// <param name="grid">“grid”参数。</param>
-    /// <param name="collection">“collection”参数。</param>
     private static void RemoveSelected<T>(DataGrid grid, ICollection<T> collection)
     {
         foreach (var item in grid.SelectedItems.Cast<T>().ToArray())
@@ -169,9 +157,6 @@ public sealed class WorkflowBlockMappingEditorWindow : Window
         Width = new DataGridLength(1, DataGridLengthUnitType.Star)
     };
 
-    /// <summary>尝试执行“Candidates”。</summary>
-    /// <param name="factory">“factory”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static IReadOnlyList<WorkflowBindingCandidate> TryCandidates(Func<IReadOnlyList<WorkflowBindingCandidate>> factory)
     {
         try { return factory(); }
@@ -180,8 +165,6 @@ public sealed class WorkflowBlockMappingEditorWindow : Window
     }
 
     /// <summary>执行 Binding Values 相关处理。</summary>
-    /// <param name="candidates">“candidates”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static string[] BindingValues(IEnumerable<WorkflowBindingCandidate> candidates) => new[] { string.Empty }
         .Concat(candidates.Select(item => item.ToBindingKey().ToString()))
         .Distinct(StringComparer.Ordinal)
@@ -189,7 +172,6 @@ public sealed class WorkflowBlockMappingEditorWindow : Window
 
     /// <summary>执行 Parse Binding 相关处理。</summary>
     /// <param name="text">要显示或处理的文本。</param>
-    /// <returns>返回处理结果。</returns>
     private static WorkflowBindingKey? ParseBinding(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
@@ -206,10 +188,6 @@ public sealed class WorkflowBlockMappingEditorWindow : Window
     };
 
     /// <summary>创建并冻结指定 RGB 颜色的 WPF 画刷。</summary>
-    /// <param name="red">“red”参数。</param>
-    /// <param name="green">“green”参数。</param>
-    /// <param name="blue">“blue”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static SolidColorBrush Brush(byte red, byte green, byte blue)
     {
         var brush = new SolidColorBrush(Color.FromRgb(red, green, blue));

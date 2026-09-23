@@ -14,8 +14,6 @@ public sealed class WorkflowBindingSelectorWindow : Window
     private readonly WorkflowBindingKey? _current;
 
     /// <summary>初始化工作流数据绑定选择窗口。</summary>
-    /// <param name="candidates">“candidates”参数。</param>
-    /// <param name="current">“current”参数。</param>
     public WorkflowBindingSelectorWindow(
         IEnumerable<WorkflowBindingCandidate> candidates,
         WorkflowBindingKey? current = null)
@@ -76,7 +74,6 @@ public sealed class WorkflowBindingSelectorWindow : Window
     /// <summary>创建Item。</summary>
     /// <param name="source">源路径点集合。</param>
     /// <param name="selected">“selected”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private TreeViewItem CreateItem(WorkflowBindingTreeNode source, ref TreeViewItem? selected)
     {
         var item = new TreeViewItem

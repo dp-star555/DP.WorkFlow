@@ -53,14 +53,12 @@ public static class WorkflowCSharpScriptEditorModel
 
     /// <summary>将脚本文本规范化为完整的程序源代码。</summary>
     /// <param name="source">源数据或路径点集合。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static string EnsureProgramSource(string? source) => WorkflowCSharpEditorSource.Normalize(source);
 
     /// <summary>编译脚本并返回结构化诊断项。</summary>
     /// <param name="source">源数据或路径点集合。</param>
     /// <param name="referencePaths">脚本显式引用的 DLL 路径。</param>
     /// <param name="scriptNodeAssembly">可选具体脚本节点程序集。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static IReadOnlyList<RoslynScriptDiagnostic> GetDiagnosticItems(
         string? source,
         IEnumerable<string>? referencePaths = null,
@@ -71,7 +69,6 @@ public static class WorkflowCSharpScriptEditorModel
     /// <param name="script">脚本文本。</param>
     /// <param name="referencePaths">脚本显式引用的 DLL 路径。</param>
     /// <param name="scriptNodeAssembly">可选具体脚本节点程序集。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static IReadOnlyList<string> GetDiagnostics(
         string? script,
         IEnumerable<string>? referencePaths = null,
@@ -81,7 +78,6 @@ public static class WorkflowCSharpScriptEditorModel
 
     /// <summary>将脚本诊断格式化为包含位置的文本。</summary>
     /// <param name="item">目标数据项。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static string FormatDiagnostic(RoslynScriptDiagnostic item)
     {
         var location = item.Line > 0 ? $" ({item.Line},{item.Column})" : string.Empty;
@@ -99,7 +95,6 @@ public static class WorkflowCSharpScriptEditorModel
     /// <param name="text">输入文本。</param>
     /// <param name="caretIndex">光标索引。</param>
     /// <param name="cancellationToken">用于取消异步操作的令牌。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static async Task<IReadOnlyList<string>> GetSemanticCompletionsAsync(string text, int caretIndex, CancellationToken cancellationToken = default) =>
         (await Service.GetCompletionsAsync(text, caretIndex, CreateEnvironment(), cancellationToken).ConfigureAwait(false))
         .Select(item => item.InsertionText).ToArray();
@@ -107,30 +102,25 @@ public static class WorkflowCSharpScriptEditorModel
     /// <summary>同步获取指定光标位置的补全项。</summary>
     /// <param name="text">输入文本。</param>
     /// <param name="caretIndex">光标索引。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static IReadOnlyList<string> GetCompletions(string text, int caretIndex) =>
         GetSemanticCompletionsAsync(text, caretIndex).GetAwaiter().GetResult();
 
     /// <summary>异步计算脚本的语法高亮区间。</summary>
     /// <param name="text">输入文本。</param>
     /// <param name="cancellationToken">用于取消异步操作的令牌。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static Task<IReadOnlyList<RoslynScriptHighlightSpan>> GetHighlightSpansAsync(string text, CancellationToken cancellationToken = default) =>
         Service.GetHighlightSpansAsync(text, CreateEnvironment(), cancellationToken);
 
     /// <summary>读取脚本中的 using 命名空间。</summary>
     /// <param name="script">脚本文本。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static IReadOnlyList<string> GetUsings(string? script) => RoslynScriptService.GetUsings(script);
     /// <summary>替换脚本中的 using 命名空间。</summary>
     /// <param name="script">脚本文本。</param>
     /// <param name="namespaces">using 命名空间集合。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static string SetUsings(string? script, IEnumerable<string> namespaces) => RoslynScriptService.SetUsings(script, namespaces);
     /// <summary>计算当前补全单词的起始位置。</summary>
     /// <param name="text">输入文本。</param>
     /// <param name="caretIndex">光标索引。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static int GetCompletionStart(string text, int caretIndex) => RoslynScriptService.GetCompletionStart(text, caretIndex);
 }
 

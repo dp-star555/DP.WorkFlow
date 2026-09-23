@@ -92,9 +92,6 @@ public sealed class WorkflowToolboxControl : UserControl
         });
     }
 
-    /// <summary>处理“Tree Mouse Move”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnTreeMouseMove(object sender, MouseEventArgs e)
     {
         if (e.LeftButton != MouseButtonState.Pressed
@@ -108,10 +105,6 @@ public sealed class WorkflowToolboxControl : UserControl
     }
 
     /// <summary>创建并冻结指定 RGB 颜色的 WPF 画刷。</summary>
-    /// <param name="red">“red”参数。</param>
-    /// <param name="green">“green”参数。</param>
-    /// <param name="blue">“blue”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static SolidColorBrush Brush(byte red, byte green, byte blue)
     {
         var brush = new SolidColorBrush(Color.FromRgb(red, green, blue));

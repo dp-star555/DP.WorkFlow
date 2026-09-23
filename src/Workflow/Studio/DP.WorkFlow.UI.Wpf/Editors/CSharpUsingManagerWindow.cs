@@ -20,8 +20,6 @@ internal sealed class CSharpUsingManagerWindow : Window
     private readonly ComboBox _input;
 
     /// <summary>初始化 C# using 命名空间管理窗口。</summary>
-    /// <param name="owner">“owner”参数。</param>
-    /// <param name="namespaces">“namespaces”参数。</param>
     public CSharpUsingManagerWindow(Window owner, IEnumerable<string> namespaces)
     {
         Owner = owner;
@@ -107,7 +105,6 @@ internal sealed class CSharpUsingManagerWindow : Window
     }
 
     /// <summary>执行 Replace Items 相关处理。</summary>
-    /// <param name="values">“values”参数。</param>
     private void ReplaceItems(IEnumerable<string> values)
     {
         var result = values.Select(Normalize).Where(IsValid).Distinct(StringComparer.Ordinal).OrderBy(item => item, StringComparer.Ordinal).ToArray();
@@ -116,12 +113,10 @@ internal sealed class CSharpUsingManagerWindow : Window
     }
 
     /// <summary>执行 Thickness 相关处理。</summary>
-    /// <returns>返回处理结果。</returns>
     private static void Add(Grid grid, UIElement element, int row) { Grid.SetRow(element, row); grid.Children.Add(element); }
     private static Button Button(string text) => new() { Content = text, Margin = new Thickness(4), Padding = new Thickness(10, 4, 10, 4) };
     /// <summary>执行 Normalize 相关处理。</summary>
     /// <param name="value">要转换或设置的值。</param>
-    /// <returns>返回处理结果。</returns>
     private static string Normalize(string? value)
     {
         var result = value?.Trim() ?? string.Empty;
@@ -130,7 +125,6 @@ internal sealed class CSharpUsingManagerWindow : Window
         return result.Trim().TrimEnd(';').Trim();
     }
     /// <summary>执行 All 相关处理。</summary>
-    /// <returns>返回处理结果。</returns>
     private static bool IsValid(string value) => value.Length > 0 && value.Split('.').All(segment => segment.Length > 0
         && (char.IsLetter(segment[0]) || segment[0] == '_')
         && segment.Skip(1).All(character => char.IsLetterOrDigit(character) || character == '_'));

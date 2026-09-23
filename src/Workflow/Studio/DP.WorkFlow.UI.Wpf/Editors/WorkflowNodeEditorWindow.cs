@@ -34,9 +34,6 @@ public sealed class WorkflowNodeEditorWindow : Window
     private readonly Action<IWorkflowBlockMappingNode>? _editMappings;
 
     /// <summary>初始化节点综合编辑窗口并创建对应页面。</summary>
-    /// <param name="model">“model”参数。</param>
-    /// <param name="renderers">“renderers”参数。</param>
-    /// <param name="editMappings">“editMappings”参数。</param>
     public WorkflowNodeEditorWindow(
         WorkflowNodeEditorModel model,
         IEnumerable<IWorkflowWpfNodeEditorPageRenderer>? renderers = null,
@@ -94,7 +91,6 @@ public sealed class WorkflowNodeEditorWindow : Window
     }
 
     /// <summary>创建Header。</summary>
-    /// <returns>返回处理结果。</returns>
     private FrameworkElement CreateHeader()
     {
         var grid = new Grid { Margin = new Thickness(12, 8, 12, 8) };
@@ -133,7 +129,6 @@ public sealed class WorkflowNodeEditorWindow : Window
     }
 
     /// <summary>创建Workspace。</summary>
-    /// <returns>返回处理结果。</returns>
     private FrameworkElement CreateWorkspace()
     {
         var propertiesPage = _model.Pages.Single(page => page.Kind == WorkflowNodeEditorPageKind.Properties);
@@ -166,7 +161,6 @@ public sealed class WorkflowNodeEditorWindow : Window
     }
 
     /// <summary>应用Changes。</summary>
-    /// <returns>返回处理结果。</returns>
     private bool ApplyChanges()
     {
         try
@@ -194,8 +188,6 @@ public sealed class WorkflowNodeEditorWindow : Window
     }
 
     /// <summary>创建Page Element。</summary>
-    /// <param name="page">“page”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private FrameworkElement CreatePageElement(WorkflowNodeEditorPageDescriptor page)
     {
         var rendererKey = ResolveRendererKey(page);
@@ -217,8 +209,6 @@ public sealed class WorkflowNodeEditorWindow : Window
     }
 
     /// <summary>创建Properties。</summary>
-    /// <param name="page">“page”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private FrameworkElement CreateProperties(WorkflowPropertyEditorPageModel page)
     {
         var panel = new WorkflowPropertyPanel
@@ -234,8 +224,6 @@ public sealed class WorkflowNodeEditorWindow : Window
     }
 
     /// <summary>创建Sub DP.WorkFlow。</summary>
-    /// <param name="page">“page”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private FrameworkElement CreateSubWorkflow(WorkflowSubWorkflowEditorPageModel page)
     {
         var designer = new WorkflowDesignerControl { Session = page.Session };
@@ -262,17 +250,12 @@ public sealed class WorkflowNodeEditorWindow : Window
     }
 
     /// <summary>创建Script。</summary>
-    /// <param name="page">“page”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private FrameworkElement CreateScript(WorkflowScriptEditorPageModel page) => new WorkflowCSharpScriptEditorControl
     {
         Page = page
     };
 
     /// <summary>更新Diagnostics。</summary>
-    /// <param name="page">“page”参数。</param>
-    /// <param name="script">“script”参数。</param>
-    /// <param name="list">“list”参数。</param>
     private static void UpdateDiagnostics(WorkflowScriptEditorPageModel page, string script, ListBox list)
     {
         list.Items.Clear();
@@ -282,8 +265,6 @@ public sealed class WorkflowNodeEditorWindow : Window
     }
 
     /// <summary>创建Diagnostics。</summary>
-    /// <param name="page">“page”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static FrameworkElement CreateDiagnostics(WorkflowScriptEditorPageModel page)
     {
         var list = new ListBox();
@@ -331,15 +312,9 @@ public sealed class WorkflowNodeEditorWindow : Window
     }
 
     /// <summary>执行 Thickness 相关处理。</summary>
-    /// <returns>返回处理结果。</returns>
     private static Button Button(string text) => new() { Content = text, Margin = new Thickness(5), Padding = new Thickness(9, 4, 9, 4) };
     /// <summary>执行 From Rgb 相关处理。</summary>
-    /// <param name="r">“r”参数。</param>
-    /// <param name="g">“g”参数。</param>
-    /// <param name="b">“b”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static SolidColorBrush Brush(byte r, byte g, byte b) => new(Color.FromRgb(r, g, b));
     /// <summary>定义 EditorPageItem 类型。</summary>
-    /// <param name="Page">“Page”参数。</param>
     private sealed record EditorPageItem(WorkflowNodeEditorPageDescriptor Page) { public string Title => Page.Title; }
 }

@@ -115,7 +115,6 @@ public sealed class WorkflowBindingTreeModel
 
     /// <summary>判断绑定候选项是否匹配当前搜索条件。</summary>
     /// <param name="candidate">绑定候选项。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private bool Matches(WorkflowBindingCandidate candidate) =>
         candidate.DisplayPath.Contains(SearchText, StringComparison.OrdinalIgnoreCase)
         || candidate.SourceNodeId.Contains(SearchText, StringComparison.OrdinalIgnoreCase)
@@ -125,7 +124,6 @@ public sealed class WorkflowBindingTreeModel
 
     /// <summary>构建公共数据绑定分组节点。</summary>
     /// <param name="candidates">候选项集合。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static WorkflowBindingTreeNode BuildPublicData(IReadOnlyList<WorkflowBindingCandidate> candidates)
     {
         var root = new Builder("公共数据", WorkflowBindingTreeNodeKind.PublicDataGroup);
@@ -163,7 +161,6 @@ public sealed class WorkflowBindingTreeModel
     /// <summary>构建指定来源节点的绑定树分支。</summary>
     /// <param name="sourceNodeId">数据来源节点标识。</param>
     /// <param name="candidates">候选项集合。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static WorkflowBindingTreeNode BuildSource(
         string sourceNodeId,
         IEnumerable<WorkflowBindingCandidate> candidates)
@@ -179,7 +176,6 @@ public sealed class WorkflowBindingTreeModel
 
     /// <summary>生成适合界面显示的类型名称。</summary>
     /// <param name="type">目标 CLR 类型。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static string FriendlyType(Type type)
     {
         var nullable = Nullable.GetUnderlyingType(type);
@@ -216,7 +212,6 @@ public sealed class WorkflowBindingTreeModel
         /// <summary>取得指定子节点；不存在时创建。</summary>
         /// <param name="label">界面显示文本。</param>
         /// <param name="kind">节点、页面或变更类型。</param>
-        /// <returns>返回操作结果；具体含义参见方法说明。</returns>
         public Builder GetOrAdd(string label, WorkflowBindingTreeNodeKind kind)
         {
             var existing = Children.FirstOrDefault(item => item.Label == label && item.Kind == kind);
@@ -228,7 +223,6 @@ public sealed class WorkflowBindingTreeModel
 
         /// <summary>将临时构建节点转换为只读绑定树节点。</summary>
         /// <param name="sourceSearch">可选的来源搜索结果。</param>
-        /// <returns>返回操作结果；具体含义参见方法说明。</returns>
         public WorkflowBindingTreeNode Build(IEnumerable<string>? sourceSearch = null)
         {
             var children = Children

@@ -619,7 +619,6 @@ public sealed partial class WorkflowDesignerControl : Control
 
     /// <summary>生成节点执行序号和耗时显示文本。</summary>
     /// <param name="node">目标画布节点。</param>
-    /// <returns>返回处理结果。</returns>
     private string? GetRuntimeDisplayText(WorkflowCanvasNode node)
     {
         var info = _session?.GetNodeRuntimeInfo(node.Node.Id);
@@ -722,8 +721,6 @@ public sealed partial class WorkflowDesignerControl : Control
     }
 
     /// <summary>将运行耗时格式化为合适精度的文本。</summary>
-    /// <param name="elapsed">“elapsed”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static string FormatElapsed(TimeSpan elapsed) => elapsed.TotalSeconds >= 1
         ? $"{elapsed.TotalSeconds:F2}s"
         : elapsed.TotalMilliseconds >= 10
@@ -780,7 +777,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>判断节点指定方向是否需要显示端口标签。</summary>
     /// <param name="node">目标画布节点。</param>
     /// <param name="direction">端口方向。</param>
-    /// <returns>返回处理结果。</returns>
     private bool ShouldDrawPortLabel(WorkflowCanvasNode node, WorkflowPortDirection direction) =>
         _session?.GetPorts(node.Node.Id, direction).Count > 1;
 
@@ -788,7 +784,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="node">目标画布节点。</param>
     /// <param name="port">“port”参数。</param>
     /// <param name="side">端口所在边。</param>
-    /// <returns>返回处理结果。</returns>
     private bool IsPortConnectedAtSide(
         WorkflowCanvasNode node,
         WorkflowPortDescriptor port,
@@ -802,7 +797,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>命中只有一个输出端口节点的四边快捷连接目标。</summary>
     /// <param name="x">屏幕横坐标。</param>
     /// <param name="y">屏幕纵坐标。</param>
-    /// <returns>返回处理结果。</returns>
     private (WorkflowCanvasNode Node, WorkflowPortDescriptor Port, WorkflowPoint Point, WorkflowPortSide Side)?
         HitSingleOutputSideTarget(double x, double y)
     {
@@ -913,7 +907,6 @@ public sealed partial class WorkflowDesignerControl : Control
 
     /// <summary>点击或拖动概览时，将点击位置移动到主画布中心。</summary>
     /// <param name="location">菜单显示位置。</param>
-    /// <returns>返回处理结果。</returns>
     private bool TryNavigateOverview(Point location)
     {
         if (_session is null || !TryCreateOverviewMapLayout(out var layout) || !layout.MapBounds.Contains(location))
@@ -941,8 +934,6 @@ public sealed partial class WorkflowDesignerControl : Control
     }
 
     /// <summary>计算概览窗口、世界边界及缩放比例；内容未溢出时返回 false。</summary>
-    /// <param name="layout">“layout”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private bool TryCreateOverviewMapLayout(out OverviewMapLayout layout)
     {
         layout = default;
@@ -1011,7 +1002,6 @@ public sealed partial class WorkflowDesignerControl : Control
     }
 
     /// <summary>执行 Current Viewport Canvas Rect 相关处理。</summary>
-    /// <returns>返回处理结果。</returns>
     private WorkflowDesignerRect CurrentViewportCanvasRect()
     {
         var topLeft = WorkflowDesignerGeometry.ScreenToCanvas(_session!, 0, 0);
@@ -1027,10 +1017,6 @@ public sealed partial class WorkflowDesignerControl : Control
         layout.ContentBounds.Y + (float)((y - layout.WorldBounds.Y) * layout.Scale));
 
     /// <summary>定义 OverviewMapLayout 类型。</summary>
-    /// <param name="MapBounds">“MapBounds”参数。</param>
-    /// <param name="ContentBounds">“ContentBounds”参数。</param>
-    /// <param name="WorldBounds">“WorldBounds”参数。</param>
-    /// <param name="Scale">“Scale”参数。</param>
     private readonly record struct OverviewMapLayout(
         RectangleF MapBounds,
         RectangleF ContentBounds,
@@ -1054,7 +1040,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>返回指定屏幕坐标命中的最上层节点。</summary>
     /// <param name="x">屏幕横坐标。</param>
     /// <param name="y">屏幕纵坐标。</param>
-    /// <returns>返回处理结果。</returns>
     private WorkflowCanvasNode? HitNode(double x, double y) => _session?.Canvas.Nodes
         .Reverse()
         .FirstOrDefault(node => WorkflowDesignerGeometry.GetNodeScreenRect(_session, node).Contains(x, y));
@@ -1063,7 +1048,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="x">屏幕横坐标。</param>
     /// <param name="y">屏幕纵坐标。</param>
     /// <param name="direction">端口方向。</param>
-    /// <returns>返回处理结果。</returns>
     private (WorkflowCanvasNode Node, WorkflowPortDescriptor Port, WorkflowPoint Point, WorkflowPortSide Side)? HitPort(
         double x,
         double y,
@@ -1101,7 +1085,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>尝试启动连接中间线段的整体拖动。</summary>
     /// <param name="x">屏幕横坐标。</param>
     /// <param name="y">屏幕纵坐标。</param>
-    /// <returns>返回处理结果。</returns>
     private bool TryBeginSegmentDrag(double x, double y)
     {
         if (_session is null) return false;
@@ -1135,7 +1118,6 @@ public sealed partial class WorkflowDesignerControl : Control
 
     /// <summary>计算连接经过视口转换和障碍物路由后的屏幕路径。</summary>
     /// <param name="connection">目标连接。</param>
-    /// <returns>返回处理结果。</returns>
     private IReadOnlyList<WorkflowPoint> GetConnectionPath(WorkflowConnectionModel connection)
     {
         if (_session is null) return Array.Empty<WorkflowPoint>();
@@ -1168,7 +1150,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="x">屏幕横坐标。</param>
     /// <param name="y">屏幕纵坐标。</param>
     /// <param name="tolerance">命中测试允许的像素距离。</param>
-    /// <returns>返回处理结果。</returns>
     private (WorkflowConnectionModel Connection, WorkflowPortSide InputSide, WorkflowPortSide OutputSide)?
         HitConnectionInsertion(double x, double y, double tolerance)
     {
@@ -1197,7 +1178,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="x">屏幕横坐标。</param>
     /// <param name="y">屏幕纵坐标。</param>
     /// <param name="tolerance">命中测试允许的像素距离。</param>
-    /// <returns>返回处理结果。</returns>
     private WorkflowConnectionModel? HitConnection(double x, double y, double tolerance = 7)
     {
         if (_session is null)
@@ -1217,7 +1197,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>返回指定屏幕坐标命中的连接拐点。</summary>
     /// <param name="x">屏幕横坐标。</param>
     /// <param name="y">屏幕纵坐标。</param>
-    /// <returns>返回处理结果。</returns>
     private (WorkflowConnectionModel Connection, int Index)? HitWaypoint(double x, double y)
     {
         if (_session?.SelectedConnection is not { } connection)
@@ -1236,7 +1215,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="nodeId">节点标识。</param>
     /// <param name="portKey">端口键。</param>
     /// <param name="direction">端口方向。</param>
-    /// <returns>返回处理结果。</returns>
     private WorkflowPortSide FindPortSide(
         string nodeId,
         string portKey,
@@ -1257,7 +1235,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="portKey">端口键。</param>
     /// <param name="direction">端口方向。</param>
     /// <param name="sideOverride">可选的连接端点边覆盖。</param>
-    /// <returns>返回处理结果。</returns>
     private WorkflowPoint? FindPortPoint(
         string nodeId,
         string portKey,
@@ -1308,8 +1285,6 @@ public sealed partial class WorkflowDesignerControl : Control
     }
 
     /// <summary>处理设计会话变化并刷新当前控件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
     {
         if (e.Kind == WorkflowDesignerChangeKind.Document)
@@ -1496,7 +1471,6 @@ public sealed partial class WorkflowDesignerControl : Control
 
     /// <summary>判断连接是否需要显示输出语义标签。</summary>
     /// <param name="connection">目标连接。</param>
-    /// <returns>返回处理结果。</returns>
     private bool ShouldDrawConnectionLabel(WorkflowConnectionModel connection) =>
         _session is not null
         && (_session.GetPorts(connection.FromNodeId, WorkflowPortDirection.Output).Count > 1
@@ -1506,7 +1480,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="graphics">GDI+ 绘图表面。</param>
     /// <param name="font">绘制使用的字体。</param>
     /// <param name="connection">目标连接。</param>
-    /// <returns>返回处理结果。</returns>
     private RectangleF GetConnectionLabelBounds(Graphics graphics, Font font, WorkflowConnectionModel connection)
     {
         var center = PointAlongPath(GetConnectionPath(connection), connection.LabelPosition);
@@ -1521,7 +1494,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>返回指定屏幕坐标命中的连接标签。</summary>
     /// <param name="x">屏幕横坐标。</param>
     /// <param name="y">屏幕纵坐标。</param>
-    /// <returns>返回处理结果。</returns>
     private WorkflowConnectionModel? HitConnectionLabel(double x, double y)
     {
         if (_session is null) return null;
@@ -1535,7 +1507,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>计算连接路径指定相对位置处的坐标。</summary>
     /// <param name="points">路径点集合。</param>
     /// <param name="position">“position”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static WorkflowPoint PointAlongPath(IReadOnlyList<WorkflowPoint> points, double position)
     {
         if (points.Count == 0) return default;
@@ -1557,7 +1528,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="points">路径点集合。</param>
     /// <param name="x">屏幕横坐标。</param>
     /// <param name="y">屏幕纵坐标。</param>
-    /// <returns>返回处理结果。</returns>
     private static double ProjectPathPosition(IReadOnlyList<WorkflowPoint> points, double x, double y)
     {
         if (points.Count < 2) return 0.5;
@@ -1589,7 +1559,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>计算两点之间的欧氏距离。</summary>
     /// <param name="first">第一个坐标或矩形。</param>
     /// <param name="second">第二个坐标或矩形。</param>
-    /// <returns>返回处理结果。</returns>
     private static double Distance(WorkflowPoint first, WorkflowPoint second) =>
         Math.Sqrt(Math.Pow(second.X - first.X, 2) + Math.Pow(second.Y - first.Y, 2));
 
@@ -1597,7 +1566,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="connection">目标连接。</param>
     /// <param name="start">路径起点。</param>
     /// <param name="end">路径终点。</param>
-    /// <returns>返回处理结果。</returns>
     private WorkflowDesignerRect[] GetConnectionObstacles(
         WorkflowConnectionModel connection,
         WorkflowPoint start,
@@ -1620,7 +1588,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>判断两个矩形是否相交或接触。</summary>
     /// <param name="first">第一个坐标或矩形。</param>
     /// <param name="second">第二个坐标或矩形。</param>
-    /// <returns>返回处理结果。</returns>
     private static bool RectanglesOverlap(WorkflowDesignerRect first, WorkflowDesignerRect second) =>
         first.X <= second.X + second.Width && first.X + first.Width >= second.X
         && first.Y <= second.Y + second.Height && first.Y + first.Height >= second.Y;
@@ -1628,7 +1595,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>调整路径以避开与其相交的节点障碍物。</summary>
     /// <param name="route">“route”参数。</param>
     /// <param name="connection">目标连接。</param>
-    /// <returns>返回处理结果。</returns>
     private IReadOnlyList<WorkflowPoint> AvoidNodeObstacles(
         IReadOnlyList<WorkflowPoint> route,
         WorkflowConnectionModel connection)
@@ -1684,7 +1650,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>向四周扩展矩形。</summary>
     /// <param name="rect">目标矩形。</param>
     /// <param name="amount">矩形扩展量。</param>
-    /// <returns>返回处理结果。</returns>
     private static WorkflowDesignerRect Expand(WorkflowDesignerRect rect, double amount) =>
         new(rect.X - amount, rect.Y - amount, rect.Width + amount * 2, rect.Height + amount * 2);
 
@@ -1692,7 +1657,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="first">第一个坐标或矩形。</param>
     /// <param name="second">第二个坐标或矩形。</param>
     /// <param name="rect">目标矩形。</param>
-    /// <returns>返回处理结果。</returns>
     private static bool SegmentCrossesRect(WorkflowPoint first, WorkflowPoint second, WorkflowDesignerRect rect)
     {
         if (Math.Abs(first.Y - second.Y) < 0.1)
@@ -1708,7 +1672,6 @@ public sealed partial class WorkflowDesignerControl : Control
 
     /// <summary>移除路径中连续重复的坐标。</summary>
     /// <param name="points">路径点集合。</param>
-    /// <returns>返回处理结果。</returns>
     private static IReadOnlyList<WorkflowPoint> Compact(IEnumerable<WorkflowPoint> points)
     {
         var result = new List<WorkflowPoint>();
@@ -1722,7 +1685,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="waypoints">手工连接拐点集合。</param>
     /// <param name="startSide">起点端口所在边。</param>
     /// <param name="endSide">终点端口所在边。</param>
-    /// <returns>返回处理结果。</returns>
     private static IReadOnlyList<WorkflowPoint> BuildOrthogonalPath(
         WorkflowPoint start,
         WorkflowPoint end,
@@ -1773,7 +1735,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="point">目标坐标。</param>
     /// <param name="side">端口所在边。</param>
     /// <param name="distance">偏移距离。</param>
-    /// <returns>返回处理结果。</returns>
     private static WorkflowPoint Offset(WorkflowPoint point, WorkflowPortSide side, double distance) => side switch
     {
         WorkflowPortSide.Left => new WorkflowPoint(point.X - distance, point.Y),
@@ -1814,7 +1775,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="x">屏幕横坐标。</param>
     /// <param name="y">屏幕纵坐标。</param>
     /// <param name="margin">扩展命中区域大小。</param>
-    /// <returns>返回处理结果。</returns>
     private static bool IsNearNode(WorkflowDesignerRect rect, double x, double y, double margin) =>
         x >= rect.X - margin && x <= rect.X + rect.Width + margin
         && y >= rect.Y - margin && y <= rect.Y + rect.Height + margin;
@@ -1823,7 +1783,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="rect">目标矩形。</param>
     /// <param name="x">屏幕横坐标。</param>
     /// <param name="y">屏幕纵坐标。</param>
-    /// <returns>返回处理结果。</returns>
     private static WorkflowPortSide NearestSide(WorkflowDesignerRect rect, double x, double y)
     {
         var distances = new[]
@@ -1837,7 +1796,6 @@ public sealed partial class WorkflowDesignerControl : Control
     }
 
     /// <summary>执行 From LTRB 相关处理。</summary>
-    /// <returns>返回处理结果。</returns>
     private static Rectangle NormalizeRectangle(Point first, Point second) => Rectangle.FromLTRB(
         Math.Min(first.X, second.X),
         Math.Min(first.Y, second.Y),
@@ -1847,7 +1805,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>判断节点矩形是否与框选矩形相交。</summary>
     /// <param name="node">目标画布节点。</param>
     /// <param name="marquee">“marquee”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static bool Intersects(WorkflowDesignerRect node, Rectangle marquee) =>
         node.X < marquee.Right && node.X + node.Width > marquee.Left
         && node.Y < marquee.Bottom && node.Y + node.Height > marquee.Top;
@@ -1857,7 +1814,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="y">屏幕纵坐标。</param>
     /// <param name="start">路径起点。</param>
     /// <param name="end">路径终点。</param>
-    /// <returns>返回处理结果。</returns>
     private static double DistanceToSegment(double x, double y, WorkflowPoint start, WorkflowPoint end)
     {
         var dx = end.X - start.X;
@@ -1873,7 +1829,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>创建用于绘制圆角矩形的 GDI+ 路径。</summary>
     /// <param name="bounds">绘制或命中边界。</param>
     /// <param name="radius">端口或圆角半径。</param>
-    /// <returns>返回处理结果。</returns>
     private static GraphicsPath RoundedRectangle(RectangleF bounds, float radius)
     {
         var diameter = radius * 2;
@@ -1888,7 +1843,6 @@ public sealed partial class WorkflowDesignerControl : Control
 
     /// <summary>取得节点运行状态对应的 GDI+ 颜色。</summary>
     /// <param name="state">节点运行状态。</param>
-    /// <returns>返回处理结果。</returns>
     private static Color StateColor(E_NodeState state) => state switch
     {
         E_NodeState.Running => Color.FromArgb(56, 189, 248),

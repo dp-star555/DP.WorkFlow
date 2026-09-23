@@ -146,7 +146,6 @@ public sealed class WorkflowPropertyEntry
     }
 
     /// <summary>将集合或复杂对象导出为缩进 JSON。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public string GetStructuredJson() => JsonSerializer.Serialize(Value, ValueType, StructuredJsonOptions);
 
     /// <summary>从 JSON 整体替换集合或复杂对象。</summary>
@@ -161,17 +160,14 @@ public sealed class WorkflowPropertyEntry
     }
 
     /// <summary>读取 WorkflowInput 的来源。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public WorkflowValueSource GetInputSource() =>
         (WorkflowValueSource)GetRequiredInputProperty(nameof(WorkflowInput<object>.Source)).GetValue(Value)!;
 
     /// <summary>读取 WorkflowInput 的固定值。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public object? GetInputLiteral() =>
         GetRequiredInputProperty(nameof(WorkflowInput<object>.LiteralValue)).GetValue(Value);
 
     /// <summary>读取 WorkflowInput 的绑定。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public WorkflowBindingKey? GetInputBinding() =>
         (WorkflowBindingKey?)GetRequiredInputProperty(nameof(WorkflowInput<object>.Binding)).GetValue(Value);
 
@@ -222,7 +218,6 @@ public sealed class WorkflowPropertyEntry
 
     /// <summary>取得工作流输入对象的必需子属性。</summary>
     /// <param name="name">名称。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private PropertyInfo GetRequiredInputProperty(string name) =>
         ValueType.GetProperty(name, BindingFlags.Instance | BindingFlags.Public)
         ?? throw new InvalidOperationException($"{ValueType.Name} 缺少属性 {name}。");
@@ -230,7 +225,6 @@ public sealed class WorkflowPropertyEntry
     /// <summary>将编辑器输入值转换为目标属性类型。</summary>
     /// <param name="value">要校验、转换或写入的值。</param>
     /// <param name="targetType">目标转换类型。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static object? ConvertValue(object? value, Type targetType)
     {
         var nullable = Nullable.GetUnderlyingType(targetType);
@@ -349,7 +343,6 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
 
     /// <summary>获取当前消费者与输入类型兼容的绑定候选。</summary>
     /// <param name="entry">目标属性条目。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public IReadOnlyList<WorkflowBindingCandidate> GetBindingCandidates(WorkflowPropertyEntry entry)
     {
         if (SelectedNode is null || entry.WorkflowInputType is null)
@@ -383,13 +376,9 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     }
 
     /// <summary>处理公共数据声明变化并通知属性面板刷新。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnPublicDataChanged(object? sender, EventArgs e) => Changed?.Invoke(this, EventArgs.Empty);
 
     /// <summary>处理设计会话变更，并同步刷新派生模型。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
     {
         if (e.Kind is WorkflowDesignerChangeKind.Selection or WorkflowDesignerChangeKind.Document)
@@ -409,7 +398,6 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     /// <summary>通过反射为节点构建可编辑属性条目。</summary>
     /// <param name="node">目标画布节点或节点模型。</param>
     /// <param name="choiceProvider">可选候选提供者。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static IReadOnlyList<WorkflowPropertyEntry> BuildEntries(IWorkflowNodeModel node, WorkflowPropertyChoiceProvider? choiceProvider)
     {
         var entries = new List<WorkflowPropertyEntry>();
@@ -512,7 +500,6 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     /// <summary>根据属性元数据和节点状态判断属性是否显示。</summary>
     /// <param name="node">目标画布节点或节点模型。</param>
     /// <param name="property">反射属性信息。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static bool IsPropertyVisible(IWorkflowNodeModel node, PropertyInfo property)
     {
         var rules = property.GetCustomAttributes<WorkflowPropertyVisibleWhenAttribute>().ToArray();
@@ -563,7 +550,6 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
 
     /// <summary>判断类型是否为 CLR 数值类型。</summary>
     /// <param name="type">目标 CLR 类型。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static bool IsNumber(Type type) => Type.GetTypeCode(type) is
         TypeCode.Byte or TypeCode.SByte or TypeCode.Int16 or TypeCode.UInt16 or TypeCode.Int32
         or TypeCode.UInt32 or TypeCode.Int64 or TypeCode.UInt64 or TypeCode.Single

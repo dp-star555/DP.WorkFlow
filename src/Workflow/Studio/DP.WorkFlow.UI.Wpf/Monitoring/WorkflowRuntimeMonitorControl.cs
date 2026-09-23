@@ -53,7 +53,6 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
     }
 
     /// <summary>执行 Subscribe 相关处理。</summary>
-    /// <param name="binding">“binding”参数。</param>
     private void Subscribe(WorkflowStudioRuntimeBinding? binding)
     {
         if (_runtimeBinding is not null)
@@ -62,9 +61,6 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
             binding.StateChanged += OnRuntimeChanged;
     }
 
-    /// <summary>处理“Runtime Changed”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnRuntimeChanged(object? sender, EventArgs e)
     {
         if (Dispatcher.CheckAccess())
@@ -92,7 +88,6 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
     }
 
     /// <summary>创建Trace Panel。</summary>
-    /// <returns>返回处理结果。</returns>
     private FrameworkElement CreateTracePanel()
     {
         var filter = new TextBox
@@ -143,10 +138,6 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
     };
 
     /// <summary>创建并冻结指定 RGB 颜色的 WPF 画刷。</summary>
-    /// <param name="red">“red”参数。</param>
-    /// <param name="green">“green”参数。</param>
-    /// <param name="blue">“blue”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static SolidColorBrush Brush(byte red, byte green, byte blue)
     {
         var brush = new SolidColorBrush(Color.FromRgb(red, green, blue));

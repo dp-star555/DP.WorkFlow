@@ -254,7 +254,6 @@ public sealed partial class WorkflowStudioControl : UserControl
     }
 
     /// <summary>执行 Save Document 相关处理。</summary>
-    /// <param name="saveAs">“saveAs”参数。</param>
     private void SaveDocument(bool saveAs)
     {
         if (Workspace is null)
@@ -281,12 +280,8 @@ public sealed partial class WorkflowStudioControl : UserControl
     }
 
     /// <summary>执行 Invoke 相关处理。</summary>
-    /// <returns>返回处理结果。</returns>
     private bool CanDiscardCurrentDocument() => Workspace?.IsDirty != true || ConfirmDiscardChanges?.Invoke() == true;
 
-    /// <summary>处理“Workspace Changed”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnWorkspaceChanged(object? sender, EventArgs e)
     {
         if (Workspace?.Navigator is not null && !ReferenceEquals(Navigator, Workspace.Navigator))
@@ -308,9 +303,6 @@ public sealed partial class WorkflowStudioControl : UserControl
         Session.AddNode(item.NodeType, center.X - 90, center.Y - 30);
     }
 
-    /// <summary>处理“Block Mapping Edit Requested”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="block">“block”参数。</param>
     private void OnBlockMappingEditRequested(object? sender, IWorkflowBlockMappingNode block)
     {
         if (Session is null || string.IsNullOrWhiteSpace(EntryNodeId))
@@ -343,7 +335,6 @@ public sealed partial class WorkflowStudioControl : UserControl
     }
 
     /// <summary>应用Navigator。</summary>
-    /// <returns>返回处理结果。</returns>
     private void OnNavigatorChanged(object? sender, EventArgs e) => ApplyNavigator();
 
     /// <summary>应用Navigator。</summary>
@@ -364,7 +355,6 @@ public sealed partial class WorkflowStudioControl : UserControl
     }
 
     /// <summary>执行 Run DP.WorkFlow 相关处理。</summary>
-    /// <returns>返回处理结果。</returns>
     private async Task RunWorkflowAsync()
     {
         if (RuntimeBinding is null)
@@ -386,9 +376,6 @@ public sealed partial class WorkflowStudioControl : UserControl
         }
     }
 
-    /// <summary>处理“Runtime State Changed”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnRuntimeStateChanged(object? sender, EventArgs e)
     {
         if (IsDisposed)
@@ -400,7 +387,6 @@ public sealed partial class WorkflowStudioControl : UserControl
     }
 
     /// <summary>更新Commands。</summary>
-    /// <returns>返回处理结果。</returns>
     private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e) => UpdateCommands();
 
     /// <summary>更新Commands。</summary>
