@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework><GenerateDependencyFile>true</GenerateDependencyFile></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../DP.WorkFlow.Nodes.Vision/DP.WorkFlow.Nodes.Vision.csproj" /></ItemGroup>
+</Project>

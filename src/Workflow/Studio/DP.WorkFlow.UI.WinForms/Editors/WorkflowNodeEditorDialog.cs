@@ -53,7 +53,8 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         _renderers = CreateRendererIndex(renderers);
         ValidatePageRenderers(model.Pages, _renderers);
         _editMappings = editMappings;
-        Text = $"节点信息 - {model.Node.Title}";
+        Text = model.PropertyEditorKey == null ? $"节点信息 - {model.Node.Title}"
+            : $"{model.Pages.Single(p => p.PropertyEditorKey == model.PropertyEditorKey).Title} - {model.Node.Title}";
 
         var hasSpecialContent = model.Pages.Any(page => page.Kind is not (WorkflowNodeEditorPageKind.Properties or WorkflowNodeEditorPageKind.Diagnostics));
         // 默认尺寸应能完整放入常见的 1366×768 工作区，并给宿主任务栏保留空间。
@@ -63,6 +64,11 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         nodeIdTextBox.Text = model.EditingNode.Id;
         nodeTypeTextBox.Text = model.EditingNode.NodeType;
         titleTextBox.Text = model.EditingNode.Title;
+        if (model.PropertyEditorKey != null)
+        {
+            headerLayout.Visible = false;
+            rootLayout.RowStyles[0].Height = 0;
+        }
         titleTextBox.Validated += (_, _) => CommitEditedTitle();
         applyButton.Click += (_, _) => ApplyChanges();
         okButton.Click += (_, _) =>
@@ -73,6 +79,13 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         };
 
         workspacePanel.Controls.Add(CreateWorkspace());
+        if (model.Pages.Any(p => p.Model is IWorkflowNodeEditorCommitReadiness))
+        {
+            components ??= new System.ComponentModel.Container();
+            var readiness = new System.Windows.Forms.Timer(components) { Interval = 150 };
+            void UpdateReadiness() { applyButton.Enabled = okButton.Enabled = model.CanApplyChanges; }
+            readiness.Tick += (_, _) => UpdateReadiness(); UpdateReadiness(); readiness.Start();
+        }
         ApplyFixedStyle(this);
     }
 
@@ -121,11 +134,17 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     /// <returns>返回处理结果。</returns>
     private Control CreateWorkspace()
     {
+        if (Model.PropertyEditorKey is { } key)
+        {
+            var editor = CreatePageControl(Model.Pages.Single(p => p.PropertyEditorKey == key));
+            editor.Dock = DockStyle.Fill;
+            return editor;
+        }
         var propertiesPage = Model.Pages.Single(page => page.Kind == WorkflowNodeEditorPageKind.Properties);
         var properties = CreatePageControl(propertiesPage);
         properties.Dock = DockStyle.Fill;
         var specialPages = Model.Pages
-            .Where(page => page.Kind is not (WorkflowNodeEditorPageKind.Properties or WorkflowNodeEditorPageKind.Diagnostics))
+            .Where(page => page.PropertyEditorKey == null && page.Kind is not (WorkflowNodeEditorPageKind.Properties or WorkflowNodeEditorPageKind.Diagnostics))
             .ToArray();
         if (specialPages.Length == 0) return properties;
 
@@ -229,6 +248,8 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     {
         var panel = new WorkflowPropertyPanel
         {
+            ChoiceProvider = page.ChoiceProvider,
+            AdditionalProperties = page.AdditionalProperties,
             Session = page.Session,
             EntryNodeId = page.EntryNodeId,
             Dock = DockStyle.Fill,
@@ -236,6 +257,18 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             HideSpecialActions = Model.Pages.Any(item => item.Kind != WorkflowNodeEditorPageKind.Properties)
         };
         panel.EditError += (_, message) => MessageBox.Show(this, message, "参数错误", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        panel.PropertyActionRequested += (_, request) =>
+        {
+            WorkflowNodeEditorModel? child = null;
+            try
+            {
+                child = Model.CreatePropertyEditor(request.EditorKey);
+                using var dialog = new WorkflowNodeEditorDialog(child, _renderers.Values, _editMappings);
+                dialog.ShowDialog(this);
+            }
+            catch (Exception ex) { MessageBox.Show(this, ex.Message, "属性编辑失败", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+            finally { if (child != null) child.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        };
         if (_editMappings is not null) panel.BlockMappingEditRequested += (_, block) => _editMappings(block);
         return panel;
     }

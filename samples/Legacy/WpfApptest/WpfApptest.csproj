@@ -18,7 +18,7 @@
          宿主因此无法在编译期选择具体Provider（阶段D/E的验收项）。 -->
     <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.Halcon\DP.Vision.Halcon.csproj" ReferenceOutputAssembly="false" Private="false" />
     <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.Basler\DP.Vision.Basler.csproj" ReferenceOutputAssembly="false" Private="false" />
-    <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.OpenCv\DP.Vision.OpenCv.csproj" />
+    <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.OpenCv\DP.Vision.OpenCv.csproj" ReferenceOutputAssembly="false" Private="false" />
     <ProjectReference Include="..\..\..\src\Workflow\Kernel\DP.WorkFlow.Abstractions\DP.WorkFlow.Abstractions.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Kernel\DP.WorkFlow.Core\DP.WorkFlow.Core.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Composite\DP.WorkFlow.Nodes.Composite.csproj" />
@@ -71,4 +71,5 @@
           DestinationFolder="$(OutDir)plugins\dp.vision.basler"
           SkipUnchangedFiles="true" />
   </Target>
+  <Import Project="..\..\VisionData\AlgorithmPlugins.targets" />
 </Project>

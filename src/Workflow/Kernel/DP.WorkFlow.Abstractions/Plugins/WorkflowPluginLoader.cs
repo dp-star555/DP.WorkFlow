@@ -1,5 +1,5 @@
 using System.Reflection;
-using System.Runtime.Loader;
+using DP.Plugins;
 using System.Text.Json;
 
 namespace DP.WorkFlow;
@@ -42,6 +42,15 @@ public sealed class WorkflowPluginManifest
 /// <summary>从受信任插件目录读取 Manifest，并按宿主请求的窄接口实例化 Module。</summary>
 public sealed class WorkflowPluginLoader
 {
+    private readonly PluginLoadSession _session;
+    /// <summary>保留既有无参数构造入口。</summary>
+    public WorkflowPluginLoader() : this(null) { }
+    /// <summary>共用宿主包会话，保留Workflow Manifest分组规则。</summary>
+    public WorkflowPluginLoader(PluginLoadSession? session)
+    {
+        _session = session ?? new PluginLoadSession();
+        _session.RegisterSharedAssembly(typeof(IWorkflowRuntimePluginModule).Assembly);
+    }
     private const string ManifestFileName = "plugin.json";
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -50,6 +59,9 @@ public sealed class WorkflowPluginLoader
 
     private readonly Dictionary<string, LoadedPackage> _packages = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _sync = new();
+
+    /// <summary>最近一次无 Manifest Runtime 扫描的失败；宿主应在启动诊断中报告。</summary>
+    public IReadOnlyList<PluginLoadFailure> DiscoveryFailures { get; private set; } = Array.Empty<PluginLoadFailure>();
 
     /// <summary>从目录中加载指定分组且实现目标接口的插件 Module。</summary>
     /// <typeparam name="TModule">宿主拥有的窄 Module 接口。</typeparam>
@@ -87,19 +99,28 @@ public sealed class WorkflowPluginLoader
                             $"插件“{item.Manifest.PluginId}”把程序集“{assemblyFile}”声明到“{moduleGroup}”分组，但其中没有实现 {typeof(TModule).FullName} 的公开 Module。");
                     foreach (var type in moduleTypes)
                     {
-                        var module = Activator.CreateInstance(type) as TModule
+                        var module = _session.GetModules<TModule>(assembly).FirstOrDefault(item => item.GetType() == type)
                             ?? throw new InvalidOperationException(
                                 $"插件 Module“{type.FullName}”无法通过公开无参数构造函数创建。");
                         modules.Add((packageOrder, assemblyPath, type.FullName!, module));
                     }
                 }
             }
-            return modules
+            var ordered = modules
                 .OrderBy(item => item.PackageOrder)
                 .ThenBy(item => item.AssemblyPath, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(item => item.TypeName, StringComparer.Ordinal)
                 .Select(item => item.Module)
                 .ToArray();
+            // Manifest 包仍严格按分组加载；直接投放的 Runtime DLL 可自动发现。
+            // 不扫描已有 Manifest 包，避免把未请求的桌面分组误当作 Runtime。
+            if (typeof(TModule) != typeof(IWorkflowRuntimePluginModule)
+                || !string.Equals(moduleGroup, WorkflowPluginModuleGroups.Runtime, StringComparison.OrdinalIgnoreCase))
+                return ordered;
+            var manifestRoots = manifests.Select(m => Path.GetDirectoryName(m.ManifestPath)! + Path.DirectorySeparatorChar).ToArray();
+            var discovered = _session.Discover<TModule>(root, path => !manifestRoots.Any(package => path.StartsWith(package, StringComparison.OrdinalIgnoreCase)));
+            DiscoveryFailures = discovered.Failures;
+            return ordered.Concat(discovered.Modules).Distinct().ToArray();
         }
     }
 
@@ -107,7 +128,7 @@ public sealed class WorkflowPluginLoader
     {
         if (_packages.TryGetValue(entry.ManifestPath, out var package))
             return package;
-        package = new LoadedPackage(entry.Manifest.PluginId, Path.GetDirectoryName(entry.ManifestPath)!);
+        package = new LoadedPackage(_session, Path.GetDirectoryName(entry.ManifestPath)!);
         _packages.Add(entry.ManifestPath, package);
         return package;
     }
@@ -256,67 +277,9 @@ public sealed class WorkflowPluginLoader
 
     private sealed class LoadedPackage
     {
-        private readonly PluginLoadContext _context;
-        private readonly Dictionary<string, Assembly> _assemblies = new(StringComparer.OrdinalIgnoreCase);
-
-        public LoadedPackage(string pluginId, string packageRoot) =>
-            _context = new PluginLoadContext(pluginId, packageRoot);
-
-        public Assembly Load(string assemblyPath)
-        {
-            if (_assemblies.TryGetValue(assemblyPath, out var assembly))
-                return assembly;
-            _context.AddResolver(assemblyPath);
-            var name = AssemblyName.GetAssemblyName(assemblyPath);
-            assembly = AssemblyLoadContext.Default.Assemblies.FirstOrDefault(candidate =>
-                AssemblyName.ReferenceMatchesDefinition(candidate.GetName(), name))
-                ?? _context.LoadFromAssemblyPath(assemblyPath);
-            _assemblies.Add(assemblyPath, assembly);
-            return assembly;
-        }
-    }
-
-    private sealed class PluginLoadContext : AssemblyLoadContext
-    {
-        private readonly string _packageRoot;
-        private readonly List<AssemblyDependencyResolver> _resolvers = new();
-        private readonly HashSet<string> _resolverPaths = new(StringComparer.OrdinalIgnoreCase);
-
-        public PluginLoadContext(string pluginId, string packageRoot)
-            : base($"WorkflowPlugin:{pluginId}", isCollectible: false) =>
-            _packageRoot = Path.GetFullPath(packageRoot);
-
-        public void AddResolver(string assemblyPath)
-        {
-            if (_resolverPaths.Add(assemblyPath))
-                _resolvers.Add(new AssemblyDependencyResolver(assemblyPath));
-        }
-
-        protected override Assembly? Load(AssemblyName assemblyName)
-        {
-            var shared = Default.Assemblies.FirstOrDefault(candidate =>
-                AssemblyName.ReferenceMatchesDefinition(candidate.GetName(), assemblyName));
-            if (shared is not null)
-                return shared;
-            foreach (var resolver in _resolvers)
-            {
-                var path = resolver.ResolveAssemblyToPath(assemblyName);
-                if (path is not null)
-                    return LoadFromAssemblyPath(path);
-            }
-            var localPath = Path.Combine(_packageRoot, $"{assemblyName.Name}.dll");
-            return File.Exists(localPath) ? LoadFromAssemblyPath(localPath) : null;
-        }
-
-        protected override nint LoadUnmanagedDll(string unmanagedDllName)
-        {
-            foreach (var resolver in _resolvers)
-            {
-                var path = resolver.ResolveUnmanagedDllToPath(unmanagedDllName);
-                if (path is not null)
-                    return LoadUnmanagedDllFromPath(path);
-            }
-            return nint.Zero;
-        }
+        private readonly PluginLoadSession _session;
+        private readonly string _root;
+        public LoadedPackage(PluginLoadSession session, string root) { _session = session; _root = root; }
+        public Assembly Load(string path) => _session.LoadAssembly(path, _root);
     }
 }

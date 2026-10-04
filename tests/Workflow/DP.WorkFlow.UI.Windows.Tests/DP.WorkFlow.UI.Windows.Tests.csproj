@@ -8,6 +8,7 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Composite\DP.WorkFlow.Nodes.Composite.csproj" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
@@ -31,4 +32,5 @@
     <Compile Include="..\..\..\samples\Recovery\WorkflowRecoveryDemo.cs" Link="WorkflowRecoveryDemo.cs" />
     <Content Include="..\..\..\samples\VisionData\demo.pgm" Link="VisionData\demo.pgm" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <Import Project="..\..\..\samples\VisionData\AlgorithmPlugins.targets" />
 </Project>

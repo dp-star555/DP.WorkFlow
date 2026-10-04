@@ -105,7 +105,7 @@ public sealed partial class WorkflowEngine
                 (draft, writeMode) => RecordRunEvent(draft, writeMode),
                 ReportRecordingDegraded,
                 (plan, childContext, childCancellation) =>
-                    RunChildWorkflowAsync(node, identity, plan, childContext, childCancellation));
+                    RunChildWorkflowAsync(node, identity, plan, childContext, childCancellation), PlanPath, BindingScopeId);
             var operationKey = (token.TokenId, node.Id);
             NodeExecutionResult result;
             if (handler is IWorkflowNodeOperationFactory factory)

@@ -3,7 +3,7 @@ using DP.Vision.Algorithms;
 
 namespace DP.WorkFlow;
 
-/// <summary>冻结文件列表后的单次运行文件夹游标能力。</summary>
+/// <summary>冻结文件列表后的文件夹游标能力；是否跨根运行继续由节点配置决定。</summary>
 public interface IWorkflowVisionFolderSource
 {
     /// <summary>读取下一张，只有解码成功后推进游标。</summary>
@@ -13,9 +13,16 @@ public interface IWorkflowVisionFolderSource
     Task<IImageSource> NextAsync(string nodeId, CancellationToken token);
 }
 
+/// <summary>文件序列管理与节点选择的解码器分离；成功解码后才推进游标。</summary>
+public interface IWorkflowVisionAlgorithmFolderSource : IWorkflowVisionFolderSource
+{
+    /// <summary>以调用者提供的节点绑定读取下一张；调用者拥有返回图像。</summary>
+    Task<IImageSource> NextAsync(string nodeId, Func<string, CancellationToken, Task<IImageSource>> read, CancellationToken token);
+}
+
 /// <summary>在运行准备时冻结目录清单；各节点独立游标并串行推进。准备阶段只校验并产出候选清单，由 <see cref="IWorkflowRunResourceOwner.ReleasePreviousRunAsync"/> 启用。</summary>
 public sealed class WorkflowVisionAcquisitionSession(IImageFileReader reader, IWorkflowRunPreparationService? next = null)
-    : IWorkflowVisionFolderSource, IWorkflowRunPreparationService, IWorkflowRunResourceOwner
+    : IWorkflowVisionAlgorithmFolderSource, IWorkflowRunPreparationService, IWorkflowRunResourceOwner
 {
     private readonly IImageFileReader _reader = reader ?? throw new ArgumentNullException(nameof(reader));
     private Dictionary<string, Sequence> _sequences = new(StringComparer.Ordinal);
@@ -23,23 +30,37 @@ public sealed class WorkflowVisionAcquisitionSession(IImageFileReader reader, IW
 
     /// <inheritdoc/>
     /// <remarks>
-    /// 本方法只校验并**产出候选清单**，不启用它：启用意味着重置游标，而嵌套运行重置游标
-    /// 会让根运行重复消费已经处理过的图像（AR-27）。启用由 <see cref="ReleasePreviousRunAsync"/> 完成。
+    /// 本方法只校验并产出候选清单，不启用它；嵌套运行不能重置根运行正在使用的游标（AR-27）。
+    /// 根运行激活时按节点配置复用或重置序列，启用由 <see cref="ReleasePreviousRunAsync"/> 完成。
     /// </remarks>
     public async ValueTask PrepareAsync(WorkflowRunPreparationContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
         var prepared = new Dictionary<string, Sequence>(StringComparer.Ordinal);
-        foreach (var node in context.Nodes.OfType<LoadVisionFolderNodeModel>())
+        foreach (var node in context.Nodes)
         {
+            var folder = node switch
+            {
+                LoadVisionFolderNodeModel legacy => (legacy.FolderPath, legacy.Extensions, legacy.Loop, Restart: true),
+                AcquireVisionImageNodeModel { SourceMode: EWorkflowVisionImageSource.Folder } input =>
+                    (input.FolderPath, input.Extensions, input.Loop, Restart: input.RestartFolderEachRun),
+                _ => default
+            };
+            if (folder.FolderPath is null) continue;
             cancellationToken.ThrowIfCancellationRequested();
-            var extensions = node.Extensions.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            var extensions = folder.Extensions.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
                 .Select(e => e.StartsWith('.') ? e : "." + e).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var files = Directory.EnumerateFiles(node.FolderPath, "*", SearchOption.TopDirectoryOnly)
+            var path = Path.GetFullPath(folder.FolderPath);
+            var filter = string.Join(";", extensions.OrderBy(extension => extension, StringComparer.OrdinalIgnoreCase));
+            var files = Directory.EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly)
                 .Where(f => extensions.Contains(Path.GetExtension(f))).OrderBy(f => f, StringComparer.Ordinal).ToArray();
-            if (files.Length == 0) throw new InvalidOperationException($"图像文件夹没有匹配文件：{node.FolderPath}");
+            if (files.Length == 0) throw new InvalidOperationException($"图像文件夹没有匹配文件：{folder.FolderPath}");
+            var sequence = !folder.Restart && _sequences.TryGetValue(node.Id, out var previous)
+                && previous.Loop == folder.Loop && StringComparer.OrdinalIgnoreCase.Equals(previous.FolderPath, path)
+                && StringComparer.OrdinalIgnoreCase.Equals(previous.Filter, filter) && previous.Files.SequenceEqual(files, StringComparer.Ordinal)
+                ? previous : new Sequence(files, folder.Loop, path, filter);
             // 根/子文档重用同一节点ID会产生歧义，明确拒绝而非共享错误游标。
-            if (!prepared.TryAdd(node.Id, new Sequence(files, node.Loop)))
+            if (!prepared.TryAdd(node.Id, sequence))
                 throw new InvalidOperationException($"文件夹节点ID跨文档重复：{node.Id}");
         }
         if (next is not null) await next.PrepareAsync(context, cancellationToken).ConfigureAwait(false);
@@ -49,7 +70,7 @@ public sealed class WorkflowVisionAcquisitionSession(IImageFileReader reader, IW
         _pending = prepared;
     }
 
-    /// <summary>启用本次准备产出的清单并归零游标，退役上一轮的文件序列。</summary>
+    /// <summary>启用本次准备产出的清单，复用符合继续读取条件的游标，退役其他序列。</summary>
     /// <param name="cancellationToken">宿主取消本次运行时触发的令牌。</param>
     /// <returns>清单切换完成时结束的异步操作。</returns>
     public async ValueTask ReleasePreviousRunAsync(CancellationToken cancellationToken)
@@ -64,14 +85,23 @@ public sealed class WorkflowVisionAcquisitionSession(IImageFileReader reader, IW
     }
 
     /// <inheritdoc/>
-    public async Task<IImageSource> NextAsync(string nodeId, CancellationToken token)
+    public Task<IImageSource> NextAsync(string nodeId, CancellationToken token) => NextAsync(nodeId, _reader.ReadAsync, token);
+
+    /// <inheritdoc/>
+    public async Task<IImageSource> NextAsync(string nodeId, Func<string, CancellationToken, Task<IImageSource>> read, CancellationToken token)
     {
+        ArgumentNullException.ThrowIfNull(read);
         if (!_sequences.TryGetValue(nodeId, out var sequence)) throw new InvalidOperationException("文件夹节点尚未进行运行准备。");
         await sequence.Gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
             if (sequence.Index >= sequence.Files.Length) throw new InvalidOperationException("图像文件序列已经结束。");
-            var image = await _reader.ReadAsync(sequence.Files[sequence.Index], token).ConfigureAwait(false);
+            var image = await read(sequence.Files[sequence.Index], token).ConfigureAwait(false);
+            if (token.IsCancellationRequested)
+            {
+                image.Dispose();
+                token.ThrowIfCancellationRequested();
+            }
             sequence.Index++;
             if (sequence.Loop && sequence.Index == sequence.Files.Length) sequence.Index = 0;
             return image;
@@ -79,27 +109,40 @@ public sealed class WorkflowVisionAcquisitionSession(IImageFileReader reader, IW
         finally { sequence.Gate.Release(); }
     }
 
-    private sealed class Sequence(string[] files, bool loop)
+    private sealed class Sequence(string[] files, bool loop, string folderPath, string filter)
     {
         public readonly string[] Files = files;
         public readonly bool Loop = loop;
+        public readonly string FolderPath = folderPath;
+        public readonly string Filter = filter;
         public readonly SemaphoreSlim Gate = new(1, 1);
         public int Index;
     }
 }
 
 /// <summary>新版本文件夹输入；默认到达末尾失败而不是悄悄重复图像。</summary>
-[WorkflowNode("Vision.LoadFolder", DisplayName = "顺序读取图像目录", Category = "5.Vision/ImageBuffer")]
-public sealed class LoadVisionFolderNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
+[WorkflowNode("Vision.LoadFolder", DisplayName = "顺序读取图像目录", Category = "5.Vision/Acquisition")]
+[System.ComponentModel.Browsable(false)]
+public sealed class LoadVisionFolderNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator, IWorkflowVisionAlgorithmNode
 {
+    /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
+    [System.ComponentModel.Browsable(false)]
+    public VisionAlgorithmSelection Algorithm { get; set; } = new() { ImplementationId = "opencv.image-read" };
+
+    /// <inheritdoc/>
+    public IReadOnlyList<WorkflowVisionAlgorithmSlot> GetAlgorithmSlots() => new[] { new WorkflowVisionAlgorithmSlot("algorithm", typeof(IImageFileReader), Algorithm) };
+
     /// <inheritdoc/>
     public override string NodeType => "Vision.LoadFolder";
     /// <summary>静态目录。</summary>
+    [WorkflowProperty("图像文件夹", "运行准备时按文件名冻结清单，每次执行读取下一张。", Category = "图像来源")]
     [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.FolderPath)]
     public string FolderPath { get; set; } = string.Empty;
     /// <summary>分号分隔的扩展名。</summary>
+    [WorkflowProperty("文件类型", "用分号分隔需要读取的图像扩展名，例如 .png;.bmp;.jpg。", Category = "图像来源")]
     public string Extensions { get; set; } = ".png;.bmp;.jpg;.jpeg;.tif;.tiff";
     /// <summary>明确请求循环。</summary>
+    [WorkflowProperty("循环读取", "开启后读取到末尾会回到第一张；关闭时末尾报错。", Category = "图像来源")]
     public bool Loop { get; set; }
     /// <inheritdoc/>
     public IReadOnlyList<string> ValidateConfiguration() => !Directory.Exists(FolderPath) || string.IsNullOrWhiteSpace(Extensions)
@@ -110,9 +153,28 @@ public sealed class LoadVisionFolderNodeModel : WorkflowNodeModel, IWorkflowNode
 public sealed class LoadVisionFolderNodeHandler : WorkflowNodeHandler<LoadVisionFolderNodeModel>
 {
     /// <inheritdoc/>
-    protected override async ValueTask<NodeExecutionResult> ExecuteAsync(LoadVisionFolderNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+    protected override ValueTask<NodeExecutionResult> ExecuteAsync(LoadVisionFolderNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+        => ReadAsync(node.Id, node.Algorithm, context, cancellationToken);
+
+    internal static async ValueTask<NodeExecutionResult> ReadAsync(string nodeId, VisionAlgorithmSelection algorithm,
+        IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
-        using var image = await context.GetRequiredCapability<IWorkflowVisionFolderSource>().NextAsync(node.Id, cancellationToken).ConfigureAwait(false);
+        var source = context.GetRequiredCapability<IWorkflowVisionFolderSource>();
+        Task<IImageSource> Read(string path, CancellationToken token) => WorkflowVisionAlgorithmInvocation.InvokeAsync(context, algorithm, "opencv.image-read",
+            (IImageFileReader reader, CancellationToken cancellation) => reader.ReadAsync(path, cancellation), token);
+        Task<IImageSource> next;
+        if (context.Services.GetService(typeof(IWorkflowVisionAlgorithmBindings)) is IWorkflowVisionAlgorithmBindings)
+        {
+            if (source is not IWorkflowVisionAlgorithmFolderSource algorithmSource)
+                throw new InvalidOperationException("文件夹来源未支持节点算法选择，请使用支持解码回调的文件夹来源。");
+            next = algorithmSource.NextAsync(nodeId, Read, cancellationToken);
+        }
+        else
+        {
+            WorkflowVisionAlgorithmInvocation.RequireLegacySelection(algorithm, "opencv.image-read");
+            next = source.NextAsync(nodeId, cancellationToken);
+        }
+        using var image = await next.ConfigureAwait(false);
         return LoadVisionFileNodeHandler.Output(image, context, cancellationToken);
     }
 }

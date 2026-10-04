@@ -90,7 +90,8 @@ public static class WorkflowRuntimeCapabilityValidator
                     available = capabilities.GetService(requirement.CapabilityType) is not null;
                     availability.Add(requirement.CapabilityType, available);
                 }
-                if (!available)
+                if (!available && !(capabilities.GetService(typeof(IWorkflowNodeCapabilityProvider)) is IWorkflowNodeCapabilityProvider provider
+                    && provider.Provides(node, requirement.CapabilityType)))
                 {
                     issues.Add(new WorkflowRuntimeCapabilityIssue(
                         planPath,

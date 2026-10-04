@@ -10,8 +10,12 @@ internal static class WorkflowNodeConfigurationValidator
     {
         ArgumentNullException.ThrowIfNull(nodes);
         var diagnostics = new List<WorkflowValidationError>();
-        foreach (var node in nodes)
+        var scope = nodes.ToArray();
+        foreach (var node in scope)
         {
+            if (node is IWorkflowNodeDocumentConfigurationValidator documentValidator)
+                foreach (var message in documentValidator.ValidateDocumentConfiguration(scope).Where(message => !string.IsNullOrWhiteSpace(message)))
+                    diagnostics.Add(Error(node, node.GetType().Name, message));
             if (node is IWorkflowNodeConfigurationValidator custom)
             {
                 foreach (var message in custom.ValidateConfiguration().Where(message => !string.IsNullOrWhiteSpace(message)))

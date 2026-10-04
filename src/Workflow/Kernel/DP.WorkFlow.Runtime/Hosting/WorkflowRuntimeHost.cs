@@ -309,26 +309,27 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
         CancellationToken cancellationToken)
     {
         WorkflowRuntimeCapabilityValidator.Validate(plan, context.Services);
-        if (context.Services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowRunPreparationService preparation)
-            await preparation.PrepareAsync(
-                new WorkflowRunPreparationContext(
-                    EnumerateNodes(plan.Plan).ToArray(),
-                    WorkflowRunScopeKind.Root,
-                    Services: context.Services),
-                cancellationToken).ConfigureAwait(false);
-        // AR-01 阶段2：退役上一轮资源只在这里发生。准备阶段只校验并产出候选状态，
-        // 因此顺序必须是"先准备、后释放"；嵌套调用点不解析本接口，在类型上无法触发清理。
-        if (context.Services.GetService(typeof(IWorkflowRunResourceOwner)) is IWorkflowRunResourceOwner owner)
-            await owner.ReleasePreviousRunAsync(cancellationToken).ConfigureAwait(false);
-
-        // 本轮作用域取得必须晚于准备（校验未通过的运行不应该打开设备），
-        // 且早于首节点执行（外部回调必须在采集节点之前就能进入队列）。
+        engine.BindingScopeId = Guid.NewGuid();
+        var preparationContext = new WorkflowRunPreparationContext(
+            EnumerateNodes(plan.Plan).ToArray(), WorkflowRunScopeKind.Root, Services: context.Services,
+            PositionedNodes: WorkflowRunPreparationPlanner.Enumerate(plan.Plan), BindingScopeId: engine.BindingScopeId);
+        IWorkflowPreparedRun? prepared = null;
         IWorkflowRunScopeLease? runScope = null;
-        if (context.Services.GetService(typeof(IWorkflowRunScopeOwner)) is IWorkflowRunScopeOwner scopeOwner)
-            runScope = await scopeOwner.BeginRunAsync(Guid.NewGuid(), cancellationToken).ConfigureAwait(false);
-
         try
         {
+            if (context.Services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowTransactionalRunPreparationService transactional)
+                prepared = await transactional.PrepareRunAsync(preparationContext, cancellationToken).ConfigureAwait(false);
+            else if (context.Services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowRunPreparationService preparation)
+                await preparation.PrepareAsync(preparationContext, cancellationToken).ConfigureAwait(false);
+            // 退役上一轮资源由根运行所有者负责，嵌套准备不调用这个入口。
+            if (context.Services.GetService(typeof(IWorkflowRunResourceOwner)) is IWorkflowRunResourceOwner owner)
+                await owner.ReleasePreviousRunAsync(cancellationToken).ConfigureAwait(false);
+
+            // 先完成其他准备和作用域取得，再发布候选算法绑定。
+            if (context.Services.GetService(typeof(IWorkflowRunScopeOwner)) is IWorkflowRunScopeOwner scopeOwner)
+                runScope = await scopeOwner.BeginRunAsync(Guid.NewGuid(), cancellationToken).ConfigureAwait(false);
+            if (prepared is not null) cancellationToken.ThrowIfCancellationRequested();
+            prepared?.Commit();
             var result = await engine.RunAsync(cancellationToken).ConfigureAwait(false);
             lock (_syncRoot)
                 _lastRunResult = result;
@@ -338,7 +339,9 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
         {
             // 根运行退役：本轮的设备布防与未领取帧在这里归还；节点输出持有的是独立租约，不受影响。
             if (runScope is not null)
-                await runScope.DisposeAsync().ConfigureAwait(false);
+                try { await runScope.DisposeAsync().ConfigureAwait(false); }
+                finally { if (prepared is not null) await prepared.DisposeAsync().ConfigureAwait(false); }
+            else if (prepared is not null) await prepared.DisposeAsync().ConfigureAwait(false);
         }
     }
 

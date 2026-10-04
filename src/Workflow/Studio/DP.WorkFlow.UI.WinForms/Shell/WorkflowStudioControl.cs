@@ -45,6 +45,7 @@ public sealed partial class WorkflowStudioControl : UserControl
         Designer.NodeEditRequested += OnDesignerNodeEditRequested;
         Properties.EditError += (_, message) => InteractionError?.Invoke(this, message);
         Properties.BlockMappingEditRequested += OnBlockMappingEditRequested;
+        Properties.PropertyActionRequested += OnPropertyActionRequested;
         Load += (_, _) =>
         {
             if (toolboxAndEditor.Width > 500)
@@ -67,6 +68,9 @@ public sealed partial class WorkflowStudioControl : UserControl
 
     /// <summary>获取编译诊断面板。</summary>
     public WorkflowDiagnosticsControl Diagnostics => diagnosticsControl;
+    /// <summary>为领域工具添加独立工作台页面。</summary>
+    public void AddToolPage(string title, Control page)
+    { var tab = new TabPage(title); page.Dock = DockStyle.Fill; tab.Controls.Add(page); bottomTabs.TabPages.Add(tab); }
 
     /// <summary>获取运行监视器。</summary>
     public WorkflowRuntimeMonitorControl RuntimeMonitor => runtimeMonitorControl;
@@ -136,6 +140,7 @@ public sealed partial class WorkflowStudioControl : UserControl
             if (_navigator is not null)
                 _navigator.CurrentChanged -= OnNavigatorChanged;
             _navigator = value;
+            Diagnostics.Navigator = value;
             if (_navigator is not null)
             {
                 _navigator.CurrentChanged += OnNavigatorChanged;
@@ -320,6 +325,21 @@ public sealed partial class WorkflowStudioControl : UserControl
         _ = dialog.ShowDialog(this);
     }
 
+    private async void OnPropertyActionRequested(object? sender, WorkflowPropertyActionRequest request)
+    {
+        if (Session == null || string.IsNullOrWhiteSpace(EntryNodeId)) return;
+        WorkflowNodeEditorModel? model = null;
+        try
+        {
+            model = new WorkflowNodeEditorModel(Session, EntryNodeId, request.NodeId, NodeEditorExtensions.GetPageProviders(),
+                Properties.ChoiceProvider, Properties.AdditionalProperties, request.EditorKey);
+            using var dialog = new WorkflowNodeEditorDialog(model, NodeEditorExtensions.GetRenderers());
+            dialog.ShowDialog(this);
+        }
+        catch (Exception ex) { InteractionError?.Invoke(this, $"无法打开属性编辑窗口：{ex.Message}"); }
+        finally { if (model != null) await model.DisposeAsync(); }
+    }
+
     /// <summary>处理“Designer Node Edit Requested”事件。</summary>
     /// <param name="sender">事件发送者。</param>
     /// <param name="node">目标画布节点。</param>
@@ -329,7 +349,8 @@ public sealed partial class WorkflowStudioControl : UserControl
         try
         {
             var model = new WorkflowNodeEditorModel(
-                Session, EntryNodeId, node.Id, NodeEditorExtensions.GetPageProviders());
+                Session, EntryNodeId, node.Id, NodeEditorExtensions.GetPageProviders(),
+                Properties.ChoiceProvider, Properties.AdditionalProperties);
             using var dialog = new WorkflowNodeEditorDialog(
                 model, NodeEditorExtensions.GetRenderers(),
                 block => OnBlockMappingEditRequested(this, block));
@@ -367,11 +388,12 @@ public sealed partial class WorkflowStudioControl : UserControl
     /// <returns>返回处理结果。</returns>
     private async Task RunWorkflowAsync()
     {
+        Diagnostics.RefreshDiagnostics();
         if (RuntimeBinding is null)
             return;
         if (!Diagnostics.CanRun)
         {
-            InteractionError?.Invoke(this, "当前流程存在编译错误，不能运行。");
+            InteractionError?.Invoke(this, "当前流程存在配置或编译错误，不能运行。");
             return;
         }
         try

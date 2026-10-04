@@ -11,7 +11,8 @@ namespace DP.WorkFlow;
 /// 在没有确定设备需求之前先加字段，只会把厂商私有刻度写进流程文档，让文档无法跨机器使用。
 /// </para>
 /// </summary>
-[WorkflowNode("Vision.CaptureLineScanFrame", DisplayName = "采集线扫帧", Category = "5.Vision/ImageBuffer")]
+[WorkflowNode("Vision.CaptureLineScanFrame", DisplayName = "采集线扫帧", Category = "5.Vision/Acquisition")]
+[System.ComponentModel.Browsable(false)]
 public sealed class CaptureLineScanFrameNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
 {
     /// <inheritdoc/>

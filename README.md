@@ -18,13 +18,17 @@ DP.WorkFlow 是从旧 `WorkFlow.Rebuild` 独立出来的 .NET 8 重构主线。�
 - [源码目录与依赖规则](docs/project-structure.md)
 - [节点工程分类与依赖边界](docs/nodes/project-classification.md)
 - [插件架构](docs/plugin-architecture.md)
+- [视觉算法插件、引擎选择与资源准备](../DP.Vision/ALGORITHM_PLUGINS.md)（13 个现有算法节点已接入）
+- [模板匹配节点内制作、资源保存与坐标衔接](docs/nodes/vision-template-authoring.md)（OpenCV；WinForms/WPF）
+- [视觉插件人工复核与独立条码/OCR 节点](docs/plugins/vision-plugin-review.md)（双平台清单、诊断、资源检查、配置升级、嵌套依赖编辑与节点工作台，`--barcode-demo`）
 - [节点重写保真审计](docs/nodes/fidelity-audit.md)
 - [独立 DP.Vision 实施记录](docs/dp-vision-integration-plan.md)
 - [多厂商图像采集 Provider 实施与验收基线](docs/vision-acquisition-providers.md)（阶段A–E 已实施：HALCON 与 Basler 两个真实 Provider；阶段F 受外部依赖阻塞）
 - [新版视觉节点、ROI 与双宿主示例](docs/nodes/new-vision-file-pipeline.md)
 - [模板定位坐标系、ROI随动与双坐标结果](docs/nodes/vision-coordinate-systems.md)
+- [视觉节点盘点、带来源几何与测量复核](docs/nodes/vision-geometry-measurement.md)（32种注册类型、28种工具箱入口，`--geometry-demo` / `--coordinate-demo`）
 
-WinForms/WPF 示例使用独立 DP.Vision 的18种节点及原生图像页，启动即有可运行的文件→预处理→Region→形态学→Blob→筛选→掩码颜色流程。构建需保留同级 `../DP.Vision/` 源码。旧视觉节点、MachineVision 工程、兼容 Adapter、旧页面及 Paddle 工作流/工具已删除；不会静默转换旧文档。相机采集由独立 `DP.Vision.Halcon` 以插件形式提供：示例只扫描 `plugins/` 目录里的 `plugin.json`，编译期不引用任何 HALCON 类型，工作流文档只保存逻辑SourceId。详见[清理决定](docs/decisions/0014-vision-clean-break.md)和[已落地算子及用法](docs/nodes/vision-operators.md)。
+WinForms/WPF 示例使用20种内置视觉节点和12种目录发现的独立节点（条码1、水平单行OCR1、几何及坐标10）及原生图像页。图像获取统一选择文件、文件夹、面阵或线扫，四种已发布取图类型保留配方兼容并从工具箱隐藏。启动即有可运行的图像获取（文件）→预处理→Region→形态学→Blob→筛选→掩码颜色流程。`--geometry-demo` 启动模板定位→局部点→生成直线→距离示例。构建需保留同级 `../DP.Vision/` 源码。更早的旧视觉节点、MachineVision 工程、兼容 Adapter、旧页面及 Paddle 工作流/工具已删除；不会静默转换未知旧文档。相机采集由独立 `DP.Vision.Halcon` 以插件形式提供：示例按 Driver Module 接口扫描 `plugins/` 中的 DLL，编译期不引用任何 HALCON 类型，工作流文档只保存逻辑SourceId。详见[清理决定](docs/decisions/0014-vision-clean-break.md)和[已落地算子及用法](docs/nodes/vision-operators.md)。
 
 ## 构建
 
@@ -60,7 +64,7 @@ powershell -ExecutionPolicy Bypass -File tools/Test-DPWorkFlow.ps1 -Configuratio
 - Retry 需要 Idempotent/ResumeAware 声明，Jump 需要恢复目标能力；
 - `plugin.json` 分组装载 Runtime、Studio、WinForms/WPF 插件 Module；
 - 节点插件目录、稳定 Key 和冲突诊断；
-- `WorkflowImageRuntimePluginModule` 注册18种强类型视觉节点；宿主固定装配采集、Blob、颜色、测量和定位能力，运行前递归预检；
+- `WorkflowImageRuntimePluginModule` 注册20种强类型视觉节点（含4种隐藏兼容取图类型），目录另发现12种独立视觉节点；统一图像获取按来源准备所需能力，算法按节点选择、运行前递归准备，点和直线显式携带帧与坐标来源；
 - 统一 `IImageSource / ImageFrame`、有界帧租约、同帧检测证据和原生双平台 ROI 编辑；HALCON SDK 仅在独立厂商边界复制中立像素；
 - 节点详情页通过 PageProvider、PageId/Priority 和 RendererKey 自动匹配，Block/Script/Image 不再硬编码在聚合模型；
 - `WorkflowInput<T>`、`WorkflowBindingKey` 及运行时成员路径解析；

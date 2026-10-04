@@ -17,6 +17,7 @@ public interface IWorkflowRuntimePluginModule
 public sealed class WorkflowRuntimePluginCatalog
 {
     private readonly HashSet<string> _extensionIds = new(StringComparer.Ordinal);
+    private readonly HashSet<Type> _registeredModuleTypes = new();
     private readonly object _syncRoot = new();
     private bool _frozen;
 
@@ -52,6 +53,7 @@ public sealed class WorkflowRuntimePluginCatalog
             if (!_extensionIds.Add(extensionId))
                 throw new InvalidOperationException($"工作流运行插件“{extensionId}”已经注册。");
             extension.Register(this);
+            _registeredModuleTypes.Add(extension.GetType());
             return this;
         }
     }
@@ -66,9 +68,17 @@ public sealed class WorkflowRuntimePluginCatalog
             EnsureMutable();
         var modules = (loader ?? new WorkflowPluginLoader())
             .LoadModules<IWorkflowRuntimePluginModule>(pluginRoot, WorkflowPluginModuleGroups.Runtime);
+        var count = 0;
         foreach (var module in modules)
-            Register(module);
-        return modules.Count;
+        {
+            lock (_syncRoot)
+            {
+                // 同一程序集入口的部署副本不重复登记，实际不同入口的 Id 冲突仍由 Register 拒绝。
+                if (_registeredModuleTypes.Contains(module.GetType())) continue;
+                Register(module); count++;
+            }
+        }
+        return count;
     }
 
     /// <summary>获取运行组合目录是否已经冻结。</summary>

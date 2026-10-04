@@ -4,13 +4,21 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>新版单文件图像输入，标准输出ImageFrame，不写隐式变量或旧显示通道。</summary>
-[WorkflowNode("Vision.LoadFile", DisplayName = "读取图像文件", Category = "5.Vision/ImageBuffer")]
-public sealed class LoadVisionFileNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
+[WorkflowNode("Vision.LoadFile", DisplayName = "读取图像文件", Category = "5.Vision/Acquisition")]
+[System.ComponentModel.Browsable(false)]
+public sealed class LoadVisionFileNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator, IWorkflowVisionAlgorithmNode
 {
+    /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
+    [System.ComponentModel.Browsable(false)]
+    public VisionAlgorithmSelection Algorithm { get; set; } = new() { ImplementationId = "opencv.image-read" };
+
+    /// <inheritdoc/>
+    public IReadOnlyList<WorkflowVisionAlgorithmSlot> GetAlgorithmSlots() => new[] { new WorkflowVisionAlgorithmSlot("algorithm", typeof(IImageFileReader), Algorithm) };
+
     /// <inheritdoc/>
     public override string NodeType => "Vision.LoadFile";
     /// <summary>静态文件路径，编译前必须存在。</summary>
-    [WorkflowProperty("图像文件", "单图文件，格式由宿主读取器决定。", Category = "图像来源")]
+    [WorkflowProperty("图像文件", "单图文件，格式由节点所选读取器决定。", Category = "图像来源")]
     [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.FilePath, CheckExists = true)]
     public string FilePath { get; set; } = string.Empty;
     /// <inheritdoc/>
@@ -23,11 +31,14 @@ public sealed class LoadVisionFileNodeModel : WorkflowNodeModel, IWorkflowNodeCo
 public sealed class LoadVisionFileNodeHandler : WorkflowNodeHandler<LoadVisionFileNodeModel>
 {
     /// <inheritdoc/>
-    protected override async ValueTask<NodeExecutionResult> ExecuteAsync(LoadVisionFileNodeModel node,
+    protected override ValueTask<NodeExecutionResult> ExecuteAsync(LoadVisionFileNodeModel node,
+        IWorkflowNodeExecutionContext context, CancellationToken cancellationToken) => ReadAsync(node.FilePath, node.Algorithm, context, cancellationToken);
+
+    internal static async ValueTask<NodeExecutionResult> ReadAsync(string path, VisionAlgorithmSelection algorithm,
         IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
-        var reader = context.GetRequiredCapability<IImageFileReader>();
-        using var image = await reader.ReadAsync(node.FilePath, cancellationToken).ConfigureAwait(false);
+        using var image = await WorkflowVisionAlgorithmInvocation.InvokeAsync(context, algorithm, "opencv.image-read",
+            (IImageFileReader reader, CancellationToken token) => reader.ReadAsync(path, token), cancellationToken).ConfigureAwait(false);
         return Output(image, context, cancellationToken);
     }
 

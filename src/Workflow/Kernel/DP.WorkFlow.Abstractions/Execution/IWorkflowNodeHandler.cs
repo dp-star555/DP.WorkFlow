@@ -5,6 +5,12 @@ namespace DP.WorkFlow;
 /// </summary>
 public interface IWorkflowNodeExecutionContext
 {
+    /// <summary>准备绑定作用域，根运行和普通子流程共享，独立准备的恢复运行另有身份。</summary>
+    Guid BindingScopeId => Guid.Empty;
+
+    /// <summary>稳定的编译计划路径。</summary>
+    string PlanPath => "$";
+
     /// <summary>获取当前节点。</summary>
     IWorkflowNodeModel Node { get; }
 

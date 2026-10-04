@@ -5,8 +5,46 @@ namespace DP.WorkFlow;
 
 /// <summary>有界离散旋转/尺度模板搜索，输出姿态及正反坐标变换。</summary>
 [WorkflowNode("Vision.LocateTemplatePose", DisplayName = "旋转尺度模板定位", Category = "5.Vision/Location")]
-public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeModel
+public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode, IWorkflowVisionTemplateNode
 {
+    /// <summary>旧配方默认图像绑定；节点内制作后选择资源。</summary>
+    [WorkflowProperty("模板来源", "资源模式使用已发布模板，图像绑定保留动态模板。", Category = "模板")]
+    public EWorkflowVisionTemplateSource TemplateSource { get; set; }
+    /// <inheritdoc/>
+    [System.ComponentModel.Browsable(false)]
+    public VisionAlgorithmSelection ModelAlgorithm { get; set; } = new() { ImplementationId = "opencv.template-pose-model" };
+    /// <inheritdoc/>
+    [System.ComponentModel.Browsable(false)]
+    public string TemplateResourceId { get; set; } = Guid.NewGuid().ToString("N");
+    /// <inheritdoc/>
+    [System.ComponentModel.Browsable(false)]
+    public VisionTemplateDefinition? TemplateReferenceDefinition { get; set; }
+    /// <inheritdoc/>
+    [System.ComponentModel.Browsable(false)]
+    public string TemplateSourceHash { get; set; } = "";
+
+    /// <summary>打开挂载在本匹配节点上的独立模板制作模型。</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    [WorkflowProperty("模板", "制作、查看或选择本地模板；确认后应用到本节点。", Category = "模板")]
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.VisionTemplateEditor, IsAction = true, DialogTitle = "模板制作/选择")]
+    public string EditTemplate => string.IsNullOrEmpty(TemplateResourcePath) ? "未选择模板 · 制作/选择…" : "已选择模板 · 查看/修改…";
+    /// <summary>已发布版本的清单引用。</summary>
+    [System.ComponentModel.Browsable(false), System.Text.Json.Serialization.JsonIgnore]
+    [WorkflowProperty("模板资源", "双击节点展开模板制作；支持配方相对路径和resource:。", Category = "模板")]
+    [WorkflowPropertyVisibleWhen(nameof(TemplateSource), nameof(EWorkflowVisionTemplateSource.Resource))]
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.FilePath)]
+    public string TemplateResourcePath { get => ModelAlgorithm.Settings.GetValueOrDefault("templatePath", ""); set => ModelAlgorithm.Settings["templatePath"] = value; }
+    /// <inheritdoc/>
+    [System.ComponentModel.Browsable(false), System.Text.Json.Serialization.JsonIgnore]
+    public bool RequiresPoseSearch => true;
+    /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
+    [System.ComponentModel.Browsable(false)]
+    public VisionAlgorithmSelection Algorithm { get; set; } = new() { ImplementationId = "opencv.template-pose" };
+
+    /// <inheritdoc/>
+    public IReadOnlyList<WorkflowVisionAlgorithmSlot> GetAlgorithmSlots() => TemplateSource == EWorkflowVisionTemplateSource.Resource
+        ? new[] { WorkflowVisionTemplateResource.Slot(this) } : new[] { new WorkflowVisionAlgorithmSlot("algorithm", typeof(ITemplatePoseLocator), Algorithm) };
+
     /// <inheritdoc/>
     public override string NodeType => "Vision.LocateTemplatePose";
     /// <inheritdoc/>
@@ -16,6 +54,7 @@ public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeMo
     public string CoordinateSystemId { get; set; } = Guid.NewGuid().ToString("N");
     /// <summary>独立模板帧绑定。</summary>
     [WorkflowProperty("模板图像", "ImageFrame绑定，模板与目标身份分别校验。", Category = "输入")]
+    [WorkflowPropertyVisibleWhen(nameof(TemplateSource), nameof(EWorkflowVisionTemplateSource.ImageBinding))]
     public WorkflowInput<ImageFrame> Template { get; set; } = WorkflowInput<ImageFrame>.FromLiteral(null);
     /// <summary>离散顺时针弧度候选。</summary>
     [WorkflowProperty("角度候选", "顺时针弧度，最多181项；不是连续角度估计。", Category = "搜索")]
@@ -29,31 +68,42 @@ public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeMo
     /// <summary>保守工作量预算。</summary>
     [WorkflowProperty("比较预算", "位置数×模板面积累计上限，最多20亿；超限失败，不截断候选。", Category = "搜索")]
     public long MaximumWork { get; set; } = 200000000;
-    internal TemplatePoseOptions Options(LocatedCoordinateSystem? parent = null) => parent is null
+    internal TemplatePoseOptions Options(VisionCoordinateSystem? parent = null) => parent is null
         ? new(AnglesRadians, Scales, MinimumScore, MaximumWork)
-        : new(AnglesRadians.Select(a => Math.Atan2(Math.Sin(a + parent.Pose.AngleRadians), Math.Cos(a + parent.Pose.AngleRadians))),
-            Scales.Select(s => s * parent.Pose.Scale), MinimumScore, MaximumWork);
+        : new(AnglesRadians.Select(a => Math.Atan2(Math.Sin(a + parent.RotationRadians), Math.Cos(a + parent.RotationRadians))),
+            Scales.Select(s => s * parent.SimilarityScale), MinimumScore, MaximumWork);
+    /// <summary>制作界面沿用运行角度、尺度和比较预算。</summary>
+    public TemplatePoseOptions OptionsForPreview(VisionCoordinateSystem? parent = null) => Options(parent);
     /// <inheritdoc/>
     public override IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = base.ValidateConfiguration().ToList();
         if (string.IsNullOrWhiteSpace(CoordinateSystemId)) errors.Add("模板坐标系定义ID不能为空。");
-        if (Template is null || Template.Source != WorkflowValueSource.Binding || Template.Binding is null || Template.LiteralValue is not null) errors.Add("模板必须使用图像绑定。");
+        errors.AddRange(WorkflowVisionTemplateResource.Validate(this));
+        if (TemplateSource == EWorkflowVisionTemplateSource.ImageBinding && (Template is null || Template.Source != WorkflowValueSource.Binding || Template.Binding is null || Template.LiteralValue is not null)) errors.Add("模板必须使用图像绑定。");
         try { _ = Options(); } catch (ArgumentException ex) { errors.Add(ex.Message); }
         return errors;
     }
 }
 
-/// <summary>调用固定装配定位能力，不在失败后自动切换实现。</summary>
+/// <summary>调用本轮准备的节点定位实现，不在失败后自动切换实现。</summary>
 public sealed class LocateVisionTemplatePoseNodeHandler : WorkflowNodeHandler<LocateVisionTemplatePoseNodeModel>
 {
     /// <inheritdoc/>
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(LocateVisionTemplatePoseNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
+        if (node.TemplateSource == EWorkflowVisionTemplateSource.Resource)
+        {
+            var modelRange = node.ResolveRange(frame, context, cancellationToken);
+            var modelResult = WorkflowVisionTemplateResource.Match(node, context, frame, modelRange.Bounds, modelRange.Region,
+                modelRange.Coordinates, node.Options(modelRange.Coordinates), cancellationToken);
+            return ValueTask.FromResult(NodeExecutionResult.Continue(output: modelResult, projection: WorkflowVisionFrameScope.Stage(context, frame, modelResult)));
+        }
         var template = context.ResolveInput(node.Template) ?? throw new InvalidOperationException("模板帧为空。");
         var range = node.ResolveRange(frame, context, cancellationToken); var coordinates = range.Coordinates;
-        var result = context.GetRequiredCapability<ITemplatePoseLocator>().Locate(frame, template, range.Bounds, node.Options(coordinates), cancellationToken, range.Region)
+        var result = WorkflowVisionAlgorithmInvocation.Invoke(context, node.Algorithm, "opencv.template-pose",
+            (ITemplatePoseLocator algorithm) => algorithm.Locate(frame, template, range.Bounds, node.Options(coordinates), cancellationToken, range.Region), cancellationToken)
             ?? throw new InvalidOperationException("姿态定位返回空结果。");
         if (result.TemplateFrameId != template.FrameId) throw new InvalidOperationException("定位模板身份不一致。");
         if (result.Transform is { } pose && (pose.TemplateWidth != template.Image.Info.Width || pose.TemplateHeight != template.Image.Info.Height))
@@ -79,7 +129,7 @@ public sealed class MapVisionPoseCoordinateNodeModel : WorkflowNodeModel, IWorkf
     /// <summary>Y常量或绑定。</summary>
     public WorkflowInput<double> Y { get; set; } = WorkflowInput<double>.FromLiteral(0);
     /// <summary>启用时图像→模板，否则模板→图像。</summary>
-    [WorkflowProperty("反向映射", "启用：图像到模板；关闭：模板到图像。坐标都是像素边界。", Category = "映射")]
+    [WorkflowProperty("反向映射", "启用：图像到参考；关闭：参考到图像。资源模式采用制作原点和方向，旧图像模式仍采用模板像素边界。", Category = "映射")]
     public bool Inverse { get; set; }
     /// <inheritdoc/>
     public IReadOnlyList<string> ValidateConfiguration()
@@ -99,8 +149,12 @@ public sealed class MapVisionPoseCoordinateNodeHandler : WorkflowNodeHandler<Map
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(MapVisionPoseCoordinateNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var pose = context.ResolveInput(node.Pose)?.Transform ?? throw new InvalidOperationException("没有达标定位，不能映射坐标。");
+        var result = context.ResolveInput(node.Pose) ?? throw new InvalidOperationException("没有定位结果，不能映射坐标。");
+        var pose = result.Transform ?? throw new InvalidOperationException("没有达标定位，不能映射坐标。");
         var point = new Coordinate2D(context.ResolveInput(node.X), context.ResolveInput(node.Y));
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: node.Inverse ? pose.ToTemplate(point) : pose.ToImage(point)));
+        var mapped = result.CoordinateSystem is { } coordinates
+            ? (node.Inverse ? coordinates.ImageToLocal : coordinates.LocalToImage).Map(point)
+            : node.Inverse ? pose.ToTemplate(point) : pose.ToImage(point);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: mapped));
     }
 }

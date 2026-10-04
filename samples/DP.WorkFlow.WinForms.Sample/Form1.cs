@@ -1,6 +1,6 @@
+using DP.Plugins;
 using DP.Vision.Acquisition;
 using DP.Vision.Algorithms;
-using DP.Vision.OpenCv;
 using DP.WorkFlow;
 using DP.WorkFlow.UI;
 using DP.WorkFlow.UI.WinForms;
@@ -19,6 +19,9 @@ public partial class Form1 : Form
     private readonly WorkflowStudioRuntimeBinding _runtimeBinding;
     private readonly WorkflowContext _runtimeContext;
     private readonly WorkflowVisionFrameScope _frameScope;
+    private readonly VisionAlgorithmRuntime _algorithmRuntime;
+    private readonly WorkflowVisionAlgorithmBindings _algorithmBindings;
+    private readonly WorkflowVisionAlgorithmDiagnostics _algorithmDiagnostics;
     private readonly VisionAcquisitionRuntime _visionAcquisition;
     private readonly WorkflowVisionSourceCatalog _visionSources;
     private readonly WorkflowWinFormsOperatorService _operatorService;
@@ -28,6 +31,13 @@ public partial class Form1 : Form
     public Form1()
     {
         InitializeComponent();
+        var pluginDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "plugins");
+        var loadSession = new PluginLoadSession();
+        loadSession.RegisterSharedAssembly(typeof(IWorkflowVisionAlgorithmNode).Assembly);
+        var algorithmLoader = new VisionAlgorithmModuleLoader(loadSession);
+        var driverLoader = new VisionAcquisitionDriverModuleLoader(loadSession);
+        var workflowLoader = new WorkflowPluginLoader(loadSession);
+        loadSession.RegisterSharedContracts(pluginDirectory);
         _operatorService = new WorkflowWinFormsOperatorService(this);
         var recoveryDemo = Environment.GetCommandLineArgs().Contains("--recovery-demo", StringComparer.OrdinalIgnoreCase)
             ? new WorkflowRecoveryDemo() : null;
@@ -42,13 +52,25 @@ public partial class Form1 : Form
             .Register(new WorkflowProcessRuntimePluginModule())
             .Register(new WorkflowImageRuntimePluginModule());
         if (recoveryDemo is not null) plugins.Register(recoveryDemo);
+        plugins.LoadPlugins(pluginDirectory, workflowLoader);
+        foreach (var failure in workflowLoader.DiscoveryFailures)
+            System.Diagnostics.Trace.TraceError(failure.AssemblyPath + ": " + failure.Reason);
         plugins.Freeze();
+        var algorithmCatalog = algorithmLoader.Load(pluginDirectory, new[] { new ManagedVisionAlgorithmModule() });
+        foreach (var failure in algorithmCatalog.Diagnostics)
+            System.Diagnostics.Trace.TraceError(failure.Source + ": " + failure.Reason);
+        _algorithmRuntime = new VisionAlgorithmRuntime(algorithmCatalog);
 
         // 2. 创建文档工作区
         _workspace = new WorkflowDocumentWorkspace(_nodeCatalog);
-        var fileReader = new OpenCvImageFileReader();
+        var algorithmEnvironment = WorkflowVisionAlgorithmEnvironment.Load(AppContext.BaseDirectory);
+        VisionAlgorithmResourceContext Resources() => algorithmEnvironment.Capture(_workspace.CurrentFilePath);
+        var fileReader = new WorkflowVisionImageFileReader(_algorithmRuntime, new VisionAlgorithmSelection { ImplementationId = "opencv.image-read" });
         var acquisition = new WorkflowVisionAcquisitionSession(fileReader);
         _frameScope = new WorkflowVisionFrameScope(acquisition);
+        _algorithmBindings = new WorkflowVisionAlgorithmBindings(_algorithmRuntime, _frameScope, Resources);
+        _algorithmDiagnostics = new WorkflowVisionAlgorithmDiagnostics(algorithmCatalog, _algorithmRuntime, _algorithmBindings, Resources);
+        _workspace.DocumentChanged += (_, _) => _algorithmDiagnostics.Invalidate();
 
         // 2.1 V2 机器配置：插件自动发现 + 版本化CameraDefinition。工作流文档只保存SourceId，
         // 换机器时只改这里，不需要改流程文档，也不需要重新编译节点。
@@ -78,7 +100,7 @@ public partial class Form1 : Form
             ]
             """;
         var providerPluginDirectory = Path.Combine(AppContext.BaseDirectory, "plugins");
-        var driverModules = new VisionAcquisitionDriverModuleLoader().Load(providerPluginDirectory);
+        var driverModules = driverLoader.Load(providerPluginDirectory);
         var typeCatalog = new VisionAcquisitionTypeCatalogComposer().Compose(driverModules.Modules);
         var cameras = VisionAcquisitionMachineConfigurationParser.Parse(machineConfigurationJson);
         var composition = new VisionAcquisitionMachineConfigurationComposer()
@@ -117,7 +139,10 @@ public partial class Form1 : Form
 
         // 3. 创建新文档
         _workspace.New(recoveryDemo is null ? "新版视觉文件分析" : "异常恢复演示（仅软件模拟）");
-        if (recoveryDemo is null) WorkflowImageDemo.PopulateProcessing(_workspace.Navigator!.RootSession);
+        if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--barcode-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateBarcode(_workspace.Navigator!.RootSession);
+        else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--coordinate-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateCoordinates(_workspace.Navigator!.RootSession);
+        else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--geometry-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateGeometry(_workspace.Navigator!.RootSession);
+        else if (recoveryDemo is null) WorkflowImageDemo.PopulateProcessing(_workspace.Navigator!.RootSession);
         else recoveryDemo.Populate(_workspace.Navigator!.RootSession);
         _workspace.Navigator!.RootSession.PublicDataCatalog
             .Register<DP.Vision.ImageFrame>("VisionFrame", "显式发布的图像帧", "视觉数据")
@@ -126,12 +151,16 @@ public partial class Form1 : Form
 
         // 4. 连接到设计器控件
         workflowStudioControl1.Workspace = _workspace;
+        workflowStudioControl1.Diagnostics.Provider = _algorithmDiagnostics;
+        workflowStudioControl1.AddToolPage("插件与算法", new WorkflowVisionAlgorithmPanel(_algorithmDiagnostics,
+            () => _workspace.Navigator?.RootDocument, () => _workspace.Navigator?.CurrentSession));
         workflowStudioControl1.NodeEditorExtensions.Register(
             new VisionWinFormsStudioExtension()
-            { FrameSource = _frameScope, FileReader = fileReader });
+            { FrameSource = _frameScope, FileReader = fileReader, Templates = new VisionTemplateEditingRuntime(algorithmCatalog, _algorithmRuntime, Resources) });
         // 采集节点的"逻辑图像源"从本机已发布的源里选，避免手写出机器上不存在的标识；
         // 面阵节点与线扫节点各看各的采集类型，不能互相选到对方的源。
-        workflowStudioControl1.Properties.ChoiceProvider = WorkflowVisionSourceChoices.CreateProvider(_visionSources);
+        workflowStudioControl1.Properties.ChoiceProvider = WorkflowVisionAlgorithmChoices.CreateProvider(algorithmCatalog, WorkflowVisionSourceChoices.CreateProvider(_visionSources));
+        workflowStudioControl1.Properties.AdditionalProperties = WorkflowVisionAlgorithmProperties.CreateProvider(algorithmCatalog);
 
         // 5. 注册宿主运行能力；节点和 Handler 已由上面的 Runtime Module 成组注册。
         var actions = new WorkflowActionRegistry()
@@ -152,17 +181,6 @@ public partial class Form1 : Form
                 return ValueTask.FromResult(false);
             });
         var services = new WorkflowServiceProvider()
-            .Add<IImageFileReader>(fileReader)
-            .Add<IBlobAnalyzer>(new OpenCvBlobAnalyzer())
-            .Add<IImagePreprocessor>(new OpenCvImagePreprocessor())
-            .Add<IRegionProcessor>(new OpenCvRegionProcessor())
-            .Add<IBlobSelector>(new BlobSelector())
-            .Add<ICaliperMeasurer>(new CaliperMeasurer())
-            .Add<IRobustLineFitter>(new RobustLineFitter())
-            .Add<IColorAnalyzer>(new RgbColorAnalyzer())
-            .Add<IEdgeMeasurer>(new OpenCvEdgeMeasurer())
-            .Add<ITemplateLocator>(new OpenCvTemplateLocator())
-            .Add<ITemplatePoseLocator>(new OpenCvTemplatePoseLocator())
             .Add<IWorkflowVisionFrameScope>(_frameScope)
             .Add<IWorkflowVisionFolderSource>(acquisition)
             .Add<IVisionAcquisition>(_visionAcquisition)
@@ -182,7 +200,9 @@ public partial class Form1 : Form
             .Add<IWorkflowWaferRobotService>(new DemoWaferRobotService())
             .Add<IWorkflowRecoveryService>(new DemoRecoveryService())
             // 准备服务只做校验；退役上一轮资源是运行所有者的职责，只有根运行宿主持有它（AR-01 阶段2）。
-            .Add<IWorkflowRunPreparationService>(_frameScope)
+            .Add<IWorkflowVisionAlgorithmBindings>(_algorithmBindings)
+            .Add<IWorkflowNodeCapabilityProvider>(_algorithmBindings)
+            .Add<IWorkflowRunPreparationService>(_algorithmBindings)
             .Add<IWorkflowRunResourceOwner>(_frameScope)
             // 本轮作用域取得：外部回调缓冲源要在采集节点之前布防。桥接是 Kernel 与采集侧之间唯一的连接点，
             // 嵌套调用点不解析 IWorkflowRunScopeOwner，因此结构上无法重新布防或清空父运行队列。
@@ -208,6 +228,7 @@ public partial class Form1 : Form
             };
         }
         workflowStudioControl1.RuntimeBinding = _runtimeBinding;
+        _runtimeBinding.RunConfiguring += _algorithmDiagnostics.SetRunBasePath;
 
         workflowStudioControl1.ConfirmDiscardChanges = () =>
             MessageBox.Show(
@@ -264,7 +285,7 @@ public partial class Form1 : Form
         _operatorService.Dispose();
         _runtimeBinding.Dispose();
         _runtimeHost.Dispose();
-        _frameScope.Dispose();
+        _algorithmDiagnostics.Dispose(); _algorithmBindings.Dispose(); _algorithmRuntime.Dispose(); _frameScope.Dispose();
         _workspace.Dispose();
     }
 }

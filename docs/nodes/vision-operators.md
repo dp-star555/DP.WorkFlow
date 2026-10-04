@@ -1,6 +1,8 @@
-# 已落地的新增视觉算子
+# 已落地的视觉算子
 
-本轮增加8个节点，`WorkflowImageRuntimePluginModule` 现在注册18个节点。算法仍属于独立DP.Vision；相机现场工作按用户安排延期，不阻塞这些算子。
+2026-10-02独立几何及坐标包提供10节点：业务定义、本帧坐标构建、点生成/选择、点和直线转换、生成直线、点点/点线/线线距离。模板仅是坐标来源之一，卡尺/Blob/拟合可接入同一几何链路。图像获取已融合为AcquireFrame：内置20＋独立12，共32种注册类型，工具箱隐藏四种兼容取图类型后展示28种；见[取图说明](new-vision-file-pipeline.md#acquisition-入口与图像来源)、[几何测量](vision-geometry-measurement.md)和[业务坐标](vision-coordinate-systems.md)。下文早期数量和验证数字保留为历史记录。
+
+算子扩展时增加了8个节点，`WorkflowImageRuntimePluginModule` 目前共注册19个节点。算法属于独立DP.Vision；其中13个算法节点已按节点配置选择引擎，运行前统一准备。两个示例从插件包发现实现，编译期不引用具体引擎。相机现场工作按用户安排延期，不阻塞这些算子。默认选择、配置归属及部署方式见[算法插件文档](../../../DP.Vision/ALGORITHM_PLUGINS.md)。
 
 | NodeType | 标准输出 | 已实现语义 |
 |---|---|---|
@@ -14,6 +16,8 @@
 | Vision.MapPoseCoordinate | Coordinate2D | 模板→图像或图像→模板的姿态坐标映射；未检出明确失败 |
 
 ## 定位随动扩展
+
+后续增加两个独立节点包，内置模块仍为19个节点：`Vision.ReadBarcode`（默认 zxing.code，精确掩码、同帧读码事实）与 `Vision.RecognizeTextLine`（默认 ppocr.recognize，显式预处理依赖、水平单行矩形）。宿主从目录发现，不编译引用节点包。机器资源配置、取消检查、准备错误定位及人工复核详见 [复核说明](../plugins/vision-plugin-review.md)。
 
 已有模板定位现在输出共享`CoordinateSystem`；Blob/颜色/阈值Region、卡尺及鲁棒直线可显式绑定。局部ROI编辑、正反矩阵、双坐标结果及不支持的范围详见[定位坐标系机制](vision-coordinate-systems.md)。下方653项为算子扩展时的历史验证基线。
 
@@ -68,7 +72,7 @@ var fit = new FitVisionRobustLineNodeModel {
 ```
 
 - 卡尺仅接受Gray8。起终点是原图像素边界坐标；像素中心为`.5`。整个采样带必须处于可采样像素中心范围，不裁剪越界带。
-- 沿带约1px均匀采样，垂直方向按1px平均；不暗中滤波。端部各约两个采样步长不输出梯度峰，那里没有足够插值邻域。
+- 沿带约1px均匀采样，垂直方向使用BandSampleStep（默认1px）平均；绑定定位后间隔乘尺度，不暗中滤波。端部各约两个采样步长不输出梯度峰，那里没有足够插值邻域。
 - `Profile`保存灰度剖面；`Edges`按扫描距离排序，含Position、Distance、带符号Gradient。Rising/Falling均相对于起点→终点，反向扫描会反转极性。
 - 可用两条已选边缘坐标绑定现有距离节点计算宽度；当前不自动选择业务意义上的边缘对。
 - RANSAC最多8192点、1024次采样，总距离评估不超过400万；正交重拟合内点集合不稳定、方向不可辨识、重合或证据不足均失败。不是鲁棒圆/圆弧拟合。
@@ -84,18 +88,9 @@ var fit = new FitVisionRobustLineNodeModel {
 
 候选组合最多512，默认保守工作量预算2亿（位置数×模板面积）。**搜索前**检查完整预算，超限失败；缩小搜索ROI或显式调整预算，不截断候选后宣称全局最佳。
 
-## 宿主新增服务
+## 宿主算法装配
 
-```csharp
-services.Add<IImagePreprocessor>(new OpenCvImagePreprocessor())
-    .Add<IRegionProcessor>(new OpenCvRegionProcessor())
-    .Add<IBlobSelector>(new BlobSelector())
-    .Add<ICaliperMeasurer>(new CaliperMeasurer())
-    .Add<IRobustLineFitter>(new RobustLineFitter())
-    .Add<ITemplatePoseLocator>(new OpenCvTemplatePoseLocator());
-```
-
-预处理还要求`IWorkflowVisionFrameScope`接管输出租约；其余新能力通过统一运行前预检。Module目录冻结后，宿主不能在运行中替换服务。页面继续使用共享FrameEditor及双原生Renderer，支持新Region、特征、卡尺和位姿证据拾取；不适用的ROI编辑禁用。
+当前示例从插件包发现引擎，注册ManagedVisionAlgorithmModule与WorkflowVisionAlgorithmBindings，按节点槽位统一运行前准备；不再在宿主中逐个new具体引擎。装配代码见[算法插件说明](../../../DP.Vision/ALGORITHM_PLUGINS.md)。预处理仍由IWorkflowVisionFrameScope接管输出租约。目录冻结后不能在运行中替换服务；几何证据通过共享契约进入FrameEditor及两平台Renderer。
 
 ## 验证
 

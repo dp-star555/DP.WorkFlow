@@ -10,5 +10,7 @@ public enum EWorkflowVisionRange
     /// <summary>定向采样带，可绑定定位，不接受面积ROI。</summary>
     SamplingBand,
     /// <summary>原图几何事实，可绑定结果坐标表达，不重复变换输入点。</summary>
-    GeometryFacts
+    GeometryFacts,
+    /// <summary>仅原图轴对齐矩形；不接受面积掩码或定位变换。</summary>
+    Rectangle
 }

@@ -12,10 +12,12 @@ public sealed class VisionModuleTests
         var nodes = new WorkflowNodeCatalog(); var handlers = new WorkflowNodeHandlerCatalog();
         new WorkflowRuntimePluginCatalog(nodes, handlers).Register(new WorkflowImageRuntimePluginModule()).Freeze();
         // V2-5：旧的 Vision.CaptureFrame 被面阵/线扫两个强类型节点取代，净增一个节点。
-        Assert.Equal(19, nodes.Snapshot().Count);
+        Assert.Equal(20, nodes.Snapshot().Count);
         Assert.Equal(typeof(ImageFrame), nodes.GetOrThrow("Vision.LoadFile").OutputType);
         Assert.Equal(typeof(ImageFrame), nodes.GetOrThrow("Vision.CaptureAreaFrame").OutputType);
         Assert.Equal(typeof(ImageFrame), nodes.GetOrThrow("Vision.CaptureLineScanFrame").OutputType);
+        foreach (var type in new[] { "Vision.LoadFile", "Vision.LoadFolder", "Vision.CaptureAreaFrame", "Vision.CaptureLineScanFrame" })
+            Assert.Equal("5.Vision/Acquisition", nodes.GetOrThrow(type).Category);
         Assert.DoesNotContain(nodes.Snapshot().Keys, type => type is "Vision.AcquireImage" or "Vision.RunTool" or "Vision.Blob" or "Vision.Ocr" or "Vision.PaddleOcr");
         Assert.DoesNotContain(typeof(WorkflowImageRuntimePluginModule).Assembly.GetReferencedAssemblies(), a => a.Name!.StartsWith("MachineVision", StringComparison.Ordinal));
     }
@@ -37,7 +39,7 @@ public sealed class VisionModuleTests
             var nodes = new WorkflowNodeCatalog(); var handlers = new WorkflowNodeHandlerCatalog();
             var composition = new WorkflowRuntimePluginCatalog(nodes, handlers);
             Assert.Equal(1, composition.LoadPlugins(root)); composition.Freeze();
-            Assert.Equal(19, nodes.Snapshot().Count);
+            Assert.Equal(20, nodes.Snapshot().Count);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -57,6 +59,21 @@ public sealed class VisionModuleTests
             Assert.DoesNotContain(xml.Descendants("ProjectReference"), reference =>
                 ((string?)reference.Attribute("Include"))?.Contains("MachineVision", StringComparison.Ordinal) == true);
         }
+    }
+
+    [Fact]
+    public void DeployedBuiltinCopy_IsNotRegisteredAgainByDirectoryDiscovery()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "workflow-builtin-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            File.Copy(typeof(WorkflowImageRuntimePluginModule).Assembly.Location, Path.Combine(root, "DP.WorkFlow.Nodes.Vision.dll"));
+            var nodes = new WorkflowNodeCatalog(); var handlers = new WorkflowNodeHandlerCatalog();
+            var composition = new WorkflowRuntimePluginCatalog(nodes, handlers).Register(new WorkflowImageRuntimePluginModule());
+            Assert.Equal(0, composition.LoadPlugins(root)); composition.Freeze();
+            Assert.Equal(20, nodes.Snapshot().Count);
+        }
+        finally { Directory.Delete(root, true); }
     }
 
     [Fact]

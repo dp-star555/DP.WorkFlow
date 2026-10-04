@@ -3,6 +3,8 @@ namespace DP.WorkFlow;
 /// <summary>工作流属性编辑器稳定键。节点只声明编辑语义，不依赖具体 UI 技术。</summary>
 public static class WorkflowPropertyEditorKeys
 {
+    /// <summary>统一图像获取节点的来源模式候选。</summary>
+    public const string VisionImageSourceMode = "VisionImageSourceMode";
     /// <summary>使用文件选择对话框编辑字符串路径。</summary>
     public const string FilePath = "FilePath";
 
@@ -14,6 +16,15 @@ public static class WorkflowPropertyEditorKeys
 
     /// <summary>从宿主已发布的候选集中选择线扫逻辑图像源；只对逻辑标识类属性有效，不允许自由文本。</summary>
     public const string VisionLineScanSource = "VisionLineScanSource";
+
+    /// <summary>通用算法候选键前缀，后接能力Id；新增能力无需修改共享UI。</summary>
+    public const string VisionAlgorithmPrefix = "VisionAlgorithm/";
+
+    /// <summary>选择已安装的模板定位算法实现。</summary>
+    public const string VisionTemplateAlgorithm = VisionAlgorithmPrefix + "location.template";
+
+    /// <summary>打开匹配节点挂载的模板制作及资源选择编辑器。</summary>
+    public const string VisionTemplateEditor = "VisionTemplateEditor";
 }
 
 /// <summary>为节点属性显式指定跨 WinForms/WPF 的专用编辑器。</summary>
@@ -34,4 +45,7 @@ public sealed class WorkflowPropertyEditorAttribute(string editorKey) : Attribut
 
     /// <summary>提交非空路径时是否验证文件或目录存在。</summary>
     public bool CheckExists { get; set; }
+
+    /// <summary>该属性表示编辑操作按钮；值只作状态展示，不允许标量赋值。</summary>
+    public bool IsAction { get; set; }
 }

@@ -6,6 +6,25 @@ namespace DP.WorkFlow.Tests;
 public sealed class WorkflowPropertyInspectorTests
 {
     [Fact]
+    public async Task PropertyAction_ExecutesAsyncWithoutWritingAValue_AndHonorsReadiness()
+    {
+        string blocked = "请先选择图像";
+        int calls = 0;
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entry = WorkflowPropertyEntry.CreateAction("Build", "制作", "模板", "创建模型", () => "生成模型",
+            () => { calls++; return completion.Task; }, () => blocked);
+        Assert.True(entry.IsReadOnly);
+        Assert.Throws<InvalidOperationException>(() => entry.SetValue("new value"));
+        await Assert.ThrowsAsync<InvalidOperationException>(entry.ExecuteActionAsync);
+        Assert.Equal(0, calls);
+        blocked = "";
+        var operation = entry.ExecuteActionAsync();
+        Assert.Equal(1, calls); Assert.False(operation.IsCompleted);
+        completion.SetResult(); await operation;
+        Assert.Equal("生成模型", entry.Value);
+    }
+
+    [Fact]
     public void Inspector_EditsScalarAndWorkflowInputUsingTypedCandidates()
     {
         var canvasDocument = new WorkflowDocument { Name = "Properties" };

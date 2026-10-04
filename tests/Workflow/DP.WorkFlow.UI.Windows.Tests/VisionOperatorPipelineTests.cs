@@ -10,8 +10,10 @@ namespace DP.WorkFlow.Tests;
 
 public sealed class VisionOperatorPipelineTests
 {
-    [Fact]
-    public async Task Preprocess_Region_Morphology_BlobSelectionAndColor_RoundTripAndRerun()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Preprocess_Region_Morphology_BlobSelectionAndColor_RoundTripAndRerun(bool usePlugins)
     {
         string path = Image(20, 20, (x, y) => x >= 4 && x <= 8 && y >= 4 && y <= 8 && (x == 4 || x == 8 || y == 4 || y == 8) || x == 15 && y == 15 ? (byte)255 : (byte)0);
         try
@@ -19,8 +21,10 @@ public sealed class VisionOperatorPipelineTests
             var document = RegionPipeline(path); var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
             var store = new WorkflowDocumentJsonStore(nodes); document = store.Deserialize(store.Serialize(document)).Document;
             using var scope = new WorkflowVisionFrameScope();
+            using var runtime = PluginRuntime();
+            using var bindings = new WorkflowVisionAlgorithmBindings(runtime, scope);
             using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
-            host.Configure(document, new WorkflowContext(Services(scope)));
+            host.Configure(document, new WorkflowContext(usePlugins ? PluginServices(scope, bindings) : Services(scope)));
             Assert.True((await host.RunAsync()).Success);
             var original = Output<ImageFrame>(host, "file"); var processed = Output<ImageFrame>(host, "process");
             Assert.NotEqual(original.FrameId, processed.FrameId);
@@ -48,8 +52,10 @@ public sealed class VisionOperatorPipelineTests
         using var workspace = new WorkflowDocumentWorkspace(nodes); workspace.New("算子示例");
         DP.WorkFlow.Samples.WorkflowImageDemo.PopulateProcessing(workspace.Navigator!.RootSession);
         using var scope = new WorkflowVisionFrameScope();
+        using var runtime = PluginRuntime();
+        using var bindings = new WorkflowVisionAlgorithmBindings(runtime, scope);
         using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterStandardNodeHandlers().RegisterImageNodeHandlers());
-        host.Configure(workspace.Navigator.RootSession.Document, new WorkflowContext(Services(scope)));
+        host.Configure(workspace.Navigator.RootSession.Document, new WorkflowContext(PluginServices(scope, bindings)));
         var run = await host.RunAsync(); Assert.True(run.Success, run.Message);
         var outputs = host.Engine!.RunState.NodeOutputs.Select(o => o.Value).ToArray();
         Assert.Equal(2, outputs.OfType<ImageFrame>().Count());
@@ -91,9 +97,11 @@ public sealed class VisionOperatorPipelineTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ThreeCalipers_BindEvidenceIntoRobustLine(bool mixFrames)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task ThreeCalipers_BindEvidenceIntoRobustLine(bool mixFrames, bool usePlugins)
     {
         string path = Image(64, 32, (x, y) => (byte)Math.Round(255 / (1 + Math.Exp(-(x + .5 - (20.25 + .2 * (y + .5))) / 1.2))));
         try
@@ -111,8 +119,11 @@ public sealed class VisionOperatorPipelineTests
             sequence.AddRange(calipers); sequence.Add(fit);
             var nodes = new WorkflowNodeCatalog().RegisterImageNodes(); var store = new WorkflowDocumentJsonStore(nodes);
             var document = store.Deserialize(store.Serialize(Document(sequence.ToArray()))).Document;
-            using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
-            host.Configure(document, new WorkflowContext(Services(scope)));
+            using var scope = new WorkflowVisionFrameScope();
+            using var runtime = PluginRuntime();
+            using var bindings = new WorkflowVisionAlgorithmBindings(runtime, scope);
+            using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
+            host.Configure(document, new WorkflowContext(usePlugins ? PluginServices(scope, bindings) : Services(scope)));
             var run = await host.RunAsync();
             if (mixFrames)
             {
@@ -129,9 +140,11 @@ public sealed class VisionOperatorPipelineTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Pose_BindsTransformAndRejectsMappingWhenNotFound(bool absent)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task Pose_BindsTransformAndRejectsMappingWhenNotFound(bool absent, bool usePlugins)
     {
         var pixels = new byte[] { 30,200,70,100,180,90,255,10,130,50,160,40,230,80,210 };
         string template = Image(5, 3, (x, y) => pixels[y * 5 + x]);
@@ -147,8 +160,11 @@ public sealed class VisionOperatorPipelineTests
                     X = WorkflowInput<double>.FromBinding(new WorkflowBindingKey("map", "X")), Y = WorkflowInput<double>.FromBinding(new WorkflowBindingKey("map", "Y")) });
             var nodes = new WorkflowNodeCatalog().RegisterImageNodes(); var store = new WorkflowDocumentJsonStore(nodes);
             document = store.Deserialize(store.Serialize(document)).Document;
-            using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
-            host.Configure(document, new WorkflowContext(Services(scope)));
+            using var scope = new WorkflowVisionFrameScope();
+            using var runtime = PluginRuntime();
+            using var bindings = new WorkflowVisionAlgorithmBindings(runtime, scope);
+            using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
+            host.Configure(document, new WorkflowContext(usePlugins ? PluginServices(scope, bindings) : Services(scope)));
             var run = await host.RunAsync();
             Assert.Equal(!absent, Output<TemplatePoseResult>(host, "pose").Found);
             if (absent)
@@ -187,6 +203,11 @@ public sealed class VisionOperatorPipelineTests
         new SelectVisionBlobsNodeModel { Id = "select", Frame = Input<ImageFrame>("process"), Blobs = Input<BlobAnalysisResult>("blob"), MinimumArea = 5 },
         new AnalyzeVisionColorNodeModel { Id = "color", Frame = Input<ImageFrame>("process"), Mask = Input<RegionAnalysisResult>("morph") });
 
+    private static VisionAlgorithmRuntime PluginRuntime() => new(VisionAlgorithmCatalog.Compose(new IVisionAlgorithmModule[]
+        { new ManagedVisionAlgorithmModule(), new OpenCvVisionAlgorithmModule() }));
+    private static WorkflowServiceProvider PluginServices(WorkflowVisionFrameScope scope, WorkflowVisionAlgorithmBindings bindings) => new WorkflowServiceProvider()
+        .Add<IWorkflowVisionFrameScope>(scope).Add<IWorkflowVisionAlgorithmBindings>(bindings).Add<IWorkflowNodeCapabilityProvider>(bindings)
+        .Add<IWorkflowRunPreparationService>(bindings).Add<IWorkflowRunResourceOwner>(scope);
     private static WorkflowServiceProvider Services(WorkflowVisionFrameScope scope) => new WorkflowServiceProvider()
         .Add<IImageFileReader>(new OpenCvImageFileReader()).Add<IImagePreprocessor>(new OpenCvImagePreprocessor())
         .Add<IRegionProcessor>(new OpenCvRegionProcessor()).Add<IBlobAnalyzer>(new OpenCvBlobAnalyzer()).Add<IBlobSelector>(new BlobSelector())

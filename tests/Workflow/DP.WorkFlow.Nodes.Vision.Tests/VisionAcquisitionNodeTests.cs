@@ -9,6 +9,46 @@ namespace DP.WorkFlow.Tests;
 /// </summary>
 public sealed class VisionAcquisitionNodeTests
 {
+    [Theory]
+    [InlineData(EWorkflowVisionImageSource.AreaCamera, EVisionAcquisitionKind.AreaScan)]
+    [InlineData(EWorkflowVisionImageSource.LineCamera, EVisionAcquisitionKind.LineScan)]
+    public async Task 统一相机入口只需要采集能力并保留采集帧身份(EWorkflowVisionImageSource mode, EVisionAcquisitionKind kind)
+    {
+        using var rig = new Rig(sources: [Source("Camera.Top", "dp.vision.halcon", kind: kind)],
+            captureNode: new AcquireVisionImageNodeModel { Id = "capture", SourceMode = mode, Source = new("Camera.Top"),
+                Algorithm = new() { ImplementationId = "missing.file-decoder" } });
+        var result = await rig.Host.RunAsync();
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(1, rig.Acquisition.CaptureCount);
+        var frame = Assert.IsType<ImageFrame>(rig.Host.Engine!.RunState.NodeOutputs.Single(output => output.NodeId == "capture").Value);
+        Assert.Equal("capture-1", frame.FrameId);
+        using var preview = rig.FrameScope.Capture("capture");
+        Assert.Equal(frame.FrameId, preview!.Frame.FrameId);
+    }
+
+    [Theory]
+    [InlineData(EWorkflowVisionImageSource.AreaCamera, EVisionAcquisitionKind.LineScan)]
+    [InlineData(EWorkflowVisionImageSource.LineCamera, EVisionAcquisitionKind.AreaScan)]
+    public async Task 统一相机入口在首节点前拒绝形态不匹配(EWorkflowVisionImageSource mode, EVisionAcquisitionKind kind)
+    {
+        using var rig = new Rig(sources: [Source("Camera.Top", "dp.vision.halcon", kind: kind)],
+            captureNode: new AcquireVisionImageNodeModel { Id = "capture", SourceMode = mode, Source = new("Camera.Top") });
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => rig.Host.RunAsync());
+        Assert.Contains("禁止跨类型绑定", error.Message);
+        Assert.Equal(0, rig.Acquisition.CaptureCount);
+        Assert.Equal(0, rig.Sink.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task 统一回调入口在首节点前拒绝曝光覆盖()
+    {
+        using var rig = new Rig(sources: [Buffered("Camera.Top", "dp.vision.basler")],
+            captureNode: new AcquireVisionImageNodeModel { Id = "capture", SourceMode = EWorkflowVisionImageSource.AreaCamera,
+                Source = new("Camera.Top"), ExposureMicroseconds = 100 });
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => rig.Host.RunAsync());
+        Assert.Contains("不支持节点级曝光", error.Message);
+        Assert.Equal(0, rig.Acquisition.CaptureCount);
+    }
     [Fact]
     public async Task 采集节点在首节点前拒绝未发布的源()
     {

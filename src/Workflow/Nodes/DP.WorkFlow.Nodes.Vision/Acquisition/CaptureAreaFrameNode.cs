@@ -11,7 +11,8 @@ namespace DP.WorkFlow;
 /// 两者的执行主干与输出都走 <see cref="VisionCaptureNodeExecution"/>，不产生第二套采集语义。
 /// </para>
 /// </summary>
-[WorkflowNode("Vision.CaptureAreaFrame", DisplayName = "采集面阵帧", Category = "5.Vision/ImageBuffer")]
+[WorkflowNode("Vision.CaptureAreaFrame", DisplayName = "采集面阵帧", Category = "5.Vision/Acquisition")]
+[System.ComponentModel.Browsable(false)]
 public sealed class CaptureAreaFrameNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
 {
     /// <inheritdoc/>

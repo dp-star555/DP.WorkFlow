@@ -25,6 +25,13 @@ public static class WorkflowVisionSourceChoices
         ArgumentNullException.ThrowIfNull(catalog);
         return (editorKey, _) => editorKey switch
         {
+            WorkflowPropertyEditorKeys.VisionImageSourceMode =>
+            [
+                new("文件", EWorkflowVisionImageSource.File),
+                new("文件夹", EWorkflowVisionImageSource.Folder),
+                new("面阵相机", EWorkflowVisionImageSource.AreaCamera),
+                new("线扫相机", EWorkflowVisionImageSource.LineCamera)
+            ],
             WorkflowPropertyEditorKeys.VisionAreaSource => Project(catalog, EVisionAcquisitionKind.AreaScan),
             WorkflowPropertyEditorKeys.VisionLineScanSource => Project(catalog, EVisionAcquisitionKind.LineScan),
             _ => Array.Empty<WorkflowPropertyChoice>()

@@ -93,6 +93,7 @@ public sealed partial class ModernPropertyGrid
         return comparison.IndexOf(presentation.DisplayName, search, options) >= 0
             || property.Name.Contains(search, StringComparison.OrdinalIgnoreCase)
             || comparison.IndexOf(presentation.CategoryText, search, options) >= 0
+            || GroupPath(property).Any(group => comparison.IndexOf(group, search, options) >= 0)
             || comparison.IndexOf(presentation.Description, search, options) >= 0;
     }
 
@@ -151,15 +152,83 @@ public sealed partial class ModernPropertyGrid
             Padding = Padding.Empty,
             BackColor = _theme.Background
         };
-        foreach (var property in properties) body.Controls.Add(CreateRow(property));
-        var expandedHeight = body.Controls.Cast<Control>().Sum(control => control.Height + control.Margin.Vertical);
+        var items = new List<(Control Control, string[] Ancestors)>();
+        var headers = new List<(ModernButton Button, string Key)>();
+        var searching = _search.Text.Trim().Length != 0;
+        var state = new CategoryBodyState(category, 0) { MeasureExpandedHeight = Measure };
+        AddLevel(properties, [], 0);
+        int Measure() => items.Where(item => searching || !item.Ancestors.Any(_collapsedCategories.Contains))
+            .Sum(item => item.Control.Height + item.Control.Margin.Vertical);
+        var expandedHeight = Measure();
         var collapsed = _collapsedCategories.Contains(category);
-        body.Tag = new CategoryBodyState(category, expandedHeight);
+        state.ExpandedHeight = expandedHeight;
+        body.Tag = state;
         body.Height = collapsed ? 0 : expandedHeight;
         body.Visible = !collapsed;
+        UpdateGroups();
         body.SizeChanged += (_, _) => ResizeCategoryRows(body);
+        body.Disposed += (_, _) => state.CancelAnimation();
         return body;
+
+        void AddLevel(IReadOnlyList<PropertyDescriptor> current, string[] ancestors, int depth)
+        {
+            foreach (var property in current.Where(property => GroupPath(property).Count <= depth))
+            {
+                var row = CreateRow(property);
+                body.Controls.Add(row);
+                items.Add((row, ancestors));
+            }
+            foreach (var group in current.Where(property => GroupPath(property).Count > depth)
+                         .GroupBy(property => GroupPath(property)[depth], StringComparer.Ordinal))
+            {
+                // 长度编码避免组名里的分隔符造成状态键碰撞。
+                var key = (ancestors.LastOrDefault() ?? "group:" + category.Length + ":" + category) + ":" + group.Key.Length + ":" + group.Key;
+                var button = new ModernButton
+                {
+                    Text = group.Key,
+                    AccessibleName = group.Key,
+                    Icon = _collapsedCategories.Contains(key) && !searching ? ModernIconKind.ChevronRight : ModernIconKind.ChevronDown,
+                    ButtonType = ModernButtonType.Text,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    Height = ScaleLogical(32),
+                    Padding = new Padding(ScaleLogical((depth + 1) * 12), 0, 0, 0),
+                    Margin = new Padding(0, ScaleLogical(2), 0, ScaleLogical(2)),
+                    Theme = _theme
+                };
+                button.Click += (_, _) =>
+                {
+                    if (searching) return;
+                    if (!_collapsedCategories.Add(key)) _collapsedCategories.Remove(key);
+                    UpdateGroups();
+                    ResizeRows();
+                };
+                body.Controls.Add(button);
+                items.Add((button, ancestors));
+                headers.Add((button, key));
+                AddLevel(group.ToArray(), [.. ancestors, key], depth + 1);
+            }
+        }
+
+        void UpdateGroups()
+        {
+            state.CancelAnimation();
+            body.SuspendLayout();
+            try
+            {
+                foreach (var item in items)
+                    item.Control.Visible = searching || !item.Ancestors.Any(_collapsedCategories.Contains);
+                foreach (var header in headers)
+                    header.Button.Icon = _collapsedCategories.Contains(header.Key) && !searching
+                        ? ModernIconKind.ChevronRight : ModernIconKind.ChevronDown;
+                state.ExpandedHeight = Measure();
+                body.Height = _collapsedCategories.Contains(category) ? 0 : state.ExpandedHeight;
+            }
+            finally { body.ResumeLayout(); }
+        }
     }
+
+    private static IReadOnlyList<string> GroupPath(PropertyDescriptor property) =>
+        (property.Attributes[typeof(PropertyGroupAttribute)] as PropertyGroupAttribute)?.Path ?? Array.Empty<string>();
 
     private void ResizeCategoryRows(Control body)
     {
@@ -194,6 +263,8 @@ public sealed partial class ModernPropertyGrid
             CornerRadius = 7,
             Tag = property
         };
+        // 固定高度的属性行必须约束单元格高度，不能由复合编辑器的默认首选高度撑开。
+        row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         // 名称列使用统一宽度，保证各行编辑器左边缘对齐；单位列按文本内容自动占用空间。
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(120)));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -206,6 +277,7 @@ public sealed partial class ModernPropertyGrid
             Dock = DockStyle.Fill,
             AutoEllipsis = true,
             TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(ScaleLogical(GroupPath(property).Count * 12), 0, 0, 0),
             ForeColor = _theme.TextSecondary
         };
         var editor = CreateEditor(property);

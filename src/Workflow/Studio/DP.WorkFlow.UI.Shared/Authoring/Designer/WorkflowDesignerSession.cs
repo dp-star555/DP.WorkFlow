@@ -229,6 +229,8 @@ public sealed class WorkflowDesignerSession
     /// <summary>返回按分类和显示名称排序的工具箱项目。</summary>
     /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public IReadOnlyList<WorkflowToolboxItem> GetToolboxItems() => Catalog.Snapshot().Values
+        .Where(descriptor => descriptor.ModelType.GetCustomAttributes(typeof(System.ComponentModel.BrowsableAttribute), true)
+            .OfType<System.ComponentModel.BrowsableAttribute>().All(attribute => attribute.Browsable))
         .Select(descriptor => new WorkflowToolboxItem(
             descriptor.NodeType,
             descriptor.DisplayName ?? descriptor.NodeType,
