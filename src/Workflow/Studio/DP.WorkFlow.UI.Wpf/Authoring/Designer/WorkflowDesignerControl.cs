@@ -520,7 +520,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             headerLayout.TitleBounds.Width,
             headerLayout.TitleBounds.Height,
             headerLayout.TitleFontSize,
-            FontWeights.SemiBold,
+            FontWeights.Normal,
             ForegroundBrush);
         DrawPorts(context, item, WorkflowPortDirection.Input);
         DrawPorts(context, item, WorkflowPortDirection.Output);
@@ -531,7 +531,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             DrawPortSideTargets(context, item, bounds);
     }
 
-    /// <summary>在节点标题区域绘制执行序号和耗时。</summary>
+    /// <summary>在节点正文区绘制执行序号和耗时。</summary>
     /// <param name="context">绘图上下文或当前编辑上下文。</param>
     /// <param name="layout">标题和运行摘要的独立布局区域。</param>
     /// <param name="text">要显示或处理的文本。</param>
@@ -551,7 +551,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             layout.RuntimeFontSize,
             FontWeights.Normal,
             Brush(200, 200, 200),
-            TextAlignment.Right);
+            TextAlignment.Left);
     }
 
     /// <summary>连接拖动期间绘制所有可用输入端点。</summary>
