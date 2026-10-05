@@ -37,7 +37,7 @@ public static class WorkflowImageNodes
             .Register(WorkflowNodeDescriptor.Create<AnalyzeVisionBlobsNodeModel, BlobAnalysisResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<AnalyzeVisionColorNodeModel, ColorAnalysisResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<MeasureVisionEdgesNodeModel, EdgeMeasurementResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<LocateVisionTemplateNodeModel, TemplateLocationResult>(ports: ports))
+            .Register(WorkflowNodeDescriptor.Create<LocateVisionTemplateNodeModel, TemplatePoseResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<SolveVisionCalibrationNodeModel, AffineCalibration>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<MapVisionCoordinateNodeModel, Coordinate2D>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<MeasureVisionDistanceNodeModel, VisionDistanceResult>(ports: ports))

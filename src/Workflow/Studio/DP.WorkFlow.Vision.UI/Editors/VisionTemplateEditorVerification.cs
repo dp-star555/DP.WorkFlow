@@ -56,15 +56,13 @@ public sealed partial class VisionTemplateEditorModel
     }
 
     private async Task<TemplatePoseResult> MatchModelAsync(VisionTemplateBuild build, ImageFrame input, PixelBounds bounds,
-        TemplatePoseOptions options, RegionGeometry? region = null, VisionCoordinateSystem? parent = null)
+        TemplatePoseOptions options, RegionGeometry? region = null)
     {
         var issue = SearchIssue(bounds, options);
         if (issue.Length != 0) throw new InvalidOperationException(issue);
         using var resource = await _runtime!.PreviewAsync(build, _token);
         var matcher = resource.Instance as IPreparedVisionTemplateMatcher ?? throw new InvalidOperationException("预览模型类型无效。");
-        var result = await Task.Run(() => matcher.Match(input, bounds, options, region, _token), _token);
-        result = result.InReferenceCoordinates(_node.CoordinateSystemId, input, matcher.Definition, matcher.ModelIdentity);
-        return parent == null ? result : result.WithSearchCoordinates(parent);
+        return await Task.Run(() => matcher.Match(input, bounds, options, region, _token), _token);
     }
 
     private static string DescribeSearch(ImageFrame frame, PixelBounds bounds, TemplatePoseOptions options)
@@ -73,7 +71,7 @@ public sealed partial class VisionTemplateEditorModel
             + $"角度范围 [{options.MinimumAngleRadians * 180 / Math.PI:G6}°, {options.MaximumAngleRadians * 180 / Math.PI:G6}°]；尺度范围 [{options.MinimumScale:G6}, {options.MaximumScale:G6}]；阈值 {options.MinimumScore:G6}";
     }
 
-    private static string DetectionSummary(TemplatePoseResult result) => result.Transform is { } pose
-        ? $"分数 {result.Score:F5} · 位置 ({pose.Center.X:F2}, {pose.Center.Y:F2})\n角度 {pose.AngleRadians * 180 / Math.PI:F2}° · 尺度 {pose.Scale:F4}"
+    private static string DetectionSummary(TemplatePoseResult result) => result.Found
+        ? $"分数 {result.Score:F5} · 中心 ({result.CenterX:F2}, {result.CenterY:F2})\n角度 {result.AngleDegrees:F2}° · 尺度 {result.Scale:F4}"
         : "未返回达标候选；请检查制作区域、对比度/极性、阈值及搜索配置。";
 }

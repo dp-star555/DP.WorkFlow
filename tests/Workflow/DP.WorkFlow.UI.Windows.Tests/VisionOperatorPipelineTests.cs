@@ -172,7 +172,9 @@ public sealed class VisionOperatorPipelineTests
             else
             {
                 Assert.True(run.Success, run.Message);
-                var mapped = Output<Coordinate2D>(host, "map"); Assert.Equal(12, mapped.X, 8); Assert.Equal(10, mapped.Y, 8);
+                // 参考坐标原点在模板参考点；图像模板的参考点是模板中心。
+                var pose = Output<TemplatePoseResult>(host, "pose"); Assert.Equal(14.5, pose.CenterX, 8); Assert.Equal(0, pose.AngleDegrees, 8);
+                var mapped = Output<Coordinate2D>(host, "map"); Assert.Equal(14.5, mapped.X, 8); Assert.Equal(11.5, mapped.Y, 8);
                 var inverse = Output<Coordinate2D>(host, "inverse"); Assert.Equal(0, inverse.X, 8); Assert.Equal(0, inverse.Y, 8);
             }
         }

@@ -104,6 +104,21 @@ public sealed class WorkflowNodeResultPageTests
         Assert.Equal("匹配分数", WorkflowOutputDisplayNames.Resolve(typeof(DP.Vision.Algorithms.TemplatePoseResult).GetProperty("Score")!));
     }
 
+    [Fact]
+    public void TemplateMatchOutput_ShowsPoseValues_AndHidesDiagnosticMembers()
+    {
+        WorkflowVisionOutputNames.EnsureRegistered();
+        var result = new DP.Vision.Algorithms.TemplatePoseResult("frame", "template", .95,
+            new DP.Vision.Algorithms.TemplatePoseTransform(20, 10, new DP.Vision.PointD(50, 40), Math.PI / 2, 1.5),
+            new DP.Vision.Algorithms.TemplateReference(10, 5, 0, "reference"));
+        var items = new List<WorkflowNodeResultItem>();
+
+        WorkflowNodeResultPageModel.AddOutput(items, result);
+
+        Assert.Equal(new[] { "是否找到", "匹配分数", "中心X", "中心Y", "角度(°)", "缩放", "参考点X", "参考点Y", "参考方向(°)", "摘要" }, items.Select(item => item.Name));
+        Assert.Equal("90", items.Single(item => item.Name == "角度(°)").Value);
+    }
+
     /// <summary>列出输出类型中没有中文显示名称的公开成员；坐标分量 X/Y 本身即为显示名。</summary>
     internal static IEnumerable<string> UnnamedMembers(Type? type)
     {

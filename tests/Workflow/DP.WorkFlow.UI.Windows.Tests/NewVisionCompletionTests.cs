@@ -162,8 +162,8 @@ public sealed class NewVisionCompletionTests
             host.Configure(Document(template, file, locate), new WorkflowContext(new WorkflowServiceProvider()
                 .Add<IImageFileReader>(new OpenCvImageFileReader()).Add<IWorkflowVisionFrameScope>(scope).Add<ITemplateLocator>(new OpenCvTemplateLocator())));
             Assert.True((await host.RunAsync()).Success);
-            var result = Assert.IsType<TemplateLocationResult>(host.Engine!.RunState.NodeOutputs.Last().Value);
-            Assert.True(result.Found); Assert.Equal(8, result.Bounds!.Value.X); Assert.Equal(7, result.Bounds.Value.Y);
+            var result = Assert.IsType<TemplatePoseResult>(host.Engine!.RunState.NodeOutputs.Last().Value);
+            Assert.True(result.Found); Assert.Equal(10.5, result.CenterX); Assert.Equal(9.5, result.CenterY);
         }
         finally { Directory.Delete(folder, true); }
     }

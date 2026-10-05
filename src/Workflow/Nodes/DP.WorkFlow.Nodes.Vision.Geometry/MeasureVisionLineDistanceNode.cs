@@ -13,7 +13,7 @@ public sealed class MeasureVisionLineDistanceNodeModel : WorkflowVisionGeometryA
     /// <summary>第二直线。</summary>
     public WorkflowInput<VisionLine> B { get; set; } = WorkflowInput<VisionLine>.FromLiteral(null);
     /// <summary>测量空间。</summary>
-    [WorkflowProperty("测量空间", "距离始终带image-px或template-px单位。", Category = "测量")]
+    [WorkflowProperty("测量空间", "距离单位为image-px，或局部坐标定义的单位（reference-px/mm）。", Category = "测量")]
     public EVisionCoordinateSpace Space { get; set; }
     /// <summary>无限直线非平行时距离为零；有限线段可以不相交。</summary>
     [WorkflowProperty("距离模式", "相交的无限直线最短距离为零；工件端点间隙应显式使用有限线段。", Category = "测量")]

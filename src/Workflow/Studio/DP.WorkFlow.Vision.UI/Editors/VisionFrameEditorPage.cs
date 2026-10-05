@@ -175,7 +175,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         var range = node.ResolvePreviewRange(frame, parent, maskPreview?.Facts as RegionAnalysisResult);
         var options = _node is LocateVisionTemplatePoseNodeModel pose ? pose.OptionsForPreview(parent)
             : new TemplatePoseOptions(parent?.RotationRadians ?? 0, parent?.RotationRadians ?? 0, parent?.SimilarityScale ?? 1, parent?.SimilarityScale ?? 1, ((LocateVisionTemplateNodeModel)_node).MinimumScore);
-        await template.TryMatchAsync(frame, range.Bounds, options, range.Region, parent);
+        await template.TryMatchAsync(frame, range.Bounds, options, range.Region);
     }
     /// <summary>共享ROI编辑器，原图坐标。</summary>
     public RoiEditor Editor { get; }
@@ -329,7 +329,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             _visuals = visuals; _lastKey = key;
             Status = Describe(facts, frame) + maskStatus;
             if (_node is AnalyzeVisionFrameNodeModel { Coordinates: { } binding })
-                Status += CoordinateEditingReady ? $" {(SupportsRegions ? "ROI" : "几何表达")}绑定模板局部系 {binding.CoordinateSystemId}，按本帧定位显示。" : " 当前视图只读，不使用其他帧的定位。";
+                Status += CoordinateEditingReady ? $" {(SupportsRegions ? "ROI" : "几何表达")}绑定坐标系 {binding.CoordinateSystemId}，按本帧坐标系显示。" : " 当前视图只读，不使用其他帧的定位。";
             return canvas;
         }
     }
@@ -346,12 +346,10 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         IVisionGeometryFact result => result.Summary,
         RegionAnalysisResult r => $"精确Region面积 {r.Area}；孔洞保留，空区域正常完成。",
         CaliperResult c => $"卡尺边缘 {c.Count}；剖面采样 {c.Profile.Count}；梯度峰抛物线插值。",
-        TemplatePoseResult p => $"模板姿态 Found={p.Found}；Score={p.Score:F5}；角度 {p.Transform?.AngleRadians * 180 / Math.PI:F2}°；尺度 {p.Transform?.Scale:F4}。",
         RobustLineResult r => $"鲁棒直线内点 {r.InlierCount}；RMS {r.RmsError:F4}px。",
         BlobAnalysisResult b => $"帧 {frame.FrameId}；连通域 {b.Count}；完成≠产品合格。点击Region查看面积/质心。",
         ColorAnalysisResult c => $"RGB=({c.Red:F3},{c.Green:F3},{c.Blue:F3})；像素 {c.PixelCount}；Alpha不加权。",
         EdgeMeasurementResult e => $"{e.Model}；边缘 {e.PointCount}；RMS {e.RmsError:F4}px；半径 {e.Radius:F4}px。",
-        TemplateLocationResult t => $"平移定位 Found={t.Found}；Score={t.Score:F5}（非概率）；相对于固定搜索姿态平移。", 
         _ => $"帧 {frame.FrameId}；{frame.Image.Info.Width}×{frame.Image.Info.Height}；{frame.Image.Info.Layout}"
     };
 
@@ -369,12 +367,6 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
                 yield return new Visual($"edge-{i}", new EllipseGeometry(caliper.Edges[i].Position, 1, 1), 0xFFFFCC00,
                     $"边缘 ({caliper.Edges[i].Position.X:F4},{caliper.Edges[i].Position.Y:F4})；梯度 {caliper.Edges[i].Gradient:F3}");
         }
-        if (facts is TemplatePoseResult { Transform: { } pose })
-        {
-            var corners = new[] { new Coordinate2D(0, 0), new Coordinate2D(pose.TemplateWidth, 0), new Coordinate2D(pose.TemplateWidth, pose.TemplateHeight), new Coordinate2D(0, pose.TemplateHeight) }
-                .Select(pose.ToImage).Select(p => new PointD(p.X, p.Y)).ToArray();
-            yield return new Visual("pose", new ContourGeometry(corners, closed: true), 0xFF33BBFF, $"模板姿态 {pose.AngleRadians * 180 / Math.PI:F2}° ×{pose.Scale:F4}");
-        }
         if (facts is RobustLineResult line)
             yield return new Visual("robust-line", new ContourGeometry(new[] { line.A, line.B }), 0xFFFFCC00, $"内点 {line.InlierCount}；RMS {line.RmsError:F4}");
         if (facts is BlobAnalysisResult blobs)
@@ -387,8 +379,6 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             yield return new Visual("measurement", e.Model == EEdgeModel.Line
                 ? new ContourGeometry(new[] { e.A, e.B }) : new EllipseGeometry(e.A, e.Radius, e.Radius),
                 0xFFFFCC00, $"{e.Model} RMS={e.RmsError:F4}px");
-        if (facts is TemplateLocationResult { MatchGeometry: { } match })
-            yield return new Visual("match", match, 0xFF33BBFF, "模板实际匹配范围；非外接框");
     }
 
     /// <inheritdoc/>

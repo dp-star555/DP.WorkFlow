@@ -22,7 +22,7 @@ public sealed class CreateVisionPointNodeModel : WorkflowVisionGeometryNodeModel
     public override IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = base.ValidateConfiguration().ToList();
-        if (!Enum.IsDefined(Space) || Space == EVisionCoordinateSpace.TemplateLocal && Coordinates is null) errors.Add("局部点必须明确绑定本帧坐标系。");
+        if (!Enum.IsDefined(Space) || Space == EVisionCoordinateSpace.Local && Coordinates is null) errors.Add("局部点必须明确绑定本帧坐标系。");
         if (PointX is null || PointY is null || PointX.Source == WorkflowValueSource.Literal && (!double.IsFinite(PointX.LiteralValue) || Math.Abs(PointX.LiteralValue) > 1e9)
             || PointY.Source == WorkflowValueSource.Literal && (!double.IsFinite(PointY.LiteralValue) || Math.Abs(PointY.LiteralValue) > 1e9)) errors.Add("视觉点坐标必须有限且不超过正负十亿。");
         return errors;

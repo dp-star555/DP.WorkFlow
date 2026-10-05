@@ -3,7 +3,7 @@ using DP.Vision.Algorithms;
 
 namespace DP.WorkFlow;
 
-/// <summary>按角度及尺度区间搜索模板，输出姿态及正反坐标变换。</summary>
+/// <summary>按角度及尺度区间搜索模板，输出中心、角度、缩放和参考点；坐标系由“构建本帧坐标系”生成。</summary>
 [WorkflowNode("Vision.LocateTemplatePose", DisplayName = "旋转尺度模板定位", Category = "5.Vision/Location")]
 public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode, IWorkflowVisionTemplateNode
 {
@@ -49,9 +49,6 @@ public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeMo
     public override string NodeType => "Vision.LocateTemplatePose";
     /// <inheritdoc/>
     public override EWorkflowVisionRange RangeCapability => EWorkflowVisionRange.Region;
-    /// <summary>持久化模板坐标系定义ID；重建局部原点时须更换，不能使用运行FrameId。</summary>
-    [WorkflowProperty("坐标系定义ID", "模板局部原点的稳定身份；下游制作ROI时同时锁定模板像素签名。", Category = "定位坐标系")]
-    public string CoordinateSystemId { get; set; } = Guid.NewGuid().ToString("N");
     /// <summary>独立模板帧绑定。</summary>
     [WorkflowProperty("模板图像", "ImageFrame绑定，模板与目标身份分别校验。", Category = "输入")]
     [WorkflowPropertyVisibleWhen(nameof(TemplateSource), nameof(EWorkflowVisionTemplateSource.ImageBinding))]
@@ -93,7 +90,6 @@ public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeMo
     public override IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = base.ValidateConfiguration().ToList();
-        if (string.IsNullOrWhiteSpace(CoordinateSystemId)) errors.Add("模板坐标系定义ID不能为空。");
         errors.AddRange(WorkflowVisionTemplateResource.Validate(this));
         if (TemplateSource == EWorkflowVisionTemplateSource.ImageBinding && (Template is null || Template.Source != WorkflowValueSource.Binding || Template.Binding is null || Template.LiteralValue is not null)) errors.Add("模板必须使用图像绑定。");
         try { _ = Options(); } catch (ArgumentException ex) { errors.Add(ex.Message); }
@@ -112,19 +108,17 @@ public sealed class LocateVisionTemplatePoseNodeHandler : WorkflowNodeHandler<Lo
         {
             var modelRange = node.ResolveRange(frame, context, cancellationToken);
             var modelResult = WorkflowVisionTemplateResource.Match(node, context, frame, modelRange.Bounds, modelRange.Region,
-                modelRange.Coordinates, node.Options(modelRange.Coordinates), cancellationToken);
+                node.Options(modelRange.Coordinates), cancellationToken);
             return ValueTask.FromResult(NodeExecutionResult.Continue(output: modelResult, projection: WorkflowVisionFrameScope.Stage(context, frame, modelResult)));
         }
         var template = context.ResolveInput(node.Template) ?? throw new InvalidOperationException("模板帧为空。");
-        var range = node.ResolveRange(frame, context, cancellationToken); var coordinates = range.Coordinates;
+        var range = node.ResolveRange(frame, context, cancellationToken);
         var result = WorkflowVisionAlgorithmInvocation.Invoke(context, node.Algorithm, "opencv.template-pose",
-            (ITemplatePoseLocator algorithm) => algorithm.Locate(frame, template, range.Bounds, node.Options(coordinates), cancellationToken, range.Region), cancellationToken)
+            (ITemplatePoseLocator algorithm) => algorithm.Locate(frame, template, range.Bounds, node.Options(range.Coordinates), cancellationToken, range.Region), cancellationToken)
             ?? throw new InvalidOperationException("姿态定位返回空结果。");
         if (result.TemplateFrameId != template.FrameId) throw new InvalidOperationException("定位模板身份不一致。");
         if (result.Transform is { } pose && (pose.TemplateWidth != template.Image.Info.Width || pose.TemplateHeight != template.Image.Info.Height))
             throw new InvalidOperationException("定位变换的模板尺寸不一致。");
-        result = result.InCoordinateSystem(node.CoordinateSystemId, frame, template, cancellationToken);
-        if (coordinates is not null) result = result.WithSearchCoordinates(coordinates);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
@@ -137,14 +131,14 @@ public sealed class MapVisionPoseCoordinateNodeModel : WorkflowNodeModel, IWorkf
     /// <inheritdoc/>
     public override string NodeType => "Vision.MapPoseCoordinate";
     /// <summary>定位事实绑定。</summary>
-    [WorkflowProperty("定位结果", "TemplatePoseResult绑定，必须Found。", Category = "输入")]
+    [WorkflowProperty("定位结果", "模板匹配结果绑定，必须找到目标。", Category = "输入")]
     public WorkflowInput<TemplatePoseResult> Pose { get; set; } = WorkflowInput<TemplatePoseResult>.FromLiteral(null);
     /// <summary>X常量或绑定。</summary>
     public WorkflowInput<double> X { get; set; } = WorkflowInput<double>.FromLiteral(0);
     /// <summary>Y常量或绑定。</summary>
     public WorkflowInput<double> Y { get; set; } = WorkflowInput<double>.FromLiteral(0);
-    /// <summary>启用时图像→模板，否则模板→图像。</summary>
-    [WorkflowProperty("反向映射", "启用：图像到参考；关闭：参考到图像。资源模式采用制作原点和方向，旧图像模式仍采用模板像素边界。", Category = "映射")]
+    /// <summary>启用时图像→参考，否则参考→图像。</summary>
+    [WorkflowProperty("反向映射", "启用：图像到参考；关闭：参考到图像。参考坐标原点在模板参考点、X轴沿参考方向，单位为模板像素。", Category = "映射")]
     public bool Inverse { get; set; }
     /// <inheritdoc/>
     public IReadOnlyList<string> ValidateConfiguration()
@@ -165,11 +159,9 @@ public sealed class MapVisionPoseCoordinateNodeHandler : WorkflowNodeHandler<Map
     {
         cancellationToken.ThrowIfCancellationRequested();
         var result = context.ResolveInput(node.Pose) ?? throw new InvalidOperationException("没有定位结果，不能映射坐标。");
-        var pose = result.Transform ?? throw new InvalidOperationException("没有达标定位，不能映射坐标。");
+        var matrix = result.ReferenceToImage ?? throw new InvalidOperationException("没有达标定位，不能映射坐标。");
         var point = new Coordinate2D(context.ResolveInput(node.X), context.ResolveInput(node.Y));
-        var mapped = result.CoordinateSystem is { } coordinates
-            ? (node.Inverse ? coordinates.ImageToLocal : coordinates.LocalToImage).Map(point)
-            : node.Inverse ? pose.ToTemplate(point) : pose.ToImage(point);
+        var mapped = (node.Inverse ? matrix.Inverse() : matrix).Map(point);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: mapped));
     }
 }

@@ -1362,14 +1362,13 @@ public sealed class VisionTemplateAuthoringTests
                 .Add<IWorkflowNodeCapabilityProvider>(bindings).Add<IWorkflowRunPreparationService>(bindings).Add<IWorkflowRunResourceOwner>(frames);
             using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers()); host.Configure(document, new WorkflowContext(services));
             var run = await host.RunAsync(); Assert.True(run.Success, run.Message);
-            var result = Assert.IsAssignableFrom<IVisionCoordinateResult>(host.Engine!.RunState.NodeOutputs.Single(o => o.NodeId == "locate").Value);
-            Assert.NotNull(result.CoordinateSystem); Assert.Equal(pose ? 2d : 1d, result.CoordinateSystem!.LocalToImage.Tx, 5); Assert.Equal(1d, result.CoordinateSystem.LocalToImage.Ty, 5);
+            var result = Assert.IsType<TemplatePoseResult>(host.Engine!.RunState.NodeOutputs.Single(o => o.NodeId == "locate").Value);
+            Assert.True(result.Found); Assert.Equal(pose ? 2d : 1d, result.ReferenceX, 5); Assert.Equal(1d, result.ReferenceY, 5);
             if (pose)
             {
                 var point = Assert.IsType<Coordinate2D>(host.Engine.RunState.NodeOutputs.Single(o => o.NodeId == "map").Value);
                 Assert.Equal(2d, point.X, 5); Assert.Equal(1d, point.Y, 5);
             }
-            Assert.Equal(EVisionCoordinateUnit.ReferencePixel, result.CoordinateSystem.Definition.Unit);
         }
         finally { await editor.DisposeAsync(); }
     }
@@ -1400,20 +1399,25 @@ public sealed class VisionTemplateAuthoringTests
         var parameter = editor.Parameters.Single(p => p.Id == "blurKernel"); editor.SetParameter(parameter, "3"); await editor.BuildAsync(); editor.PrepareCommit();
         var second = VisionTemplateStore.Capture(Path.Combine(fixture.Root, node.ModelAlgorithm.Settings["templatePath"]));
         Assert.NotEqual(first.Manifest.RevisionId, second.Manifest.RevisionId);
-        Assert.Equal(first.Manifest.Definition.CoordinateDefinition(node.CoordinateSystemId).Signature, second.Manifest.Definition.CoordinateDefinition(node.CoordinateSystemId).Signature);
+        Assert.Equal(first.Manifest.Definition.Reference().Signature, second.Manifest.Definition.Reference().Signature);
         using var image = VisionTemplateSource.Decode(first.Read("source/image.bin")); using var frame = new ImageFrame("frame", image);
-        var pose = new TemplatePoseTransform(4, 4, new PointD(2, 2), 0, 1);
-        var oldCoordinates = first.Manifest.Definition.Locate(node.CoordinateSystemId, frame, pose, first.Identity);
-        var binding = WorkflowVisionCoordinateBinding.Capture("locate", oldCoordinates);
+        // 下游经“构建本帧坐标系”的模板方式随动：坐标定义并入模板参考签名。
+        var (catalog, _) = GeometryPluginTestCatalog.Create(Path.Combine(fixture.Root, "plugins"));
+        var definitionNode = GeometryPluginTestCatalog.Definition(catalog, "definition", "part");
+        var build = GeometryPluginTestCatalog.BuildFromTemplate(catalog, "part", "frame", "definition", "locate");
+        var business = ((IWorkflowVisionCoordinateDefinitionNode)definitionNode).GetCoordinateDefinition();
+        VisionCoordinateSystem Located(VisionTemplateDefinition definition) =>
+            VisionCoordinateBuilder.FromMatrix(definition.Reference().Bind(business), frame, CoordinateMatrix2D.Identity);
+        var binding = WorkflowVisionCoordinateBinding.Capture("part", Located(first.Manifest.Definition));
         node.Id = "locate";
         var downstream = new AnalyzeVisionColorNodeModel { Coordinates = binding };
-        binding.Validate(second.Manifest.Definition.Locate(node.CoordinateSystemId, frame, pose, second.Identity), frame);
-        Assert.Empty(downstream.ValidateDocumentConfiguration(new IWorkflowNodeModel[] { node, downstream }));
+        binding.Validate(Located(second.Manifest.Definition), frame);
+        Assert.Empty(downstream.ValidateDocumentConfiguration(new IWorkflowNodeModel[] { node, definitionNode, build, downstream }));
         editor.OriginX += .5; await editor.BuildAsync(); editor.PrepareCommit();
         var third = VisionTemplateStore.Capture(Path.Combine(fixture.Root, node.ModelAlgorithm.Settings["templatePath"]));
         Assert.Equal(2, third.Manifest.Definition.ReferenceVersion);
-        Assert.Throws<InvalidOperationException>(() => binding.Validate(third.Manifest.Definition.Locate(node.CoordinateSystemId, frame, pose, third.Identity), frame));
-        Assert.Single(downstream.ValidateDocumentConfiguration(new IWorkflowNodeModel[] { node, downstream }));
+        Assert.Throws<InvalidOperationException>(() => binding.Validate(Located(third.Manifest.Definition), frame));
+        Assert.Single(downstream.ValidateDocumentConfiguration(new IWorkflowNodeModel[] { node, definitionNode, build, downstream }));
     }
 
     [Fact]
@@ -1503,7 +1507,7 @@ public sealed class VisionTemplateAuthoringTests
         await editor.ReadSourceAsync(fixture.SamplePath); await editor.BuildAsync();
         using var image = await fixture.Reader.ReadAsync(fixture.SamplePath); using var frame = new ImageFrame("trial", image);
         await editor.TryMatchAsync(frame, new PixelBounds(0, 0, 4, 4), new TemplatePoseOptions(0d, 0d, 1d, 1d, .99));
-        Assert.True(editor.TrialResult!.Found); Assert.NotNull(editor.TrialResult.CoordinateSystem);
+        Assert.True(editor.TrialResult!.Found); Assert.NotNull(editor.TrialResult.ReferencePoint);
         Assert.Empty(node.ModelAlgorithm.Settings); Assert.False(Directory.Exists(Path.Combine(fixture.Root, "Resources")));
         using var canvas = editor.Capture(true); Assert.Equal("trial", canvas!.FrameId);
     }
@@ -1600,7 +1604,7 @@ public sealed class VisionTemplateAuthoringTests
                 Assert.False(_disposed);
                 // 原生调用可能在页面关闭后才返回，期间输入图像租约仍须可读。
                 var bytes = new byte[frame.Image.Info.ByteLength]; frame.Image.CopyTo(0, bytes, 0, bytes.Length);
-                return fail ? throw new InvalidOperationException("原生自检错误") : new TemplatePoseResult(frame.FrameId, ModelIdentity, 0, null);
+                return fail ? throw new InvalidOperationException("原生自检错误") : new TemplatePoseResult(frame.FrameId, ModelIdentity, 0, null, Definition.Reference());
             }
             public void Dispose() { Assert.False(_disposed); _disposed = true; Interlocked.Increment(ref owner.DisposedMatchers); }
         }

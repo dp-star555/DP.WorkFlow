@@ -38,21 +38,21 @@ public sealed class VisionCoordinatePipelineTests
     public async Task ActualMatching_RoiAndResultsFollowNewImage_WithoutChangingDocument()
     {
         using var data = new Images();
-        var nodes = new WorkflowNodeCatalog().RegisterImageNodes(); var store = new WorkflowDocumentJsonStore(nodes);
+        var nodes = data.Nodes; var store = new WorkflowDocumentJsonStore(nodes);
         var document = store.Deserialize(store.Serialize(data.Pipeline())).Document;
         string configuration = store.Serialize(document);
-        using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
+        using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(nodes, data.Handlers);
         host.Configure(document, new WorkflowContext(Services(scope)));
         var first = await host.RunAsync(); Assert.True(first.Success, first.Message);
         var a = Output<BlobAnalysisResult>(host, "blob"); var ac = Assert.Single(a.LocatedCentroids!);
         Assert.Equal(19.5, ac.ImagePosition.X, 6); Assert.Equal(11.5, ac.ImagePosition.Y, 6);
-        Assert.Equal(9.5, ac.LocalPosition.X, 6); Assert.Equal(1.5, ac.LocalPosition.Y, 6);
+        Assert.Equal(7, ac.LocalPosition.X, 6); Assert.Equal(0, ac.LocalPosition.Y, 6);
         Assert.Equal(8, Assert.Single(a.Blobs).Area);
         Assert.Equal(8, Output<RegionAnalysisResult>(host, "threshold").Area);
         Assert.Equal(255, Output<ColorAnalysisResult>(host, "color").Red);
         Assert.NotNull(Output<BlobAnalysisResult>(host, "select").CoordinateSystem);
         Assert.NotNull(Output<RegionAnalysisResult>(host, "morph").CoordinateSystem);
-        var localLine = Output<RobustLineResult>(host, "fit"); Assert.InRange(localLine.LocatedA!.LocalPosition.X, 7.8, 8.2);
+        var localLine = Output<RobustLineResult>(host, "fit"); Assert.InRange(localLine.LocatedA!.LocalPosition.X, 5.3, 5.7);
         data.WriteScene(rotated: true);
         var second = await host.RunAsync(); Assert.True(second.Success, second.Message);
         var b = Output<BlobAnalysisResult>(host, "blob"); var bc = Assert.Single(b.LocatedCentroids!);
@@ -61,14 +61,14 @@ public sealed class VisionCoordinatePipelineTests
         Assert.Equal(ac.LocalPosition.X, bc.LocalPosition.X, 6); Assert.Equal(ac.LocalPosition.Y, bc.LocalPosition.Y, 6);
         Assert.Equal(8, Assert.Single(b.Blobs).Area); Assert.Equal(255, Output<ColorAnalysisResult>(host, "color").Red);
         Assert.Equal(Math.PI / 2, b.CoordinateSystem.RotationRadians, 8);
-        Assert.InRange(Output<RobustLineResult>(host, "fit").LocatedA!.LocalPosition.X, 7.8, 8.2);
+        Assert.InRange(Output<RobustLineResult>(host, "fit").LocatedA!.LocalPosition.X, 5.3, 5.7);
         Assert.All(Output<CaliperResult>(host, "c0").LocatedEdges!, p => Assert.Equal(b.FrameId, p.FrameId));
         Assert.Equal(configuration, store.Serialize(document));
         // 第三帧定位失败，不能复用第二帧矩阵或保留第二帧消费者输出。
         data.WriteScene(absent: true);
         Assert.False((await host.RunAsync()).Success);
-        Assert.Null(Output<TemplatePoseResult>(host, "pose").CoordinateSystem);
-        Assert.DoesNotContain(host.Engine!.RunState.NodeOutputs, o => o.NodeId == "blob");
+        Assert.False(Output<TemplatePoseResult>(host, "pose").Found);
+        Assert.DoesNotContain(host.Engine!.RunState.NodeOutputs, o => o.NodeId is "part" or "blob");
     }
 
     [Fact]
@@ -77,46 +77,45 @@ public sealed class VisionCoordinatePipelineTests
         using var data = new Images(); var document = data.Pipeline();
         var original = (AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node;
         var parent = original.Coordinates!;
-        List<WorkflowVisionRoi> Search() => new() { new() { Id = "search", CenterX = 2.5, CenterY = 1.5, Width = 5, Height = 3 } };
+        List<WorkflowVisionRoi> Search() => new() { new() { Id = "search", CenterX = 0, CenterY = 0, Width = 5, Height = 3 } };
         var child = new LocateVisionTemplatePoseNodeModel { Id = "child", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"),
-            Coordinates = parent, CoordinateSystemId = "child-definition", Regions = Search(), MinimumScore = .9999 };
+            Coordinates = parent, Regions = Search(), MinimumScore = .9999 };
+        var childDefinition = GeometryPluginTestCatalog.Definition(data.Nodes, "child-definition", "child-definition");
+        var childPart = GeometryPluginTestCatalog.BuildFromTemplate(data.Nodes, "child-part", "scene", "child-definition", "child");
         var translation = new LocateVisionTemplateNodeModel { Id = "translation", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"),
             Coordinates = parent, Regions = Search(), MinimumScore = .9999 };
         var edges = new MeasureVisionEdgesNodeModel { Id = "edges", Frame = Input<ImageFrame>("scene"), Coordinates = parent,
-            Regions = new() { new() { Id = "line", CenterX = 19.5, CenterY = 7.5, Width = 3, Height = 10 } } };
+            Regions = new() { new() { Id = "line", CenterX = 17, CenterY = 6, Width = 3, Height = 10 } } };
         var consumer = new AnalyzeVisionBlobsNodeModel { Id = "child-blob", Frame = Input<ImageFrame>("scene"), MinimumGray = 255, MaximumGray = 255,
-            Regions = original.Regions, Coordinates = new WorkflowVisionCoordinateBinding { CoordinateSystemId = "child-definition", TemplateSignature = parent.TemplateSignature,
-                System = WorkflowInput<VisionCoordinateSystem>.FromBinding(new("child", "CoordinateSystem")) } };
+            Regions = original.Regions, Coordinates = data.Binding("child-part", "child-definition") };
         string previous = "fit";
-        foreach (var node in new IWorkflowNodeModel[] { edges, translation, child, consumer })
+        foreach (var node in new IWorkflowNodeModel[] { edges, translation, child, childDefinition, childPart, consumer })
         {
             document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
             document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = previous, FromPort = WorkflowPorts.Success, ToNodeId = node.Id, ToPort = WorkflowPorts.Input });
             previous = node.Id;
-            using var page = new VisionFrameEditorPageModel(node); Assert.True(page.CanBindCoordinates);
+            if (node is AnalyzeVisionFrameNodeModel { RangeCapability: EWorkflowVisionRange.Region } area) { using var page = new VisionFrameEditorPageModel(area); Assert.True(page.CanBindCoordinates); }
         }
-        var nodes = new WorkflowNodeCatalog().RegisterImageNodes(); var store = new WorkflowDocumentJsonStore(nodes);
+        var nodes = data.Nodes; var store = new WorkflowDocumentJsonStore(nodes);
         document = store.Deserialize(store.Serialize(document)).Document;
-        using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
+        using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(nodes, data.Handlers);
         host.Configure(document, new WorkflowContext(Services(scope)));
         foreach (bool rotated in new[] { false, true })
         {
             data.WriteScene(rotated); var run = await host.RunAsync(); Assert.True(run.Success, run.Message);
             var located = Output<TemplatePoseResult>(host, "child"); Assert.True(located.Found);
-            Assert.Equal("child-definition", located.CoordinateSystem!.CoordinateSystemId);
-            Assert.Equal("part-definition", located.SearchCoordinateSystem!.CoordinateSystemId);
-            Assert.Equal(rotated ? Math.PI / 2 : 0, located.Transform!.AngleRadians, 8);
-            Assert.Equal(rotated ? 38.5 : 12.5, located.Transform.Center.X, 6);
-            var match = Output<TemplateLocationResult>(host, "translation"); Assert.True(match.Found);
-            Assert.Equal(located.Transform.Center, match.Transform!.Center);
+            Assert.Equal(rotated ? 90 : 0, located.AngleDegrees, 8);
+            Assert.Equal(rotated ? 38.5 : 12.5, located.CenterX, 6);
+            Assert.Equal("child-definition", Output<VisionCoordinateSystemResult>(host, "child-part").CoordinateSystem.CoordinateSystemId);
+            var match = Output<TemplatePoseResult>(host, "translation"); Assert.True(match.Found);
+            Assert.Equal(located.Transform!.Center, match.Transform!.Center);
             Assert.IsType<RectangleGeometry>(match.MatchGeometry);
             var result = Output<BlobAnalysisResult>(host, "child-blob");
             Assert.Equal(rotated ? 38.5 : 19.5, Assert.Single(result.Blobs).Centroid.X, 6);
-            Assert.Equal(9.5, Assert.Single(result.LocatedCentroids!).LocalPosition.X, 6);
-            Assert.InRange(Output<EdgeMeasurementResult>(host, "edges").LocatedA!.LocalPosition.X, 19, 21);
+            Assert.Equal(7, Assert.Single(result.LocatedCentroids!).LocalPosition.X, 6);
+            Assert.InRange(Output<EdgeMeasurementResult>(host, "edges").LocatedA!.LocalPosition.X, 16.5, 18.5);
         }
-        child.Coordinates = new WorkflowVisionCoordinateBinding { CoordinateSystemId = "child-definition", TemplateSignature = parent.TemplateSignature,
-            System = WorkflowInput<VisionCoordinateSystem>.FromBinding(new("child", "CoordinateSystem")) };
+        child.Coordinates = data.Binding("child", "child-definition");
         Assert.Contains(child.ValidateConfiguration(), e => e.Contains("自身", StringComparison.Ordinal));
     }
 
@@ -131,7 +130,14 @@ public sealed class VisionCoordinatePipelineTests
         if (fault == "frame") blob.Frame = Input<ImageFrame>("template");
         if (fault == "definition") blob.Coordinates!.CoordinateSystemId = "another-template";
         if (fault == "template") data.ChangeTemplateOnePixel();
-        using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(new WorkflowNodeCatalog().RegisterImageNodes(), new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
+        using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(data.Nodes, data.Handlers);
+        if (fault == "definition")
+        {
+            // 定义身份可静态解析，编译阶段即拒绝，不读取任何图像。
+            Assert.Throws<WorkflowCompilationException>(() => host.Configure(document, new WorkflowContext(Services(scope))));
+            Assert.Null(scope.Capture("scene"));
+            return;
+        }
         host.Configure(document, new WorkflowContext(Services(scope)));
         Assert.False((await host.RunAsync()).Success);
         Assert.True(Output<TemplatePoseResult>(host, "pose").Found); // 不是通过匹配失败间接蒙混过关。
@@ -145,25 +151,26 @@ public sealed class VisionCoordinatePipelineTests
         using var data = new Images(); var document = data.Pipeline();
         var source = (AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node;
         source.Coordinates = null; source.Regions = new() { new() { Id = "drawn", CenterX = 19.5, CenterY = 11.5, Width = 3, Height = 3 } };
-        var nodes = new WorkflowNodeCatalog().RegisterImageNodes(); var store = new WorkflowDocumentJsonStore(nodes);
-        using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
+        var nodes = data.Nodes; var store = new WorkflowDocumentJsonStore(nodes);
+        using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(nodes, data.Handlers);
         host.Configure(document, new WorkflowContext(Services(scope))); Assert.True((await host.RunAsync()).Success);
         var session = new WorkflowDesignerSession(document, nodes);
         var editor = new WorkflowNodeEditorModel(session, "scene", "blob", new[] { new VisionFrameEditorPageProvider(scope) });
         try
         {
             var page = Assert.IsType<VisionFrameEditorPageModel>(editor.Pages.Single(p => p.RendererKey == VisionFrameEditorPageProvider.RendererKey).Model);
-            Assert.Contains(page.CoordinateSources, s => s.NodeId == "pose");
+            Assert.Contains(page.CoordinateSources, s => s.NodeId == "part");
+            Assert.DoesNotContain(page.CoordinateSources, s => s.NodeId == "pose");
             using (var canvas = page.Capture(0)) Assert.NotNull(canvas);
-            page.BindCoordinates("pose");
+            page.BindCoordinates("part");
             var editing = (AnalyzeVisionBlobsNodeModel)editor.EditingNode;
             Assert.Null(source.Coordinates); Assert.Equal(19.5, source.Regions[0].CenterX);
-            Assert.Equal(9.5, editing.Regions[0].CenterX, 8); Assert.Equal(1.5, editing.Regions[0].CenterY, 8);
+            Assert.Equal(7, editing.Regions[0].CenterX, 8); Assert.Equal(0, editing.Regions[0].CenterY, 8);
             Assert.NotNull(editing.Coordinates);
             page.Editor.Tool = ERoiTool.Ellipse;
             page.Editor.PointerDown(new PointD(18.5, 10.5), .1); page.Editor.PointerUp(new PointD(20.5, 12.5));
             Assert.Equal(2, editing.Regions.Count); Assert.Single(source.Regions);
-            Assert.Equal(9.5, editing.Regions[1].CenterX, 8);
+            Assert.Equal(7, editing.Regions[1].CenterX, 8);
             editor.ApplyChanges();
             Assert.NotNull(((AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node).Coordinates);
             Assert.True(session.Undo());
@@ -192,7 +199,7 @@ public sealed class VisionCoordinatePipelineTests
     {
         using var data = new Images(); var document = data.Pipeline();
         var node = (AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node;
-        using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(new WorkflowNodeCatalog().RegisterImageNodes(), new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
+        using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(data.Nodes, data.Handlers);
         host.Configure(document, new WorkflowContext(Services(scope))); Assert.True((await host.RunAsync()).Success);
         using var page = new VisionFrameEditorPageModel(node, scope);
         using (var frame = page.Capture(0)) Assert.NotNull(frame);
@@ -218,7 +225,7 @@ public sealed class VisionCoordinatePipelineTests
     public void AreaCapabilityEnablesCoordinates_WholeImageOperatorsStillRejectThem()
     {
         var node = new MeasureVisionEdgesNodeModel { Frame = Input<ImageFrame>("scene"), Coordinates = new WorkflowVisionCoordinateBinding
-        { System = WorkflowInput<VisionCoordinateSystem>.FromBinding(new("pose", "CoordinateSystem")), CoordinateSystemId = "id", TemplateSignature = "sig" } };
+        { System = WorkflowInput<VisionCoordinateSystem>.FromBinding(new("part", "CoordinateSystem")), CoordinateSystemId = "id", DefinitionSignature = "sig" } };
         node.Regions.Add(new WorkflowVisionRoi { Width = 5, Height = 5, CenterX = 10, CenterY = 10 });
         Assert.Empty(node.ValidateConfiguration());
         using var page = new VisionFrameEditorPageModel(node);
@@ -244,8 +251,8 @@ public sealed class VisionCoordinatePipelineTests
         var sink = new CollectingSink();
         using var scope = new WorkflowVisionFrameScope();
         using var host = new WorkflowRuntimeHost(
-            new WorkflowNodeCatalog().RegisterImageNodes(),
-            new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers(),
+            data.Nodes,
+            data.Handlers,
             new WorkflowExecutionOptions { Recording = new WorkflowRunRecordingOptions { Sink = sink } });
         host.Configure(document, new WorkflowContext(Services(scope)));
 
@@ -270,7 +277,7 @@ public sealed class VisionCoordinatePipelineTests
         Assert.All(nestedInputs, item => Assert.Equal("ExplicitDynamic", item.Data!["InputMetadataStatus"].Text));
         var nestedInput = Assert.Single(nestedInputs, item => item.NodeId == "blob");
         Assert.Equal("NodeOutput", nestedInput.Data!["SourceKind"].Text);
-        Assert.Equal("pose", nestedInput.Data["SourceNodeId"].Text);
+        Assert.Equal("part", nestedInput.Data["SourceNodeId"].Text);
         Assert.Equal("CoordinateSystem", nestedInput.Data["SourceOutputKey"].Text);
         // 关键不变式：这条管线里每个输入都有稳定键，不得出现任何未识别降级。
         Assert.DoesNotContain(inputs, item => item.Data!["InputMetadataStatus"].Text == "Unresolved");
@@ -326,10 +333,16 @@ public sealed class VisionCoordinatePipelineTests
     private sealed class Images : IDisposable
     {
         private readonly string _directory = Path.Combine(Path.GetTempPath(), "coordinates-" + Guid.NewGuid());
+        public WorkflowNodeCatalog Nodes { get; }
+        public WorkflowNodeHandlerCatalog Handlers { get; }
         private readonly byte[] _template = { 30,200,70,100,180,90,240,10,130,50,160,40,230,80,210 };
         public string Scene => Path.Combine(_directory, "scene.png");
         public string Template => Path.Combine(_directory, "template.png");
-        public Images() { Directory.CreateDirectory(_directory); WriteTemplate(); WriteScene(); }
+        public Images()
+        {
+            Directory.CreateDirectory(_directory); WriteTemplate(); WriteScene();
+            (Nodes, Handlers) = GeometryPluginTestCatalog.Create(Path.Combine(_directory, "plugins"));
+        }
         public void WriteScene(bool rotated = false, bool absent = false)
         {
             using var mat = new Mat(64, 64, MatType.CV_8UC1, Scalar.All(0));
@@ -351,16 +364,17 @@ public sealed class VisionCoordinatePipelineTests
             Cv2.ImWrite(Template, mat);
         }
         public void ChangeTemplateOnePixel() { _template[0]++; WriteTemplate(); }
-        private WorkflowVisionCoordinateBinding Binding()
+        /// <summary>随动绑定：坐标定义并入当前模板像素的参考签名，局部原点在模板中心。</summary>
+        public WorkflowVisionCoordinateBinding Binding(string source = "part", string definitionId = "part-definition")
         {
             using var image = VisionImage.CopyFrom(new ImageInfo(5, 3, EPixelLayout.Gray8), _template);
-            return new WorkflowVisionCoordinateBinding { System = WorkflowInput<VisionCoordinateSystem>.FromBinding(new("pose", "CoordinateSystem")),
-                CoordinateSystemId = "part-definition", TemplateSignature = LocatedCoordinateSystem.ComputeTemplateSignature(image) };
+            var definition = ((IWorkflowVisionCoordinateDefinitionNode)GeometryPluginTestCatalog.Definition(Nodes, definitionId, definitionId)).GetCoordinateDefinition();
+            return GeometryPluginTestCatalog.Follow(source, TemplateReference.FromImage(image, new PixelBounds(0, 0, 5, 3)).Bind(definition));
         }
         private static List<WorkflowVisionRoi> Regions() => new()
         {
-            new() { Id = "include", CenterX = 9.5, CenterY = 1.5, Width = 3, Height = 3 },
-            new() { Id = "hole", CenterX = 9.5, CenterY = 1.5, Width = 1, Height = 1, Exclude = true }
+            new() { Id = "include", CenterX = 7, CenterY = 0, Width = 3, Height = 3 },
+            new() { Id = "hole", CenterX = 7, CenterY = 0, Width = 1, Height = 1, Exclude = true }
         };
         public WorkflowDocument Pipeline()
         {
@@ -368,7 +382,9 @@ public sealed class VisionCoordinatePipelineTests
             {
                 new LoadVisionFileNodeModel { Id = "scene", FilePath = Scene }, new LoadVisionFileNodeModel { Id = "template", FilePath = Template },
                 new LocateVisionTemplatePoseNodeModel { Id = "pose", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"),
-                    CoordinateSystemId = "part-definition", MinimumAngleRadians = 0, MaximumAngleRadians = Math.PI / 2, AngleStepRadians = Math.PI / 2, MinimumScore = .9999 },
+                    MinimumAngleRadians = 0, MaximumAngleRadians = Math.PI / 2, AngleStepRadians = Math.PI / 2, MinimumScore = .9999 },
+                GeometryPluginTestCatalog.Definition(Nodes, "definition", "part-definition"),
+                GeometryPluginTestCatalog.BuildFromTemplate(Nodes, "part", "scene", "definition", "pose"),
                 new AnalyzeVisionBlobsNodeModel { Id = "blob", Frame = Input<ImageFrame>("scene"), MinimumGray = 255, MaximumGray = 255, Coordinates = Binding(), Regions = Regions() },
                 new AnalyzeVisionColorNodeModel { Id = "color", Frame = Input<ImageFrame>("scene"), Coordinates = Binding(), Regions = Regions() },
                 new ThresholdVisionRegionNodeModel { Id = "threshold", Frame = Input<ImageFrame>("scene"), MinimumGray = 255, MaximumGray = 255, Coordinates = Binding(), Regions = Regions() },
@@ -376,7 +392,7 @@ public sealed class VisionCoordinatePipelineTests
                 new SelectVisionBlobsNodeModel { Id = "select", Frame = Input<ImageFrame>("scene"), Blobs = Input<BlobAnalysisResult>("blob") }
             };
             for (int i = 0; i < 3; i++) nodes.Add(new MeasureVisionCaliperNodeModel { Id = "c" + i, Frame = Input<ImageFrame>("scene"),
-                Coordinates = Binding(), StartX = 4, EndX = 15, StartY = i + .5, EndY = i + .5, HalfWidth = 0, Polarity = ECaliperPolarity.Rising });
+                Coordinates = Binding(), StartX = 1.5, EndX = 12.5, StartY = i - 1, EndY = i - 1, HalfWidth = 0, Polarity = ECaliperPolarity.Rising });
             nodes.Add(new FitVisionRobustLineNodeModel { Id = "fit", Frame = Input<ImageFrame>("scene"), Coordinates = Binding(),
                 Samples = Enumerable.Range(0, 3).Select(i => Input<CaliperResult>("c" + i)).ToList() });
             var document = new WorkflowDocument { EntryNodeId = nodes[0].Id };

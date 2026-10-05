@@ -38,20 +38,20 @@
 
 ## 坐标如何影响后续节点
 
-VisionPoint保存FrameId、原图ImagePosition和可选VisionCoordinateSystem；LocalPosition由本帧逆矩阵计算。VisionLine两端点必须同帧、同定义语义签名、同映射矩阵；定义ID相同不足以证明可混用。LocatedCoordinateSystem为模板来源兼容子类。
+VisionPoint保存FrameId、原图ImagePosition和可选VisionCoordinateSystem；LocalPosition由本帧逆矩阵计算。VisionLine两端点必须同帧、同定义语义签名、同映射矩阵；定义ID相同不足以证明可混用。
 
-平移模板定位也输出自己的CoordinateSystem；旋转尺度定位保持离散候选搜索。父定位控制搜索，子输出已经是原图姿态，不能重复乘父矩阵。界面通过IVisionCoordinateResult识别定位输出，外部定位节点也能加入来源列表。
+模板匹配（平移与旋转尺度）只输出位姿测量值：中心X/Y、角度(°)、缩放、参考点X/Y、参考方向(°)，角度顺时针为正；坐标系由“构建本帧坐标系”的模板方式生成。父坐标控制搜索，匹配输出已经是原图姿态，不能重复乘父矩阵。界面通过IVisionCoordinateResult识别坐标来源，外部节点也能加入来源列表。
 
 运行链：
 
 1. 获取图像，完成会生成新FrameId的预处理。
-2. 选择独立业务定义，根据参数、双点、交线、矩阵或标定建立映射，也可将模板匹配作为父来源。
-3. 成功输出本帧CoordinateSystem；制作页面显式绑定，保存定义ID、版本、语义签名及数据来源。旧模板配方继续核对模板签名。
+2. 选择独立业务定义，根据模板匹配结果、参数、双点、交线、矩阵或标定建立映射。
+3. 成功输出本帧CoordinateSystem；制作页面显式绑定，保存定义ID、版本、语义签名及数据来源；模板方式的语义签名包含模板参考签名。
 4. 局部配置按本帧定位转到原图，执行卡尺/Blob；也可由CreatePoint创建已知局部基准点。
 5. 从本轮检测选择视觉点，或绑定拟合结果MeasuredLine。
 6. 明确选择测量空间/距离模式，输出距离、最近点、坐标来源和原图叠加证据。
 
-新距离单位为image-px、reference-px、兼容template-px或明确标定的mm。相似尺度2下局部距离3对应原图距离6；一般仿射在所选局部空间计算垂足和最短距离，再回投原图，不能简单用原图距离除一个倍率。
+新距离单位为image-px、reference-px或明确标定的mm。相似尺度2下局部距离3对应原图距离6；一般仿射在所选局部空间计算垂足和最短距离，再回投原图，不能简单用原图距离除一个倍率。
 
 未配置目标Coordinates的生成/测量节点保留输入来源，来源不同则拒绝。明确配置目标Coordinates时，两侧输入经同一原图换成共同目标表达。混合独立定位的同帧点需显式统一来源，或使用TransformPoint/TransformLine转回原图。转换不会将上一帧点搬到下一帧。
 
@@ -65,7 +65,7 @@ VisionPoint保存FrameId、原图ImagePosition和可选VisionCoordinateSystem；
 | 垂足在线段外 | 无限模式返回垂足；线段模式返回最近端点 |
 | 重合端点或原图长度小于1e-9px | 不能生成直线，明确失败 |
 | 帧不一致、不同定位来源 | 拒绝；尺寸或定义ID相同也不足以接受 |
-| 定位未检出 | 定位正常完成但CoordinateSystem为空；消费者失败，不提交输出、不用旧矩阵 |
+| 模板未找到 | 匹配正常完成、数值为NaN；构建节点停止，消费者不提交输出、不用旧矩阵 |
 | 换模板/改坐标定义 | 签名/定义与制作配置不符时拒绝，需重新确认绑定 |
 | 节点或引擎包丢失 | 缺节点保留未知节点原配置；缺实现运行前阻止，恢复包后重启 |
 | 数值无效或超限 | 拒绝NaN/Infinity及超过±1e9的输入/生成点；遥远交点超限也失败 |
@@ -78,9 +78,9 @@ VisionPoint保存FrameId、原图ImagePosition和可选VisionCoordinateSystem；
 
 卡尺绑定时，将端点、MinimumSeparation、BandSampleStep逆变换为局部配置；解除时正变换，保持实际采样带。HalfWidth是单侧采样步数。鲁棒直线绑定/解除同时转换DistanceThreshold。实际原图长度、采样间隔和预算在执行时再次校验。
 
-CreatePoint的Space和X/Y保持显式配置，绑定/解除定位不会猜测并重写数值或外部绑定。解除后仍选TemplateLocal会在配置检查报错，需要明确选择Image并配置原图值。确认才写正式配方；取消、撤销继续遵循隔离编辑。
+CreatePoint的Space和X/Y保持显式配置，绑定/解除定位不会猜测并重写数值或外部绑定。解除后仍选Local会在配置检查报错，需要明确选择Image并配置原图值。确认才写正式配方；取消、撤销继续遵循隔离编辑。
 
-TemplateLocal与Local为同值兼容名。卡尺/鲁棒拟合要求正方向相似变换；非等比、剪切或镜像不会以单一尺度冒充。面积ROI及点线几何支持一般可逆仿射。同定义更换来源保留已保存局部ROI，不重复逆变换。
+卡尺/鲁棒拟合要求正方向相似变换；非等比、剪切或镜像不会以单一尺度冒充。面积ROI及点线几何支持一般可逆仿射。同定义更换来源保留已保存局部ROI，不重复逆变换。
 
 ## 可直接复核的示例
 
@@ -91,9 +91,9 @@ dotnet run --project samples/DP.WorkFlow.WinForms.Sample/WinFormsApp_test.csproj
 dotnet run --project samples/Legacy/WpfApptest/WpfApptest.csproj -- --geometry-demo
 ```
 
-流程是场景文件→模板文件→平移定位→4个局部点→2条直线→点线距离→线线距离。文件为VisionData/geometry-scene.pgm、geometry-template.pgm，不依赖相机和外部模型。两项距离均为2 template-px，局部原点对应场景(5,6)。
+流程是场景文件→模板文件→平移模板匹配→定义坐标系→构建本帧坐标系（模板方式）→4个局部点→2条直线→点线距离→线线距离。文件为VisionData/geometry-scene.pgm、geometry-template.pgm，不依赖相机和外部模型。两项距离均为2 reference-px，局部原点为模板中心，对应场景(7,7.5)。
 
-人工复核：运行后检查点/直线/距离页面；移动场景中的模板后重跑，局部距离保持2，原图点随模板移动。删除目标后，定位未检出，后续停止，不复用历史结果。保存重开，确认绑定、Space、Mode和算法选择保留。
+人工复核：运行后检查点/直线/距离页面；移动场景中的模板后重跑，局部距离保持2，原图点随模板移动。删除目标后，模板未找到，构建节点及后续停止，不复用历史结果。保存重开，确认绑定、Space、Mode和算法选择保留。
 
 两套命令将参数改为`--coordinate-demo`可复核独立工件中心定义：模板提供父姿态，构建节点将原点设在父坐标(2,1.5)，下游选择业务坐标，距离2 reference-px、业务ROI的Blob面积12。样图当前业务原点为(7,7.5)，不再是模板左上角。
 

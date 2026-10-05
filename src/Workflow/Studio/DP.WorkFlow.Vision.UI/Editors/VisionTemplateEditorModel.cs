@@ -204,18 +204,18 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
         _baselineSourceHash = manifest.Files.SingleOrDefault(f => f.Path == "source/image.bin")?.Hash;
         _node.TemplateResourceId = manifest.TemplateId;
     }
-    /// <summary>明确新建模板与坐标身份，用于替换无法核对的资源；正式节点应用前保持不变。</summary>
+    /// <summary>明确新建模板身份，用于替换无法核对的资源；正式节点应用前保持不变。</summary>
     public void StartNewTemplate()
     {
         ThrowIfDisposed(); _baseline = null; _baselineSourceHash = null; _sourceReplaced = false;
         _source?.Dispose(); _source = null; _built = null; _builtKey = null; _settings.Clear();
         _originX = _originY = _axisAngle = 0;
         Editor.Cancel(); Editor.Load(new RoiDocument([]));
-        _node.TemplateResourceId = Guid.NewGuid().ToString("N"); _node.CoordinateSystemId = Guid.NewGuid().ToString("N");
+        _node.TemplateResourceId = Guid.NewGuid().ToString("N");
         _node.TemplateReferenceDefinition = null; _node.TemplateSourceHash = "";
         _displayName = DefaultDisplayName();
         _node.ModelAlgorithm = new VisionAlgorithmSelection { ImplementationId = _implementation };
-        Invalidate(); Status = "已新建空白模板和坐标身份；请读取样图并生成模型。原下游ROI需重新确认。";
+        Invalidate(); Status = "已新建空白模板身份；请读取样图并生成模型。原下游ROI需重新确认。";
     }
     private string Key() => _source == null ? "no-source" : _source.FrameId + "|" + _implementation + "|" +
         OriginX.ToString("R", CultureInfo.InvariantCulture) + "|" + OriginY.ToString("R", CultureInfo.InvariantCulture) + "|" + AxisAngleRadians.ToString("R", CultureInfo.InvariantCulture)
@@ -244,7 +244,7 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
         finally { _busy = false; }
     }
     /// <summary>在当前输入或测试图像上试匹配，持有资源直到原生调用退出。</summary>
-    public async Task TryMatchAsync(ImageFrame frame, PixelBounds bounds, TemplatePoseOptions options, RegionGeometry? region = null, VisionCoordinateSystem? parent = null)
+    public async Task TryMatchAsync(ImageFrame frame, PixelBounds bounds, TemplatePoseOptions options, RegionGeometry? region = null)
     {
         ThrowIfDisposed(); if (_busy || !IsBuilt) throw new InvalidOperationException("请先为当前配置生成模型。");
         var build = _built!; var key = _builtKey; long generation = _generation;
@@ -253,7 +253,7 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
         Status = "正在试匹配…";
         try
         {
-            var result = await MatchModelAsync(build, input, bounds, options, region, parent);
+            var result = await MatchModelAsync(build, input, bounds, options, region);
             if (_disposed || generation != _generation || key != Key()) return;
             var search = new RegionGeometry(Enumerable.Range(bounds.Y, bounds.Height).Select(y => new RegionRun(y, bounds.X, bounds.X + bounds.Width)));
             _trialMask = region is null ? search : search.Intersect(region, _token);

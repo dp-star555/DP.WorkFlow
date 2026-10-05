@@ -15,12 +15,20 @@ public static class WorkflowVisionOutputNames
         ["Summary"] = "摘要",
         ["DisplayGeometry"] = "显示图形",
         ["CoordinateSystem"] = "坐标系",
-        ["SearchCoordinateSystem"] = "搜索坐标系",
         ["Found"] = "是否找到",
         ["Score"] = "匹配分数",
+        ["CenterX"] = "中心X",
+        ["CenterY"] = "中心Y",
+        ["AngleDegrees"] = "角度(°)",
+        ["Scale"] = "缩放",
+        ["ReferenceX"] = "参考点X",
+        ["ReferenceY"] = "参考点Y",
+        ["ReferenceAngleDegrees"] = "参考方向(°)",
         ["Transform"] = "姿态变换",
-        ["MeasuredCenter"] = "匹配中心",
-        ["LocatedCenter"] = "匹配中心(双坐标)",
+        ["Reference"] = "模板参考",
+        ["CenterPoint"] = "匹配中心",
+        ["ReferencePoint"] = "参考点",
+        ["ReferenceToImage"] = "参考坐标映射",
         ["MatchGeometry"] = "匹配轮廓",
         ["Bounds"] = "外接矩形",
         ["Count"] = "数量",
@@ -91,7 +99,7 @@ public static class WorkflowVisionOutputNames
         foreach (var type in new[]
         {
             typeof(ImageFrame), typeof(BlobAnalysisResult), typeof(ColorAnalysisResult), typeof(EdgeMeasurementResult),
-            typeof(TemplateLocationResult), typeof(TemplatePoseResult), typeof(AffineCalibration), typeof(Coordinate2D),
+            typeof(TemplatePoseResult), typeof(AffineCalibration), typeof(Coordinate2D),
             typeof(RegionAnalysisResult), typeof(CaliperResult), typeof(RobustLineResult), typeof(VisionPoint), typeof(VisionLine),
             typeof(GeometricDistanceResult), typeof(VisionCoordinateSystemResult), typeof(VisionCoordinateDefinition)
         })

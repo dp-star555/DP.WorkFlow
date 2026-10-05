@@ -1,4 +1,5 @@
 using System.Collections;
+using System.ComponentModel;
 using System.Globalization;
 using System.Reflection;
 
@@ -99,7 +100,7 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
         if (_session is not null) _session.Changed -= OnSessionChanged;
     }
 
-    /// <summary>将输出值展开为一层公开属性，名称取自属性特性或节点包登记的中文名称；简单值直接显示。</summary>
+    /// <summary>将输出值展开为一层公开属性，名称取自属性特性或节点包登记的中文名称；简单值直接显示。标记为不可浏览的诊断成员不显示，但仍可绑定。</summary>
     public static void AddOutput(ICollection<WorkflowNodeResultItem> items, object? value)
     {
         if (value is null || IsScalar(value.GetType()) || value is IEnumerable and not IDictionary)
@@ -109,7 +110,8 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
         }
         var properties = value.GetType()
             .GetProperties(BindingFlags.Instance | BindingFlags.Public)
-            .Where(property => property.CanRead && property.GetIndexParameters().Length == 0)
+            .Where(property => property.CanRead && property.GetIndexParameters().Length == 0
+                && property.GetCustomAttribute<BrowsableAttribute>()?.Browsable != false)
             .Take(MaximumOutputMembers)
             .ToArray();
         if (properties.Length == 0)

@@ -88,9 +88,6 @@ public sealed class LocateVisionTemplateNodeModel : AnalyzeVisionFrameNodeModel,
     /// <inheritdoc/>
     [System.ComponentModel.Browsable(false), System.Text.Json.Serialization.JsonIgnore]
     public bool RequiresPoseSearch => false;
-    /// <summary>本模板的稳定坐标系定义身份，下游绑定时同时锁定内容签名。</summary>
-    [WorkflowProperty("坐标系定义ID", "本模板局部坐标定义，区别于搜索父坐标系。", Category = "定位坐标系")]
-    public string CoordinateSystemId { get; set; } = Guid.NewGuid().ToString("N");
     /// <summary>节点选择，旧配方缺字段时显式保持原OpenCV实现。</summary>
     [System.ComponentModel.Browsable(false)]
     public VisionAlgorithmSelection Algorithm { get; set; } = new() { ImplementationId = "opencv.template" };
@@ -141,7 +138,6 @@ public sealed class LocateVisionTemplateNodeModel : AnalyzeVisionFrameNodeModel,
     public override IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = base.ValidateConfiguration().ToList();
-        if (string.IsNullOrWhiteSpace(CoordinateSystemId)) errors.Add("模板坐标系定义ID不能为空。");
         errors.AddRange(WorkflowVisionTemplateResource.Validate(this));
         if (TemplateSource == EWorkflowVisionTemplateSource.ImageBinding && (Template is null || Template.Source != WorkflowValueSource.Binding || Template.Binding is null || Template.LiteralValue is not null))
             errors.Add("模板必须为图像帧绑定。");
@@ -161,19 +157,17 @@ public sealed class LocateVisionTemplateNodeHandler : WorkflowNodeHandler<Locate
         {
             var modelRange = node.ResolveRange(frame, context, cancellationToken); var parent = modelRange.Coordinates;
             var options = new TemplatePoseOptions(parent?.RotationRadians ?? 0, parent?.RotationRadians ?? 0, parent?.SimilarityScale ?? 1, parent?.SimilarityScale ?? 1, node.MinimumScore);
-            var pose = WorkflowVisionTemplateResource.Match(node, context, frame, modelRange.Bounds, modelRange.Region, parent, options, cancellationToken);
-            var modelResult = TemplateLocationResult.FromModelPose(pose);
+            var modelResult = WorkflowVisionTemplateResource.Match(node, context, frame, modelRange.Bounds, modelRange.Region, options, cancellationToken);
             return ValueTask.FromResult(NodeExecutionResult.Continue(output: modelResult, projection: WorkflowVisionFrameScope.Stage(context, frame, modelResult)));
         }
         var template = context.ResolveInput(node.Template) ?? throw new InvalidOperationException("模板帧为空。");
         var range = node.ResolveRange(frame, context, cancellationToken);
-        TemplateLocationResult Locate(ITemplateLocator locator) => locator.Locate(frame, range.Bounds, template,
+        TemplatePoseResult Locate(ITemplateLocator locator) => locator.Locate(frame, range.Bounds, template,
             new PixelBounds(0, 0, template.Image.Info.Width, template.Image.Info.Height), node.MinimumScore, cancellationToken, range.Region, range.Coordinates);
         var result = context.Services.GetService(typeof(IWorkflowVisionAlgorithmBindings)) is IWorkflowVisionAlgorithmBindings bindings
-            ? bindings.Invoke<ITemplateLocator, TemplateLocationResult>(context, "locator", Locate, cancellationToken)
+            ? bindings.Invoke<ITemplateLocator, TemplatePoseResult>(context, "locator", Locate, cancellationToken)
             : Locate(GetLegacyLocator(node, context));
         if (result.TemplateFrameId != template.FrameId) throw new InvalidOperationException("定位结果模板身份与本次输入不一致。");
-        result = result.InCoordinateSystem(node.CoordinateSystemId, frame, template, cancellationToken);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }

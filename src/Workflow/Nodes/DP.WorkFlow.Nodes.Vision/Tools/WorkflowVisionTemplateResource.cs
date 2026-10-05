@@ -21,8 +21,6 @@ public interface IWorkflowVisionTemplateNode
     VisionAlgorithmSelection ModelAlgorithm { get; set; }
     /// <summary>模板稳定资源身份。</summary>
     string TemplateResourceId { get; set; }
-    /// <summary>输出坐标系稳定身份。</summary>
-    string CoordinateSystemId { get; set; }
     /// <summary>是否要求旋转尺度搜索。</summary>
     bool RequiresPoseSearch { get; }
     /// <summary>节点应用时确认的参考定义，独立于资源路径和引擎配置。</summary>
@@ -50,16 +48,15 @@ internal static class WorkflowVisionTemplateResource
         return errors;
     }
     internal static TemplatePoseResult Match(IWorkflowVisionTemplateNode node, IWorkflowNodeExecutionContext context,
-        ImageFrame frame, PixelBounds bounds, RegionGeometry? region, VisionCoordinateSystem? parent, TemplatePoseOptions options, CancellationToken token)
+        ImageFrame frame, PixelBounds bounds, RegionGeometry? region, TemplatePoseOptions options, CancellationToken token)
     {
         var bindings = context.Services.GetService(typeof(IWorkflowVisionAlgorithmBindings)) as IWorkflowVisionAlgorithmBindings
             ?? throw new InvalidOperationException("模板资源需要宿主注册算法绑定服务。");
         return bindings.Invoke<IPreparedVisionTemplateMatcher, TemplatePoseResult>(context, "model", matcher =>
         {
-            if (node.TemplateReferenceDefinition is { } expected && expected.CoordinateDefinition(node.CoordinateSystemId).Signature != matcher.Definition.CoordinateDefinition(node.CoordinateSystemId).Signature)
+            if (node.TemplateReferenceDefinition is { } expected && expected.Reference().Signature != matcher.Definition.Reference().Signature)
                 throw new InvalidOperationException("模板资源参考定义与节点确认内容不一致，请在节点内读取并确认资源。");
-            var result = matcher.Match(frame, bounds, options, region, token).InReferenceCoordinates(node.CoordinateSystemId, frame, matcher.Definition, matcher.ModelIdentity);
-            return parent == null ? result : result.WithSearchCoordinates(parent);
+            return matcher.Match(frame, bounds, options, region, token);
         }, token);
     }
 }
