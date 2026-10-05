@@ -24,10 +24,10 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
 {
     private readonly VisionFrameEditorPageModel _model;
     private readonly DP.Vision.WPF.VisionCanvasControl _canvas = new();
-    private readonly ToolBar _toolbar = new();
-    private readonly ComboBox _source = new() { Width = 130, Margin = new Thickness(2), ToolTip = "显示的图像" };
-    private readonly ComboBox _tool = new() { Width = 140, Margin = new Thickness(2), ToolTip = "区域类型" };
-    private readonly ComboBox _purpose = new() { Width = 70, Margin = new Thickness(2), ToolTip = "包含/排除：作用于选中的区域；画笔写入所选用途" };
+    private readonly ToolBar _toolbar = new() { Padding = new Thickness(4, 3, 4, 3) };
+    private readonly ComboBox _source = new() { MinWidth = 150, Height = 30, Margin = new Thickness(2), VerticalContentAlignment = VerticalAlignment.Center, ToolTip = "显示的图像" };
+    private readonly ComboBox _tool = new() { MinWidth = 170, Height = 30, Margin = new Thickness(2), VerticalContentAlignment = VerticalAlignment.Center, ToolTip = "区域类型" };
+    private readonly ComboBox _purpose = new() { MinWidth = 80, Height = 30, Margin = new Thickness(2), VerticalContentAlignment = VerticalAlignment.Center, ToolTip = "包含/排除：作用于选中的区域；画笔写入所选用途" };
     private readonly Slider _radius = new() { Width = 110, Minimum = 1, Maximum = 200, Value = 10, IsSnapToTickEnabled = true, TickFrequency = 1, VerticalAlignment = VerticalAlignment.Center, ToolTip = "笔刷半径（像素）" };
     private readonly IReadOnlyList<VisionFrameView> _views;
     private IReadOnlyList<RoiToolChoice> _tools = Array.Empty<RoiToolChoice>();
@@ -76,19 +76,19 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
 
         if (model.SupportsMaskPreview || model.Template != null)
         {
-            var showMask = new System.Windows.Controls.Primitives.ToggleButton { IsChecked = model.ShowMask, ToolTip = "显示有效掩膜", Content = Icon(VisionToolIcons.Eye) };
+            var showMask = new System.Windows.Controls.Primitives.ToggleButton { IsChecked = model.ShowMask, ToolTip = "显示有效掩膜", Content = Icon(VisionToolIcons.Eye), Width = 32, Height = 30 };
             showMask.Checked += (_, _) => { model.ShowMask = true; showMask.Content = Icon(VisionToolIcons.Eye); RefreshPreview(); };
             showMask.Unchecked += (_, _) => { model.ShowMask = false; showMask.Content = Icon(VisionToolIcons.EyeOff); RefreshPreview(); };
             if (!model.ShowMask) showMask.Content = Icon(VisionToolIcons.EyeOff);
             _toolbar.Items.Add(showMask);
         }
-        var fit = new Button { ToolTip = "适应窗口", Content = Icon(VisionToolIcons.FitWindow) };
+        var fit = new Button { ToolTip = "适应窗口", Content = Icon(VisionToolIcons.FitWindow), Width = 32, Height = 30 };
         fit.Click += (_, _) => _canvas.FitToWindow();
         _toolbar.Items.Add(fit);
         if (model.CanBindCoordinates)
         {
             _toolbar.Items.Add(new Separator());
-            var coordinates = new ComboBox { Width = 160, Margin = new Thickness(2), ItemsSource = model.CoordinateSources, SelectedIndex = 0, ToolTip = "定位节点" };
+            var coordinates = new ComboBox { MinWidth = 180, Height = 30, Margin = new Thickness(2), VerticalContentAlignment = VerticalAlignment.Center, ItemsSource = model.CoordinateSources, SelectedIndex = 0, ToolTip = "定位节点" };
             _toolbar.Items.Add(coordinates);
             TextButton("绑定/更换坐标系", () => model.BindCoordinates((coordinates.SelectedItem as VisionCoordinateSource)?.NodeId
                 ?? throw new InvalidOperationException("请选择定位节点。")));
@@ -128,7 +128,7 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
         }
         void TextButton(string text, Action action)
         {
-            var button = new Button { Content = text, Padding = new Thickness(5, 2, 5, 2) };
+            var button = new Button { Content = text, Height = 30, Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(2) };
             button.Click += (_, _) => { Guard(action); RefreshPreview(); _status.Text = model.Status; };
             _toolbar.Items.Add(button);
         }
@@ -148,7 +148,7 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
 
     private static System.Windows.Shapes.Path Icon(string data) => new()
     {
-        Data = System.Windows.Media.Geometry.Parse(data), Width = 16, Height = 16, Stretch = System.Windows.Media.Stretch.None,
+        Data = System.Windows.Media.Geometry.Parse(data), Width = 18, Height = 18, Stretch = System.Windows.Media.Stretch.Uniform,
         StrokeThickness = 1.5, StrokeLineJoin = System.Windows.Media.PenLineJoin.Round,
         StrokeStartLineCap = System.Windows.Media.PenLineCap.Round, StrokeEndLineCap = System.Windows.Media.PenLineCap.Round,
         Stroke = SystemColors.ControlTextBrush, VerticalAlignment = VerticalAlignment.Center

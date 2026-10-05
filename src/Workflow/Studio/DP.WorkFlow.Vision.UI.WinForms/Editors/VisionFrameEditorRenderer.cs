@@ -22,13 +22,16 @@ internal sealed class VisionFrameEditorControl : UserControl
     private static readonly ModernUI.WinForms.ModernTheme Theme = ModernUI.WinForms.ModernTheme.Dark;
     private readonly VisionFrameEditorPageModel _model;
     private readonly DP.Vision.Winform.VisionCanvasControl _canvas = new() { Dock = DockStyle.Fill };
-    private readonly ModernUI.WinForms.ModernToolStrip _toolbar = new() { Dock = DockStyle.Top, Theme = Theme, ImageScalingSize = new Size(16, 16) };
+    private readonly ModernUI.WinForms.ModernToolStrip _toolbar = new() { Dock = DockStyle.Top, Theme = Theme };
     private readonly ModernUI.WinForms.ModernSelect _source = ToolSelect(130);
     private readonly ModernUI.WinForms.ModernSelect _tool = ToolSelect(140);
     private readonly ModernUI.WinForms.ModernSelect _purpose = ToolSelect(80);
     private readonly ModernUI.WinForms.ModernInputNumber _radius = new() { Size = new Size(90, 30), Minimum = 1, Maximum = 500, Value = 10, Theme = Theme };
     private readonly ToolStripControlHost _toolHost, _purposeHost, _radiusHost;
-    private readonly ImageList _toolIcons = new() { ImageSize = new Size(16, 16), ColorDepth = ColorDepth.Depth32Bit };
+    private readonly ImageList _toolIcons = new() { ImageSize = new Size(IconPixels, IconPixels), ColorDepth = ColorDepth.Depth32Bit };
+    // 工具栏宿主控件及其宽度依据：宽度=最长文字+额外留白（逻辑像素），高度统一，随DPI和字体重新计算。
+    private readonly List<(ToolStripControlHost Host, Func<IEnumerable<string>> Texts, int Extra)> _fitted = new();
+    private const int ControlHeight = 32, IconPixels = 32;
     private readonly IReadOnlyList<VisionFrameView> _views;
     private IReadOnlyList<RoiToolChoice> _tools = Array.Empty<RoiToolChoice>();
     private bool? _toolsForTemplate;
@@ -46,19 +49,19 @@ internal sealed class VisionFrameEditorControl : UserControl
         _views = model.Views;
         _source.Items.AddRange(_views.Cast<object>().ToArray());
         SetViewCore(model.IsTemplateEditor ? 4 : 1);
-        _toolbar.Items.Add(Host(_source, "显示的图像"));
+        _toolbar.Items.Add(Fit(Host(_source, "显示的图像"), () => _views.Select(v => v.Text), 44));
         _toolbar.Items.Add(new ToolStripSeparator());
 
         // 区域类型下拉框带图标；用途同时作用于选中的ROI和画笔；半径只在画笔/橡皮下出现。
         foreach (var (tool, icon) in ToolIcons)
-            _toolIcons.Images.Add(tool.ToString(), ModernUI.WinForms.ModernIcons.CreateBitmap(icon, Theme.Text, 16));
+            _toolIcons.Images.Add(tool.ToString(), ModernUI.WinForms.ModernIcons.CreateBitmap(icon, Theme.Text, IconPixels));
         _tool.ImageList = _toolIcons; _tool.ImageKeyMember = nameof(RoiToolChoice.Tool);
         _tool.SelectedIndexChanged += (_, _) =>
         {
             if (_syncing || _tool.SelectedItem is not RoiToolChoice choice || _canvas.Editor is not { } editor) return;
             Guard(() => editor.Tool = choice.Tool); _canvas.Focus();
         };
-        _toolbar.Items.Add(_toolHost = Host(_tool, "区域类型"));
+        _toolbar.Items.Add(_toolHost = Fit(Host(_tool, "区域类型"), () => _tools.Select(t => t.Text), 66));
         _purpose.Items.AddRange(new object[] { "包含", "排除" });
         _purpose.SelectedIndexChanged += (_, _) =>
         {
@@ -71,9 +74,9 @@ internal sealed class VisionFrameEditorControl : UserControl
                     editor.SetSelectedMetadata(purpose, selected.Enabled);
             });
         };
-        _toolbar.Items.Add(_purposeHost = Host(_purpose, "包含/排除：作用于选中的区域；画笔写入所选用途"));
+        _toolbar.Items.Add(_purposeHost = Fit(Host(_purpose, "包含/排除：作用于选中的区域；画笔写入所选用途"), () => new[] { "包含", "排除" }, 44));
         _radius.ValueChanged += (_, _) => { if (!_syncing && _canvas.Editor is { } editor) Guard(() => editor.BrushRadius = (double)_radius.Value); };
-        _toolbar.Items.Add(_radiusHost = Host(_radius, "笔刷半径（像素）"));
+        _toolbar.Items.Add(_radiusHost = Fit(Host(_radius, "笔刷半径（像素）"), () => new[] { "500" }, 64));
         _toolbar.Items.Add(new ToolStripSeparator());
 
         if (model.SupportsMaskPreview || model.Template != null)
@@ -84,7 +87,7 @@ internal sealed class VisionFrameEditorControl : UserControl
             {
                 model.ShowMask = showMask.Checked;
                 var old = showMask.Image;
-                showMask.Image = ModernUI.WinForms.ModernIcons.CreateBitmap(showMask.Checked ? ModernUI.WinForms.ModernIconKind.Eye : ModernUI.WinForms.ModernIconKind.EyeOff, Theme.Text, 16);
+                showMask.Image = ModernUI.WinForms.ModernIcons.CreateBitmap(showMask.Checked ? ModernUI.WinForms.ModernIconKind.Eye : ModernUI.WinForms.ModernIconKind.EyeOff, Theme.Text, IconPixels);
                 old?.Dispose(); RefreshPreview();
             };
         }
@@ -95,7 +98,7 @@ internal sealed class VisionFrameEditorControl : UserControl
             var coordinates = ToolSelect(160);
             coordinates.Items.AddRange(model.CoordinateSources.Cast<object>().ToArray());
             if (coordinates.Items.Count > 0) coordinates.SelectedIndex = 0;
-            _toolbar.Items.Add(Host(coordinates, "定位节点"));
+            _toolbar.Items.Add(Fit(Host(coordinates, "定位节点"), () => model.CoordinateSources.Select(c => c.ToString() ?? "").Append("请选择"), 44));
             TextButton("绑定/更换坐标系", () => model.BindCoordinates((coordinates.SelectedItem as VisionCoordinateSource)?.NodeId
                 ?? throw new InvalidOperationException("请选择定位节点。")));
             TextButton("解除坐标系转原图", model.UnbindCoordinates);
@@ -122,6 +125,8 @@ internal sealed class VisionFrameEditorControl : UserControl
         VisibleChanged += (_, _) => { if (Visible) _timer.Start(); else _timer.Stop(); };
         model.RegisterViewLifetime(Dispose);
         SyncToolbar();
+        HandleCreated += (_, _) => FitToolbar();
+        FontChanged += (_, _) => FitToolbar();
         _timer.Start();
 
         void Guard(Action action)
@@ -131,17 +136,17 @@ internal sealed class VisionFrameEditorControl : UserControl
         }
         ToolStripButton IconButton(string text, ModernUI.WinForms.ModernIconKind icon, Action action)
         {
-            var button = new ToolStripButton(text, ModernUI.WinForms.ModernIcons.CreateBitmap(icon, Theme.Text, 16))
-            { DisplayStyle = ToolStripItemDisplayStyle.Image, ToolTipText = text, AutoToolTip = false };
+            var button = new ToolStripButton(text, ModernUI.WinForms.ModernIcons.CreateBitmap(icon, Theme.Text, IconPixels))
+            { DisplayStyle = ToolStripItemDisplayStyle.Image, ToolTipText = text, AutoToolTip = false, Padding = new Padding(4) };
             button.Click += (_, _) => Guard(action);
             _toolbar.Items.Add(button);
             return button;
         }
         void TextButton(string text, Action action)
         {
-            var button = new ToolStripButton(text) { DisplayStyle = ToolStripItemDisplayStyle.Text };
+            var button = new ModernUI.WinForms.ModernButton { Text = text, Theme = Theme, Size = new Size(120, ControlHeight) };
             button.Click += (_, _) => { Guard(action); RefreshPreview(); _status.Text = model.Status; };
-            _toolbar.Items.Add(button);
+            _toolbar.Items.Add(Fit(Host(button, text), () => new[] { text }, 28));
         }
     }
 
@@ -168,6 +173,41 @@ internal sealed class VisionFrameEditorControl : UserControl
     {
         int index = _views.ToList().FindIndex(v => v.Code == view);
         if (index >= 0) _source.SelectedIndex = index;
+    }
+
+    private ToolStripControlHost Fit(ToolStripControlHost host, Func<IEnumerable<string>> texts, int extra)
+    {
+        _fitted.Add((host, texts, extra));
+        return host;
+    }
+
+    /// <summary>按当前DPI和字体重新计算工具栏尺寸，避免缩放后下拉框文字被截断、工具栏显得单薄。</summary>
+    private void FitToolbar()
+    {
+        if (IsDisposed) return;
+        int Scale(int logical) => LogicalToDeviceUnits(logical);
+        _toolbar.SuspendLayout();
+        try
+        {
+            _toolbar.Padding = new Padding(Scale(6), Scale(5), Scale(6), Scale(5));
+            _toolbar.ImageScalingSize = new Size(Scale(20), Scale(20));
+            foreach (var (host, texts, extra) in _fitted)
+            {
+                var control = host.Control;
+                int text = texts().DefaultIfEmpty("").Max(t => TextRenderer.MeasureText(t, control.Font).Width);
+                var size = new Size(Math.Min(text + Scale(extra), Scale(360)), Scale(ControlHeight)); // 定位节点名称可能很长，限制最大宽度。
+                control.Size = size; host.Size = size;
+                host.Margin = new Padding(Scale(2), 0, Scale(2), 0);
+            }
+        }
+        finally { _toolbar.ResumeLayout(true); }
+    }
+
+    /// <inheritdoc/>
+    protected override void OnDpiChangedAfterParent(EventArgs e)
+    {
+        base.OnDpiChangedAfterParent(e);
+        FitToolbar();
     }
 
     private static ToolStripControlHost Host(Control control, string tip) => new(control)
@@ -226,6 +266,7 @@ internal sealed class VisionFrameEditorControl : UserControl
                 _toolsForTemplate = templateMaking;
                 _tools = _model.RegionTools(templateMaking);
                 _tool.Items.Clear(); _tool.Items.AddRange(_tools.Cast<object>().ToArray());
+                if (IsHandleCreated) FitToolbar();
             }
             bool regions = templateMaking || _model.SupportsRegions;
             _toolHost.Enabled = editor != null;
