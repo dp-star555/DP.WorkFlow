@@ -1,3 +1,5 @@
+using System.Drawing.Drawing2D;
+
 namespace ModernUI.WinForms;
 
 /// <summary>Centralizes the native ToolStrip family renderer so menus, toolbars and status bars stay consistent.</summary>
@@ -70,6 +72,53 @@ internal static class ModernToolStripTheme
             e.ArrowColor = e.Item?.Enabled != false ? theme.TextSecondary : theme.TextDisabled;
             base.OnRenderArrow(e);
         }
+
+        // 原生 Professional 渲染器的悬停/按下色来自系统浅蓝渐变，深色主题下会盖住浅色文字；
+        // 统一改为主题圆角高亮，并保证高亮项文字仍使用主题文字色。
+        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+        {
+            if (!e.Item.IsOnDropDown && e.Item.Owner is not MenuStrip) { base.OnRenderMenuItemBackground(e); return; }
+            if (e.Item.Enabled && (e.Item.Selected || e.Item.Pressed))
+                FillHighlight(e.Graphics, e.Item.IsOnDropDown
+                    ? new Rectangle(4, 1, e.Item.Width - 8, e.Item.Height - 2)
+                    : new Rectangle(Point.Empty, e.Item.Size), e.Item.Pressed && !e.Item.IsOnDropDown ? theme.PrimaryBackground : theme.ControlHover);
+        }
+
+        protected override void OnRenderButtonBackground(ToolStripItemRenderEventArgs e) =>
+            RenderButtonHighlight(e, e.Item is ToolStripButton { Checked: true });
+
+        protected override void OnRenderDropDownButtonBackground(ToolStripItemRenderEventArgs e) =>
+            RenderButtonHighlight(e, false);
+
+        protected override void OnRenderSplitButtonBackground(ToolStripItemRenderEventArgs e) =>
+            RenderButtonHighlight(e, false);
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            e.TextColor = !e.Item.Enabled ? theme.TextDisabled
+                : e.Item.IsOnDropDown || e.Item.Selected || e.Item.Pressed ? theme.Text : e.Item.ForeColor;
+            base.OnRenderItemText(e);
+        }
+
+        private void RenderButtonHighlight(ToolStripItemRenderEventArgs e, bool isChecked)
+        {
+            if (!e.Item.Enabled) return;
+            var pressed = e.Item.Pressed || (e.Item as ToolStripDropDownItem)?.DropDown.Visible == true;
+            if (!pressed && !isChecked && !e.Item.Selected) return;
+            FillHighlight(e.Graphics, new Rectangle(Point.Empty, e.Item.Size),
+                pressed || isChecked ? theme.PrimaryBackground : theme.ControlHover);
+        }
+
+        private void FillHighlight(Graphics graphics, Rectangle bounds, Color color)
+        {
+            if (bounds.Width <= 0 || bounds.Height <= 0) return;
+            var state = graphics.SmoothingMode;
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using var path = Geometry.CreateRoundedRectangle(bounds, Math.Min(theme.Radius, bounds.Height / 2f));
+            using var brush = new SolidBrush(color);
+            graphics.FillPath(brush, path);
+            graphics.SmoothingMode = state;
+        }
     }
 
     private sealed class ColorTable(ModernTheme theme) : ProfessionalColorTable
@@ -88,6 +137,18 @@ internal static class ModernToolStripTheme
         public override Color ImageMarginGradientBegin => theme.Control;
         public override Color ImageMarginGradientMiddle => theme.Control;
         public override Color ImageMarginGradientEnd => theme.Control;
+        public override Color MenuItemSelectedGradientBegin => theme.ControlHover;
+        public override Color MenuItemSelectedGradientEnd => theme.ControlHover;
+        public override Color ButtonSelectedGradientBegin => theme.ControlHover;
+        public override Color ButtonSelectedGradientMiddle => theme.ControlHover;
+        public override Color ButtonSelectedGradientEnd => theme.ControlHover;
+        public override Color ButtonPressedGradientBegin => theme.PrimaryBackground;
+        public override Color ButtonPressedGradientMiddle => theme.PrimaryBackground;
+        public override Color ButtonPressedGradientEnd => theme.PrimaryBackground;
+        public override Color ButtonCheckedGradientBegin => theme.PrimaryBackground;
+        public override Color ButtonCheckedGradientMiddle => theme.PrimaryBackground;
+        public override Color ButtonCheckedGradientEnd => theme.PrimaryBackground;
+        public override Color ButtonCheckedHighlight => theme.PrimaryBackground;
         public override Color ButtonSelectedHighlight => theme.ControlHover;
         public override Color ButtonSelectedBorder => theme.Border;
         public override Color ButtonPressedHighlight => theme.PrimaryBackground;
