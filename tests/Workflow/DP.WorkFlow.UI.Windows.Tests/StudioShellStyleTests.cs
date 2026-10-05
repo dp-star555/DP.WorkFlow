@@ -23,6 +23,26 @@ public sealed class StudioShellStyleTests
     }
 
     [Fact]
+    public void Toolbar_UsesIconButtonsAndIconMenuItems()
+    {
+        Run(() =>
+        {
+            using var studio = new DP.WorkFlow.UI.WinForms.WorkflowStudioControl();
+            var toolbar = Descendants(studio).OfType<ModernToolStrip>().Single();
+            var buttons = toolbar.Items.OfType<ToolStripButton>().ToDictionary(item => item.Name ?? string.Empty);
+
+            foreach (var name in new[] { "_undoButton", "_redoButton", "_upButton", "_runButton", "_pauseButton", "_resumeButton", "_stopButton" })
+            {
+                Assert.Equal(ToolStripItemDisplayStyle.Image, buttons[name].DisplayStyle);
+                Assert.NotNull(buttons[name].Image);
+                Assert.False(string.IsNullOrWhiteSpace(buttons[name].ToolTipText));
+            }
+            Assert.All(toolbar.Items.OfType<ToolStripDropDownButton>().SelectMany(menu => menu.DropDownItems.Cast<ToolStripItem>()),
+                item => Assert.NotNull(item.Image));
+        });
+    }
+
+    [Fact]
     public void Toolbox_FiltersNodesBySearchText()
     {
         Run(() =>

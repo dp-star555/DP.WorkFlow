@@ -38,7 +38,41 @@ public enum ModernIconKind
     /// <summary>橡皮。</summary>
     Eraser,
     /// <summary>适应窗口（四角向外）。</summary>
-    FitWindow
+    FitWindow,
+    /// <summary>撤销（逆时针箭头）。</summary>
+    Undo,
+    /// <summary>重做（顺时针箭头）。</summary>
+    Redo,
+    /// <summary>暂停（双竖条）。</summary>
+    Pause,
+    /// <summary>停止（实心方块）。</summary>
+    Stop,
+    /// <summary>继续（竖条加三角）。</summary>
+    Resume,
+    /// <summary>返回上一级（向上折返箭头）。</summary>
+    NavigateUp,
+    /// <summary>新建文件。</summary>
+    FileNew,
+    /// <summary>打开文件夹。</summary>
+    FolderOpen,
+    /// <summary>保存。</summary>
+    Save,
+    /// <summary>另存为。</summary>
+    SaveAs,
+    /// <summary>自动布局（层级节点）。</summary>
+    AutoLayout,
+    /// <summary>左对齐。</summary>
+    AlignLeft,
+    /// <summary>右对齐。</summary>
+    AlignRight,
+    /// <summary>顶端对齐。</summary>
+    AlignTop,
+    /// <summary>底端对齐。</summary>
+    AlignBottom,
+    /// <summary>水平等距分布。</summary>
+    DistributeHorizontal,
+    /// <summary>垂直等距分布。</summary>
+    DistributeVertical
 }
 
 /// <summary>Specifies where a button icon is placed relative to its text.</summary>
@@ -196,6 +230,102 @@ internal static class ModernIconRenderer
                 graphics.DrawLines(pen, [Point(.86f, .64f), Point(.86f, .86f), Point(.64f, .86f)]);
                 graphics.DrawLines(pen, [Point(.36f, .86f), Point(.14f, .86f), Point(.14f, .64f)]);
                 break;
+            case ModernIconKind.Undo:
+            case ModernIconKind.Redo:
+            {
+                var undo = icon == ModernIconKind.Undo;
+                PointF P(float x, float y) => Point(undo ? x : 1 - x, y);
+                using var path = new GraphicsPath();
+                path.AddLine(P(.22f, .44f), P(.6f, .44f));
+                path.AddBezier(P(.6f, .44f), P(.92f, .44f), P(.92f, .82f), P(.6f, .82f));
+                path.AddLine(P(.6f, .82f), P(.4f, .82f));
+                graphics.DrawPath(pen, path);
+                graphics.DrawLines(pen, [P(.38f, .26f), P(.2f, .44f), P(.38f, .62f)]);
+                break;
+            }
+            case ModernIconKind.Pause:
+                using (var brush = new SolidBrush(color))
+                {
+                    graphics.FillRectangle(brush, left + width * .26f, top + height * .2f, width * .16f, height * .6f);
+                    graphics.FillRectangle(brush, left + width * .58f, top + height * .2f, width * .16f, height * .6f);
+                }
+                break;
+            case ModernIconKind.Stop:
+                using (var brush = new SolidBrush(color))
+                using (var path = Geometry.CreateRoundedRectangle(new RectangleF(left + width * .22f, top + height * .22f, width * .56f, height * .56f), width * .08f))
+                    graphics.FillPath(brush, path);
+                break;
+            case ModernIconKind.Resume:
+                using (var brush = new SolidBrush(color))
+                using (var path = new GraphicsPath())
+                {
+                    graphics.FillRectangle(brush, left + width * .18f, top + height * .2f, width * .13f, height * .6f);
+                    path.AddPolygon([Point(.42f, .2f), Point(.84f, .5f), Point(.42f, .8f)]);
+                    graphics.FillPath(brush, path);
+                }
+                break;
+            case ModernIconKind.NavigateUp:
+                graphics.DrawLines(pen, [Point(.3f, .38f), Point(.5f, .18f), Point(.7f, .38f)]);
+                graphics.DrawLines(pen, [Point(.5f, .18f), Point(.5f, .62f), Point(.5f, .7f)]);
+                graphics.DrawLines(pen, [Point(.5f, .7f), Point(.5f, .82f), Point(.82f, .82f)]);
+                break;
+            case ModernIconKind.FileNew:
+                graphics.DrawPolygon(pen, [Point(.22f, .1f), Point(.58f, .1f), Point(.78f, .3f), Point(.78f, .9f), Point(.22f, .9f)]);
+                graphics.DrawLines(pen, [Point(.58f, .1f), Point(.58f, .3f), Point(.78f, .3f)]);
+                graphics.DrawLine(pen, Point(.5f, .48f), Point(.5f, .74f));
+                graphics.DrawLine(pen, Point(.37f, .61f), Point(.63f, .61f));
+                break;
+            case ModernIconKind.FolderOpen:
+                graphics.DrawLines(pen, [Point(.12f, .78f), Point(.12f, .22f), Point(.38f, .22f), Point(.46f, .32f), Point(.8f, .32f), Point(.8f, .44f)]);
+                graphics.DrawPolygon(pen, [Point(.12f, .78f), Point(.26f, .44f), Point(.92f, .44f), Point(.78f, .78f)]);
+                break;
+            case ModernIconKind.Save:
+            case ModernIconKind.SaveAs:
+                graphics.DrawPolygon(pen, [Point(.14f, .14f), Point(.7f, .14f), Point(.86f, .3f), Point(.86f, .86f), Point(.14f, .86f)]);
+                graphics.DrawRectangle(pen, left + width * .32f, top + height * .14f, width * .3f, height * .2f);
+                graphics.DrawRectangle(pen, left + width * .3f, top + height * .56f, width * .4f, height * .3f);
+                if (icon == ModernIconKind.SaveAs)
+                    using (var brush = new SolidBrush(color))
+                        graphics.FillEllipse(brush, left + width * .66f, top + height * .66f, width * .3f, height * .3f);
+                break;
+            case ModernIconKind.AutoLayout:
+                graphics.DrawRectangle(pen, left + width * .36f, top + height * .1f, width * .28f, height * .2f);
+                graphics.DrawRectangle(pen, left + width * .1f, top + height * .7f, width * .28f, height * .2f);
+                graphics.DrawRectangle(pen, left + width * .62f, top + height * .7f, width * .28f, height * .2f);
+                graphics.DrawLines(pen, [Point(.5f, .3f), Point(.5f, .5f), Point(.24f, .5f), Point(.24f, .7f)]);
+                graphics.DrawLines(pen, [Point(.5f, .5f), Point(.76f, .5f), Point(.76f, .7f)]);
+                break;
+            case ModernIconKind.AlignLeft:
+            case ModernIconKind.AlignRight:
+            case ModernIconKind.AlignTop:
+            case ModernIconKind.AlignBottom:
+            {
+                var vertical = icon is ModernIconKind.AlignLeft or ModernIconKind.AlignRight;
+                var far = icon is ModernIconKind.AlignRight or ModernIconKind.AlignBottom;
+                PointF A(float along, float across) => vertical ? Point(far ? 1 - across : across, along) : Point(along, far ? 1 - across : across);
+                graphics.DrawLine(pen, A(.1f, .14f), A(.9f, .14f));
+                using var brush = new SolidBrush(color);
+                foreach (var (start, length) in new[] { (.22f, .6f), (.58f, .36f) })
+                {
+                    var a = A(start, .26f);
+                    var b = A(start + .2f, .26f + length);
+                    graphics.FillRectangle(brush, Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Abs(b.X - a.X), Math.Abs(b.Y - a.Y));
+                }
+                break;
+            }
+            case ModernIconKind.DistributeHorizontal:
+            case ModernIconKind.DistributeVertical:
+            {
+                var horizontal = icon == ModernIconKind.DistributeHorizontal;
+                PointF D(float along, float across) => horizontal ? Point(along, across) : Point(across, along);
+                graphics.DrawLine(pen, D(.1f, .12f), D(.1f, .88f));
+                graphics.DrawLine(pen, D(.9f, .12f), D(.9f, .88f));
+                using var brush = new SolidBrush(color);
+                var a = D(.38f, .26f);
+                var b = D(.62f, .74f);
+                graphics.FillRectangle(brush, Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Abs(b.X - a.X), Math.Abs(b.Y - a.Y));
+                break;
+            }
             case ModernIconKind.Loading:
                 pen.StartCap = LineCap.Round;
                 pen.EndCap = LineCap.Round;

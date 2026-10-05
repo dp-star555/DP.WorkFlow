@@ -1,4 +1,5 @@
 using DP.WorkFlow.UI;
+using ModernUI.WinForms;
 
 namespace DP.WorkFlow.UI.WinForms;
 
@@ -20,17 +21,26 @@ public sealed partial class WorkflowStudioControl : UserControl
         InitializeComponent();
 
         // 菜单行为依赖当前 Session/Workspace，固定 ToolStripItem 已在 Designer 中声明。
-        fileMenu.DropDownItems.Add("新建", null, (_, _) => NewDocument());
-        fileMenu.DropDownItems.Add("打开…", null, (_, _) => OpenDocument());
-        fileMenu.DropDownItems.Add("保存", null, (_, _) => SaveDocument(false));
-        fileMenu.DropDownItems.Add("另存为…", null, (_, _) => SaveDocument(true));
-        layoutMenu.DropDownItems.Add("自动布局", null, (_, _) => Session?.AutoLayout());
-        layoutMenu.DropDownItems.Add("左对齐", null, (_, _) => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Left));
-        layoutMenu.DropDownItems.Add("右对齐", null, (_, _) => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Right));
-        layoutMenu.DropDownItems.Add("顶端对齐", null, (_, _) => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Top));
-        layoutMenu.DropDownItems.Add("底端对齐", null, (_, _) => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Bottom));
-        layoutMenu.DropDownItems.Add("水平分布", null, (_, _) => Session?.DistributeSelectedNodes(WorkflowNodeDistribution.Horizontal));
-        layoutMenu.DropDownItems.Add("垂直分布", null, (_, _) => Session?.DistributeSelectedNodes(WorkflowNodeDistribution.Vertical));
+        AddMenuItem(fileMenu, "新建", ModernIconKind.FileNew, NewDocument);
+        AddMenuItem(fileMenu, "打开…", ModernIconKind.FolderOpen, OpenDocument);
+        AddMenuItem(fileMenu, "保存", ModernIconKind.Save, () => SaveDocument(false));
+        AddMenuItem(fileMenu, "另存为…", ModernIconKind.SaveAs, () => SaveDocument(true));
+        AddMenuItem(layoutMenu, "自动布局", ModernIconKind.AutoLayout, () => Session?.AutoLayout());
+        AddMenuItem(layoutMenu, "左对齐", ModernIconKind.AlignLeft, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Left));
+        AddMenuItem(layoutMenu, "右对齐", ModernIconKind.AlignRight, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Right));
+        AddMenuItem(layoutMenu, "顶端对齐", ModernIconKind.AlignTop, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Top));
+        AddMenuItem(layoutMenu, "底端对齐", ModernIconKind.AlignBottom, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Bottom));
+        AddMenuItem(layoutMenu, "水平分布", ModernIconKind.DistributeHorizontal, () => Session?.DistributeSelectedNodes(WorkflowNodeDistribution.Horizontal));
+        AddMenuItem(layoutMenu, "垂直分布", ModernIconKind.DistributeVertical, () => Session?.DistributeSelectedNodes(WorkflowNodeDistribution.Vertical));
+        var theme = ModernTheme.Dark;
+        SetIconOnly(_undoButton, ModernIconKind.Undo, theme.Text, "撤销 (Ctrl+Z)");
+        SetIconOnly(_redoButton, ModernIconKind.Redo, theme.Text, "重做 (Ctrl+Y)");
+        SetIconOnly(_upButton, ModernIconKind.NavigateUp, theme.Text, "返回上一级画布（仅在进入子流程画布后可用）");
+        SetIconOnly(fitButton, ModernIconKind.FitWindow, theme.Text, "适合画布");
+        SetIconOnly(_runButton, ModernIconKind.Play, theme.Success, "运行");
+        SetIconOnly(_pauseButton, ModernIconKind.Pause, theme.Warning, "暂停");
+        SetIconOnly(_resumeButton, ModernIconKind.Resume, theme.Success, "继续");
+        SetIconOnly(_stopButton, ModernIconKind.Stop, theme.Error, "停止");
 
         _undoButton.Click += (_, _) => Session?.Undo();
         _redoButton.Click += (_, _) => Session?.Redo();
@@ -53,6 +63,26 @@ public sealed partial class WorkflowStudioControl : UserControl
         };
         WorkflowWinFormsStyle.Apply(this);
     }
+
+    /// <summary>向下拉菜单添加带图标的命令项。</summary>
+    private void AddMenuItem(ToolStripDropDownItem menu, string text, ModernIconKind icon, Action action)
+    {
+        var item = new ToolStripMenuItem(text, CreateIcon(icon, ModernTheme.Dark.Text), (_, _) => action());
+        menu.DropDownItems.Add(item);
+    }
+
+    /// <summary>工具栏按钮只显示图标，文字保留为提示与无障碍名称。</summary>
+    private void SetIconOnly(ToolStripItem item, ModernIconKind icon, Color color, string toolTip)
+    {
+        item.Image = CreateIcon(icon, color);
+        item.DisplayStyle = ToolStripItemDisplayStyle.Image;
+        item.AccessibleName = item.Text;
+        item.ToolTipText = toolTip;
+        item.AutoToolTip = false;
+    }
+
+    private Bitmap CreateIcon(ModernIconKind icon, Color color) =>
+        ModernIcons.CreateBitmap(icon, color, _toolbar.LogicalToDeviceUnits(16));
 
     /// <summary>获取画布控件。</summary>
     public WorkflowDesignerControl Designer => designerControl;
@@ -442,17 +472,6 @@ public sealed partial class WorkflowStudioControl : UserControl
             ? "Root"
             : string.Join("  /  ", Navigator.Breadcrumbs.Select(item => item.Title));
         _breadcrumbLabel.Text = Workspace?.IsDirty == true ? path + " *" : path;
-        _runButton.Text = Navigator?.Depth > 0 ? "运行当前子流程" : "运行";
-    }
-
-    /// <summary>定义 FixedColorTable 类型。</summary>
-    private sealed class FixedColorTable : ProfessionalColorTable
-    {
-        public override Color ToolStripGradientBegin => Color.FromArgb(37, 37, 38);
-        public override Color ToolStripGradientMiddle => Color.FromArgb(37, 37, 38);
-        public override Color ToolStripGradientEnd => Color.FromArgb(37, 37, 38);
-        public override Color ButtonSelectedHighlight => Color.FromArgb(62, 62, 66);
-        public override Color ButtonSelectedGradientBegin => Color.FromArgb(62, 62, 66);
-        public override Color ButtonSelectedGradientEnd => Color.FromArgb(62, 62, 66);
+        _runButton.Text = _runButton.ToolTipText = Navigator?.Depth > 0 ? "运行当前子流程" : "运行";
     }
 }
