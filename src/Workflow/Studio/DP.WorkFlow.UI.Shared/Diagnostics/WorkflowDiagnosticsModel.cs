@@ -107,7 +107,7 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
         }
     }
 
-    /// <summary>选择诊断关联节点。</summary>
+    /// <summary>选择诊断关联节点；节点位于子流程内部时选择包含它的最外层子流程节点。</summary>
     /// <param name="item">目标数据项。</param>
     public bool NavigateTo(WorkflowDiagnosticItem item)
     {
@@ -125,8 +125,8 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
             }
             if (!document.Graph.Nodes.Any(n => n.Id == item.NodeId)) return false;
             if (_navigator.Depth != depth) _navigator.NavigateToDepth(depth);
-            foreach (var parent in parents) if (!_navigator.EnterSubCanvas(parent)) return false;
-            _navigator.CurrentSession.SelectedNodeId = item.NodeId; return true;
+            // 子画布以节点窗口弹出编辑，主画布不再进入子画布：嵌套诊断定位到所在画布上的最外层子流程节点。
+            _navigator.CurrentSession.SelectedNodeId = parents.Length > 0 ? parents[0] : item.NodeId; return true;
         }
         if (string.IsNullOrWhiteSpace(item.NodeId)
             || !_session.Canvas.Nodes.Any(node => node.Node.Id == item.NodeId))

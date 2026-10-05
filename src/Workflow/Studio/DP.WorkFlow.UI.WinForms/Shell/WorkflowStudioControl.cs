@@ -35,7 +35,6 @@ public sealed partial class WorkflowStudioControl : UserControl
         var theme = ModernTheme.Dark;
         SetIconOnly(_undoButton, ModernIconKind.Undo, theme.Text, "撤销 (Ctrl+Z)");
         SetIconOnly(_redoButton, ModernIconKind.Redo, theme.Text, "重做 (Ctrl+Y)");
-        SetIconOnly(_upButton, ModernIconKind.NavigateUp, theme.Text, "返回上一级画布（仅在进入子流程画布后可用）");
         SetIconOnly(fitButton, ModernIconKind.FitWindow, theme.Text, "适合画布");
         SetIconOnly(_runButton, ModernIconKind.Play, theme.Success, "运行");
         SetIconOnly(_pauseButton, ModernIconKind.Pause, theme.Warning, "暂停");
@@ -44,7 +43,6 @@ public sealed partial class WorkflowStudioControl : UserControl
 
         _undoButton.Click += (_, _) => Session?.Undo();
         _redoButton.Click += (_, _) => Session?.Redo();
-        _upButton.Click += (_, _) => Navigator?.NavigateUp();
         _runButton.Click += async (_, _) => await RunWorkflowAsync();
         _pauseButton.Click += (_, _) => RuntimeBinding?.Pause();
         _resumeButton.Click += (_, _) => RuntimeBinding?.Resume();
@@ -467,7 +465,6 @@ public sealed partial class WorkflowStudioControl : UserControl
     /// <summary>更新Navigation。</summary>
     private void UpdateNavigation()
     {
-        _upButton.Enabled = Navigator?.Depth > 0;
         var path = Navigator is null
             ? "Root"
             : string.Join("  /  ", Navigator.Breadcrumbs.Select(item => item.Title));

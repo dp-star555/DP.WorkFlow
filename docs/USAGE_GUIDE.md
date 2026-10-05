@@ -392,7 +392,7 @@ block.OutputMappings.Add(new BlockOutputMapping
 
 子 Context 默认不复制父变量，并隔离 NodeOutputs。进入和返回子流程的数据都必须通过 InputMapping/OutputMapping 显式声明。
 
-双 UI 属性面板在选中 Block 后提供“编辑输入/输出映射…”入口。双击 Block 则进入子画布，使用面包屑或“上一级”返回。
+双 UI 属性面板在选中 Block 后提供“编辑输入/输出映射…”入口。双击 Block 会弹出节点窗口，在其中的子画布里编辑子流程，左侧工具箱可双击或拖放添加节点。
 
 ---
 

@@ -15,7 +15,6 @@ partial class WorkflowStudioControl
         _undoButton = new ToolStripButton();
         _redoButton = new ToolStripButton();
         editSeparator = new ToolStripSeparator();
-        _upButton = new ToolStripButton();
         _breadcrumbLabel = new ToolStripLabel();
         navigationSeparator = new ToolStripSeparator();
         fitButton = new ToolStripButton();
@@ -54,7 +53,7 @@ partial class WorkflowStudioControl
         _toolbar.BackColor = Color.FromArgb(22, 32, 49);
         _toolbar.ForeColor = Color.FromArgb(226, 232, 240);
         _toolbar.GripStyle = ToolStripGripStyle.Hidden;
-        _toolbar.Items.AddRange(new ToolStripItem[] { fileMenu, fileSeparator, _undoButton, _redoButton, editSeparator, _upButton, _breadcrumbLabel, navigationSeparator, fitButton, layoutMenu, runtimeSeparator, _runButton, _pauseButton, _resumeButton, _stopButton, _runtimeLabel });
+        _toolbar.Items.AddRange(new ToolStripItem[] { fileMenu, fileSeparator, _undoButton, _redoButton, editSeparator, _breadcrumbLabel, navigationSeparator, fitButton, layoutMenu, runtimeSeparator, _runButton, _pauseButton, _resumeButton, _stopButton, _runtimeLabel });
         _toolbar.Location = new Point(0, 0);
         _toolbar.Name = "_toolbar";
         _toolbar.Size = new Size(1180, 25);
@@ -87,12 +86,6 @@ partial class WorkflowStudioControl
         // 
         editSeparator.Name = "editSeparator";
         editSeparator.Size = new Size(6, 25);
-        // 
-        // _upButton
-        // 
-        _upButton.Name = "_upButton";
-        _upButton.Size = new Size(48, 22);
-        _upButton.Text = "上一级";
         // 
         // _breadcrumbLabel
         // 
@@ -283,7 +276,6 @@ partial class WorkflowStudioControl
     private ToolStripButton _undoButton = null!;
     private ToolStripButton _redoButton = null!;
     private ToolStripSeparator editSeparator = null!;
-    private ToolStripButton _upButton = null!;
     private ToolStripLabel _breadcrumbLabel = null!;
     private ToolStripSeparator navigationSeparator = null!;
     private ToolStripButton fitButton = null!;

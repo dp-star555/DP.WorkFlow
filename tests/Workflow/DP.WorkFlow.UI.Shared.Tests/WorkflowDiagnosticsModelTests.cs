@@ -29,12 +29,13 @@ public sealed class WorkflowDiagnosticsModelTests
         using var diagnostics = new WorkflowDiagnosticsModel(navigator.RootSession, "same", null, navigator);
         var issue = new WorkflowDiagnosticItem("ALG_MISSING", WorkflowValidationSeverity.Error, "missing", "same")
             { PlanPath = "$/" + Uri.EscapeDataString(block.Id), FromRoot = true };
-        Assert.True(diagnostics.NavigateTo(issue)); Assert.Same(child, navigator.CurrentSession.Document);
-        Assert.Equal("same", navigator.CurrentSession.SelectedNodeId);
+        Assert.True(diagnostics.NavigateTo(issue)); Assert.Same(root, navigator.CurrentSession.Document);
+        Assert.Equal(block.Id, navigator.CurrentSession.SelectedNodeId);
         Assert.False(diagnostics.NavigateTo(issue with { PlanPath = "$/unknown" }));
-        Assert.Same(child, navigator.CurrentSession.Document);
+        Assert.Equal(block.Id, navigator.CurrentSession.SelectedNodeId);
         Assert.True(diagnostics.NavigateTo(issue with { PlanPath = "$" }));
         Assert.Same(root, navigator.CurrentSession.Document);
+        Assert.Equal("same", navigator.CurrentSession.SelectedNodeId);
     }
 
     private static WorkflowDocument Document(params IWorkflowNodeModel[] nodes)

@@ -296,13 +296,31 @@ public sealed class WorkflowNodeEditorWindow : Window
             mappings.Click += (_, _) => _editMappings(block);
             toolbar.Children.Add(mappings);
         }
-        var grid = new Grid();
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        grid.Children.Add(toolbar);
+        var canvas = new Grid();
+        canvas.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        canvas.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        canvas.Children.Add(toolbar);
         Grid.SetRow(designer, 1);
-        grid.Children.Add(designer);
-        return grid;
+        canvas.Children.Add(designer);
+
+        // 子画布与主工作台一致：左侧工具箱双击添加到画布中心，或直接拖放到画布。
+        var toolbox = new WorkflowToolboxControl { Session = page.Session };
+        toolbox.NodeTypeActivated += (_, item) =>
+        {
+            var center = WorkflowDesignerGeometry.ScreenToCanvas(page.Session, designer.ActualWidth / 2d, designer.ActualHeight / 2d);
+            page.Session.AddNode(item.NodeType, center.X - 90, center.Y - 30);
+        };
+        var layoutGrid = new Grid();
+        layoutGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200), MinWidth = 150 });
+        layoutGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
+        layoutGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 300 });
+        layoutGrid.Children.Add(toolbox);
+        var splitter = new GridSplitter { Width = 5, HorizontalAlignment = HorizontalAlignment.Stretch, Background = new SolidColorBrush(Color.FromRgb(51, 51, 55)) };
+        Grid.SetColumn(splitter, 1);
+        layoutGrid.Children.Add(splitter);
+        Grid.SetColumn(canvas, 2);
+        layoutGrid.Children.Add(canvas);
+        return layoutGrid;
     }
 
     /// <summary>创建Script。</summary>

@@ -19,7 +19,6 @@ public sealed class WorkflowStudioControl : UserControl
 
     private readonly Button _undoButton;
     private readonly Button _redoButton;
-    private readonly Button _upButton;
     private readonly TextBlock _breadcrumb;
     private readonly Button _runButton;
     private readonly Button _pauseButton;
@@ -60,7 +59,6 @@ public sealed class WorkflowStudioControl : UserControl
         var saveButton = CommandButton("保存");
         _undoButton = CommandButton("撤销");
         _redoButton = CommandButton("重做");
-        _upButton = CommandButton("上一级");
         _breadcrumb = new TextBlock
         {
             Text = "Root",
@@ -88,7 +86,6 @@ public sealed class WorkflowStudioControl : UserControl
         toolbar.Children.Add(saveButton);
         toolbar.Children.Add(_undoButton);
         toolbar.Children.Add(_redoButton);
-        toolbar.Children.Add(_upButton);
         toolbar.Children.Add(_breadcrumb);
         toolbar.Children.Add(fitButton);
         toolbar.Children.Add(autoLayoutButton);
@@ -117,7 +114,6 @@ public sealed class WorkflowStudioControl : UserControl
         saveButton.Click += (_, _) => SaveDocument();
         _undoButton.Click += (_, _) => Session?.Undo();
         _redoButton.Click += (_, _) => Session?.Redo();
-        _upButton.Click += (_, _) => Navigator?.NavigateUp();
         _runButton.Click += async (_, _) => await RunWorkflowAsync();
         _pauseButton.Click += (_, _) => RuntimeBinding?.Pause();
         _resumeButton.Click += (_, _) => RuntimeBinding?.Resume();
@@ -530,7 +526,6 @@ public sealed class WorkflowStudioControl : UserControl
     /// <summary>更新Navigation。</summary>
     private void UpdateNavigation()
     {
-        _upButton.IsEnabled = Navigator?.Depth > 0;
         var path = Navigator is null
             ? "Root"
             : string.Join("  /  ", Navigator.Breadcrumbs.Select(item => item.Title));

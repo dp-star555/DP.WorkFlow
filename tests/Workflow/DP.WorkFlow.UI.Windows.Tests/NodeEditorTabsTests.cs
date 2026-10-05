@@ -43,6 +43,27 @@ public sealed class NodeEditorTabsTests
     }
 
     [Fact]
+    public void WinFormsNodeEditor_SubCanvasHasToolboxBoundToChildSession()
+    {
+        Run(() =>
+        {
+            var document = new WorkflowDocument { Name = "Block" };
+            var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes());
+            var start = session.AddNode("Start", 20, 20);
+            var block = session.AddNode("Block", 200, 20);
+            var model = new WorkflowNodeEditorModel(session, start.Node.Id, block.Node.Id);
+            using var dialog = new DP.WorkFlow.UI.WinForms.WorkflowNodeEditorDialog(model);
+            dialog.CreateControl();
+
+            var toolbox = Assert.Single(Descendants(dialog).OfType<DP.WorkFlow.UI.WinForms.WorkflowToolboxControl>());
+            var designer = Assert.Single(Descendants(dialog).OfType<DP.WorkFlow.UI.WinForms.WorkflowDesignerControl>());
+            Assert.NotNull(toolbox.Session);
+            Assert.Same(designer.Session, toolbox.Session);
+            Assert.NotSame(session, toolbox.Session);
+        });
+    }
+
+    [Fact]
     public void RoiListModel_SelectsDeletesAndTogglesRoisSharedWithTheCanvas()
     {
         var node = new AnalyzeVisionColorNodeModel();

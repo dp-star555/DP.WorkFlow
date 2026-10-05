@@ -296,7 +296,7 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         return panel;
     }
 
-    /// <summary>创建嵌入式子流程设计器及其局部工具栏。</summary>
+    /// <summary>创建嵌入式子流程设计器、局部工具栏和节点工具箱。</summary>
     private Control CreateSubWorkflow(WorkflowSubWorkflowEditorPageModel page)
     {
         var designer = new WorkflowDesignerControl { Session = page.Session, Dock = DockStyle.Fill };
@@ -313,10 +313,30 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             mappings.Click += (_, _) => _editMappings(block);
             toolbar.Controls.Add(mappings);
         }
-        var panel = new Panel { Dock = DockStyle.Fill };
-        panel.Controls.Add(designer);
-        panel.Controls.Add(toolbar);
-        return panel;
+        var canvas = new Panel { Dock = DockStyle.Fill };
+        canvas.Controls.Add(designer);
+        canvas.Controls.Add(toolbar);
+
+        // 子画布与主工作台一致：左侧工具箱双击添加到画布中心，或直接拖放到画布。
+        var toolbox = new WorkflowToolboxControl { Session = page.Session, Dock = DockStyle.Fill };
+        toolbox.NodeTypeActivated += (_, item) =>
+        {
+            var center = WorkflowDesignerGeometry.ScreenToCanvas(page.Session, designer.ClientSize.Width / 2d, designer.ClientSize.Height / 2d);
+            page.Session.AddNode(item.NodeType, center.X - 90, center.Y - 30);
+        };
+        var split = new ModernUI.WinForms.ModernSplitter
+        {
+            // 先给出足够尺寸，避免默认 150px 宽度下设置最小宽度/分隔位置越界。
+            Size = new Size(900, 500),
+            Dock = DockStyle.Fill,
+            FixedPanel = FixedPanel.Panel1,
+            InitialPanel2Size = 0,
+            Panel1MinSize = 150,
+            SplitterDistance = 200
+        };
+        split.Panel1.Controls.Add(toolbox);
+        split.Panel2.Controls.Add(canvas);
+        return split;
     }
 
     private ModernUI.WinForms.ModernButton ToolbarButton(string text) => new()
