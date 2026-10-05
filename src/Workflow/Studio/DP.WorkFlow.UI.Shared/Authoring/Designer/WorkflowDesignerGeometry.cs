@@ -14,8 +14,12 @@ public readonly record struct WorkflowDesignerRect(double X, double Y, double Wi
         x >= X && x <= X + Width && y >= Y && y <= Y + Height;
 }
 
-/// <summary>节点标题与运行摘要互不重叠的屏幕布局。</summary>
+/// <summary>
+/// 节点标题栏的屏幕布局：状态指示灯、标题与运行摘要同处一行且互不重叠，三者都在标题栏内垂直居中。
+/// 字号以屏幕像素表示（随缩放变化，不随系统 DPI 额外放大），使文字与卡片尺寸始终成比例。
+/// </summary>
 public readonly record struct WorkflowNodeHeaderLayout(
+    WorkflowDesignerRect IndicatorBounds,
     WorkflowDesignerRect TitleBounds,
     WorkflowDesignerRect RuntimeBounds,
     double TitleFontSize,
@@ -35,9 +39,14 @@ public static class WorkflowDesignerGeometry
     /// <summary>端口命中与绘制使用的基础半径。</summary>
     public const double PortRadius = 5;
 
+    /// <summary>标题文字的设计像素字号。</summary>
+    public const double TitleFontPixels = 12;
+    /// <summary>运行摘要、端口与连接标签的设计像素字号。</summary>
+    public const double DetailFontPixels = 10.5;
+
     /// <summary>
-    /// 为标题和执行序号/耗时分配独立区域：标题独占标题栏整行，运行摘要放在下方正文区垂直居中，
-    /// 两者都不再互相挤占宽度，长标题也只在自己的区域内省略。
+    /// 在标题栏一行内依次放置状态指示灯、标题和右对齐的执行序号/耗时。运行摘要最多占可用宽度的一半，
+    /// 长标题只在自己的区域内省略，不能覆盖右侧运行信息。
     /// </summary>
     /// <param name="nodeBounds">节点屏幕矩形。</param>
     /// <param name="zoom">当前缩放。</param>
@@ -49,17 +58,19 @@ public static class WorkflowDesignerGeometry
     {
         zoom = Math.Max(0.05, zoom);
         var headerHeight = Math.Min(nodeBounds.Height, HeaderHeight * zoom);
+        var indicator = 8 * zoom;
         var titleLeft = nodeBounds.X + 24 * zoom;
         var contentRight = nodeBounds.X + nodeBounds.Width - 10 * zoom;
-        var contentWidth = Math.Max(0, contentRight - titleLeft);
-        var bodyTop = nodeBounds.Y + headerHeight;
-        var bodyHeight = Math.Max(0, nodeBounds.Y + nodeBounds.Height - bodyTop);
-        var runtimeHeight = measuredRuntimeWidth > 0 ? Math.Min(bodyHeight, 18 * zoom) : 0;
+        var availableWidth = Math.Max(0, contentRight - titleLeft);
+        var gap = measuredRuntimeWidth > 0 ? 8 * zoom : 0;
+        var runtimeWidth = measuredRuntimeWidth <= 0 ? 0 : Math.Min(measuredRuntimeWidth, availableWidth * 0.5);
+        var titleWidth = Math.Max(0, availableWidth - runtimeWidth - gap);
         return new WorkflowNodeHeaderLayout(
-            new WorkflowDesignerRect(titleLeft, nodeBounds.Y + 7 * zoom, contentWidth, Math.Max(0, headerHeight - 7 * zoom)),
-            new WorkflowDesignerRect(titleLeft, bodyTop + (bodyHeight - runtimeHeight) / 2, runtimeHeight > 0 ? contentWidth : 0, runtimeHeight),
-            Math.Max(3, 9 * zoom),
-            Math.Max(3, 7.5 * zoom));
+            new WorkflowDesignerRect(nodeBounds.X + 10 * zoom, nodeBounds.Y + (headerHeight - indicator) / 2, indicator, indicator),
+            new WorkflowDesignerRect(titleLeft, nodeBounds.Y, titleWidth, headerHeight),
+            new WorkflowDesignerRect(contentRight - runtimeWidth, nodeBounds.Y, runtimeWidth, headerHeight),
+            Math.Max(3, TitleFontPixels * zoom),
+            Math.Max(3, DetailFontPixels * zoom));
     }
 
     /// <summary>将画布坐标按照当前缩放和平移参数转换为屏幕坐标。</summary>

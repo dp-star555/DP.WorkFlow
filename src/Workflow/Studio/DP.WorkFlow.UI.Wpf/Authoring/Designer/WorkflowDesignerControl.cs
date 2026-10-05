@@ -501,10 +501,8 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             bounds,
             8,
             8);
-        var stateRadius = Math.Max(1, 4.5 * _session.Zoom);
-        context.DrawEllipse(stateBrush, null, new Point(rect.X + 14 * _session.Zoom, rect.Y + 14 * _session.Zoom), stateRadius, stateRadius);
         var runtimeText = WorkflowDesignerInteraction.GetRuntimeDisplayText(_session, item);
-        var runtimeMeasureSize = Math.Max(3, 7.5 * _session.Zoom);
+        var runtimeMeasureSize = Math.Max(3, WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
         var measuredRuntimeWidth = string.IsNullOrEmpty(runtimeText)
             ? 0
             : MeasureTextWidth(runtimeText, runtimeMeasureSize, FontWeights.Normal);
@@ -512,6 +510,9 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             new WorkflowDesignerRect(bounds.X, bounds.Y, bounds.Width, bounds.Height),
             _session.Zoom,
             measuredRuntimeWidth);
+        var indicator = headerLayout.IndicatorBounds;
+        context.DrawEllipse(stateBrush, null, new Point(indicator.X + indicator.Width / 2, indicator.Y + indicator.Height / 2),
+            indicator.Width / 2, indicator.Height / 2);
         DrawTextClipped(
             context,
             item.Node.Title,
@@ -531,7 +532,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             DrawPortSideTargets(context, item, bounds);
     }
 
-    /// <summary>在节点正文区绘制执行序号和耗时。</summary>
+    /// <summary>在节点标题栏右侧绘制执行序号和耗时。</summary>
     /// <param name="context">绘图上下文或当前编辑上下文。</param>
     /// <param name="layout">标题和运行摘要的独立布局区域。</param>
     /// <param name="text">要显示或处理的文本。</param>
@@ -551,7 +552,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             layout.RuntimeFontSize,
             FontWeights.Normal,
             Brush(200, 200, 200),
-            TextAlignment.Left);
+            TextAlignment.Right);
     }
 
     /// <summary>连接拖动期间绘制所有可用输入端点。</summary>
@@ -790,7 +791,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         WorkflowPortSide? sideOverride = null)
     {
         if (_session is null) return;
-        var size = Math.Max(3, 9 * _session.Zoom);
+        var size = Math.Max(3, WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
         var brush = direction == WorkflowPortDirection.Input
             ? Brush(196, 181, 253)
             : Brush(110, 231, 183);
@@ -961,7 +962,8 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         formatted.MaxTextHeight = Math.Max(size, height);
         formatted.Trimming = TextTrimming.CharacterEllipsis;
         formatted.TextAlignment = alignment;
-        context.DrawText(formatted, new Point(x, y));
+        // 单行文字在给定区域内垂直居中，与标题栏指示灯对齐。
+        context.DrawText(formatted, new Point(x, y + Math.Max(0, (height - formatted.Height) / 2)));
     }
 
     /// <summary>按指定字体和位置绘制文本。</summary>

@@ -538,22 +538,22 @@ public sealed partial class WorkflowDesignerControl : Control
         graphics.FillRectangle(header, bounds.X, bounds.Y, bounds.Width, Math.Max(0, headerHeight));
         graphics.Restore(graphicsState);
         graphics.DrawPath(border, path);
-        using var stateBrush = new SolidBrush(stateColor);
-        var stateSize = (float)Math.Max(2, 9 * _session.Zoom);
-        graphics.FillEllipse(stateBrush, bounds.X + (float)(9 * _session.Zoom), bounds.Y + (float)(9 * _session.Zoom), stateSize, stateSize);
         var runtimeText = WorkflowDesignerInteraction.GetRuntimeDisplayText(_session, item);
-        using var runtimeMeasureFont = new Font(Font.FontFamily, Math.Max(3, 7.5f * (float)_session.Zoom));
+        using var runtimeFont = CanvasFont(WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
         var measuredRuntimeWidth = string.IsNullOrEmpty(runtimeText)
             ? 0
-            : graphics.MeasureString(runtimeText, runtimeMeasureFont).Width;
+            : graphics.MeasureString(runtimeText, runtimeFont).Width;
         var headerLayout = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(
             new WorkflowDesignerRect(bounds.X, bounds.Y, bounds.Width, bounds.Height),
             _session.Zoom,
             measuredRuntimeWidth);
-        using var titleFont = new Font(Font.FontFamily, (float)headerLayout.TitleFontSize, FontStyle.Regular);
+        using var stateBrush = new SolidBrush(stateColor);
+        graphics.FillEllipse(stateBrush, ToRectangle(headerLayout.IndicatorBounds));
+        using var titleFont = CanvasFont(headerLayout.TitleFontSize);
         using var titleBrush = new SolidBrush(ForeColor);
         using var titleFormat = new StringFormat
         {
+            LineAlignment = StringAlignment.Center,
             Trimming = StringTrimming.EllipsisCharacter,
             FormatFlags = StringFormatFlags.NoWrap
         };
@@ -565,31 +565,34 @@ public sealed partial class WorkflowDesignerControl : Control
             titleFormat);
         DrawPorts(graphics, item, WorkflowPortDirection.Input);
         DrawPorts(graphics, item, WorkflowPortDirection.Output);
-        DrawRuntimeInfo(graphics, headerLayout, runtimeText);
+        DrawRuntimeInfo(graphics, headerLayout, runtimeText, runtimeFont);
         DrawConnectionOverrideEndpoints(graphics, item);
         DrawConnectionInputTargets(graphics, item);
         if (selected)
             DrawPortSideTargets(graphics, item, bounds);
     }
 
-    /// <summary>在节点正文区绘制执行序号和耗时。</summary>
-    /// <param name="graphics">GDI+ 绘图表面。</param>
-    /// <param name="layout">标题和运行摘要的独立布局区域。</param>
-    /// <param name="text">要显示或处理的文本。</param>
-    private void DrawRuntimeInfo(Graphics graphics, WorkflowNodeHeaderLayout layout, string? text)
+    /// <summary>在节点标题栏右侧绘制执行序号和耗时。</summary>
+    private static void DrawRuntimeInfo(Graphics graphics, WorkflowNodeHeaderLayout layout, string? text, Font font)
     {
         if (string.IsNullOrEmpty(text) || layout.RuntimeBounds.Width <= 0) return;
-        using var font = new Font(Font.FontFamily, (float)layout.RuntimeFontSize);
         using var brush = new SolidBrush(WorkflowWinFormsStyle.Get().MutedText);
         using var format = new StringFormat
         {
-            Alignment = StringAlignment.Near,
+            Alignment = StringAlignment.Far,
             LineAlignment = StringAlignment.Center,
             Trimming = StringTrimming.EllipsisCharacter,
             FormatFlags = StringFormatFlags.NoWrap
         };
         graphics.DrawString(text, font, brush, ToRectangle(layout.RuntimeBounds), format);
     }
+
+    /// <summary>
+    /// 画布文字使用像素字号并随缩放变化：画布几何不随系统 DPI 放大，若用磅值字号，
+    /// 高 DPI 下文字会相对卡片被额外放大。
+    /// </summary>
+    private Font CanvasFont(double pixels, FontStyle style = FontStyle.Regular) =>
+        new(Font.FontFamily, (float)Math.Max(3, pixels), style, GraphicsUnit.Pixel);
 
     private static RectangleF ToRectangle(WorkflowDesignerRect rect) => new(
         (float)rect.X,
@@ -674,7 +677,7 @@ public sealed partial class WorkflowDesignerControl : Control
             ? Color.FromArgb(167, 139, 250)
             : Color.FromArgb(52, 211, 153));
         using var border = new Pen(Color.FromArgb(15, 23, 42), 1.5f);
-        using var labelFont = new Font(Font.FontFamily, Math.Max(3, 7.5f * (float)_session.Zoom));
+        using var labelFont = CanvasFont(WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
         using var labelBrush = new SolidBrush(direction == WorkflowPortDirection.Input
             ? Color.FromArgb(196, 181, 253)
             : Color.FromArgb(110, 231, 183));
@@ -737,7 +740,7 @@ public sealed partial class WorkflowDesignerControl : Control
         using var viewportBrush = new SolidBrush(Color.FromArgb(30, 59, 130, 246));
         using var viewportPen = new Pen(Color.FromArgb(96, 165, 250), 1.5f);
         using var titleBrush = new SolidBrush(Color.FromArgb(212, 212, 216));
-        using var titleFont = new Font(Font.FontFamily, 8f, FontStyle.Regular);
+        using var titleFont = CanvasFont(WorkflowDesignerGeometry.DetailFontPixels);
 
         graphics.FillRectangle(background, layout.MapBounds);
         graphics.DrawRectangle(border, layout.MapBounds.X, layout.MapBounds.Y, layout.MapBounds.Width, layout.MapBounds.Height);
@@ -1121,7 +1124,7 @@ public sealed partial class WorkflowDesignerControl : Control
             graphics.DrawEllipse(endpointBorder, (float)target.X - radius, (float)target.Y - radius, radius * 2, radius * 2);
             if (WorkflowDesignerInteraction.ShouldDrawPortLabel(_session, node, direction))
             {
-                using var font = new Font(Font.FontFamily, Math.Max(3, 7.5f * (float)_session.Zoom));
+                using var font = CanvasFont(WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
                 using var brush = new SolidBrush(direction == WorkflowPortDirection.Input
                     ? Color.FromArgb(196, 181, 253)
                     : Color.FromArgb(110, 231, 183));
@@ -1140,7 +1143,7 @@ public sealed partial class WorkflowDesignerControl : Control
         WorkflowPoint source)
     {
         if (_session is null || !WorkflowDesignerInteraction.ShouldDrawConnectionLabel(_session, connection)) return;
-        using var font = new Font(Font.FontFamily, Math.Max(3, 8 * (float)_session.Zoom), FontStyle.Bold);
+        using var font = CanvasFont(WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
         var rect = GetConnectionLabelBounds(graphics, font, connection);
         var palette = WorkflowWinFormsStyle.Get();
         using var background = new SolidBrush(Color.FromArgb(235, palette.Surface));
@@ -1176,7 +1179,7 @@ public sealed partial class WorkflowDesignerControl : Control
     {
         if (_session is null) return null;
         using var graphics = CreateGraphics();
-        using var font = new Font(Font.FontFamily, Math.Max(3, 8 * (float)_session.Zoom), FontStyle.Bold);
+        using var font = CanvasFont(WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
         return _session.Canvas.Connections.Reverse().FirstOrDefault(connection =>
             WorkflowDesignerInteraction.ShouldDrawConnectionLabel(_session, connection)
             && GetConnectionLabelBounds(graphics, font, connection).Contains((float)x, (float)y));
