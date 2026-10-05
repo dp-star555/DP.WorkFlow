@@ -51,15 +51,19 @@ public sealed class WorkflowDesignerSessionTests
     }
 
     [Fact]
-    public void NodeHeaderLayout_ReservesRuntimeRegionAndUsesCompactTitleFont()
+    public void NodeHeaderLayout_GivesTitleFullHeaderAndPutsRuntimeInBody()
     {
         var layout = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(
             new WorkflowDesignerRect(100, 50, 180, 64),
             zoom: 1,
             measuredRuntimeWidth: 96);
 
-        Assert.True(layout.TitleBounds.X + layout.TitleBounds.Width <= layout.RuntimeBounds.X);
-        Assert.True(layout.RuntimeBounds.Width <= (180 - 32) * 0.45 + 0.01);
+        // 标题独占标题栏整行；运行摘要位于正文区，与标题不重叠且同样左对齐。
+        Assert.Equal(180 - 34, layout.TitleBounds.Width, 6);
+        Assert.True(layout.RuntimeBounds.Y >= 50 + WorkflowDesignerGeometry.HeaderHeight);
+        Assert.True(layout.RuntimeBounds.Y + layout.RuntimeBounds.Height <= 50 + 64);
+        Assert.Equal(layout.TitleBounds.X, layout.RuntimeBounds.X);
+        Assert.Equal(layout.TitleBounds.Width, layout.RuntimeBounds.Width);
         Assert.Equal(9, layout.TitleFontSize);
         Assert.Equal(7.5, layout.RuntimeFontSize);
     }
@@ -476,6 +480,7 @@ public sealed class WorkflowDesignerSessionTests
 
         session.FitToView(1000, 600);
 
+        Assert.True(session.Zoom <= WorkflowDesignerSession.MaximumFitZoom);
         foreach (var node in session.Canvas.Nodes)
         {
             var rect = WorkflowDesignerGeometry.GetNodeScreenRect(session, node);

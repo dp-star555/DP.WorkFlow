@@ -36,9 +36,12 @@ public static class WorkflowDesignerGeometry
     public const double PortRadius = 5;
 
     /// <summary>
-    /// 为标题和执行计数/耗时分配独立区域。运行摘要最多占可用宽度的 45%，
-    /// 长标题只能在自己的区域内省略，不能覆盖右侧运行信息。
+    /// 为标题和执行序号/耗时分配独立区域：标题独占标题栏整行，运行摘要放在下方正文区垂直居中，
+    /// 两者都不再互相挤占宽度，长标题也只在自己的区域内省略。
     /// </summary>
+    /// <param name="nodeBounds">节点屏幕矩形。</param>
+    /// <param name="zoom">当前缩放。</param>
+    /// <param name="measuredRuntimeWidth">运行摘要测量宽度；为 0 表示没有运行摘要。</param>
     public static WorkflowNodeHeaderLayout CalculateNodeHeaderLayout(
         WorkflowDesignerRect nodeBounds,
         double zoom,
@@ -47,17 +50,14 @@ public static class WorkflowDesignerGeometry
         zoom = Math.Max(0.05, zoom);
         var headerHeight = Math.Min(nodeBounds.Height, HeaderHeight * zoom);
         var titleLeft = nodeBounds.X + 24 * zoom;
-        var contentRight = nodeBounds.X + nodeBounds.Width - 8 * zoom;
-        var availableWidth = Math.Max(0, contentRight - titleLeft);
-        var gap = measuredRuntimeWidth > 0 ? 6 * zoom : 0;
-        var runtimeWidth = measuredRuntimeWidth <= 0
-            ? 0
-            : Math.Min(measuredRuntimeWidth, Math.Max(0, availableWidth * 0.45));
-        var titleWidth = Math.Max(0, availableWidth - runtimeWidth - gap);
-        var runtimeLeft = contentRight - runtimeWidth;
+        var contentRight = nodeBounds.X + nodeBounds.Width - 10 * zoom;
+        var contentWidth = Math.Max(0, contentRight - titleLeft);
+        var bodyTop = nodeBounds.Y + headerHeight;
+        var bodyHeight = Math.Max(0, nodeBounds.Y + nodeBounds.Height - bodyTop);
+        var runtimeHeight = measuredRuntimeWidth > 0 ? Math.Min(bodyHeight, 18 * zoom) : 0;
         return new WorkflowNodeHeaderLayout(
-            new WorkflowDesignerRect(titleLeft, nodeBounds.Y + 6 * zoom, titleWidth, Math.Max(0, headerHeight - 6 * zoom)),
-            new WorkflowDesignerRect(runtimeLeft, nodeBounds.Y + 7 * zoom, runtimeWidth, Math.Max(0, headerHeight - 7 * zoom)),
+            new WorkflowDesignerRect(titleLeft, nodeBounds.Y + 7 * zoom, contentWidth, Math.Max(0, headerHeight - 7 * zoom)),
+            new WorkflowDesignerRect(titleLeft, bodyTop + (bodyHeight - runtimeHeight) / 2, runtimeHeight > 0 ? contentWidth : 0, runtimeHeight),
             Math.Max(3, 9 * zoom),
             Math.Max(3, 7.5 * zoom));
     }

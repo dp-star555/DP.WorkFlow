@@ -550,7 +550,7 @@ public sealed partial class WorkflowDesignerControl : Control
             new WorkflowDesignerRect(bounds.X, bounds.Y, bounds.Width, bounds.Height),
             _session.Zoom,
             measuredRuntimeWidth);
-        using var titleFont = new Font(Font.FontFamily, (float)headerLayout.TitleFontSize, FontStyle.Bold);
+        using var titleFont = new Font(Font.FontFamily, (float)headerLayout.TitleFontSize, FontStyle.Regular);
         using var titleBrush = new SolidBrush(ForeColor);
         using var titleFormat = new StringFormat
         {
@@ -572,7 +572,7 @@ public sealed partial class WorkflowDesignerControl : Control
             DrawPortSideTargets(graphics, item, bounds);
     }
 
-    /// <summary>在节点标题区域绘制执行序号和耗时。</summary>
+    /// <summary>在节点正文区绘制执行序号和耗时。</summary>
     /// <param name="graphics">GDI+ 绘图表面。</param>
     /// <param name="layout">标题和运行摘要的独立布局区域。</param>
     /// <param name="text">要显示或处理的文本。</param>
@@ -583,7 +583,8 @@ public sealed partial class WorkflowDesignerControl : Control
         using var brush = new SolidBrush(WorkflowWinFormsStyle.Get().MutedText);
         using var format = new StringFormat
         {
-            Alignment = StringAlignment.Far,
+            Alignment = StringAlignment.Near,
+            LineAlignment = StringAlignment.Center,
             Trimming = StringTrimming.EllipsisCharacter,
             FormatFlags = StringFormatFlags.NoWrap
         };
