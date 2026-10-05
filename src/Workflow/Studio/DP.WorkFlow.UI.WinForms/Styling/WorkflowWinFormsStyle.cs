@@ -56,7 +56,8 @@ internal static class WorkflowWinFormsStyle
         }
         if (control is ModernUI.WinForms.ModernControl or ModernUI.WinForms.ModernMenuStrip or
             ModernUI.WinForms.ModernToolStrip or ModernUI.WinForms.ModernGroupBox or
-            ModernUI.WinForms.ModernListBox or ModernUI.WinForms.ModernStatusBar)
+            ModernUI.WinForms.ModernListBox or ModernUI.WinForms.ModernStatusBar or
+            ModernUI.WinForms.ModernDataGridView)
         {
             ModernUI.WinForms.ModernUiSettings.ApplyTheme(control, ModernUI.WinForms.ModernTheme.Dark);
             return;

@@ -9,7 +9,7 @@ using DP.WorkFlow.UI.Wpf;
 namespace DP.WorkFlow.Vision.UI.Wpf;
 
 /// <summary>独立DP.Vision原生WPF画布Renderer，不使用WindowsFormsHost。</summary>
-public sealed class VisionFrameEditorRenderer : IWorkflowWpfNodeEditorPageRenderer
+public sealed class VisionFrameEditorRenderer : IWorkflowWpfNodeEditorPageRenderer, IWorkflowWpfNodeEditorSidePanelRenderer
 {
     /// <inheritdoc/>
     public string RendererKey => VisionFrameEditorPageProvider.RendererKey;
@@ -18,6 +18,12 @@ public sealed class VisionFrameEditorRenderer : IWorkflowWpfNodeEditorPageRender
     /// <inheritdoc/>
     public FrameworkElement CreateElement(WorkflowNodeEditorPageDescriptor page) => page.Model is VisionFrameEditorPageModel model
         ? new VisionFrameEditorControl(model) : throw new ArgumentException("Invalid frame editor model.", nameof(page));
+    /// <inheritdoc/>
+    public IEnumerable<WorkflowWpfNodeEditorSidePanel> CreateSidePanels(WorkflowNodeEditorPageDescriptor page)
+    {
+        if (page.Model is VisionFrameEditorPageModel model && new VisionRoiListModel(model) is { IsAvailable: true } roi)
+            yield return new WorkflowWpfNodeEditorSidePanel("Roi", "ROI列表", new VisionRoiListControl(roi));
+    }
 }
 
 internal sealed class VisionFrameEditorControl : DockPanel, IDisposable

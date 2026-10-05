@@ -23,6 +23,21 @@ public interface IWorkflowWpfNodeEditorPageRenderer
     FrameworkElement CreateElement(WorkflowNodeEditorPageDescriptor page);
 }
 
+/// <summary>渲染器为节点窗口左侧分页贡献的列表页（如视觉 ROI 列表）。</summary>
+/// <param name="PanelId">分页稳定标识。</param>
+/// <param name="Title">分页标题。</param>
+/// <param name="Content">分页内容。</param>
+public sealed record WorkflowWpfNodeEditorSidePanel(string PanelId, string Title, FrameworkElement Content);
+
+/// <summary>可选接口：渲染器在右侧主体页面之外，向左侧分页追加列表页。</summary>
+public interface IWorkflowWpfNodeEditorSidePanelRenderer
+{
+    /// <summary>为页面创建左侧附加分页；没有时返回空序列。</summary>
+    /// <param name="page">UI 无关页面描述。</param>
+    /// <returns>附加分页。</returns>
+    IEnumerable<WorkflowWpfNodeEditorSidePanel> CreateSidePanels(WorkflowNodeEditorPageDescriptor page);
+}
+
 /// <summary>可自动容纳参数、子流程、脚本、图像和宿主扩展页面的统一 WPF 节点工作台。</summary>
 public sealed class WorkflowNodeEditorWindow : Window
 {
@@ -109,23 +124,63 @@ public sealed class WorkflowNodeEditorWindow : Window
     }
 
     /// <summary>
-    /// 构建窗口主体：参数、领域页面（如视觉图像与 ROI）、子流程/脚本以及通用运行结果按页面顺序分页显示。
-    /// 只有一个页面时直接显示该页；脚本与子流程是节点的主要编辑内容，打开窗口时默认选中。
+    /// 构建窗口主体。左侧为分页列表：参数、渲染器贡献的列表页（如视觉 ROI）和运行结果；
+    /// 右侧按页面顺序纵向放置子流程、脚本、图像等主体页面。没有主体页面时左侧分页铺满窗口。
     /// </summary>
     private FrameworkElement CreateWorkspace()
     {
         if (_model.PropertyEditorKey is { } key)
             return CreatePageElement(_model.Pages.Single(p => p.PropertyEditorKey == key));
-        var pages = _model.Pages
-            .Where(page => page.PropertyEditorKey == null && page.Kind != WorkflowNodeEditorPageKind.Diagnostics)
+        var visible = _model.Pages.Where(page => page.PropertyEditorKey == null).ToArray();
+        var specialPages = visible
+            .Where(page => page.Kind is not (WorkflowNodeEditorPageKind.Properties
+                or WorkflowNodeEditorPageKind.Diagnostics or WorkflowNodeEditorPageKind.Results))
             .ToArray();
-        if (pages.Length == 1) return CreatePageElement(pages[0]);
 
-        var tabs = new TabControl { Margin = new Thickness(6, 6, 6, 0) };
-        foreach (var page in pages)
-            tabs.Items.Add(new TabItem { Header = page.Title, Name = page.PageId, Content = CreatePageElement(page) });
-        var primary = Array.FindIndex(pages, page => page.Kind is WorkflowNodeEditorPageKind.Script or WorkflowNodeEditorPageKind.SubWorkflow);
-        tabs.SelectedIndex = Math.Max(0, primary);
+        var panels = new List<WorkflowWpfNodeEditorSidePanel>
+        {
+            Panel(visible.Single(page => page.Kind == WorkflowNodeEditorPageKind.Properties))
+        };
+        var specialHost = new Grid();
+        for (var index = 0; index < specialPages.Length; index++)
+        {
+            var page = specialPages[index];
+            specialHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            var group = new GroupBox { Header = page.Title, Content = CreatePageElement(page), Margin = new Thickness(3) };
+            Grid.SetRow(group, index);
+            specialHost.Children.Add(group);
+            if (ResolveRendererKey(page) is { } rendererKey && _renderers.TryGetValue(rendererKey, out var renderer)
+                && renderer is IWorkflowWpfNodeEditorSidePanelRenderer sides)
+                panels.AddRange(sides.CreateSidePanels(page));
+        }
+        if (visible.FirstOrDefault(page => page.Kind == WorkflowNodeEditorPageKind.Results) is { } results)
+            panels.Add(Panel(results));
+        var side = CreateSidePanels(panels);
+        if (specialPages.Length == 0) return side;
+
+        var layout = new Grid();
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(340), MinWidth = 280 });
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 360 });
+        layout.Children.Add(side);
+        var splitter = new GridSplitter { Width = 5, HorizontalAlignment = HorizontalAlignment.Stretch, Background = new SolidColorBrush(Color.FromRgb(51, 51, 55)) };
+        Grid.SetColumn(splitter, 1);
+        layout.Children.Add(splitter);
+        Grid.SetColumn(specialHost, 2);
+        layout.Children.Add(specialHost);
+        return layout;
+
+        WorkflowWpfNodeEditorSidePanel Panel(WorkflowNodeEditorPageDescriptor page) => new(page.PageId, page.Title, CreatePageElement(page));
+    }
+
+    /// <summary>只有一页时直接显示内容，多页时使用 TabControl 分页并默认选中参数页。</summary>
+    private static FrameworkElement CreateSidePanels(IReadOnlyList<WorkflowWpfNodeEditorSidePanel> panels)
+    {
+        if (panels.Count == 1) return panels[0].Content;
+        var tabs = new TabControl { Margin = new Thickness(6, 6, 0, 0) };
+        foreach (var panel in panels)
+            tabs.Items.Add(new TabItem { Header = panel.Title, Name = panel.PanelId, Content = panel.Content });
+        tabs.SelectedIndex = 0;
         return tabs;
     }
 
