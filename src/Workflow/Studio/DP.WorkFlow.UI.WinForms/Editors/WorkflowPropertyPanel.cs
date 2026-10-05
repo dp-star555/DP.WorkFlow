@@ -401,7 +401,14 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         var browse = EditorButton("…");
         browse.Margin = new Padding(4, 0, 0, 0);
         browse.AccessibleName = $"浏览{entry.DisplayName}";
-        text.InnerTextBox.Validated += (_, _) => TryEdit(() => _model!.SetValue(entry, text.Text));
+        // 只提交用户实际改过的路径：校验所有子控件时，未编辑的旧显示值不能覆盖别处已更新的属性。
+        var shown = text.Text;
+        text.InnerTextBox.Validated += (_, _) =>
+        {
+            if (text.Text == shown) return;
+            shown = text.Text;
+            TryEdit(() => _model!.SetValue(entry, text.Text));
+        };
         browse.Click += (_, _) =>
         {
             if (string.Equals(entry.EditorKey, WorkflowPropertyEditorKeys.FilePath, StringComparison.Ordinal))
@@ -429,6 +436,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 text.Text = dialog.SelectedPath;
             }
+            shown = text.Text;
             TryEdit(() => _model!.SetValue(entry, text.Text));
         };
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };

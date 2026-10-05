@@ -33,6 +33,26 @@ public sealed class WorkflowNodeEditorModelTests
     }
 
     [Fact]
+    public async Task PropertyEditorApply_CommitsDirectlyToNodeAndParentDraft()
+    {
+        var block = new BlockNodeModel { Id = "Block", Title = "原始标题" };
+        var session = new WorkflowDesignerSession(Document(block), new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes());
+        await using var parent = new WorkflowNodeEditorModel(session, block.Id, block.Id);
+        parent.EditingNode.Title = "节点窗口草稿";
+        await using (var child = parent.CreatePropertyEditor("custom"))
+        {
+            Assert.Equal("节点窗口草稿", child.EditingNode.Title);
+            child.EditingNode.Title = "属性窗口修改";
+            child.ApplyChanges();
+        }
+        // 属性窗口应用即提交到正式节点，不必再应用节点窗口；节点窗口草稿同步。
+        Assert.Equal("属性窗口修改", block.Title);
+        Assert.Equal("属性窗口修改", parent.EditingNode.Title);
+        Assert.True(session.Undo());
+        Assert.Equal("原始标题", block.Title);
+    }
+
+    [Fact]
     public async Task ScriptChanges_CannotBeAppliedBeforeManualCompilation()
     {
         var node = new CSharpScriptNodeModel { Id = "Script", Title = "脚本" };

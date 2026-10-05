@@ -60,6 +60,7 @@ public sealed partial class ModernPropertyGrid
         foreach (var entry in _editors.ToArray())
         {
             if (entry.Value is not ModernInput input) continue;
+            if (input.Tag is string shown && shown == input.Text) continue; // 用户未编辑过的显示值不提交。
             var property = TypeDescriptor.GetProperties(_selectedObject)[entry.Key];
             if (property is null) continue;
             var current = _presentationProvider.FormatValue(

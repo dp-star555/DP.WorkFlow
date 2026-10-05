@@ -466,7 +466,14 @@ public sealed class WorkflowPropertyPanel : UserControl
             return button;
         }
         var text = Text(Convert.ToString(entry.Value, CultureInfo.InvariantCulture) ?? string.Empty, true);
-        text.LostFocus += (_, _) => TryEdit(() => _model!.SetValue(entry, text.Text));
+        // 只提交用户实际改过的文字：失去焦点时，未编辑的旧显示值不能覆盖别处已更新的属性。
+        var shown = text.Text;
+        text.LostFocus += (_, _) =>
+        {
+            if (text.Text == shown) return;
+            shown = text.Text;
+            TryEdit(() => _model!.SetValue(entry, text.Text));
+        };
         return text;
     }
 
@@ -484,7 +491,14 @@ public sealed class WorkflowPropertyPanel : UserControl
             Margin = new Thickness(2, 4, 4, 4),
             ToolTip = $"浏览{entry.DisplayName}"
         };
-        text.LostFocus += (_, _) => TryEdit(() => _model!.SetValue(entry, text.Text));
+        // 只提交用户实际改过的文字：失去焦点时，未编辑的旧显示值不能覆盖别处已更新的属性。
+        var shown = text.Text;
+        text.LostFocus += (_, _) =>
+        {
+            if (text.Text == shown) return;
+            shown = text.Text;
+            TryEdit(() => _model!.SetValue(entry, text.Text));
+        };
         browse.Click += (_, _) =>
         {
             if (string.Equals(entry.EditorKey, WorkflowPropertyEditorKeys.FilePath, StringComparison.Ordinal))
@@ -511,6 +525,7 @@ public sealed class WorkflowPropertyPanel : UserControl
                 if (dialog.ShowDialog(Window.GetWindow(this)) != true) return;
                 text.Text = dialog.FolderName;
             }
+            shown = text.Text;
             TryEdit(() => _model!.SetValue(entry, text.Text));
         };
         var grid = new Grid();
