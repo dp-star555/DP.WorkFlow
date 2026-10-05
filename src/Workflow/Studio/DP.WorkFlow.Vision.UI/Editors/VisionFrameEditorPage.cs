@@ -338,7 +338,13 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     /// <param name="point">原图坐标。</param>
     /// <param name="tolerance">原图像素容差。</param>
     /// <returns>结果说明。</returns>
-    public string? Pick(PointD point, double tolerance) => _visuals.Reverse().FirstOrDefault(v => v.Geometry.Contains(point, tolerance))?.Caption;
+    public string? Pick(PointD point, double tolerance)
+    {
+        var hit = _visuals.Reverse().FirstOrDefault(v => v.Geometry.Contains(point, tolerance));
+        // 同一几何事实只在第一个图形上标注；拾取其余图形（如参考轴）时沿用这条说明。
+        return hit is { Caption: null } && hit.Id.StartsWith("geometry-", StringComparison.Ordinal)
+            ? _visuals.FirstOrDefault(v => v.Id == "geometry-0")?.Caption : hit?.Caption;
+    }
 
     private static string Describe(object? facts, ImageFrame frame) => facts switch
     {
@@ -357,7 +363,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     {
         if (facts is IVisionGeometryFact geometry)
             for (var index = 0; index < geometry.DisplayGeometry.Count; index++)
-                yield return new Visual("geometry-" + index, geometry.DisplayGeometry[index], 0xFFFFCC00, geometry.Summary);
+                yield return new Visual("geometry-" + index, geometry.DisplayGeometry[index], 0xFFFFCC00, index == 0 ? geometry.Summary : null);
         if (facts is RegionAnalysisResult region)
             yield return new Visual("region", region.Region, 0xFF22DD88, $"精确区域面积 {region.Area}");
         if (facts is CaliperResult caliper)
