@@ -863,10 +863,10 @@ public sealed class WorkflowDesignerSession
         RaiseChanged(WorkflowDesignerChangeKind.Viewport);
     }
 
-    /// <summary>适合画布时允许的最大缩放；节点较少时保持 100%，避免标题和端口被放大到与界面其他文字不协调。</summary>
-    public const double MaximumFitZoom = 1.0;
+    /// <summary>适合画布时允许的最大缩放；画布文字按像素随缩放变化，放大时与卡片保持比例。</summary>
+    public const double MaximumFitZoom = 2.5;
 
-    /// <summary>调整视口，使全部节点适合指定屏幕区域；只缩小不放大超过 <see cref="MaximumFitZoom"/>。</summary>
+    /// <summary>调整视口，使全部节点适合指定屏幕区域；最多放大到 <see cref="MaximumFitZoom"/>。</summary>
     /// <param name="viewportWidth">视口宽度。</param>
     /// <param name="viewportHeight">视口高度。</param>
     /// <param name="padding">内容与视口边缘的预留距离。</param>
