@@ -25,15 +25,18 @@ internal sealed class VisionTemplateWorkspaceControl : Grid, IDisposable
     private readonly VisionFrameEditorControl _frame;
     private readonly StackPanel _properties = new();
     private readonly TextBlock _buildState = State("TemplateBuildState");
+    private readonly TextBlock _buildVerification = State("TemplateBuildVerification");
     private readonly TextBlock _testState = State("TemplateTestState");
     private readonly TextBlock _issue = State("TemplateFailure");
     private readonly List<(WorkflowPropertyEntry Entry, Button Button)> _actions = new();
+    private readonly List<(WorkflowPropertyEntry Entry, TextBlock Text)> _readOnly = new();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private bool _running, _disposed;
     private string _operation = "";
     private long _revision = -1;
     private int _generation;
     private IReadOnlyList<VisionTemplateResourceChoice>? _listed;
+    private string _reference = "";
 
     internal VisionTemplateWorkspaceControl(VisionTemplateAuthoringPageModel model)
     {
@@ -46,13 +49,13 @@ internal sealed class VisionTemplateWorkspaceControl : Grid, IDisposable
         var splitter = new GridSplitter { Width = 5, HorizontalAlignment = HorizontalAlignment.Stretch, Background = Brushes.DimGray }; SetColumn(splitter, 1); Children.Add(splitter);
         var left = new Grid { Margin = new Thickness(5) };
         Children.Add(left);
-        left.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); left.RowDefinitions.Add(new RowDefinition { Height = new GridLength(160) });
+        left.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); left.RowDefinitions.Add(new RowDefinition { Height = new GridLength(280) });
         var scroll = new ScrollViewer { Content = _properties, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; left.Children.Add(scroll);
-        var states = new Grid(); states.RowDefinitions.Add(new RowDefinition { Height = new GridLength(48) }); states.RowDefinitions.Add(new RowDefinition { Height = new GridLength(64) }); states.RowDefinitions.Add(new RowDefinition());
-        states.Children.Add(_buildState); SetRow(_testState, 1); states.Children.Add(_testState); SetRow(_issue, 2); states.Children.Add(_issue); SetRow(states, 1); left.Children.Add(states);
+        var states = new Grid(); states.RowDefinitions.Add(new RowDefinition { Height = new GridLength(46) }); states.RowDefinitions.Add(new RowDefinition { Height = new GridLength(100) }); states.RowDefinitions.Add(new RowDefinition { Height = new GridLength(88) }); states.RowDefinitions.Add(new RowDefinition());
+        states.Children.Add(_buildState); SetRow(_buildVerification, 1); states.Children.Add(_buildVerification); SetRow(_testState, 2); states.Children.Add(_testState); SetRow(_issue, 3); states.Children.Add(_issue); SetRow(states, 1); left.Children.Add(states);
         bool opened = false;
         Loaded += async (_, _) => { if (_disposed) return; _timer.Start(); if (opened) return; opened = true; await Run(model.OpenAsync, "读取模板"); };
-        Unloaded += (_, _) => _timer.Stop(); _timer.Tick += (_, _) => { if (!_disposed) { if (_revision != model.Draft.EditRevision || !ReferenceEquals(_listed, model.Draft.Resources)) RefreshProperties(); RefreshState(); } };
+        Unloaded += (_, _) => _timer.Stop(); _timer.Tick += (_, _) => { if (!_disposed) { if (_revision != model.Draft.EditRevision || !ReferenceEquals(_listed, model.Draft.Resources) || _reference != model.Frame.TemplateReference) RefreshProperties(); RefreshState(); } };
         RefreshProperties(); RefreshState(); model.Frame.RegisterViewLifetime(Dispose);
     }
     private async Task Run(Func<Task> action, string operation, bool pageOwnsOperation = false)
@@ -66,7 +69,7 @@ internal sealed class VisionTemplateWorkspaceControl : Grid, IDisposable
     private void RefreshProperties()
     {
         if (_model.Draft.IsDisposed) return;
-        _revision = _model.Draft.EditRevision; int generation = ++_generation; _properties.Children.Clear(); _actions.Clear();
+        _revision = _model.Draft.EditRevision; _reference = _model.Frame.TemplateReference; int generation = ++_generation; _properties.Children.Clear(); _actions.Clear(); _readOnly.Clear();
         foreach (var group in _model.Properties(ExecuteCommand).GroupBy(p => p.Category))
         {
             var fields = new StackPanel();
@@ -85,7 +88,11 @@ internal sealed class VisionTemplateWorkspaceControl : Grid, IDisposable
                     };
                     editor = button;
                 }
-                else if (entry.EditorKind == WorkflowPropertyEditorKind.ReadOnly) editor = new TextBlock { Text = Convert.ToString(entry.Value), Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+                else if (entry.EditorKind == WorkflowPropertyEditorKind.ReadOnly)
+                {
+                    var text = new TextBlock { Text = Convert.ToString(entry.Value), Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+                    _readOnly.Add((entry, text)); editor = text;
+                }
                 else if (entry.EditorKind is WorkflowPropertyEditorKind.Choice or WorkflowPropertyEditorKind.Enum)
                 {
                     var choices = entry.EditorKind == WorkflowPropertyEditorKind.Choice ? entry.Choices : Enum.GetValues(entry.ValueType).Cast<object>().Select(v => new WorkflowPropertyChoice(v.ToString()!, v)).ToArray();
@@ -136,6 +143,7 @@ internal sealed class VisionTemplateWorkspaceControl : Grid, IDisposable
     {
         if (_model.Draft.IsDisposed) return;
         var draft = _model.Draft; _properties.IsEnabled = !_running && !draft.IsBusy;
+        foreach (var (entry, text) in _readOnly) { text.Text = Convert.ToString(entry.Value); text.ToolTip = text.Text; }
         foreach (var (entry, button) in _actions)
         {
             button.Content = entry.Value; button.IsEnabled = !_running && entry.ActionBlockReason.Length == 0;
@@ -143,7 +151,11 @@ internal sealed class VisionTemplateWorkspaceControl : Grid, IDisposable
         }
         _buildState.Text = "制作：" + (_running ? "正在" + _operation + "…" : draft.BuildState) + "\n" + (_model.CanCommit ? "可以应用" : _model.CommitBlockReason);
         _buildState.Foreground = draft.IsBuilt ? Brushes.LightGreen : Brushes.Gainsboro;
-        _testState.Text = "测试：" + draft.TestState + "\n" + draft.TestSummary;
+        _buildVerification.Text = draft.BuildVerificationState + "\n" + draft.BuildVerificationSummary;
+        _buildVerification.Foreground = draft.BuildVerificationResult is { Found: true } ? Brushes.LightGreen : draft.IsBuilt ? Brushes.Khaki : Brushes.Gainsboro;
+        _buildVerification.ToolTip = _buildVerification.Text;
+        _testState.Text = _model.TestStatus;
+        _testState.ToolTip = _testState.Text;
         _testState.Foreground = draft.TrialResult is { Found: true } ? Brushes.LightGreen : draft.TrialResult != null ? Brushes.Khaki : Brushes.Gainsboro;
         _issue.Text = draft.Failure.Length > 0 ? "失败原因：" + draft.Failure : _model.IsPicking ? _model.PickMode : _model.TestBlockReason;
         _issue.Foreground = draft.Failure.Length > 0 ? Brushes.Salmon : Brushes.Khaki;

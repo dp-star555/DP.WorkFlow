@@ -216,7 +216,7 @@ public sealed class VisionGeometryPluginPipelineTests
     {
         using var rig = new Rig();
         Assert.DoesNotContain(GetType().Assembly.GetReferencedAssemblies(), a => a.Name == "DP.WorkFlow.Nodes.Vision.Geometry");
-        Assert.Equal(30, rig.Nodes.Snapshot().Count);
+        Assert.Equal(31, rig.Nodes.Snapshot().Count);
         var document = rig.BasicDocument();
         var store = new WorkflowDocumentJsonStore(rig.Nodes); document = store.Deserialize(store.Serialize(document)).Document;
         var json = store.Serialize(document);

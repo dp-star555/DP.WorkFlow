@@ -154,7 +154,7 @@ public sealed class VisionOperatorPipelineTests
             var document = Document(new LoadVisionFileNodeModel { Id = "scene", FilePath = scene },
                 new LoadVisionFileNodeModel { Id = "template", FilePath = template },
                 new LocateVisionTemplatePoseNodeModel { Id = "pose", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"), MinimumScore = .999,
-                    AnglesRadians = new() { 0, Math.PI / 2 } },
+                    MinimumAngleRadians = 0, MaximumAngleRadians = Math.PI / 2, AngleStepRadians = Math.PI / 2 },
                 new MapVisionPoseCoordinateNodeModel { Id = "map", Pose = Input<TemplatePoseResult>("pose") },
                 new MapVisionPoseCoordinateNodeModel { Id = "inverse", Pose = Input<TemplatePoseResult>("pose"), Inverse = true,
                     X = WorkflowInput<double>.FromBinding(new WorkflowBindingKey("map", "X")), Y = WorkflowInput<double>.FromBinding(new WorkflowBindingKey("map", "Y")) });

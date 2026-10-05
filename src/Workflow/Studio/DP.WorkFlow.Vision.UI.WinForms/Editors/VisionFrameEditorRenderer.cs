@@ -55,6 +55,12 @@ internal sealed class VisionFrameEditorControl : UserControl
             Button("解除坐标系转原图", model.UnbindCoordinates);
         }
         Button("适应窗口", _canvas.FitToWindow);
+        if (model.SupportsMaskPreview)
+        {
+            var showMask = new CheckBox { Text = "显示有效掩膜", Checked = model.ShowMask, AutoSize = true };
+            showMask.CheckedChanged += (_, _) => { model.ShowMask = showMask.Checked; RefreshPreview(); };
+            tools.Controls.Add(showMask);
+        }
         Button("选择/移动", () => Editing().Tool = ERoiTool.Select, model.CanEdit);
         Button("绘制范围", () => Editing().Tool = ERoiTool.Rectangle, model.CanEdit);
         Button("旋转矩形", () => Editing().Tool = ERoiTool.RotatedRectangle, model.SupportsRegions);

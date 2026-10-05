@@ -160,7 +160,7 @@ public sealed class LocateVisionTemplateNodeHandler : WorkflowNodeHandler<Locate
         if (node.TemplateSource == EWorkflowVisionTemplateSource.Resource)
         {
             var modelRange = node.ResolveRange(frame, context, cancellationToken); var parent = modelRange.Coordinates;
-            var options = new TemplatePoseOptions(new[] { parent?.RotationRadians ?? 0 }, new[] { parent?.SimilarityScale ?? 1 }, node.MinimumScore);
+            var options = new TemplatePoseOptions(parent?.RotationRadians ?? 0, parent?.RotationRadians ?? 0, parent?.SimilarityScale ?? 1, parent?.SimilarityScale ?? 1, node.MinimumScore);
             var pose = WorkflowVisionTemplateResource.Match(node, context, frame, modelRange.Bounds, modelRange.Region, parent, options, cancellationToken);
             var modelResult = TemplateLocationResult.FromModelPose(pose);
             return ValueTask.FromResult(NodeExecutionResult.Continue(output: modelResult, projection: WorkflowVisionFrameScope.Stage(context, frame, modelResult)));

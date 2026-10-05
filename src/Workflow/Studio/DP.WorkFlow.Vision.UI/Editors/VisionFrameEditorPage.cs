@@ -114,19 +114,41 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             if (frame == null) return manual ? "请先读取测试图像。" : "当前没有输入预览，请运行取图或选择样图/测试图像。";
             var parent = node.Coordinates == null ? null : CaptureCoordinates(node.Coordinates, frame);
             using var mask = node.Mask.Binding is { IsPublicData: false } binding ? _frames?.Capture(binding.NodeId) : null;
-            _ = node.ResolvePreviewRange(frame, parent, mask?.Facts as RegionAnalysisResult);
-            return "";
+            var range = node.ResolvePreviewRange(frame, parent, mask?.Facts as RegionAnalysisResult);
+            var options = _node is LocateVisionTemplatePoseNodeModel pose ? pose.OptionsForPreview(parent)
+                : new TemplatePoseOptions(parent?.RotationRadians ?? 0, parent?.RotationRadians ?? 0, parent?.SimilarityScale ?? 1, parent?.SimilarityScale ?? 1, ((LocateVisionTemplateNodeModel)_node).MinimumScore);
+            return Template?.SearchIssue(range.Bounds, options) ?? "";
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return ex.Message; }
     }
-    /// <summary>样图整图测试，用于没有运行输入时验证模型；不借用运行坐标和掩码。</summary>
-    public async Task TryTemplateSampleAsync()
+    /// <summary>制作样图的整图测试或制作区域自检；不借用运行坐标和掩码。</summary>
+    public async Task TryTemplateSampleAsync(bool roiSelfTest = false)
     {
         var draft = Template ?? throw new InvalidOperationException("缺少模板草稿。");
         using var frame = draft.RetainSample();
-        var options = _node is LocateVisionTemplatePoseNodeModel pose ? pose.OptionsForPreview()
-            : new TemplatePoseOptions(new[] { 0d }, new[] { 1d }, ((LocateVisionTemplateNodeModel)_node).MinimumScore);
-        await draft.TryMatchAsync(frame, new PixelBounds(0, 0, frame.Image.Info.Width, frame.Image.Info.Height), options);
+        var (bounds, options) = SampleTestSearch(frame, roiSelfTest);
+        await draft.TryMatchAsync(frame, bounds, options);
+    }
+    /// <summary>制作区域自检或样图全图搜索的轻量验证。</summary>
+    public string TemplateSampleTestIssue(bool roiSelfTest)
+    {
+        try
+        {
+            using var frame = Template!.RetainSample();
+            var (bounds, options) = SampleTestSearch(frame, roiSelfTest);
+            return Template.SearchIssue(bounds, options);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return ex.Message; }
+    }
+    private (PixelBounds Bounds, TemplatePoseOptions Options) SampleTestSearch(ImageFrame frame, bool roiSelfTest)
+    {
+        var definition = Template!.BuiltDefinition ?? throw new InvalidOperationException("请先生成模型。");
+        var bounds = roiSelfTest ? new PixelBounds(definition.X, definition.Y, definition.Width, definition.Height)
+            : new PixelBounds(0, 0, frame.Image.Info.Width, frame.Image.Info.Height);
+        var pose = _node as LocateVisionTemplatePoseNodeModel;
+        var options = roiSelfTest ? new TemplatePoseOptions(0d, 0d, 1d, 1d, pose?.MinimumScore ?? ((LocateVisionTemplateNodeModel)_node).MinimumScore, pose?.MaximumWork ?? 200000000)
+            : pose?.OptionsForPreview() ?? new TemplatePoseOptions(0d, 0d, 1d, 1d, ((LocateVisionTemplateNodeModel)_node).MinimumScore);
+        return (bounds, options);
     }
     /// <summary>隔离节点当前保存的模板清单引用。</summary>
     public string TemplateReference => _node is IWorkflowVisionTemplateNode t ? t.ModelAlgorithm.Settings.GetValueOrDefault("templatePath", "") : "";
@@ -143,7 +165,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         using var maskPreview = node.Mask.Binding is { IsPublicData: false } maskBinding ? _frames?.Capture(maskBinding.NodeId) : null;
         var range = node.ResolvePreviewRange(frame, parent, maskPreview?.Facts as RegionAnalysisResult);
         var options = _node is LocateVisionTemplatePoseNodeModel pose ? pose.OptionsForPreview(parent)
-            : new TemplatePoseOptions(new[] { parent?.RotationRadians ?? 0 }, new[] { parent?.SimilarityScale ?? 1 }, ((LocateVisionTemplateNodeModel)_node).MinimumScore);
+            : new TemplatePoseOptions(parent?.RotationRadians ?? 0, parent?.RotationRadians ?? 0, parent?.SimilarityScale ?? 1, parent?.SimilarityScale ?? 1, ((LocateVisionTemplateNodeModel)_node).MinimumScore);
         await template.TryMatchAsync(frame, range.Bounds, options, range.Region, parent);
     }
     /// <summary>共享ROI编辑器，原图坐标。</summary>
@@ -158,6 +180,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     private void OnDocumentChanged(object? sender, RoiDocumentChangedEventArgs e)
     {
         if (IsTemplateEditor || _loading || !CanEdit || _node is not AnalyzeVisionFrameNodeModel node) return;
+        _lastKey = null;
         if (node.Coordinates is not null && !HasDisplayedCoordinateBinding(node.Coordinates)) { Status = "没有同帧定位预览，不能修改局部ROI。"; return; }
         if (e.After.Rois.Count == 0) { node.FullImage = true; node.Regions.Clear(); return; }
         try
@@ -230,11 +253,15 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     /// <returns>调用者拥有的CanvasFrame。</returns>
     public CanvasFrame? Capture(int view)
     {
-        if (view is 4 or 5 || view == 2 && _node is IWorkflowVisionTemplateNode { TemplateSource: EWorkflowVisionTemplateSource.Resource })
-            return Template?.Capture(view == 5);
         lock (_gate)
         {
             if (_disposed) return null;
+            if (view is 4 or 5 || view == 2 && _node is IWorkflowVisionTemplateNode { TemplateSource: EWorkflowVisionTemplateSource.Resource })
+            {
+                // 所有来源投递到同一画布，必须共用页面序号。离开普通预览后也不能沿用其去重键。
+                _lastKey = null;
+                return Template?.Capture(view == 5, checked(++_sequence));
+            }
             string id = _node.Id;
             if (view == 0 && _node is AnalyzeVisionFrameNodeModel a && a.Frame.Binding is { IsPublicData: false } input) id = input.NodeId;
             if (view == 2 && _node is LocateVisionTemplateNodeModel t && t.Template.Binding is { IsPublicData: false } template) id = template.NodeId;
@@ -244,17 +271,37 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             if (frame is null) { CoordinateEditingReady = false; return null; }
             UpdateCoordinatePreview(frame, view);
             _displayedFrameId = frame.FrameId;
-            string key = $"{view}:{frame.FrameId}:{current?.Sequence}";
+            var analysis = _node as AnalyzeVisionFrameNodeModel;
+            using var maskPreview = analysis?.Mask.Binding is { IsPublicData: false } maskBinding ? _frames?.Capture(maskBinding.NodeId) : null;
+            string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}";
             if (_lastKey == key) return null;
             var facts = view == 1 ? current?.Facts : null;
             _lastKey = key; // 失败的显示包不在定时器中反复分配；切换来源或新帧才重试。
             var visuals = Visuals(facts).Take(10001).ToArray();
             if (visuals.Length > 10000) throw new InvalidOperationException("结果超过画布显示预算；未截断运行事实，当前结果不显示叠加。");
             // 显示预算不是算法结果裁剪；大结果明确拒绝显示并保留完整运行事实。
-            var overlay = new GeometryOverlay(frame.FrameId, new[] { new CanvasLayer("facts", ELayerKind.Annotation, visuals) });
+            var layers = new List<CanvasLayer>();
+            string maskStatus = "";
+            if (ShowMask && analysis?.RangeCapability == EWorkflowVisionRange.Region && view is 0 or 1 or 3)
+            {
+                try
+                {
+                    // 手动图像有独立帧身份，绑定区域仍严格检查同帧；不把旧掩膜绘制到新图。
+                    var range = analysis.ResolvePreviewRange(frame, analysis.Coordinates is null ? null : _displayCoordinates, maskPreview?.Facts as RegionAnalysisResult);
+                    var effective = range.ToRegion();
+                    if (!analysis.FullImage || analysis.Regions.Count > 0 || analysis.Mask.Binding is not null || analysis is CreateVisionRegionNodeModel)
+                        layers.Add(new CanvasLayer("effective-mask", ELayerKind.Annotation,
+                            new[] { new Visual("effective-mask", effective, 0x4022DD88, $"有效掩膜：{effective.AreaPixels}像素") }, -10, name: "有效掩膜"));
+                    maskStatus = $" 有效掩膜 {effective.AreaPixels}像素；包含并集减排除，再与上游掩膜和矩形范围取交集。";
+                }
+                catch (Exception error) when (error is ArgumentException or InvalidOperationException)
+                { maskStatus = " 无法预览掩膜：" + error.Message; }
+            }
+            layers.Add(new CanvasLayer("facts", ELayerKind.Annotation, visuals));
+            var overlay = new GeometryOverlay(frame.FrameId, layers);
             var canvas = new CanvasFrame(frame.FrameId, ++_sequence, frame.Image, overlay);
             _visuals = visuals; _lastKey = key;
-            Status = Describe(facts, frame);
+            Status = Describe(facts, frame) + maskStatus;
             if (_node is AnalyzeVisionFrameNodeModel { Coordinates: { } binding })
                 Status += CoordinateEditingReady ? $" {(SupportsRegions ? "ROI" : "几何表达")}绑定模板局部系 {binding.CoordinateSystemId}，按本帧定位显示。" : " 当前视图只读，不使用其他帧的定位。";
             return canvas;
@@ -273,7 +320,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         IVisionGeometryFact result => result.Summary,
         RegionAnalysisResult r => $"精确Region面积 {r.Area}；孔洞保留，空区域正常完成。",
         CaliperResult c => $"卡尺边缘 {c.Count}；剖面采样 {c.Profile.Count}；梯度峰抛物线插值。",
-        TemplatePoseResult p => $"离散姿态 Found={p.Found}；Score={p.Score:F5}；角度 {p.Transform?.AngleRadians:F4}rad；尺度 {p.Transform?.Scale:F4}。",
+        TemplatePoseResult p => $"模板姿态 Found={p.Found}；Score={p.Score:F5}；角度 {p.Transform?.AngleRadians * 180 / Math.PI:F2}°；尺度 {p.Transform?.Scale:F4}。",
         RobustLineResult r => $"鲁棒直线内点 {r.InlierCount}；RMS {r.RmsError:F4}px。",
         BlobAnalysisResult b => $"帧 {frame.FrameId}；连通域 {b.Count}；完成≠产品合格。点击Region查看面积/质心。",
         ColorAnalysisResult c => $"RGB=({c.Red:F3},{c.Green:F3},{c.Blue:F3})；像素 {c.PixelCount}；Alpha不加权。",
@@ -300,7 +347,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         {
             var corners = new[] { new Coordinate2D(0, 0), new Coordinate2D(pose.TemplateWidth, 0), new Coordinate2D(pose.TemplateWidth, pose.TemplateHeight), new Coordinate2D(0, pose.TemplateHeight) }
                 .Select(pose.ToImage).Select(p => new PointD(p.X, p.Y)).ToArray();
-            yield return new Visual("pose", new ContourGeometry(corners, closed: true), 0xFF33BBFF, $"模板姿态 {pose.AngleRadians:F4}rad ×{pose.Scale:F4}");
+            yield return new Visual("pose", new ContourGeometry(corners, closed: true), 0xFF33BBFF, $"模板姿态 {pose.AngleRadians * 180 / Math.PI:F2}° ×{pose.Scale:F4}");
         }
         if (facts is RobustLineResult line)
             yield return new Visual("robust-line", new ContourGeometry(new[] { line.A, line.B }), 0xFFFFCC00, $"内点 {line.InlierCount}；RMS {line.RmsError:F4}");

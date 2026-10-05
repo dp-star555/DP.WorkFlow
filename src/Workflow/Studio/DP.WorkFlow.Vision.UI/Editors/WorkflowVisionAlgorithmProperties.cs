@@ -188,7 +188,7 @@ public static class WorkflowVisionAlgorithmProperties
                 if (current.ImplementationId != descriptor.ImplementationId) throw new InvalidOperationException("算法实现已变化，请刷新参数。");
                 return current;
             }
-            entries.Add(WorkflowPropertyEntry.Create(name + "." + parameterName, parameter.DisplayName, category + "/初始化参数",
+            var entry = WorkflowPropertyEntry.Create(name + "." + parameterName, parameter.DisplayName, category + "/初始化参数",
                 parameter.Description ?? string.Empty, kind, type, () =>
                 {
                     var text = Current().Settings.TryGetValue(parameter.Id, out var existing) ? existing : parameter.DefaultValue;
@@ -206,7 +206,10 @@ public static class WorkflowVisionAlgorithmProperties
                     if (type.IsEnum && !Enum.IsDefined(type, value!)) throw new ArgumentException("枚举值未定义。");
                     Current().Settings[parameter.Id] = value is IFormattable formattable
                         ? formattable.ToString(null, CultureInfo.InvariantCulture) : value?.ToString() ?? string.Empty;
-                }, parameter.IsFilePath ? new WorkflowPropertyEditorAttribute(WorkflowPropertyEditorKeys.FilePath) : null));
+                }, parameter.IsFilePath ? new WorkflowPropertyEditorAttribute(WorkflowPropertyEditorKeys.FilePath) : null);
+            if (kind == WorkflowPropertyEditorKind.Number) entry.WithNumberRange(parameter.Minimum, parameter.Maximum);
+            if (parameter.DisplayRadiansAsDegrees) entry.WithRadiansAsDegrees();
+            entries.Add(entry);
         }
     }
 

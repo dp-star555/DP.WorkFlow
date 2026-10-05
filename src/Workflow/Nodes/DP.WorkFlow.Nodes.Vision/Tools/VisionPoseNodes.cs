@@ -3,11 +3,11 @@ using DP.Vision.Algorithms;
 
 namespace DP.WorkFlow;
 
-/// <summary>有界离散旋转/尺度模板搜索，输出姿态及正反坐标变换。</summary>
+/// <summary>按角度及尺度区间搜索模板，输出姿态及正反坐标变换。</summary>
 [WorkflowNode("Vision.LocateTemplatePose", DisplayName = "旋转尺度模板定位", Category = "5.Vision/Location")]
 public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode, IWorkflowVisionTemplateNode
 {
-    /// <summary>旧配方默认图像绑定；节点内制作后选择资源。</summary>
+    /// <summary>选择动态模板图像绑定或已发布模型资源。</summary>
     [WorkflowProperty("模板来源", "资源模式使用已发布模板，图像绑定保留动态模板。", Category = "模板")]
     public EWorkflowVisionTemplateSource TemplateSource { get; set; }
     /// <inheritdoc/>
@@ -37,7 +37,7 @@ public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeMo
     /// <inheritdoc/>
     [System.ComponentModel.Browsable(false), System.Text.Json.Serialization.JsonIgnore]
     public bool RequiresPoseSearch => true;
-    /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
+    /// <summary>动态模板图像模式的节点专属实现选择。</summary>
     [System.ComponentModel.Browsable(false)]
     public VisionAlgorithmSelection Algorithm { get; set; } = new() { ImplementationId = "opencv.template-pose" };
 
@@ -56,23 +56,38 @@ public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeMo
     [WorkflowProperty("模板图像", "ImageFrame绑定，模板与目标身份分别校验。", Category = "输入")]
     [WorkflowPropertyVisibleWhen(nameof(TemplateSource), nameof(EWorkflowVisionTemplateSource.ImageBinding))]
     public WorkflowInput<ImageFrame> Template { get; set; } = WorkflowInput<ImageFrame>.FromLiteral(null);
-    /// <summary>离散顺时针弧度候选。</summary>
-    [WorkflowProperty("角度候选", "顺时针弧度，最多181项；不是连续角度估计。", Category = "搜索")]
-    public List<double> AnglesRadians { get; set; } = new() { 0 };
-    /// <summary>离散尺度候选。</summary>
-    [WorkflowProperty("尺度候选", "0.1..10，最多32项；角度×尺度不超过512。", Category = "搜索")]
-    public List<double> Scales { get; set; } = new() { 1 };
+    /// <summary>搜索顺时针弧度下限。</summary>
+    [WorkflowProperty("匹配最小角度", "相对制作样图的角度下限；绑定父坐标时相对父坐标。搜索区间须在模型制作范围内。", Category = "搜索", DisplayRadiansAsDegrees = true)]
+    public double MinimumAngleRadians { get; set; }
+    /// <summary>搜索顺时针弧度上限。</summary>
+    [WorkflowProperty("匹配最大角度", "例如最小85°、最大95°表示90°附近±5°。上下限相同表示固定角度，跨度最多360°。", Category = "搜索", DisplayRadiansAsDegrees = true)]
+    public double MaximumAngleRadians { get; set; }
+    /// <summary>搜索尺度下限。</summary>
+    [WorkflowProperty("匹配最小尺度", "0.1至10；绑定父坐标时乘以父坐标尺度。", Category = "搜索")]
+    public double MinimumScale { get; set; } = 1;
+    /// <summary>搜索尺度上限。</summary>
+    [WorkflowProperty("匹配最大尺度", "例如0.9至1.1表示搜索整个区间；NCC须设为1至1。", Category = "搜索")]
+    public double MaximumScale { get; set; } = 1;
+    /// <summary>采样引擎的角度步长。</summary>
+    [WorkflowProperty("采样角度步长", "OpenCV按此步长采样搜索区间；HALCON使用原生范围搜索，不使用此参数。与模型制作步长独立。", Category = "搜索采样", DisplayRadiansAsDegrees = true)]
+    public double AngleStepRadians { get; set; } = Math.PI / 180;
+    /// <summary>采样引擎的尺度步长。</summary>
+    [WorkflowProperty("采样尺度步长", "OpenCV按此步长采样，包含区间端点；HALCON不使用此参数。", Category = "搜索采样")]
+    public double ScaleStep { get; set; } = .01;
     /// <summary>最小分数，非概率。</summary>
-    [WorkflowProperty("最小分数", "1减有效模板掩码内归一化均方差。", Category = "搜索")]
+    [WorkflowProperty("最小分数", "得分由所选引擎定义；OpenCV平方差、HALCON NCC相关性或形状得分需分别确认阈值。", Category = "搜索")]
     public double MinimumScore { get; set; } = .9;
     /// <summary>保守工作量预算。</summary>
-    [WorkflowProperty("比较预算", "位置数×模板面积累计上限，最多20亿；超限失败，不截断候选。", Category = "搜索")]
+    [WorkflowProperty("比较预算", "最多20亿；OpenCV约束像素比较量，HALCON约束候选ROI验证量。超限失败，不截断候选。", Category = "搜索")]
     public long MaximumWork { get; set; } = 200000000;
-    internal TemplatePoseOptions Options(VisionCoordinateSystem? parent = null) => parent is null
-        ? new(AnglesRadians, Scales, MinimumScore, MaximumWork)
-        : new(AnglesRadians.Select(a => Math.Atan2(Math.Sin(a + parent.RotationRadians), Math.Cos(a + parent.RotationRadians))),
-            Scales.Select(s => s * parent.SimilarityScale), MinimumScore, MaximumWork);
-    /// <summary>制作界面沿用运行角度、尺度和比较预算。</summary>
+    internal TemplatePoseOptions Options(VisionCoordinateSystem? parent = null)
+    {
+        double rotation = parent == null ? 0 : Math.Atan2(Math.Sin(parent.RotationRadians), Math.Cos(parent.RotationRadians));
+        double scale = parent?.SimilarityScale ?? 1;
+        return new(MinimumAngleRadians + rotation, MaximumAngleRadians + rotation, MinimumScale * scale, MaximumScale * scale,
+            MinimumScore, MaximumWork, AngleStepRadians, ScaleStep * scale);
+    }
+    /// <summary>制作界面沿用运行搜索区间、采样步长和比较预算。</summary>
     public TemplatePoseOptions OptionsForPreview(VisionCoordinateSystem? parent = null) => Options(parent);
     /// <inheritdoc/>
     public override IReadOnlyList<string> ValidateConfiguration()

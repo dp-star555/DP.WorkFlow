@@ -6,6 +6,31 @@ namespace DP.WorkFlow.Tests;
 
 public sealed class WorkflowPropertyPanelIntegrationTests
 {
+    [Fact]
+    public void DynamicNumericRanges_ConstrainNodePropertyStepping()
+    {
+        RunSta(() =>
+        {
+            var document = new WorkflowDocument { EntryNodeId = "node" };
+            document.CanvasProjection.Nodes.Add(new() { Node = new InputLayoutNode { Id = "node" } });
+            var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<InputLayoutNode, string>())) { SelectedNodeId = "node" };
+            var value = 0;
+            using var panel = new DP.WorkFlow.UI.WinForms.WorkflowPropertyPanel
+            {
+                AdditionalProperties = _ => [WorkflowPropertyEntry.Create("Levels", "层数", "制作", "0自动", WorkflowPropertyEditorKind.Number, typeof(int), () => value,
+                    v => { value = (int)v!; Assert.InRange(value, 0, 6); }).WithNumberRange(0, 6)],
+                Session = session, EntryNodeId = "node"
+            };
+            var number = Descendants(panel).OfType<ModernUI.WinForms.ModernInputNumber>().Single(c => c.AccessibleName == "层数");
+            Assert.Equal(0m, number.Minimum);
+            Assert.Equal(6m, number.Maximum);
+            var step = typeof(ModernUI.WinForms.ModernInputNumber).GetMethod("StepBy", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            step.Invoke(number, new object[] { false }); Assert.Equal(0, value);
+            step.Invoke(number, new object[] { true }); Assert.Equal(1, value);
+            Assert.Equal(1m, number.Value);
+        });
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

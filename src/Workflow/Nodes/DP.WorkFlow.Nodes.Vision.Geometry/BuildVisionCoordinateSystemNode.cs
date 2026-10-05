@@ -57,7 +57,7 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
     [WorkflowPropertyVisibleWhen(nameof(Mode), "Pose", "Parent")]
     public WorkflowInput<double> OriginY { get; set; } = WorkflowInput<double>.FromLiteral(0);
     /// <summary>顺时针角度。</summary>
-    [WorkflowProperty("角度(弧度)", "Pose相对原图；Parent相对父坐标。", Category = "姿态")]
+    [WorkflowProperty("角度", "Pose相对原图；Parent相对父坐标。固定值以度填写；绑定沿用上游的弧度输出。", Category = "姿态", DisplayRadiansAsDegrees = true)]
     [WorkflowPropertyVisibleWhen(nameof(Mode), "Pose", "Parent")]
     public WorkflowInput<double> AngleRadians { get; set; } = WorkflowInput<double>.FromLiteral(0);
     /// <summary>父坐标或原图单位/局部单位。</summary>

@@ -33,8 +33,13 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
     public List<WorkflowVisionRoi> Regions { get; set; } = new();
 
     /// <summary>可选的上游精确Region事实绑定；与配置ROI取交集，必须同帧。</summary>
-    [WorkflowProperty("区域掩码", "可选RegionAnalysisResult绑定；不接受运行事实Literal。", Category = "范围")]
+    [WorkflowProperty("上游区域掩膜", "可选绑定创建区域、阈值分割或形态学结果；与本节点包含/排除ROI取交集，必须与输入图像同帧。手绘掩膜直接在图像页编辑ROI。", Category = "范围")]
+    [WorkflowPropertyVisibleWhen(nameof(SupportsRegionMask), "True")]
     public WorkflowInput<RegionAnalysisResult> Mask { get; set; } = WorkflowInput<RegionAnalysisResult>.FromLiteral(null);
+
+    /// <summary>面积节点可使用精确区域掩膜；其他节点不展示此属性。</summary>
+    [System.ComponentModel.Browsable(false), System.Text.Json.Serialization.JsonIgnore]
+    public bool SupportsRegionMask => RangeCapability == EWorkflowVisionRange.Region;
 
     /// <summary>可空业务坐标绑定；启用后Regions/卡尺端点使用局部单位，运行中不改配置。</summary>
     [WorkflowProperty("坐标系", "绑定本帧CoordinateSystem，保存制作时定义ID、版本和语义签名。", Category = "坐标系")]
@@ -114,6 +119,8 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
             errors.Add("区域掩码只能使用绑定或空Literal表示未启用。");
         if (hasMask && RangeCapability != EWorkflowVisionRange.Region)
             errors.Add("此算子不支持区域掩码。");
+        if (Mask?.Binding is { IsPublicData: false } maskInput && maskInput.NodeId == Id)
+            errors.Add("区域掩膜不能绑定自身结果。");
         if (!FullImage && (X < 0 || Y < 0 || Width < 1 || Height < 1 || (long)X + Width > int.MaxValue || (long)Y + Height > int.MaxValue))
             errors.Add("矩形范围必须非负且宽高为正，不能溢出。");
         if (Regions is null || Regions.Count > 512 || Regions.Any(r => r is null || string.IsNullOrWhiteSpace(r.Id))

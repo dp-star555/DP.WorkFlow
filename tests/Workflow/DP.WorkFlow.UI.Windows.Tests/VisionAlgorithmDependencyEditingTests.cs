@@ -12,6 +12,25 @@ public sealed class VisionAlgorithmDependencyEditingTests
     private const string Leaf = Prep + ".Dependency.leaf";
 
     [Fact]
+    public void AlgorithmAngleMetadata_ProjectsDegrees_AndKeepsStoredRadiansAcrossUndo()
+    {
+        var fixture = Create();
+        fixture.Node.Algorithm.Dependencies["prep"] = new() { ImplementationId = "test.prep" };
+        using var inspector = Inspector(fixture);
+        var angle = Entry(inspector, Prep + ".angle");
+        Assert.Equal("旋转角度（°）", angle.DisplayName);
+        Assert.Equal(45d, angle.Value);
+        Assert.Equal(-180, angle.NumberMinimum); Assert.Equal(180, angle.NumberMaximum);
+        inspector.SetValue(angle, "30");
+        Assert.Equal(Math.PI / 6, double.Parse(fixture.Node.Algorithm.Dependencies["prep"].Settings["angle"], System.Globalization.CultureInfo.InvariantCulture), 12);
+        Assert.True(fixture.Session.Undo()); Assert.Equal(45d, angle.Value);
+        Assert.True(fixture.Session.Redo()); Assert.Equal(30d, Assert.IsType<double>(angle.Value), 10);
+        Assert.Throws<ArgumentOutOfRangeException>(() => inspector.SetValue(angle, "200"));
+        Assert.Equal(30d, Assert.IsType<double>(angle.Value), 10);
+        Assert.Equal(0, fixture.Module.Preparations);
+    }
+
+    [Fact]
     public void MissingPlugin_StillExposesStoredNestedParameters_WithoutChangingTheirIdentities()
     {
         var fixture = Create();
@@ -376,7 +395,8 @@ public sealed class VisionAlgorithmDependencyEditingTests
                 return config.Settings.TryGetValue("enabled", out var enabled) && enabled == "False"
                     ? [] : [new("leaf", typeof(ILeafAlgorithm))];
             }), parameters: [new("gain", "增益", typeof(double), "1", minimum: 1, maximum: 4),
-                new("enabled", "启用", typeof(bool), "True"), new("ImplementationId", "保留字参数", typeof(string)), new("a.b", "带点参数", typeof(string))]));
+                new("enabled", "启用", typeof(bool), "True"), new("ImplementationId", "保留字参数", typeof(string)), new("a.b", "带点参数", typeof(string)),
+                new("angle", "旋转角度", typeof(double), (Math.PI / 4).ToString("R", System.Globalization.CultureInfo.InvariantCulture), minimum: -Math.PI, maximum: Math.PI) { DisplayRadiansAsDegrees = true }]));
             registrations.Add(new("test.other", "Other", "1", Factory<IPrepAlgorithm>(_ => [])));
             registrations.Add(new("test.leaf", "Test", "1", Factory<ILeafAlgorithm>(_ => [])));
         }

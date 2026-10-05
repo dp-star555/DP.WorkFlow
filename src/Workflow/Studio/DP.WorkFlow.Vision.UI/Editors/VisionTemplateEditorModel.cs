@@ -25,6 +25,7 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
     private bool _disposed, _dirty, _busy;
     private long _generation, _sequence;
     private string _implementation;
+    private string _displayName;
     private double _originX, _originY, _axisAngle;
     private readonly Dictionary<string, string> _settings = new(StringComparer.Ordinal);
     private TemplatePoseResult? _trial;
@@ -35,6 +36,7 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
     {
         _token = _lifetime.Token;
         _node = node; _runtime = runtime; _input = input; _reader = reader; _implementation = node.ModelAlgorithm.ImplementationId;
+        _displayName = DefaultDisplayName();
         if (node.TemplateReferenceDefinition != null) _baseline = VisionTemplateStore.CopyDefinition(node.TemplateReferenceDefinition);
         _baselineSourceHash = string.IsNullOrEmpty(node.TemplateSourceHash) ? null : node.TemplateSourceHash;
         Editor = new RoiEditor(); Editor.DocumentChanged += OnChanged;
@@ -43,6 +45,20 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
     public RoiEditor Editor { get; }
     /// <summary>只读实现候选。</summary>
     public IReadOnlyList<VisionAlgorithmDescriptor> Choices => _runtime?.Choices(_node.RequiresPoseSearch) ?? [];
+    /// <summary>用户可读的模板名称；改名仅发布元数据，不需要重新制作原生模型。</summary>
+    public string DisplayName
+    {
+        get => _displayName;
+        set
+        {
+            ThrowIfDisposed();
+            value = value?.Trim() ?? "";
+            if (value.Length == 0 || value.Length > 100 || value.Any(char.IsControl)) throw new ArgumentException("模板名称须为1至100个字符，不能包含控制字符。");
+            if (_displayName == value) return;
+            _displayName = value; _dirty = true;
+        }
+    }
+    private string DefaultDisplayName() => _node is IWorkflowNodeModel node && !string.IsNullOrWhiteSpace(node.Title) ? node.Title.Trim() : "定位模板";
     /// <summary>当前匹配实现。</summary>
     public string ImplementationId
     {
@@ -67,9 +83,10 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
         else if (parameter.ValueType != typeof(string))
         {
             var value = Convert.ChangeType(text, parameter.ValueType, CultureInfo.InvariantCulture); var number = Convert.ToDouble(value, CultureInfo.InvariantCulture);
-            if (!double.IsFinite(number) || number < parameter.Minimum || number > parameter.Maximum) throw new ArgumentOutOfRangeException(parameter.Id, "制作参数超出允许范围。");
+            if (!double.IsFinite(number) || number < parameter.Minimum || number > parameter.Maximum)
+                throw new ArgumentOutOfRangeException(parameter.Id, text, $"{parameter.DisplayName}超出允许范围：{parameter.Minimum?.ToString(CultureInfo.InvariantCulture) ?? "无下限"}～{parameter.Maximum?.ToString(CultureInfo.InvariantCulture) ?? "无上限"}；输入值：{text}。");
         }
-        if (ParameterValue(parameter) == text) return;
+        if (ParameterValue(parameter) == text) { _failure = null; Status = BuildState; return; }
         _settings[parameter.Id] = text; Invalidate();
     }
     /// <summary>样图中的原点X。</summary>
@@ -98,7 +115,7 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
     /// <summary>试匹配结果，不会写入工作流运行输出。</summary>
     public TemplatePoseResult? TrialResult => _trial;
     private void OnChanged(object? sender, RoiDocumentChangedEventArgs e) => Invalidate();
-    private void Invalidate() { _failure = null; _dirty = true; _generation++; _trial = null; _trialFrame?.Dispose(); _trialFrame = null; Status = "模板制作配置已变化，需要生成模型后应用。"; }
+    private void Invalidate() { _dirty = true; _generation++; ResetBuildVerification(); ResetTrial(); Status = "模板制作配置已变化，需要生成模型后应用。"; }
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     /// <summary>独立复制输入预览，释放运行帧租约。</summary>
@@ -152,6 +169,7 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
         }
         else throw new InvalidDataException("资源缺少区域或有效掩码，无法完整恢复制作依据。");
         _implementation = manifest.ImplementationId; _settings.Clear(); foreach (var pair in manifest.BuildSettings) _settings.Add(pair.Key, pair.Value);
+        _displayName = string.IsNullOrWhiteSpace(manifest.DisplayName) ? "未命名模板" : manifest.DisplayName;
         SetSource(source); Editor.Load(rois); _originX = d.OriginX; _originY = d.OriginY; _axisAngle = d.AxisAngleRadians;
         _baseline = VisionTemplateStore.CopyDefinition(d); _baselineSourceHash = manifest.Files.Single(f => f.Path == "source/image.bin").Hash;
         _sourceReplaced = false; _node.TemplateResourceId = manifest.TemplateId;
@@ -166,8 +184,7 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
     private VisionTemplateDefinition Definition()
     {
         var source = _source ?? throw new InvalidOperationException("请先读取模板样图。");
-        var active = Editor.Document.Rois.Where(r => r.Enabled).ToArray();
-        var mask = InspectionMask.Compose(source.Image, active.Where(r => r.Purpose == ERoiPurpose.Include).Select(r => r.Shape), active.Where(r => r.Purpose == ERoiPurpose.Exclude).Select(r => r.Shape));
+        var mask = MakingRegion(source);
         if (mask.AreaPixels == 0) throw new InvalidOperationException("模板有效区域为空。");
         var bounds = mask.Bounds;
         int x = (int)Math.Floor(bounds.X), y = (int)Math.Floor(bounds.Y);
@@ -196,6 +213,7 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
         Editor.Cancel(); Editor.Load(new RoiDocument([]));
         _node.TemplateResourceId = Guid.NewGuid().ToString("N"); _node.CoordinateSystemId = Guid.NewGuid().ToString("N");
         _node.TemplateReferenceDefinition = null; _node.TemplateSourceHash = "";
+        _displayName = DefaultDisplayName();
         _node.ModelAlgorithm = new VisionAlgorithmSelection { ImplementationId = _implementation };
         Invalidate(); Status = "已新建空白模板和坐标身份；请读取样图并生成模型。原下游ROI需重新确认。";
     }
@@ -203,24 +221,24 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
         OriginX.ToString("R", CultureInfo.InvariantCulture) + "|" + OriginY.ToString("R", CultureInfo.InvariantCulture) + "|" + AxisAngleRadians.ToString("R", CultureInfo.InvariantCulture)
         + "|" + RoiDocumentXml.Serialize(Editor.Document) + "|" + string.Join(";", _settings.OrderBy(p => p.Key).Select(p => p.Key.Length + ":" + p.Key + p.Value.Length + ":" + p.Value));
 
-    /// <summary>后台生成模型；迟到结果不覆盖当前草稿。</summary>
+    /// <summary>后台生成模型并在制作样图制作区域内以0°/1倍自检；迟到结果不覆盖当前草稿。</summary>
     public async Task BuildAsync()
     {
         ThrowIfDisposed(); if (_busy) throw new InvalidOperationException("请等待当前制作或试匹配结束。");
         if (_runtime == null) throw new InvalidOperationException("宿主未注册模板制作运行时。");
         var definition = Definition(); var key = Key(); long generation = _generation;
         using var source = _source!.Retain();
-        var active = Editor.Document.Rois.Where(r => r.Enabled).ToArray();
-        var mask = InspectionMask.Compose(source.Image, active.Where(r => r.Purpose == ERoiPurpose.Include).Select(r => r.Shape), active.Where(r => r.Purpose == ERoiPurpose.Exclude).Select(r => r.Shape));
+        var mask = MakingRegion(source);
         var roiXml = Encoding.UTF8.GetBytes(RoiDocumentXml.Serialize(Editor.Document));
-        _failure = null; _testing = false; _busy = true; Status = "正在生成模板模型…";
+        ResetBuildVerification(); ResetTrial(); _failure = null; _testing = false; _busy = true; Status = "正在生成模板模型…";
         try
         {
             var built = await _runtime.BuildAsync(_implementation, new VisionTemplateBuildRequest(source, definition, mask, new Dictionary<string, string>(_settings)), _token);
             if (_disposed || generation != _generation || key != Key()) { if (!_disposed) Status = "制作完成时配置已改变，请重新生成。"; return; }
             _built = new VisionTemplateBuild(built.ImplementationId, built.Format, built.Definition, built.Settings,
                 built.Files.Concat(new[] { new VisionTemplateArtifact("source/regions.xml", roiXml) }));
-            _builtKey = key; Status = "模型已生成；可试匹配。应用节点时发布新版本，取消不会保存。";
+            _builtKey = key;
+            await VerifyBuiltAsync(source, _built, key, generation);
         }
         catch (Exception ex) { ReportFailure(ex); throw; }
         finally { _busy = false; }
@@ -230,16 +248,15 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
     {
         ThrowIfDisposed(); if (_busy || !IsBuilt) throw new InvalidOperationException("请先为当前配置生成模型。");
         var build = _built!; var key = _builtKey; long generation = _generation;
-        using var input = frame.Retain(); _failure = null; _testing = true; _busy = true; _trial = null;
+        using var input = frame.Retain(); _failure = null; _testing = true; _busy = true; _trial = null; _trialMask = null;
+        _trialFrame?.Dispose(); _trialFrame = null; _trialSearchSummary = DescribeSearch(input, bounds, options);
         Status = "正在试匹配…";
         try
         {
-            using var resource = await _runtime!.PreviewAsync(build, _token);
-            var matcher = resource.Instance as IPreparedVisionTemplateMatcher ?? throw new InvalidOperationException("预览模型类型无效。");
-            var result = await Task.Run(() => matcher.Match(input, bounds, options, region, _token), _token);
+            var result = await MatchModelAsync(build, input, bounds, options, region, parent);
             if (_disposed || generation != _generation || key != Key()) return;
-            result = result.InReferenceCoordinates(_node.CoordinateSystemId, input, matcher.Definition, matcher.ModelIdentity);
-            if (parent != null) result = result.WithSearchCoordinates(parent);
+            var search = new RegionGeometry(Enumerable.Range(bounds.Y, bounds.Height).Select(y => new RegionRun(y, bounds.X, bounds.X + bounds.Width)));
+            _trialMask = region is null ? search : search.Intersect(region, _token);
             _trialFrame?.Dispose(); _trialFrame = input.Retain(); _trial = result;
             Status = result.Found ? $"测试完成：已找到目标，分数 {result.Score:F5}。" : $"测试完成：未找到目标，分数 {result.Score:F5}；可检查测试图像、搜索范围和阈值。";
         }
@@ -253,7 +270,13 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
         if (!_dirty) return;
         if (_busy || Editor.IsEditing || !IsBuilt) throw new InvalidOperationException("模板草稿有未完成修改，请完成绘制并生成模型，或取消节点编辑。");
         var directory = _runtime?.Resources?.RecipeDirectory ?? throw new InvalidOperationException("请先保存配方，再应用本地模板资源。");
-        var reference = VisionTemplateStore.Publish(directory, _node.TemplateResourceId, _built!, _token);
+        var reference = VisionTemplateStore.Publish(directory, _node.TemplateResourceId, _built!, _displayName, _token);
+        var choice = VisionTemplateResourceChoice.FromManifest(reference, new VisionTemplateManifest
+        {
+            TemplateId = _node.TemplateResourceId, RevisionId = Path.GetFileName(Path.GetDirectoryName(reference))!,
+            DisplayName = _displayName, ImplementationId = _implementation, Definition = _built!.Definition
+        }, File.GetLastWriteTimeUtc(Path.Combine(directory, reference)), compatible: true);
+        Resources = new[] { choice }.Concat(Resources.Where(r => r.Reference != reference)).ToArray();
         _node.ModelAlgorithm = new VisionAlgorithmSelection { ImplementationId = _implementation, Settings = new() { ["templatePath"] = reference } };
         _node.TemplateSource = EWorkflowVisionTemplateSource.Resource; _baseline = VisionTemplateStore.CopyDefinition(_built!.Definition);
         _baselineSourceHash = VisionTemplateStore.Hash(_built.Files.Single(f => f.Name == "source/image.bin").Content); _sourceReplaced = false; _dirty = false;
@@ -261,18 +284,32 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
         Status = "模板新版本已发布，节点引用将在应用时提交。";
     }
     /// <summary>制作样图或试匹配画布快照。</summary>
-    public CanvasFrame? Capture(bool trial)
+    public CanvasFrame? Capture(bool trial) => Capture(trial, checked(++_sequence));
+
+    /// <summary>页面使用自身的统一序号捕获模板来源，避免跨来源切换时被画布作为旧帧拒绝。</summary>
+    internal CanvasFrame? Capture(bool trial, long sequence)
     {
         if (_disposed) return null;
         var frame = trial ? _trialFrame : _source; if (frame == null) return null;
         var visuals = new List<Visual>();
+        var layers = new List<CanvasLayer>();
+        if (ShowMask && (trial ? _trialMask : PreviewMask(frame)) is { } mask)
+            layers.Add(new CanvasLayer("effective-mask", ELayerKind.Annotation,
+                new[] { new Visual("effective-mask", mask, 0x4022DD88, $"{(trial ? "测试" : "模板")}有效掩膜：{mask.AreaPixels}像素") }, -10, name: "有效掩膜"));
         if (trial && _trial?.Transform is { } p) visuals.Add(new Visual("trial", new RectangleGeometry(p.Center, p.TemplateWidth * p.Scale, p.TemplateHeight * p.Scale, p.AngleRadians), 0xFF33BBFF, "试匹配"));
         if (!trial)
         {
+            if (BuildVerificationResult is { Transform: { } verified } result && result.FrameId == frame.FrameId)
+            {
+                visuals.Add(new Visual("build-check", new RectangleGeometry(verified.Center, verified.TemplateWidth * verified.Scale, verified.TemplateHeight * verified.Scale, verified.AngleRadians), 0xFF55DD77, $"制作自检 · 分数 {result.Score:F5}"));
+                visuals.Add(new Visual("build-check-center", new ContourGeometry(new[] { new PointD(verified.Center.X - 5, verified.Center.Y), new PointD(verified.Center.X + 5, verified.Center.Y) }), 0xFF55DD77, "自检匹配中心"));
+                visuals.Add(new Visual("build-check-center-y", new ContourGeometry(new[] { new PointD(verified.Center.X, verified.Center.Y - 5), new PointD(verified.Center.X, verified.Center.Y + 5) }), 0xFF55DD77));
+            }
             visuals.Add(new Visual("origin", new ContourGeometry(new[] { new PointD(_originX, _originY) }), 0xFFFFCC33, "参考原点"));
             visuals.Add(new Visual("axis", new ContourGeometry(new[] { new PointD(_originX, _originY), new PointD(_originX + 30 * Math.Cos(_axisAngle), _originY + 30 * Math.Sin(_axisAngle)) }), 0xFFFFCC33, "参考X方向"));
         }
-        return new CanvasFrame(frame.FrameId, ++_sequence, frame.Image, new GeometryOverlay(frame.FrameId, new[] { new CanvasLayer("template", ELayerKind.Annotation, visuals) }));
+        layers.Add(new CanvasLayer("template", ELayerKind.Annotation, visuals));
+        return new CanvasFrame(frame.FrameId, sequence, frame.Image, new GeometryOverlay(frame.FrameId, layers));
     }
     /// <inheritdoc/>
     public void Dispose()

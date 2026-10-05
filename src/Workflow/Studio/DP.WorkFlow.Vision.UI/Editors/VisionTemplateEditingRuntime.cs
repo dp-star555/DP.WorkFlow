@@ -5,6 +5,17 @@ namespace DP.WorkFlow.Vision.UI;
 /// <summary>配方中的已发布模板版本；按引用选择，不在列举时加载原生模型。</summary>
 public sealed record VisionTemplateResourceChoice(string Reference, string Label)
 {
+    /// <summary>模板身份；历史修订属于同一模板，名称不作为身份。</summary>
+    public string TemplateId { get; init; } = "";
+    /// <summary>清单文件的保存时间，用于列表排序；GUID不表示版本先后。</summary>
+    public DateTime SavedUtc { get; init; }
+    internal static VisionTemplateResourceChoice FromManifest(string reference, VisionTemplateManifest manifest, DateTime savedUtc, bool compatible)
+    {
+        var state = compatible ? "" : "（引擎未安装或不兼容）";
+        var name = string.IsNullOrWhiteSpace(manifest.DisplayName) ? "未命名模板" : manifest.DisplayName;
+        return new(reference, $"{name} [模板{manifest.TemplateId[..8]} / 版本{manifest.RevisionId[..8]}] / {manifest.ImplementationId} / 参考v{manifest.Definition.ReferenceVersion}{state}")
+            { TemplateId = manifest.TemplateId, SavedUtc = savedUtc };
+    }
     /// <inheritdoc/>
     public override string ToString() => Label;
 }
@@ -18,7 +29,7 @@ public sealed class VisionTemplateEditingRuntime(VisionAlgorithmCatalog catalog,
     /// <summary>只查询支持节点能力的制作实现，不初始化引擎。</summary>
     public IReadOnlyList<VisionAlgorithmDescriptor> Choices(bool pose) => catalog.Implementations.Where(d =>
         d.ContractType == typeof(IPreparedVisionTemplateMatcher) && d.Factory is IVisionTemplateFactoryDescription
-        && d.Features.Contains("translation") && (!pose || d.Features.Contains("rotation") && d.Features.Contains("scale"))).ToArray();
+        && d.Features.Contains("translation") && (!pose || d.Features.Contains("rotation"))).ToArray();
     /// <summary>获取所选实现的描述。</summary>
     public VisionAlgorithmDescriptor Descriptor(string id) => catalog.GetRequired(id);
     /// <summary>显式列举配方资源；只读清单，每项损坏不影响其他模板，最多展示256个版本。</summary>
@@ -39,7 +50,8 @@ public sealed class VisionTemplateEditingRuntime(VisionAlgorithmCatalog catalog,
                 if (!Guid.TryParseExact(Path.GetFileName(asset), "N", out _)) continue;
                 var revisions = Path.Combine(asset, "revisions");
                 if (!Directory.Exists(revisions) || (File.GetAttributes(revisions) & FileAttributes.ReparsePoint) != 0) continue;
-                foreach (var revision in Directory.EnumerateDirectories(revisions, "*", options).OrderByDescending(p => p, StringComparer.Ordinal))
+                foreach (var revision in Directory.EnumerateDirectories(revisions, "*", options)
+                    .OrderByDescending(p => File.GetLastWriteTimeUtc(Path.Combine(p, "manifest.json"))).ThenBy(p => p, StringComparer.Ordinal))
                 {
                     token.ThrowIfCancellationRequested();
                     if (!Guid.TryParseExact(Path.GetFileName(revision), "N", out _)) continue;
@@ -48,8 +60,7 @@ public sealed class VisionTemplateEditingRuntime(VisionAlgorithmCatalog catalog,
                     try
                     {
                         var manifest = VisionTemplateStore.Inspect(path);
-                        var state = compatible.Contains(manifest.ImplementationId) ? "" : "（引擎未安装或不兼容）";
-                        result.Add(new(reference, $"{manifest.TemplateId[..8]} / {manifest.ImplementationId} / 版本 {manifest.RevisionId[..8]} / 参考v{manifest.Definition.ReferenceVersion}{state}"));
+                        result.Add(VisionTemplateResourceChoice.FromManifest(reference, manifest, File.GetLastWriteTimeUtc(path), compatible.Contains(manifest.ImplementationId)));
                     }
                     catch (Exception ex) when (ex is IOException or ArgumentException or System.Runtime.Serialization.SerializationException)
                     { result.Add(new(reference, $"{Path.GetFileName(asset)[..8]} / 模板损坏：{ex.Message}")); }

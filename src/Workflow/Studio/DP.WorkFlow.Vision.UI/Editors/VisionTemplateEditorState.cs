@@ -14,8 +14,14 @@ public sealed partial class VisionTemplateEditorModel
     public string SourceSummary => _source == null ? "未读取样图" : $"{_source.Image.Info.Width} × {_source.Image.Info.Height} · {_source.Image.Info.Layout}";
     /// <summary>是否已经读取制作样图。</summary>
     public bool HasSample => _source != null;
+    /// <summary>当前模型的独立参考几何；模型未就绪时为空。</summary>
+    public DP.Vision.Algorithms.VisionTemplateDefinition? BuiltDefinition => IsBuilt ? DP.Vision.Algorithms.VisionTemplateStore.CopyDefinition(_built!.Definition) : null;
+    /// <summary>调用引擎的轻量搜索校验，不初始化原生模型。</summary>
+    public string SearchIssue(DP.Vision.Algorithms.PixelBounds search, DP.Vision.Algorithms.TemplatePoseOptions options)
+        => IsBuilt && _runtime?.Descriptor(_implementation).Factory is DP.Vision.Algorithms.IVisionTemplateSearchValidator validator
+            ? string.Join("；", validator.ValidateSearch(_built!.Definition, _built.Settings, search, options)) : "";
     /// <summary>制作状态，不混用测试结果或画布状态。</summary>
-    public string BuildState => _busy && !_testing ? "正在生成模型" : IsBuilt ? "模型已就绪" : _source == null ? "等待样图" : "需要生成模型";
+    public string BuildState => _verifyingBuild ? "模型已生成 · 正在制作自检" : _busy && !_testing ? "正在生成模型" : IsBuilt ? "模型已就绪" : _source == null ? "等待样图" : "需要生成模型";
     /// <summary>最后失败原因，持续保留到下次操作或配置修改。</summary>
     public string Failure => _failure ?? "";
     /// <summary>将操作失败显式反馈给两种平台的状态区域。</summary>
@@ -54,7 +60,7 @@ public sealed partial class VisionTemplateEditorModel
     /// <summary>测试状态，未检出与执行失败明确区分。</summary>
     public string TestState => _testing ? "正在试匹配" : _trial == null ? "尚未测试" : _trial.Found ? "已找到目标" : "未找到目标";
     /// <summary>测试条件改变后清除旧结果，保留已经生成的模型。</summary>
-    public void ResetTrial() { _trial = null; _trialFrame?.Dispose(); _trialFrame = null; _failure = null; }
+    public void ResetTrial() { _trial = null; _trialMask = null; _trialSearchSummary = ""; _trialFrame?.Dispose(); _trialFrame = null; _failure = null; }
     /// <summary>测试结果的分数、位置、角度和尺度。</summary>
     public string TestSummary => _trial == null ? "生成模型后选择测试图像，再进行试匹配。"
         : _trial.Transform is { } pose ? $"分数 {_trial.Score:F5} · 位置 ({pose.Center.X:F2}, {pose.Center.Y:F2})\n角度 {pose.AngleRadians * 180 / Math.PI:F2}° · 尺度 {pose.Scale:F4}"

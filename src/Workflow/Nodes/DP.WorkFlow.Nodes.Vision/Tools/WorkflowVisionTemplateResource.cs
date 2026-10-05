@@ -35,7 +35,10 @@ public interface IWorkflowVisionTemplateNode
 internal static class WorkflowVisionTemplateResource
 {
     internal static WorkflowVisionAlgorithmSlot Slot(IWorkflowVisionTemplateNode node) => new("model", typeof(IPreparedVisionTemplateMatcher), node.ModelAlgorithm,
-        node.RequiresPoseSearch ? new[] { "translation", "rotation", "scale" } : new[] { "translation" });
+        node.RequiresPoseSearch
+            ? node is LocateVisionTemplatePoseNodeModel pose && (Math.Abs(pose.MinimumScale - 1) > 1e-9 || Math.Abs(pose.MaximumScale - 1) > 1e-9)
+                ? new[] { "translation", "rotation", "scale" } : new[] { "translation", "rotation" }
+            : new[] { "translation" });
     internal static IReadOnlyList<string> Validate(IWorkflowVisionTemplateNode node)
     {
         var errors = new List<string>();

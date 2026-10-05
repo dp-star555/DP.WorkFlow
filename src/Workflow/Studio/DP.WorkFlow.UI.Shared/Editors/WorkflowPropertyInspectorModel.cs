@@ -60,6 +60,7 @@ public sealed class WorkflowPropertyEntry
     private Action<object?>? _write;
     private Func<Task>? _action;
     private Func<string>? _actionBlockReason;
+    private bool _displayRadiansAsDegrees;
 
     /// <summary>初始化属性的反射访问、显示元数据和编辑器配置。</summary>
     /// <param name="owner">属性所属对象。</param>
@@ -171,7 +172,7 @@ public sealed class WorkflowPropertyEntry
     }
 
     /// <summary>获取适合属性面板显示的名称。</summary>
-    public string DisplayName { get; }
+    public string DisplayName { get; private set; }
 
     /// <summary>获取属性面板分组名称。</summary>
     public string Category { get; private set; }
@@ -195,6 +196,63 @@ public sealed class WorkflowPropertyEntry
 
     /// <summary>获取编辑器直接读写的值类型。</summary>
     public Type ValueType { get; }
+
+    /// <summary>数值编辑器在显示单位下的可选下限；未指定时由平台使用默认范围。</summary>
+    public double? NumberMinimum { get; private set; }
+
+    /// <summary>领域数值编辑器的可选上限。</summary>
+    public double? NumberMaximum { get; private set; }
+
+    /// <summary>向平台传递数值范围，使步进按钮遵循领域约束；写入端仍负责最终校验。</summary>
+    /// <param name="minimum">存储单位的下限；为空表示不限制。</param>
+    /// <param name="maximum">存储单位的上限；为空表示不限制。</param>
+    /// <returns>当前属性条目。</returns>
+    public WorkflowPropertyEntry WithNumberRange(double? minimum, double? maximum)
+    {
+        if (EditorKind != WorkflowPropertyEditorKind.Number) throw new InvalidOperationException("只有数值属性可以指定范围。");
+        if (minimum > maximum || minimum is { } min && !double.IsFinite(min) || maximum is { } max && !double.IsFinite(max))
+            throw new ArgumentException("数值范围无效。");
+        var factor = _displayRadiansAsDegrees ? 180 / Math.PI : 1;
+        NumberMinimum = minimum * factor; NumberMaximum = maximum * factor;
+        return this;
+    }
+
+    /// <summary>把弧度属性投影为度；模型字段、集合元素和输入绑定仍保持原有弧度契约。</summary>
+    /// <returns>供两个平台共用的属性条目。</returns>
+    public WorkflowPropertyEntry WithRadiansAsDegrees()
+    {
+        var type = WorkflowInputType ?? ValueType;
+        if (type != typeof(double) && type != typeof(double?) && type != typeof(List<double>) && type != typeof(double[]))
+            throw new InvalidOperationException("角度显示转换只支持double及其集合或工作流输入。");
+        if (_displayRadiansAsDegrees) return this;
+        _displayRadiansAsDegrees = true;
+        if (!DisplayName.Contains('°')) DisplayName += "（°）";
+        NumberMinimum *= 180 / Math.PI;
+        NumberMaximum *= 180 / Math.PI;
+        return this;
+    }
+
+    private object? ReadStoredValue() => _read is not null ? _read() : _property.GetValue(_owner);
+
+    private object? AngleValue(object? value, bool toStorage)
+    {
+        if (!_displayRadiansAsDegrees || value == null) return value;
+        double Scale(double angle)
+        {
+            if (toStorage && (!double.IsFinite(angle) || angle < NumberMinimum || angle > NumberMaximum))
+                throw new ArgumentOutOfRangeException(Name, angle, $"{DisplayName}允许范围：{NumberMinimum?.ToString(CultureInfo.InvariantCulture) ?? "无下限"}～{NumberMaximum?.ToString(CultureInfo.InvariantCulture) ?? "无上限"}，角度须为有限数值。");
+            var scaled = toStorage ? angle * (Math.PI / 180) : angle * (180 / Math.PI);
+            if (toStorage && !double.IsFinite(scaled)) throw new ArgumentOutOfRangeException(nameof(value), "角度必须是有限数值。");
+            return scaled;
+        }
+        return value switch
+        {
+            double angle => Scale(angle),
+            List<double> angles => angles.Select(Scale).ToList(),
+            double[] angles => angles.Select(Scale).ToArray(),
+            _ => value
+        };
+    }
 
     /// <summary>获取工作流输入包装的值类型；非工作流输入时为空。</summary>
     public Type? WorkflowInputType { get; }
@@ -229,8 +287,8 @@ public sealed class WorkflowPropertyEntry
 
     public bool IsReadOnly => EditorKind is WorkflowPropertyEditorKind.ReadOnly or WorkflowPropertyEditorKind.Action;
 
-    /// <summary>获取属性所属对象中的当前值。</summary>
-    public object? Value => _read is not null ? _read() : _property.GetValue(_owner);
+    /// <summary>获取面板显示单位下的当前值；WorkflowInput通过GetInputLiteral投影固定值。</summary>
+    public object? Value => EditorKind == WorkflowPropertyEditorKind.WorkflowInput ? ReadStoredValue() : AngleValue(ReadStoredValue(), false);
 
     /// <summary>设置普通标量属性。</summary>
     /// <param name="value">要校验、转换或写入的值。</param>
@@ -240,7 +298,7 @@ public sealed class WorkflowPropertyEntry
             throw new InvalidOperationException($"属性 {Name} 为只读。");
         if (EditorKind == WorkflowPropertyEditorKind.WorkflowInput)
             throw new InvalidOperationException($"属性 {Name} 必须使用 SetWorkflowInput。");
-        var converted = ConvertValue(value, ValueType);
+        var converted = AngleValue(ConvertValue(value, ValueType), true);
         ValidateSpecialEditorValue(converted);
         if (_write is not null) _write(converted);
         else _property.SetValue(_owner, converted);
@@ -258,8 +316,7 @@ public sealed class WorkflowPropertyEntry
             throw new InvalidOperationException($"属性 {Name} 不是结构化属性。");
         var value = JsonSerializer.Deserialize(json, ValueType, StructuredJsonOptions)
             ?? throw new InvalidOperationException($"{DisplayName} 不能设置为空。");
-        if (_write is not null) _write(value);
-        else _property.SetValue(_owner, value);
+        SetValue(value);
     }
 
     /// <summary>读取 WorkflowInput 的来源。</summary>
@@ -270,7 +327,7 @@ public sealed class WorkflowPropertyEntry
     /// <summary>读取 WorkflowInput 的固定值。</summary>
     /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public object? GetInputLiteral() =>
-        GetRequiredInputProperty(nameof(WorkflowInput<object>.LiteralValue)).GetValue(Value);
+        AngleValue(GetRequiredInputProperty(nameof(WorkflowInput<object>.LiteralValue)).GetValue(Value), false);
 
     /// <summary>读取 WorkflowInput 的绑定。</summary>
     /// <returns>返回操作结果；具体含义参见方法说明。</returns>
@@ -299,8 +356,8 @@ public sealed class WorkflowPropertyEntry
         GetRequiredInputProperty(nameof(WorkflowInput<object>.LiteralValue)).SetValue(
             input,
             source == WorkflowValueSource.Binding && literalValue is null
-                ? GetInputLiteral()
-                : ConvertValue(literalValue, WorkflowInputType));
+                ? GetRequiredInputProperty(nameof(WorkflowInput<object>.LiteralValue)).GetValue(Value)
+                : AngleValue(ConvertValue(literalValue, WorkflowInputType), true));
         GetRequiredInputProperty(nameof(WorkflowInput<object>.Binding)).SetValue(input, binding);
         _property.SetValue(_owner, input);
     }
@@ -585,7 +642,7 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
                 description += $" 单位：{workflowMetadata.Unit}。";
             var enumType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
             if (enumType.IsEnum) description = AppendEnumOptions(description, enumType);
-            entries.Add(new WorkflowPropertyEntry(
+            var entry = new WorkflowPropertyEntry(
                 node,
                 property,
                 displayName,
@@ -595,7 +652,9 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
                 propertyType,
                 inputType,
                 propertyEditor,
-                candidates));
+                candidates);
+            if (workflowMetadata?.DisplayRadiansAsDegrees == true) entry.WithRadiansAsDegrees();
+            entries.Add(entry);
         }
         return entries.OrderBy(entry => entry.Category, StringComparer.Ordinal)
             .ThenBy(entry => entry.DisplayName, StringComparer.Ordinal)

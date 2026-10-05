@@ -1,5 +1,6 @@
 using System.Globalization;
 using DP.Vision;
+using DP.WorkFlow.UI;
 
 namespace DP.WorkFlow.Vision.UI.WinForms;
 
@@ -73,9 +74,15 @@ internal sealed class VisionTemplateEditorControl : UserControl
         _fields.Controls.Add(actions);
         Field("参考原点 X", _model.OriginX.ToString("R", CultureInfo.InvariantCulture), value => _model.OriginX = double.Parse(value, CultureInfo.InvariantCulture));
         Field("参考原点 Y", _model.OriginY.ToString("R", CultureInfo.InvariantCulture), value => _model.OriginY = double.Parse(value, CultureInfo.InvariantCulture));
-        Field("参考X轴（rad）", _model.AxisAngleRadians.ToString("R", CultureInfo.InvariantCulture), value => _model.AxisAngleRadians = double.Parse(value, CultureInfo.InvariantCulture));
+        Field("参考X轴（°）", (_model.AxisAngleRadians * 180 / Math.PI).ToString("R", CultureInfo.InvariantCulture), value => _model.AxisAngleRadians = double.Parse(value, CultureInfo.InvariantCulture) * Math.PI / 180);
         foreach (var parameter in _model.Parameters)
-            Field(parameter.DisplayName, _model.ParameterValue(parameter), value => _model.SetParameter(parameter, value), parameter.Description);
+        {
+            var entry = WorkflowPropertyEntry.Create(parameter.Id, parameter.DisplayName, "制作参数", parameter.Description ?? "", WorkflowPropertyEditorKind.Text, parameter.ValueType,
+                () => parameter.ValueType.IsEnum ? Enum.Parse(parameter.ValueType, _model.ParameterValue(parameter)) : Convert.ChangeType(_model.ParameterValue(parameter), parameter.ValueType, CultureInfo.InvariantCulture),
+                value => _model.SetParameter(parameter, Convert.ToString(value, CultureInfo.InvariantCulture)!));
+            if (parameter.DisplayRadiansAsDegrees) entry.WithRadiansAsDegrees();
+            Field(entry.DisplayName, Convert.ToString(entry.Value, CultureInfo.InvariantCulture)!, entry.SetValue, entry.Description);
+        }
         _status.Text = _model.Status; _fields.Controls.Add(_status);
         void Field(string caption, string value, Action<string> write, string? description = null)
         {

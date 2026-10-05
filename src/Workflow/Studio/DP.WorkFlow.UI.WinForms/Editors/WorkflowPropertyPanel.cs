@@ -406,6 +406,8 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             entry.EditorFilter,
             entry.EditorDialogTitle,
             entry.EditorCheckExists,
+            entry.NumberMinimum,
+            entry.NumberMaximum,
             entry.IsReadOnly,
             entry.EditorKind == WorkflowPropertyEditorKind.Action ? entry.Value : null,
             entry.EditorKind == WorkflowPropertyEditorKind.Action ? entry.ActionBlockReason : null,
@@ -1212,6 +1214,10 @@ public sealed partial class WorkflowPropertyPanel : UserControl
                 new DescriptionAttribute(entry.Description)
             };
             if (entry.IsReadOnly) attributes.Add(ReadOnlyAttribute.Yes);
+            if (entry.NumberMinimum.HasValue || entry.NumberMaximum.HasValue)
+                attributes.Add(new PropertyRangeAttribute(entry.NumberMinimum ?? -1_000_000_000d, entry.NumberMaximum ?? 1_000_000_000d,
+                    entry.ValueType == typeof(int) || entry.ValueType == typeof(long) ? 1 : 0.1,
+                    entry.ValueType == typeof(int) || entry.ValueType == typeof(long) ? 0 : 3));
             if (entry.GroupPath.Count != 0) attributes.Add(new PropertyGroupAttribute(entry.GroupPath.ToArray()));
             if (!string.IsNullOrWhiteSpace(entry.EditorKey))
                 attributes.Add(new PropertyEditorKeyAttribute(entry.EditorKey));

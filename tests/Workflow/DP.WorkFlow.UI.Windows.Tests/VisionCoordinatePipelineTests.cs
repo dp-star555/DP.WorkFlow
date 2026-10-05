@@ -11,6 +11,29 @@ namespace DP.WorkFlow.Tests;
 
 public sealed class VisionCoordinatePipelineTests
 {
+    [Theory]
+    [InlineData(160d, 180d, 10d, 2)]
+    [InlineData(330d, 350d, 100d, 1)]
+    [InlineData(-180d, 180d, 10d, 1)]
+    public void PoseSearchRange_FollowsParentWithoutLosingCrossBoundaryExtent(double minimum, double maximum, double rotation, int intervals)
+    {
+        double angle = rotation * Math.PI / 180;
+        var parent = new VisionCoordinateSystem(new VisionCoordinateDefinition("parent", "父坐标"), "frame", 100, 100,
+            CoordinateMatrix2D.FromAffine(2 * Math.Cos(angle), -2 * Math.Sin(angle), 10, 2 * Math.Sin(angle), 2 * Math.Cos(angle), 20));
+        var node = new LocateVisionTemplatePoseNodeModel
+        {
+            MinimumAngleRadians = minimum * Math.PI / 180, MaximumAngleRadians = maximum * Math.PI / 180,
+            MinimumScale = .9, MaximumScale = 1.1, AngleStepRadians = Math.PI / 180, ScaleStep = .01
+        };
+        var options = node.OptionsForPreview(parent);
+        Assert.Equal((minimum + rotation) * Math.PI / 180, options.MinimumAngleRadians, 10);
+        Assert.Equal((maximum + rotation) * Math.PI / 180, options.MaximumAngleRadians, 10);
+        Assert.Equal(1.8, options.MinimumScale, 10); Assert.Equal(2.2, options.MaximumScale, 10);
+        Assert.Equal(Math.PI / 180, options.AngleStepRadians, 10); Assert.Equal(.02, options.ScaleStep, 10);
+        var ranges = options.AngleIntervals(); Assert.Equal(intervals, ranges.Count);
+        Assert.Equal((maximum - minimum) * Math.PI / 180, ranges.Sum(r => r.Maximum - r.Minimum), 10);
+    }
+
     [Fact]
     public async Task ActualMatching_RoiAndResultsFollowNewImage_WithoutChangingDocument()
     {
@@ -345,7 +368,7 @@ public sealed class VisionCoordinatePipelineTests
             {
                 new LoadVisionFileNodeModel { Id = "scene", FilePath = Scene }, new LoadVisionFileNodeModel { Id = "template", FilePath = Template },
                 new LocateVisionTemplatePoseNodeModel { Id = "pose", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"),
-                    CoordinateSystemId = "part-definition", AnglesRadians = new() { 0, Math.PI / 2 }, MinimumScore = .9999 },
+                    CoordinateSystemId = "part-definition", MinimumAngleRadians = 0, MaximumAngleRadians = Math.PI / 2, AngleStepRadians = Math.PI / 2, MinimumScore = .9999 },
                 new AnalyzeVisionBlobsNodeModel { Id = "blob", Frame = Input<ImageFrame>("scene"), MinimumGray = 255, MaximumGray = 255, Coordinates = Binding(), Regions = Regions() },
                 new AnalyzeVisionColorNodeModel { Id = "color", Frame = Input<ImageFrame>("scene"), Coordinates = Binding(), Regions = Regions() },
                 new ThresholdVisionRegionNodeModel { Id = "threshold", Frame = Input<ImageFrame>("scene"), MinimumGray = 255, MaximumGray = 255, Coordinates = Binding(), Regions = Regions() },

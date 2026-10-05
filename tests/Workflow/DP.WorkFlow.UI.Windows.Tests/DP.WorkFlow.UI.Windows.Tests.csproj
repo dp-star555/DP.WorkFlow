@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Standard\DP.WorkFlow.Nodes.Standard.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision\DP.WorkFlow.Nodes.Vision.csproj" />
     <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.OpenCv\DP.Vision.OpenCv.csproj" />
+    <ProjectReference Include="..\..\..\..\DP.Vision\src\DP.Vision.Halcon\DP.Vision.Halcon.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Vision.UI\DP.WorkFlow.Vision.UI.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Vision.UI.WinForms\DP.WorkFlow.Vision.UI.WinForms.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Vision.UI.Wpf\DP.WorkFlow.Vision.UI.Wpf.csproj" />

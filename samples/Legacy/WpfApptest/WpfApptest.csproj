@@ -56,14 +56,17 @@
   <Target Name="StageVisionAcquisitionProviderPlugins" AfterTargets="Build">
     <ItemGroup>
       <HalconProviderPayload Include="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\*.dll"
-                             Exclude="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.dll;$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.dll" />
+                             Exclude="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.dll;$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.dll;$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Algorithms.dll" />
+      <HalconProviderPayload Include="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Halcon.deps.json" />
       <HalconProviderPayload Include="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\*.pdb"
-                             Exclude="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.pdb;$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.pdb" />
+                             Exclude="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.pdb;$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.pdb;$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Algorithms.pdb" />
       <BaslerProviderPayload Include="$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\*.dll"
                              Exclude="$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.dll;$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.dll" />
       <BaslerProviderPayload Include="$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\*.pdb"
                              Exclude="$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.pdb;$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.pdb" />
     </ItemGroup>
+    <!-- 旧版本曾把共享算法契约复制进包；升级时清理这些生成文件，避免残留旧身份。 -->
+    <Delete Files="$(OutDir)plugins\dp.vision.halcon\DP.Vision.Algorithms.dll;$(OutDir)plugins\dp.vision.halcon\DP.Vision.Algorithms.pdb" />
     <Copy SourceFiles="@(HalconProviderPayload)"
           DestinationFolder="$(OutDir)plugins\dp.vision.halcon"
           SkipUnchangedFiles="true" />

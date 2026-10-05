@@ -14,4 +14,14 @@ public sealed class WorkflowVisionResolvedRange
     public RegionGeometry? Region { get; }
     /// <summary>已按本帧和制作身份验证的定位。</summary>
     public VisionCoordinateSystem? Coordinates { get; }
+    /// <summary>取得真正参与计算的原图区域，包含矩形边界与精确掩膜的交集；空区域保持为空。</summary>
+    /// <param name="token">取消令牌。</param>
+    /// <returns>独立区域事实，不回退全图。</returns>
+    public RegionGeometry ToRegion(CancellationToken token = default)
+    {
+        token.ThrowIfCancellationRequested();
+        var rectangle = new RegionGeometry(Enumerable.Range(Bounds.Y, Bounds.Height)
+            .Select(y => new RegionRun(y, Bounds.X, Bounds.X + Bounds.Width)));
+        return Region is null ? rectangle : rectangle.Intersect(Region, token);
+    }
 }

@@ -22,15 +22,18 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
     private readonly VisionFrameEditorControl _frame;
     private readonly ModernPropertyGrid.WinForms.ModernPropertyGrid _properties = new() { Dock = DockStyle.Fill, Theme = ModernUI.WinForms.ModernTheme.Dark, ShowSearchBar = false };
     private readonly Label _buildState = State("TemplateBuildState");
+    private readonly Label _buildVerification = State("TemplateBuildVerification");
     private readonly Label _testState = State("TemplateTestState");
     private readonly Label _issue = State("TemplateFailure");
     private readonly List<(WorkflowPropertyEntry Entry, ModernUI.WinForms.ModernButton Button)> _actions = new();
+    private readonly List<(WorkflowPropertyEntry Entry, Label Label)> _readOnly = new();
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 150 };
     private readonly ToolTip _tips = new();
     private bool _running;
     private string _operation = "";
     private long _revision = -1;
     private IReadOnlyList<VisionTemplateResourceChoice>? _listed;
+    private string _reference = "";
 
     internal VisionTemplateWorkspaceControl(VisionTemplateAuthoringPageModel model)
     {
@@ -43,14 +46,15 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         Controls.Add(split); split.Panel2.Controls.Add(_frame);
         var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Padding = new Padding(5) };
         left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        left.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); left.RowStyles.Add(new RowStyle(SizeType.Absolute, 160));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); left.RowStyles.Add(new RowStyle(SizeType.Absolute, 280));
         split.Panel1.Controls.Add(left); left.Controls.Add(_properties, 0, 0);
-        var states = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
-        states.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); states.RowStyles.Add(new RowStyle(SizeType.Absolute, 64)); states.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        states.Controls.Add(_buildState, 0, 0); states.Controls.Add(_testState, 0, 1); states.Controls.Add(_issue, 0, 2); left.Controls.Add(states, 0, 1);
+        var states = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
+        states.RowStyles.Add(new RowStyle(SizeType.Absolute, 46)); states.RowStyles.Add(new RowStyle(SizeType.Absolute, 100)); states.RowStyles.Add(new RowStyle(SizeType.Absolute, 88)); states.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        states.Controls.Add(_buildState, 0, 0); states.Controls.Add(_buildVerification, 0, 1); states.Controls.Add(_testState, 0, 2); states.Controls.Add(_issue, 0, 3); left.Controls.Add(states, 0, 1);
         _properties.ValidationFailed += (_, e) => { model.Draft.ReportFailure(e.Exception); RefreshState(); };
         _properties.RegisterEditor(new ChoiceEditor());
         _properties.RegisterEditor(new ActionEditor(this));
+        _properties.RegisterEditor(new ReadOnlyEditor(this));
         _properties.PropertyValueChanged += (_, _) => { RefreshProperties(); RefreshState(); };
         bool opened = false;
         Load += async (_, _) => { if (opened) return; opened = true; await Run(model.OpenAsync, "读取模板"); };
@@ -65,11 +69,11 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         catch (Exception ex) { _model.Draft.ReportFailure(ex); }
         finally { _running = false; _model.IsOperating = false; if (!IsDisposed && !_model.Draft.IsDisposed) { RefreshProperties(); RefreshState(); _frame.RefreshPreview(); } }
     }
-    private void RefreshPropertiesIfChanged() { if (_revision != _model.Draft.EditRevision || !ReferenceEquals(_listed, _model.Draft.Resources)) RefreshProperties(); }
+    private void RefreshPropertiesIfChanged() { if (_revision != _model.Draft.EditRevision || !ReferenceEquals(_listed, _model.Draft.Resources) || _reference != _model.Frame.TemplateReference) RefreshProperties(); }
     private void RefreshProperties()
     {
         if (_model.Draft.IsDisposed) return;
-        _revision = _model.Draft.EditRevision; _listed = _model.Draft.Resources; _actions.Clear();
+        _revision = _model.Draft.EditRevision; _listed = _model.Draft.Resources; _reference = _model.Frame.TemplateReference; _actions.Clear(); _readOnly.Clear();
         _properties.SelectedObject = new PropertyObject(_model.Properties(ExecuteCommand));
     }
     private async Task ExecuteCommand(EVisionTemplateAuthoringCommand command)
@@ -96,6 +100,11 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         if (_model.Draft.IsDisposed) return;
         var draft = _model.Draft;
         _properties.Enabled = !_running && !draft.IsBusy;
+        foreach (var (entry, label) in _readOnly)
+        {
+            if (label.IsDisposed) continue;
+            label.Text = Convert.ToString(entry.Value); _tips.SetToolTip(label, label.Text);
+        }
         foreach (var (entry, button) in _actions)
         {
             if (button.IsDisposed) continue;
@@ -104,7 +113,11 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         }
         _buildState.Text = "制作：" + (_running ? "正在" + _operation + "…" : draft.BuildState) + "\n" + (_model.CanCommit ? "可以应用" : _model.CommitBlockReason);
         _buildState.ForeColor = draft.IsBuilt ? Color.LightGreen : Color.Gainsboro;
-        _testState.Text = "测试：" + draft.TestState + "\n" + draft.TestSummary;
+        _buildVerification.Text = draft.BuildVerificationState + "\n" + draft.BuildVerificationSummary;
+        _buildVerification.ForeColor = draft.BuildVerificationResult is { Found: true } ? Color.LightGreen : draft.IsBuilt ? Color.Khaki : Color.Gainsboro;
+        _tips.SetToolTip(_buildVerification, _buildVerification.Text);
+        _testState.Text = _model.TestStatus;
+        _tips.SetToolTip(_testState, _testState.Text);
         _testState.ForeColor = draft.TrialResult is { Found: true } ? Color.LightGreen : draft.TrialResult != null ? Color.Khaki : Color.Gainsboro;
         _issue.Text = draft.Failure.Length > 0 ? "失败原因：" + draft.Failure : _model.IsPicking ? _model.PickMode : _model.TestBlockReason;
         _issue.ForeColor = draft.Failure.Length > 0 ? Color.Salmon : Color.Khaki;
@@ -132,6 +145,20 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         }
     }
 
+    private sealed class ReadOnlyEditor(VisionTemplateWorkspaceControl owner) : IPropertyEditorProvider
+    {
+        public int Priority => 100;
+        public bool CanEdit(PropertyDescriptor property) => property is EntryProperty p && p.Entry.EditorKind == WorkflowPropertyEditorKind.ReadOnly;
+        public Control CreateEditor(PropertyEditorContext context)
+        {
+            var entry = ((EntryProperty)context.Property).Entry;
+            var label = new Label { Text = Convert.ToString(entry.Value), Dock = DockStyle.Fill, AutoEllipsis = true,
+                ForeColor = Color.Gainsboro, BackColor = Color.Transparent, TextAlign = ContentAlignment.MiddleLeft };
+            owner._readOnly.Add((entry, label));
+            return label;
+        }
+    }
+
     private sealed class ChoiceEditor : IPropertyEditorProvider
     {
         public int Priority => 100;
@@ -151,9 +178,17 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         public override PropertyDescriptorCollection GetProperties(Attribute[]? attributes) => GetProperties();
         public override object GetPropertyOwner(PropertyDescriptor? pd) => this;
     }
-    private sealed class EntryProperty(WorkflowPropertyEntry entry, int order) : PropertyDescriptor(entry.Name,
-        new Attribute[] { new DisplayNameAttribute(entry.DisplayName), new CategoryAttribute(entry.Category), new DescriptionAttribute(entry.Description), new PropertyOrderAttribute(order) })
+    private sealed class EntryProperty(WorkflowPropertyEntry entry, int order) : PropertyDescriptor(entry.Name, CreateAttributes(entry, order))
     {
+        private static Attribute[] CreateAttributes(WorkflowPropertyEntry entry, int order)
+        {
+            var attributes = new List<Attribute> { new DisplayNameAttribute(entry.DisplayName), new CategoryAttribute(entry.Category), new DescriptionAttribute(entry.Description), new PropertyOrderAttribute(order) };
+            if (entry.NumberMinimum.HasValue || entry.NumberMaximum.HasValue)
+                attributes.Add(new PropertyRangeAttribute(entry.NumberMinimum ?? -1_000_000_000d, entry.NumberMaximum ?? 1_000_000_000d,
+                    entry.ValueType == typeof(int) || entry.ValueType == typeof(long) ? 1 : 0.1,
+                    entry.ValueType == typeof(int) || entry.ValueType == typeof(long) ? 0 : 3));
+            return attributes.ToArray();
+        }
         internal WorkflowPropertyEntry Entry => entry;
         public override Type ComponentType => typeof(PropertyObject);
         public override bool IsReadOnly => entry.IsReadOnly;
