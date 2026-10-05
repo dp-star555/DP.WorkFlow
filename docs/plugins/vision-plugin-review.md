@@ -76,7 +76,7 @@ dotnet run --project samples/Legacy/WpfApptest/WpfApptest.csproj --no-build -- -
 
 ## 预期行为
 
-定位和几何测量可直接使用`--geometry-demo`，两套示例均支持。场景→模板定位→局部点→直线→点线/线线距离，两个结果都应为2 template-px。算子盘点、单位、换帧/失败行为及制作步骤见[几何测量复核](../nodes/vision-geometry-measurement.md)。图像页显示原图证据和坐标来源，点摘要同时显示局部位置；几何节点画布只读，但支持显式定位绑定。
+定位和几何测量可直接使用`--geometry-demo`，两套示例均支持。场景→模板匹配→构建本帧坐标系→局部点→直线→点线/线线距离，两个结果都应为2 reference-px。算子盘点、单位、换帧/失败行为及制作步骤见[几何测量复核](../nodes/vision-geometry-measurement.md)。图像页显示原图证据和坐标来源，点摘要同时显示局部位置；几何节点画布只读，但支持显式定位绑定。
 
 | 场景 | 操作 | 应看到的结果 |
 |---|---|---|

@@ -8,46 +8,41 @@ namespace DP.WorkFlow.Samples;
 /// <summary>两套桌面示例共用的可直接运行新视觉流程，无相机或厂商模型依赖。</summary>
 public static class WorkflowImageDemo
 {
-    /// <summary>由独立节点目录建立模板局部点、直线及距离示例。</summary>
+    /// <summary>模板匹配→构建本帧坐标系，在坐标系中建立局部点、直线及距离示例。</summary>
     public static void PopulateGeometry(WorkflowDesignerSession session)
         => PopulateGeometry(session, false);
 
-    /// <summary>模板只提供父姿态，业务原点定义在模板中心，ROI保存于业务坐标。</summary>
+    /// <summary>在几何示例基础上，Blob的ROI保存于模板构建的坐标系并随动。</summary>
     public static void PopulateCoordinates(WorkflowDesignerSession session)
         => PopulateGeometry(session, true);
 
-    private static void PopulateGeometry(WorkflowDesignerSession session, bool generalCoordinates)
+    private static void PopulateGeometry(WorkflowDesignerSession session, bool followRoi)
     {
         var source = (AcquireVisionImageNodeModel)session.AddNode("Vision.AcquireFrame", 280, 80).Node;
         source.FilePath = Path.Combine(AppContext.BaseDirectory, "VisionData", "geometry-scene.pgm");
         var template = (AcquireVisionImageNodeModel)session.AddNode("Vision.AcquireFrame", 480, 80).Node;
         template.FilePath = Path.Combine(AppContext.BaseDirectory, "VisionData", "geometry-template.pgm");
         var location = (LocateVisionTemplateNodeModel)session.AddNode("Vision.LocateTemplate", 680, 80).Node;
-        location.Frame = Input<ImageFrame>(source.Id); location.Template = Input<ImageFrame>(template.Id);
-        location.CoordinateSystemId = "demo-part"; location.MinimumScore = .9999;
-        // 与投放的完整模板一致；更换模板后须重新制作坐标绑定。
+        location.Frame = Input<ImageFrame>(source.Id); location.Template = Input<ImageFrame>(template.Id); location.MinimumScore = .9999;
+        var definition = session.AddNode("Vision.DefineCoordinateSystem", 880, 80).Node;
+        Set(definition, "CoordinateId", "demo-workpiece"); Set(definition, "CoordinateName", "工件中心坐标");
+        Set(definition, "OriginDescription", "模板中心对应的工件基准点");
+        var build = (AnalyzeVisionFrameNodeModel)session.AddNode("Vision.BuildCoordinateSystem", 1080, 80).Node;
+        build.Frame = Input<ImageFrame>(source.Id); Set(build, "Definition", Input<VisionCoordinateDefinition>(definition.Id));
+        var mode = build.GetType().GetProperty("Mode")!;
+        mode.SetValue(build, Enum.Parse(mode.PropertyType, "Template"));
+        Set(build, "Template", Input<TemplatePoseResult>(location.Id));
+        // 动态模板图像的参考签名来自模板像素：与投放的完整模板一致，更换模板后须重新确认坐标绑定。
         using var patch = VisionImage.CopyFrom(new ImageInfo(4, 3, EPixelLayout.Gray8),
             new byte[] { 0, 64, 220, 40, 180, 30, 255, 80, 100, 230, 50, 140 });
-        var signature = LocatedCoordinateSystem.ComputeTemplateSignature(patch);
-        var created = new List<IWorkflowNodeModel> { source, template, location };
-        var coordinateSource = location.Id;
-        var coordinateId = location.CoordinateSystemId;
-        VisionCoordinateDefinition? businessDefinition = null;
-        if (generalCoordinates)
+        var coordinates = TemplateReference.FromImage(patch, new PixelBounds(0, 0, 4, 3))
+            .Bind(((IWorkflowVisionCoordinateDefinitionNode)definition).GetCoordinateDefinition());
+        var created = new List<IWorkflowNodeModel> { source, template, location, definition, build };
+        WorkflowVisionCoordinateBinding Follow() => new()
         {
-            var definition = session.AddNode("Vision.DefineCoordinateSystem", 880, 80).Node;
-            Set(definition, "CoordinateId", "demo-workpiece"); Set(definition, "CoordinateName", "工件中心坐标");
-            Set(definition, "OriginDescription", "模板中心对应的工件基准点");
-            businessDefinition = ((IWorkflowVisionCoordinateDefinitionNode)definition).GetCoordinateDefinition();
-            created.Add(definition);
-            var build = (AnalyzeVisionFrameNodeModel)session.AddNode("Vision.BuildCoordinateSystem", 1080, 80).Node;
-            build.Frame = Input<ImageFrame>(source.Id); Set(build, "Definition", Input<VisionCoordinateDefinition>(definition.Id));
-            var mode = build.GetType().GetProperty("Mode")!;
-            mode.SetValue(build, Enum.Parse(mode.PropertyType, "Parent"));
-            Set(build, "OriginX", WorkflowInput<double>.FromLiteral(2)); Set(build, "OriginY", WorkflowInput<double>.FromLiteral(1.5));
-            build.Coordinates = new WorkflowVisionCoordinateBinding { System = Input<VisionCoordinateSystem>(location.Id, "CoordinateSystem"), CoordinateSystemId = location.CoordinateSystemId, TemplateSignature = signature };
-            created.Add(build); coordinateSource = build.Id; coordinateId = businessDefinition.Id;
-        }
+            System = Input<VisionCoordinateSystem>(build.Id, "CoordinateSystem"), CoordinateSystemId = coordinates.Id,
+            DefinitionVersion = coordinates.Version, DefinitionSignature = coordinates.Signature
+        };
         AnalyzeVisionFrameNodeModel Add(string type)
         {
             var node = (AnalyzeVisionFrameNodeModel)session.AddNode(type, 280 + 200 * created.Count, 80).Node;
@@ -57,33 +52,27 @@ public static class WorkflowImageDemo
         {
             var node = Add("Vision.CreatePoint");
             Set(node, "PointX", WorkflowInput<double>.FromLiteral(x)); Set(node, "PointY", WorkflowInput<double>.FromLiteral(y));
-            Set(node, "Space", EVisionCoordinateSpace.TemplateLocal);
-            node.Coordinates = new WorkflowVisionCoordinateBinding
-            {
-                System = Input<VisionCoordinateSystem>(coordinateSource, "CoordinateSystem"),
-                CoordinateSystemId = coordinateId, TemplateSignature = generalCoordinates ? "" : signature,
-                DefinitionVersion = businessDefinition?.Version ?? 1, DefinitionSignature = businessDefinition?.Signature ?? ""
-            };
+            Set(node, "Space", EVisionCoordinateSpace.Local);
+            node.Coordinates = Follow();
             return node;
         }
         AnalyzeVisionFrameNodeModel Line(IWorkflowNodeModel a, IWorkflowNodeModel b)
         {
             var node = Add("Vision.GenerateLine"); Set(node, "A", Input<VisionPoint>(a.Id)); Set(node, "B", Input<VisionPoint>(b.Id)); return node;
         }
-        var a0 = Point(0, 0); var a1 = Point(3, 0); var b0 = Point(0, 2); var b1 = Point(3, 2);
+        var a0 = Point(-2, -1.5); var a1 = Point(1, -1.5); var b0 = Point(-2, .5); var b1 = Point(1, .5);
         var lineA = Line(a0, a1); var lineB = Line(b0, b1);
         var pointLine = Add("Vision.MeasurePointLineDistance");
         Set(pointLine, "Point", Input<VisionPoint>(b0.Id)); Set(pointLine, "Line", Input<VisionLine>(lineA.Id));
-        Set(pointLine, "Space", EVisionCoordinateSpace.TemplateLocal);
+        Set(pointLine, "Space", EVisionCoordinateSpace.Local);
         var lineLine = Add("Vision.MeasureLineDistance");
         Set(lineLine, "A", Input<VisionLine>(lineA.Id)); Set(lineLine, "B", Input<VisionLine>(lineB.Id));
-        Set(lineLine, "Space", EVisionCoordinateSpace.TemplateLocal);
-        if (businessDefinition is not null)
+        Set(lineLine, "Space", EVisionCoordinateSpace.Local);
+        if (followRoi)
         {
             var blobs = (AnalyzeVisionBlobsNodeModel)Add("Vision.AnalyzeBlobs");
             blobs.MaximumGray = 255;
-            blobs.Coordinates = new WorkflowVisionCoordinateBinding { System = Input<VisionCoordinateSystem>(coordinateSource, "CoordinateSystem"), CoordinateSystemId = businessDefinition.Id,
-                DefinitionVersion = businessDefinition.Version, DefinitionSignature = businessDefinition.Signature };
+            blobs.Coordinates = Follow();
             blobs.Regions = new() { new() { Id = "part-roi", CenterX = 0, CenterY = 0, Width = 4, Height = 3 } };
         }
         string previous = "Start";

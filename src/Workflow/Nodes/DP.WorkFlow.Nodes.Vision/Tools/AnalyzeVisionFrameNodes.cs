@@ -145,23 +145,15 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
     public virtual IReadOnlyList<string> ValidateDocumentConfiguration(IReadOnlyList<IWorkflowNodeModel> nodes)
     {
         if (Coordinates is not { DefinitionSignature.Length: > 0, System.Binding: { IsPublicData: false } source }) return [];
-        var sourceNode = nodes.FirstOrDefault(n => n.Id == source.NodeId);
-        if (sourceNode is IWorkflowVisionTemplateNode { TemplateSource: EWorkflowVisionTemplateSource.Resource, TemplateReferenceDefinition: { } reference } template)
-        {
-            try
-            {
-                var definition = reference.CoordinateDefinition(template.CoordinateSystemId);
-                return definition.Id != Coordinates.CoordinateSystemId || definition.Version != Coordinates.DefinitionVersion || definition.Signature != Coordinates.DefinitionSignature
-                    ? ["模板参考定义与ROI制作身份不一致，请重新确认原点、方向、样图及版本。"] : [];
-            }
-            catch (ArgumentException error) { return [error.Message]; }
-        }
-        if (sourceNode is not IWorkflowVisionCoordinateProducerNode producer) return [];
+        if (nodes.FirstOrDefault(n => n.Id == source.NodeId) is not IWorkflowVisionCoordinateProducerNode producer) return [];
         try
         {
-            var definition = WorkflowVisionCoordinateCatalog.ResolveDefinition(nodes, producer.Definition);
-            return definition.Id != Coordinates.CoordinateSystemId || definition.Version != Coordinates.DefinitionVersion || definition.Signature != Coordinates.DefinitionSignature
-                ? ["坐标定义与ROI制作身份不一致，请重新确认原点、轴、单位及版本。"] : [];
+            // 动态模板图像的参考签名只在运行时可知，此时先检查定义身份和版本，签名留给运行时校验。
+            var business = WorkflowVisionCoordinateCatalog.ResolveDefinition(nodes, producer.Definition);
+            var definition = producer.ResolveDefinition(nodes);
+            return business.Id != Coordinates.CoordinateSystemId || business.Version != Coordinates.DefinitionVersion
+                || definition is not null && definition.Signature != Coordinates.DefinitionSignature
+                ? ["坐标定义与ROI制作身份不一致，请重新确认原点、轴、单位、模板参考及版本。"] : [];
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return [ex.Message]; }
     }

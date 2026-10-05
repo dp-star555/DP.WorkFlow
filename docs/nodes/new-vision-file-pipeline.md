@@ -19,7 +19,7 @@
 | Vision.AnalyzeBlobs | Frame绑定、范围、阈值、面积/连接性 | BlobAnalysisResult |
 | Vision.AnalyzeColor | Frame绑定、范围 | ColorAnalysisResult |
 | Vision.MeasureEdges | Frame绑定、矩形、Canny阈值、线/圆模型 | EdgeMeasurementResult |
-| Vision.LocateTemplate | Frame与Template绑定、搜索矩形、最小分数 | TemplateLocationResult |
+| Vision.LocateTemplate | Frame与Template绑定、搜索矩形、最小分数 | TemplatePoseResult（角度0、缩放1） |
 | Vision.SolveCalibration | 对应点及可选目标旋转轨迹 | AffineCalibration |
 | Vision.MapCoordinate | Calibration绑定、X/Y绑定、RotationRadians | Coordinate2D |
 | Vision.MeasureDistance | X1/Y1/X2/Y2常量或绑定 | VisionDistanceResult |

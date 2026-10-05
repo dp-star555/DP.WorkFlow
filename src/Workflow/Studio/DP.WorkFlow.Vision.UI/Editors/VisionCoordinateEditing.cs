@@ -19,8 +19,7 @@ public sealed partial class VisionFrameEditorPageModel
     private string? _displayBindingKey;
     private bool HasDisplayedCoordinateBinding(WorkflowVisionCoordinateBinding binding) => CoordinateEditingReady
         && _displayCoordinates is not null && binding.CoordinateSystemId == _displayCoordinates.CoordinateSystemId
-        && (string.IsNullOrEmpty(binding.DefinitionSignature) || binding.DefinitionSignature == _displayCoordinates.Definition.Signature && binding.DefinitionVersion == _displayCoordinates.Definition.Version)
-        && (string.IsNullOrEmpty(binding.TemplateSignature) || _displayCoordinates is LocatedCoordinateSystem legacy && binding.TemplateSignature == legacy.TemplateSignature)
+        && binding.DefinitionSignature == _displayCoordinates.Definition.Signature && binding.DefinitionVersion == _displayCoordinates.Definition.Version
         && binding.System?.Binding?.ToString() == _displayBindingKey;
     /// <summary>文档内定位节点候选；选择不等于自动应用。</summary>
     public IReadOnlyList<VisionCoordinateSource> CoordinateSources { get; }
@@ -50,12 +49,9 @@ public sealed partial class VisionFrameEditorPageModel
             _lastKey = null; Status = "已更换同定义坐标来源，局部ROI及参数保持；确认节点后提交。";
             return;
         }
-        // 无绘制范围时显式以模板矩形作为初始局部范围，而不是整张场景图。
         var imageRois = Editor.Document.Rois.ToArray();
-        if (SupportsRegions && imageRois.Length == 0 && system is not LocatedCoordinateSystem) throw new InvalidOperationException("请先在样图绘制包含ROI，再绑定业务坐标系。");
-        var local = !SupportsRegions ? node.Regions : imageRois.Length == 0 && system is LocatedCoordinateSystem template
-            ? new List<WorkflowVisionRoi> { new() { Id = "template-domain", CenterX = template.Pose.TemplateWidth / 2d,
-                CenterY = template.Pose.TemplateHeight / 2d, Width = template.Pose.TemplateWidth, Height = template.Pose.TemplateHeight } }
+        if (SupportsRegions && imageRois.Length == 0) throw new InvalidOperationException("请先在样图绘制包含ROI，再绑定业务坐标系。");
+        var local = !SupportsRegions ? node.Regions
             : imageRois.Select(r => MapRegion(new RoiDefinition(r.Id, system.ToLocalGeometry(r.Shape), r.Purpose, r.Enabled))).ToList();
         if (SupportsRegions && !local.Any(r => r.Enabled && !r.Exclude)) throw new InvalidOperationException("随动ROI必须包含至少一个启用的包含范围。");
         Coordinate2D? caliperStart = null, caliperEnd = null;

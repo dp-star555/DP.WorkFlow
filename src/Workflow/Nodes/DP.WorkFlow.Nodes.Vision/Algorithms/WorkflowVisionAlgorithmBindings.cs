@@ -84,7 +84,7 @@ public sealed class WorkflowVisionAlgorithmBindings : IWorkflowVisionAlgorithmBi
                 {
                     var key = Key(position.PlanPath, position.Node.Id, "model");
                     var definition = plan.Invoke<IPreparedVisionTemplateMatcher, VisionTemplateDefinition>(key, matcher => matcher.Definition, cancellationToken);
-                    if (definition.CoordinateDefinition(template.CoordinateSystemId).Signature != expected.CoordinateDefinition(template.CoordinateSystemId).Signature)
+                    if (definition.Reference().Signature != expected.Reference().Signature)
                         throw VisionAlgorithmExceptionDiagnostics.Attach(new InvalidOperationException("模板资源参考定义与节点确认内容不一致，请在节点内读取并确认资源。"),
                             new[] { new VisionAlgorithmIssue("ALG_TEMPLATE_REFERENCE_MISMATCH", "Preparation", key, template.ModelAlgorithm.ImplementationId, "", "模板参考定义已变化，不能使用未确认的资源。") });
                 }

@@ -33,11 +33,11 @@ public sealed class VisionAlgorithmPluginPipelineTests
             host.Configure(document, new WorkflowContext(services));
 
             Assert.True((await host.RunAsync()).Success);
-            var result = Assert.IsType<TemplateLocationResult>(host.Engine!.RunState.NodeOutputs.Single(o => o.NodeId == "locate").Value);
+            var result = Assert.IsType<TemplatePoseResult>(host.Engine!.RunState.NodeOutputs.Single(o => o.NodeId == "locate").Value);
             var templateFrame = Assert.IsType<ImageFrame>(host.Engine.RunState.NodeOutputs.Single(o => o.NodeId == "template").Value);
             Assert.Equal(templateFrame.FrameId, result.TemplateFrameId);
             Assert.True(result.Found);
-            using var preview = frames.Capture("locate"); Assert.IsType<TemplateLocationResult>(preview!.Facts);
+            using var preview = frames.Capture("locate"); Assert.IsType<TemplatePoseResult>(preview!.Facts);
             Assert.True((await host.RunAsync()).Success);
         }
         finally { File.Delete(path); }

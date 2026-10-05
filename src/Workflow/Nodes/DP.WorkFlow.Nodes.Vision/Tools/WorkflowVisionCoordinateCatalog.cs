@@ -14,6 +14,9 @@ public interface IWorkflowVisionCoordinateProducerNode
 {
     /// <summary>文档内定义绑定。</summary>
     WorkflowInput<VisionCoordinateDefinition> Definition { get; }
+    /// <summary>静态解析本节点输出坐标系的完整定义；依赖运行内容（如动态模板图像）而无法静态确定时返回空。</summary>
+    /// <param name="nodes">同文档节点。</param><returns>输出定义或空。</returns>
+    VisionCoordinateDefinition? ResolveDefinition(IReadOnlyList<IWorkflowNodeModel> nodes);
 }
 
 /// <summary>文档作用域的定义目录；运行矩阵由数据绑定传递，禁止缓存跨帧状态。</summary>
