@@ -6,7 +6,7 @@ using DP.WorkFlow.UI.WinForms;
 namespace DP.WorkFlow.Vision.UI.WinForms;
 
 /// <summary>独立DP.Vision原生WinForms画布Renderer。</summary>
-public sealed class VisionFrameEditorRenderer : IWorkflowWinFormsNodeEditorPageRenderer
+public sealed class VisionFrameEditorRenderer : IWorkflowWinFormsNodeEditorPageRenderer, IWorkflowWinFormsNodeEditorSidePanelRenderer
 {
     /// <inheritdoc/>
     public string RendererKey => VisionFrameEditorPageProvider.RendererKey;
@@ -15,6 +15,12 @@ public sealed class VisionFrameEditorRenderer : IWorkflowWinFormsNodeEditorPageR
     /// <inheritdoc/>
     public Control CreateControl(WorkflowNodeEditorPageDescriptor page) => page.Model is VisionFrameEditorPageModel model
         ? new VisionFrameEditorControl(model) : throw new ArgumentException("Invalid frame editor model.", nameof(page));
+    /// <inheritdoc/>
+    public IEnumerable<WorkflowWinFormsNodeEditorSidePanel> CreateSidePanels(WorkflowNodeEditorPageDescriptor page)
+    {
+        if (page.Model is VisionFrameEditorPageModel model && new VisionRoiListModel(model) is { IsAvailable: true } roi)
+            yield return new WorkflowWinFormsNodeEditorSidePanel("Roi", "ROI列表", new VisionRoiListControl(roi));
+    }
 }
 
 internal sealed class VisionFrameEditorControl : UserControl

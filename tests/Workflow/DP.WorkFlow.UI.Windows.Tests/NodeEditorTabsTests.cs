@@ -25,7 +25,7 @@ public sealed class NodeEditorTabsTests
     }
 
     [Fact]
-    public void WinFormsNodeEditor_OpensScriptNodesOnTheScriptTab()
+    public void WinFormsNodeEditor_KeepsScriptOutsideTheLeftTabs()
     {
         Run(() =>
         {
@@ -34,9 +34,56 @@ public sealed class NodeEditorTabsTests
             using var dialog = new DP.WorkFlow.UI.WinForms.WorkflowNodeEditorDialog(model);
             dialog.CreateControl();
 
-            var tabs = Descendants(dialog).OfType<ModernUI.WinForms.ModernTabControl>().Single();
-            Assert.Equal("Script", tabs.SelectedTab?.Name);
-            Assert.Equal("Results", tabs.TabPages.Cast<TabPage>().Last().Name);
+            var split = Descendants(dialog).OfType<SplitContainer>().First();
+            var tabs = Assert.Single(Descendants(split.Panel1).OfType<ModernUI.WinForms.ModernTabControl>());
+            Assert.Equal(new[] { "Properties", "Results" }, tabs.TabPages.Cast<TabPage>().Select(page => page.Name));
+            Assert.Equal(0, tabs.SelectedIndex);
+            Assert.Contains(Descendants(split.Panel2), control => control is DP.WorkFlow.UI.WinForms.WorkflowCSharpScriptEditorControl);
+        });
+    }
+
+    [Fact]
+    public void RoiListModel_SelectsDeletesAndTogglesRoisSharedWithTheCanvas()
+    {
+        var node = new AnalyzeVisionColorNodeModel();
+        using var frame = new DP.WorkFlow.Vision.UI.VisionFrameEditorPageModel(node);
+        frame.Editor.Load(new DP.Vision.UI.RoiDocument(new[]
+        {
+            new DP.Vision.UI.RoiDefinition("a", new DP.Vision.RectangleGeometry(new DP.Vision.PointD(5, 5), 4, 2)),
+            new DP.Vision.UI.RoiDefinition("b", new DP.Vision.EllipseGeometry(new DP.Vision.PointD(8, 8), 3, 2))
+        }));
+        var roi = new DP.WorkFlow.Vision.UI.VisionRoiListModel(frame);
+        var changes = 0;
+        roi.Changed += (_, _) => changes++;
+
+        Assert.True(roi.IsAvailable);
+        Assert.Equal(new[] { "矩形", "椭圆" }, roi.Items.Select(item => item.Shape));
+        roi.Select("b");
+        Assert.Equal("b", frame.Editor.SelectedId);
+        roi.SetSelectedPurpose(DP.Vision.UI.ERoiPurpose.Exclude);
+        roi.SetSelectedEnabled(false);
+        var b = roi.Items.Single(item => item.Id == "b");
+        Assert.Equal(("排除", false), (b.Purpose, b.Enabled));
+        roi.Select("missing");
+        Assert.Equal("b", roi.SelectedId);
+        roi.DeleteSelected();
+        Assert.Equal(new[] { "a" }, roi.Items.Select(item => item.Id));
+        Assert.True(changes > 0);
+    }
+
+    [Fact]
+    public void VisionRenderers_ContributeRoiListPanels()
+    {
+        Run(() =>
+        {
+            using var frame = new DP.WorkFlow.Vision.UI.VisionFrameEditorPageModel(new AnalyzeVisionColorNodeModel());
+            var page = new WorkflowNodeEditorPageDescriptor("Image", "图像", WorkflowNodeEditorPageKind.Custom, 450, frame,
+                RendererKey: DP.WorkFlow.Vision.UI.VisionFrameEditorPageProvider.RendererKey);
+            var winForms = Assert.Single(new DP.WorkFlow.Vision.UI.WinForms.VisionFrameEditorRenderer().CreateSidePanels(page));
+            Assert.Equal(("Roi", "ROI列表"), (winForms.PanelId, winForms.Title));
+            winForms.Content.Dispose();
+            var wpf = Assert.Single(new DP.WorkFlow.Vision.UI.Wpf.VisionFrameEditorRenderer().CreateSidePanels(page));
+            Assert.Equal(("Roi", "ROI列表"), (wpf.PanelId, wpf.Title));
         });
     }
 

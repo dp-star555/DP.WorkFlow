@@ -17,6 +17,22 @@ public interface IWorkflowWinFormsNodeEditorPageRenderer
     Control CreateControl(WorkflowNodeEditorPageDescriptor page);
 }
 
+/// <summary>节点窗口左侧分页中的一页。</summary>
+/// <param name="PanelId">稳定标识。</param>
+/// <param name="Title">标签标题。</param>
+/// <param name="Content">页面内容。</param>
+public sealed record WorkflowWinFormsNodeEditorSidePanel(string PanelId, string Title, Control Content);
+
+/// <summary>
+/// 页面渲染器的可选能力：为节点窗口左侧分页贡献列表页（例如视觉 ROI 列表），
+/// 页面主体（例如图像画布）仍显示在右侧工作区。
+/// </summary>
+public interface IWorkflowWinFormsNodeEditorSidePanelRenderer
+{
+    /// <summary>为页面创建附加到左侧分页的列表页；不需要时返回空集合。</summary>
+    IEnumerable<WorkflowWinFormsNodeEditorSidePanel> CreateSidePanels(WorkflowNodeEditorPageDescriptor page);
+}
+
 /// <summary>
 /// 可自动容纳参数、子流程、脚本、图像和宿主扩展区域的统一节点编辑窗口。
 /// <para>窗口稳定外壳位于 Designer.cs，页面内容仍由节点能力和页面描述符在运行时生成。</para>
@@ -118,8 +134,8 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     }
 
     /// <summary>
-    /// 构建节点窗口主体：参数、领域页面（如视觉图像与 ROI）、子流程/脚本以及通用运行结果按页面顺序分页显示。
-    /// 只有一个页面时直接显示该页；脚本与子流程是节点的主要编辑内容，打开窗口时默认选中。
+    /// 构建节点窗口主体。左侧为分页列表：参数、渲染器贡献的列表页（如视觉 ROI）和运行结果；
+    /// 右侧按页面顺序纵向放置子流程、脚本、图像等主体页面。没有主体页面时左侧分页铺满窗口。
     /// </summary>
     private Control CreateWorkspace()
     {
@@ -129,29 +145,85 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             editor.Dock = DockStyle.Fill;
             return editor;
         }
-        var pages = Model.Pages
-            .Where(page => page.PropertyEditorKey == null && page.Kind != WorkflowNodeEditorPageKind.Diagnostics)
+        var visible = Model.Pages.Where(page => page.PropertyEditorKey == null).ToArray();
+        var specialPages = visible
+            .Where(page => page.Kind is not (WorkflowNodeEditorPageKind.Properties
+                or WorkflowNodeEditorPageKind.Diagnostics or WorkflowNodeEditorPageKind.Results))
             .ToArray();
-        if (pages.Length == 1)
-        {
-            var single = CreatePageControl(pages[0]);
-            single.Dock = DockStyle.Fill;
-            return single;
-        }
 
-        var tabs = new ModernUI.WinForms.ModernTabControl { Dock = DockStyle.Fill, Theme = ModernUI.WinForms.ModernTheme.Dark };
-        foreach (var page in pages)
+        var panels = new List<WorkflowWinFormsNodeEditorSidePanel>
         {
-            var content = CreatePageControl(page);
-            content.Dock = DockStyle.Fill;
-            var tab = new TabPage(page.Title) { Name = page.PageId, Padding = new Padding(4) };
-            tab.Controls.Add(content);
+            Panel(visible.Single(page => page.Kind == WorkflowNodeEditorPageKind.Properties))
+        };
+        var specialControls = specialPages.Select(page =>
+        {
+            var control = CreatePageControl(page);
+            if (ResolveRenderer(page) is IWorkflowWinFormsNodeEditorSidePanelRenderer sides)
+                panels.AddRange(sides.CreateSidePanels(page));
+            return control;
+        }).ToArray();
+        if (visible.FirstOrDefault(page => page.Kind == WorkflowNodeEditorPageKind.Results) is { } results)
+            panels.Add(Panel(results));
+        var side = CreateSidePanels(panels);
+        if (specialPages.Length == 0) return side;
+
+        var specialHost = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = specialPages.Length };
+        for (var index = 0; index < specialPages.Length; index++)
+        {
+            specialHost.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / specialPages.Length));
+            specialControls[index].Dock = DockStyle.Fill;
+            var group = new ModernUI.WinForms.ModernGroupBox { Text = specialPages[index].Title, Dock = DockStyle.Fill, Padding = new Padding(6) };
+            group.Controls.Add(specialControls[index]);
+            specialHost.Controls.Add(group, 0, index);
+        }
+        var split = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical,
+            FixedPanel = FixedPanel.Panel1
+        };
+        var initialDistanceApplied = false;
+        split.SizeChanged += (_, _) =>
+        {
+            if (initialDistanceApplied || split.ClientSize.Width < 640) return;
+            var maximum = split.ClientSize.Width - split.SplitterWidth - 320;
+            if (maximum < 260) return;
+            var preferred = (int)Math.Round(split.ClientSize.Width * 0.34d);
+            split.SplitterDistance = Math.Clamp(preferred, 300, Math.Min(400, maximum));
+            split.Panel1MinSize = Math.Min(280, split.SplitterDistance);
+            split.Panel2MinSize = Math.Min(320, split.ClientSize.Width - split.SplitterDistance - split.SplitterWidth);
+            initialDistanceApplied = true;
+        };
+        split.Panel1.Controls.Add(side);
+        split.Panel2.Controls.Add(specialHost);
+        return split;
+
+        WorkflowWinFormsNodeEditorSidePanel Panel(WorkflowNodeEditorPageDescriptor page) =>
+            new(page.PageId, page.Title, CreatePageControl(page));
+    }
+
+    /// <summary>只有一页时直接显示内容，多页时使用 ModernTabControl 分页。</summary>
+    private static Control CreateSidePanels(IReadOnlyList<WorkflowWinFormsNodeEditorSidePanel> panels)
+    {
+        if (panels.Count == 1)
+        {
+            panels[0].Content.Dock = DockStyle.Fill;
+            return panels[0].Content;
+        }
+        var tabs = new ModernUI.WinForms.ModernTabControl { Dock = DockStyle.Fill, Theme = ModernUI.WinForms.ModernTheme.Dark };
+        foreach (var panel in panels)
+        {
+            panel.Content.Dock = DockStyle.Fill;
+            var tab = new TabPage(panel.Title) { Name = panel.PanelId, Padding = new Padding(2) };
+            tab.Controls.Add(panel.Content);
             tabs.TabPages.Add(tab);
         }
-        var primary = Array.FindIndex(pages, page => page.Kind is WorkflowNodeEditorPageKind.Script or WorkflowNodeEditorPageKind.SubWorkflow);
-        tabs.SelectedIndex = Math.Max(0, primary);
+        tabs.SelectedIndex = 0;
         return tabs;
     }
+
+    private IWorkflowWinFormsNodeEditorPageRenderer? ResolveRenderer(WorkflowNodeEditorPageDescriptor page) =>
+        ResolveRendererKey(page) is { } rendererKey && _renderers.TryGetValue(rendererKey, out var renderer) ? renderer : null;
 
     /// <summary>校验当前子控件，并将编辑副本作为一次可撤销操作提交到正式节点。</summary>
     private bool ApplyChanges()
