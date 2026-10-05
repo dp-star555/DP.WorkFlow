@@ -22,12 +22,12 @@ partial class WorkflowBindingSelectorDialog
     private void InitializeComponent()
     {
         components = new System.ComponentModel.Container();
-        searchTextBox = new TextBox();
+        searchTextBox = new ModernUI.WinForms.ModernInput();
         bindingTreeView = new TreeView();
         statusLabel = new Label();
         commandPanel = new FlowLayoutPanel();
-        cancelButton = new Button();
-        okButton = new Button();
+        cancelButton = new ModernUI.WinForms.ModernButton();
+        okButton = new ModernUI.WinForms.ModernButton();
         commandPanel.SuspendLayout();
         SuspendLayout();
         // 
@@ -36,7 +36,7 @@ partial class WorkflowBindingSelectorDialog
         searchTextBox.Dock = DockStyle.Top;
         searchTextBox.Name = "searchTextBox";
         searchTextBox.PlaceholderText = "搜索节点、成员、路径或类型…";
-        searchTextBox.Size = new Size(544, 23);
+        searchTextBox.Size = new Size(544, 32);
         searchTextBox.TabIndex = 0;
         // 
         // bindingTreeView
@@ -71,18 +71,17 @@ partial class WorkflowBindingSelectorDialog
         // 
         cancelButton.DialogResult = DialogResult.Cancel;
         cancelButton.Name = "cancelButton";
-        cancelButton.Size = new Size(88, 28);
+        cancelButton.Size = new Size(88, 30);
         cancelButton.TabIndex = 1;
         cancelButton.Text = "取消";
-        cancelButton.UseVisualStyleBackColor = true;
         // 
         // okButton
         // 
+        okButton.ButtonType = ModernUI.WinForms.ModernButtonType.Primary;
         okButton.Name = "okButton";
-        okButton.Size = new Size(88, 28);
+        okButton.Size = new Size(88, 30);
         okButton.TabIndex = 0;
         okButton.Text = "确定";
-        okButton.UseVisualStyleBackColor = true;
         // 
         // WorkflowBindingSelectorDialog
         // 
@@ -106,10 +105,10 @@ partial class WorkflowBindingSelectorDialog
 
     #endregion
 
-    private TextBox searchTextBox = null!;
+    private ModernUI.WinForms.ModernInput searchTextBox = null!;
     private TreeView bindingTreeView = null!;
     private Label statusLabel = null!;
     private FlowLayoutPanel commandPanel = null!;
-    private Button okButton = null!;
-    private Button cancelButton = null!;
+    private ModernUI.WinForms.ModernButton okButton = null!;
+    private ModernUI.WinForms.ModernButton cancelButton = null!;
 }

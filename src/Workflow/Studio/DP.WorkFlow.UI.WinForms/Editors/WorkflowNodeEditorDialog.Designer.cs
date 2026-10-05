@@ -25,16 +25,16 @@ partial class WorkflowNodeEditorDialog
         rootLayout = new TableLayoutPanel();
         headerLayout = new TableLayoutPanel();
         nodeIdLabel = new Label();
-        nodeIdTextBox = new TextBox();
+        nodeIdTextBox = new ModernUI.WinForms.ModernInput();
         nodeTypeLabel = new Label();
-        nodeTypeTextBox = new TextBox();
+        nodeTypeTextBox = new ModernUI.WinForms.ModernInput();
         titleLabel = new Label();
-        titleTextBox = new TextBox();
+        titleTextBox = new ModernUI.WinForms.ModernInput();
         workspacePanel = new Panel();
         commandPanel = new FlowLayoutPanel();
-        cancelButton = new Button();
-        okButton = new Button();
-        applyButton = new Button();
+        cancelButton = new ModernUI.WinForms.ModernButton();
+        okButton = new ModernUI.WinForms.ModernButton();
+        applyButton = new ModernUI.WinForms.ModernButton();
         rootLayout.SuspendLayout();
         headerLayout.SuspendLayout();
         commandPanel.SuspendLayout();
@@ -159,34 +159,29 @@ partial class WorkflowNodeEditorDialog
         // 
         // cancelButton
         // 
-        cancelButton.AutoSize = true;
         cancelButton.DialogResult = DialogResult.Cancel;
         cancelButton.Location = new Point(620, 11);
         cancelButton.Name = "cancelButton";
-        cancelButton.Size = new Size(75, 27);
+        cancelButton.Size = new Size(76, 30);
         cancelButton.TabIndex = 2;
         cancelButton.Text = "取消";
-        cancelButton.UseVisualStyleBackColor = true;
         // 
         // okButton
         // 
-        okButton.AutoSize = true;
+        okButton.ButtonType = ModernUI.WinForms.ModernButtonType.Primary;
         okButton.Location = new Point(539, 11);
         okButton.Name = "okButton";
-        okButton.Size = new Size(75, 27);
+        okButton.Size = new Size(76, 30);
         okButton.TabIndex = 1;
         okButton.Text = "确定";
-        okButton.UseVisualStyleBackColor = true;
         // 
         // applyButton
         // 
-        applyButton.AutoSize = true;
         applyButton.Location = new Point(458, 11);
         applyButton.Name = "applyButton";
-        applyButton.Size = new Size(75, 27);
+        applyButton.Size = new Size(76, 30);
         applyButton.TabIndex = 0;
         applyButton.Text = "应用";
-        applyButton.UseVisualStyleBackColor = true;
         // 
         // WorkflowNodeEditorDialog
         // 
@@ -215,14 +210,14 @@ partial class WorkflowNodeEditorDialog
     private TableLayoutPanel rootLayout = null!;
     private TableLayoutPanel headerLayout = null!;
     private Label nodeIdLabel = null!;
-    private TextBox nodeIdTextBox = null!;
+    private ModernUI.WinForms.ModernInput nodeIdTextBox = null!;
     private Label nodeTypeLabel = null!;
-    private TextBox nodeTypeTextBox = null!;
+    private ModernUI.WinForms.ModernInput nodeTypeTextBox = null!;
     private Label titleLabel = null!;
-    private TextBox titleTextBox = null!;
+    private ModernUI.WinForms.ModernInput titleTextBox = null!;
     private Panel workspacePanel = null!;
     private FlowLayoutPanel commandPanel = null!;
-    private Button applyButton = null!;
-    private Button okButton = null!;
-    private Button cancelButton = null!;
+    private ModernUI.WinForms.ModernButton applyButton = null!;
+    private ModernUI.WinForms.ModernButton okButton = null!;
+    private ModernUI.WinForms.ModernButton cancelButton = null!;
 }

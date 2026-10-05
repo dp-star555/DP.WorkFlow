@@ -76,7 +76,7 @@ public sealed class VisionAlgorithmDependencyEditingTests
                 System.Windows.Forms.Control GainRow() => FormsDescendants(grid).Single(control => control.Tag is PropertyDescriptor descriptor && descriptor.Name == Prep + ".gain");
                 ModernUI.WinForms.ModernButton Parameters() => FormsDescendants(grid).OfType<ModernUI.WinForms.ModernButton>().Single(button => button.AccessibleName == "初始化参数");
                 Assert.True(GainRow().Visible);
-                Assert.DoesNotContain(FormsDescendants(forms).OfType<System.Windows.Forms.Button>(), button => button.Text == "编辑集合/对象…");
+                Assert.DoesNotContain(FormsDescendants(forms).OfType<ModernUI.WinForms.ModernButton>(), button => button.Text == "编辑集合/对象…");
                 Parameters().PerformClick(); Assert.False(GainRow().Visible);
                 grid.RefreshProperties(); System.Windows.Forms.Application.DoEvents(); Assert.False(GainRow().Visible);
                 Parameters().PerformClick(); Assert.True(GainRow().Visible);

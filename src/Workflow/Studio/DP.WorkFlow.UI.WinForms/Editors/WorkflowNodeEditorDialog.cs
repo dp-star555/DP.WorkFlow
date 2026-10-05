@@ -66,7 +66,7 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             headerLayout.Visible = false;
             rootLayout.RowStyles[0].Height = 0;
         }
-        titleTextBox.Validated += (_, _) => CommitEditedTitle();
+        titleTextBox.InnerTextBox.Validated += (_, _) => CommitEditedTitle();
         applyButton.Click += (_, _) => ApplyChanges();
         okButton.Click += (_, _) =>
         {
@@ -252,15 +252,15 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     {
         var designer = new WorkflowDesignerControl { Session = page.Session, Dock = DockStyle.Fill };
         var toolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, Padding = new Padding(5) };
-        var fit = new Button { Text = "适合画布", AutoSize = true };
-        var layout = new Button { Text = "自动布局", AutoSize = true };
+        var fit = ToolbarButton("适合画布");
+        var layout = ToolbarButton("自动布局");
         fit.Click += (_, _) => page.Session.FitToView(designer.ClientSize.Width, designer.ClientSize.Height);
         layout.Click += (_, _) => page.Session.AutoLayout();
         toolbar.Controls.Add(fit);
         toolbar.Controls.Add(layout);
         if (Model.Node is IWorkflowBlockMappingNode block && _editMappings is not null)
         {
-            var mappings = new Button { Text = "输入/输出映射", AutoSize = true };
+            var mappings = ToolbarButton("输入/输出映射");
             mappings.Click += (_, _) => _editMappings(block);
             toolbar.Controls.Add(mappings);
         }
@@ -269,6 +269,13 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         panel.Controls.Add(toolbar);
         return panel;
     }
+
+    private ModernUI.WinForms.ModernButton ToolbarButton(string text) => new()
+    {
+        Text = text,
+        Size = new Size(TextRenderer.MeasureText(text, Font).Width + 32, 30),
+        Margin = new Padding(0, 0, 6, 0)
+    };
 
     /// <summary>创建 Roslyn 脚本编辑器、命令栏和编译诊断列表。</summary>
     private Control CreateScript(WorkflowScriptEditorPageModel page) => new WorkflowCSharpScriptEditorControl
