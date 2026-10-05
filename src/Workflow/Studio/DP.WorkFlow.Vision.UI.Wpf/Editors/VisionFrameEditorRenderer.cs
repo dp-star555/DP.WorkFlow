@@ -25,6 +25,8 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
     private readonly VisionFrameEditorPageModel _model;
     private readonly DP.Vision.WPF.VisionCanvasControl _canvas = new();
     private readonly ComboBox _source = new() { Width = 120, Margin = new Thickness(3) };
+    private readonly ComboBox _tool = new() { Width = 120, Margin = new Thickness(3) };
+    private bool _syncingTool;
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, MinHeight = 42, Margin = new Thickness(5) };
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private bool _disposed;
@@ -62,11 +64,16 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
             showMask.Unchecked += (_, _) => { model.ShowMask = false; RefreshPreview(); };
             tools.Children.Add(showMask);
         }
-        Button("选择/移动", () => Editing().Tool = ERoiTool.Select, model.CanEdit);
-        Button("绘制范围", () => Editing().Tool = ERoiTool.Rectangle, model.CanEdit);
-        Button("旋转矩形", () => Editing().Tool = ERoiTool.RotatedRectangle, model.SupportsRegions);
-        Button("椭圆", () => Editing().Tool = ERoiTool.Ellipse, model.SupportsRegions);
-        Button("多边形", () => Editing().Tool = ERoiTool.Polygon, model.SupportsRegions);
+        _tool.ItemsSource = model.RegionTools;
+        _tool.SelectedIndex = 0;
+        _tool.IsEnabled = model.CanEdit;
+        _tool.SelectionChanged += (_, _) =>
+        {
+            if (_syncingTool || _tool.SelectedItem is not RoiToolChoice choice) return;
+            try { Editing().Tool = choice.Tool; _canvas.Focus(); }
+            catch (Exception ex) { _status.Text = ex.Message; }
+        };
+        tools.Children.Add(_tool);
         Button("完成轮廓", () => Editing().Finish(), model.SupportsRegions);
         Button("设为排除", () => Editing().SetSelectedMetadata(ERoiPurpose.Exclude, true), model.SupportsRegions);
         Button("设为包含", () => Editing().SetSelectedMetadata(ERoiPurpose.Include, true), model.SupportsRegions);
@@ -129,6 +136,7 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
             using var frame = _model.Capture(_source.SelectedIndex);
             _canvas.Editor = _source.SelectedIndex == 4 ? (_picking?.Invoke() == true || _template is { PickOrigin: true } or { PickDirection: true }) ? null : _model.Template?.Editor
                 : _source.SelectedIndex == 5 ? null : !_model.IsTemplateEditor && _model.CanEdit && _model.CoordinateEditingReady ? _model.Editor : null;
+            SyncTool();
             if (frame is not null) { _canvas.Present(frame); if (_model.IsTemplateEditor && _fittedFrame != frame.FrameId) { _fittedFrame = frame.FrameId; _canvas.FitToWindow(); } _status.Text = _source.SelectedIndex is 4 or 5 ? _model.Template?.Status : _model.Status; }
             else
             {
@@ -138,6 +146,15 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
         }
         catch (Exception ex) { _canvas.Editor = null; _status.Text = ex.Message; }
     }
+    // 编辑器创建形状后会自动回到“选择”，下拉框跟随当前编辑器的工具。
+    private void SyncTool()
+    {
+        if (_canvas.Editor is not { } editor || _tool.ItemsSource is not IReadOnlyList<RoiToolChoice> tools
+            || RoiToolChoice.Find(tools, editor.Tool) is not { } choice || ReferenceEquals(_tool.SelectedItem, choice)) return;
+        _syncingTool = true;
+        try { _tool.SelectedItem = choice; } finally { _syncingTool = false; }
+    }
+
     public void Dispose()
     {
         if (_disposed) return; _disposed = true;

@@ -22,6 +22,9 @@ internal sealed class VisionFrameEditorControl : UserControl
     private readonly VisionFrameEditorPageModel _model;
     private readonly DP.Vision.Winform.VisionCanvasControl _canvas = new() { Dock = DockStyle.Fill };
     private readonly ModernUI.WinForms.ModernSelect _source = ToolSelect(120);
+    private readonly ModernUI.WinForms.ModernSelect _tool = ToolSelect(120);
+    private IReadOnlyList<RoiToolChoice> _tools = Array.Empty<RoiToolChoice>();
+    private bool _syncingTool;
     private readonly Label _status = new() { Dock = DockStyle.Bottom, Height = 52, AutoEllipsis = true };
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 100 };
     private readonly VisionTemplateEditorControl? _template;
@@ -68,11 +71,17 @@ internal sealed class VisionFrameEditorControl : UserControl
             showMask.CheckedChanged += (_, _) => { model.ShowMask = showMask.Checked; RefreshPreview(); };
             tools.Controls.Add(showMask);
         }
-        Button("选择/移动", () => Editing().Tool = ERoiTool.Select, model.CanEdit);
-        Button("绘制范围", () => Editing().Tool = ERoiTool.Rectangle, model.CanEdit);
-        Button("旋转矩形", () => Editing().Tool = ERoiTool.RotatedRectangle, model.SupportsRegions);
-        Button("椭圆", () => Editing().Tool = ERoiTool.Ellipse, model.SupportsRegions);
-        Button("多边形", () => Editing().Tool = ERoiTool.Polygon, model.SupportsRegions);
+        _tools = model.RegionTools;
+        _tool.Items.AddRange(_tools.Cast<object>().ToArray());
+        _tool.SelectedIndex = 0;
+        _tool.Enabled = model.CanEdit;
+        _tool.SelectedIndexChanged += (_, _) =>
+        {
+            if (_syncingTool || _tool.SelectedIndex < 0) return;
+            try { Editing().Tool = _tools[_tool.SelectedIndex].Tool; _canvas.Focus(); }
+            catch (Exception ex) { _status.Text = ex.Message; }
+        };
+        tools.Controls.Add(_tool);
         Button("完成轮廓", () => Editing().Finish(), model.SupportsRegions);
         Button("设为排除", () => Editing().SetSelectedMetadata(ERoiPurpose.Exclude, true), model.SupportsRegions);
         Button("设为包含", () => Editing().SetSelectedMetadata(ERoiPurpose.Include, true), model.SupportsRegions);
@@ -147,6 +156,7 @@ internal sealed class VisionFrameEditorControl : UserControl
             using var frame = _model.Capture(_source.SelectedIndex);
             _canvas.Editor = _source.SelectedIndex == 4 ? (_picking?.Invoke() == true || _template is { PickOrigin: true } or { PickDirection: true }) ? null : _model.Template?.Editor
                 : _source.SelectedIndex == 5 ? null : !_model.IsTemplateEditor && _model.CanEdit && _model.CoordinateEditingReady ? _model.Editor : null;
+            SyncTool();
             if (frame is not null) { _canvas.Present(frame); if (_model.IsTemplateEditor && _fittedFrame != frame.FrameId) { _fittedFrame = frame.FrameId; _canvas.FitToWindow(); } _status.Text = _source.SelectedIndex is 4 or 5 ? _model.Template?.Status : _model.Status; }
             else
             {
@@ -155,6 +165,16 @@ internal sealed class VisionFrameEditorControl : UserControl
             }
         }
         catch (Exception ex) { _canvas.Editor = null; _status.Text = ex.Message; }
+    }
+
+    // 编辑器创建形状后会自动回到“选择”，下拉框跟随当前编辑器的工具。
+    private void SyncTool()
+    {
+        if (_canvas.Editor is not { } editor || RoiToolChoice.Find(_tools, editor.Tool) is not { } choice) return;
+        int index = _tools.ToList().IndexOf(choice);
+        if (_tool.SelectedIndex == index) return;
+        _syncingTool = true;
+        try { _tool.SelectedIndex = index; } finally { _syncingTool = false; }
     }
 
     protected override void Dispose(bool disposing)
