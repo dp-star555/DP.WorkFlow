@@ -176,6 +176,12 @@ public sealed class VisionOperatorPipelineTests
                 var pose = Output<TemplatePoseResult>(host, "pose"); Assert.Equal(14.5, pose.CenterX, 8); Assert.Equal(0, pose.AngleDegrees, 8);
                 var mapped = Output<Coordinate2D>(host, "map"); Assert.Equal(14.5, mapped.X, 8); Assert.Equal(11.5, mapped.Y, 8);
                 var inverse = Output<Coordinate2D>(host, "inverse"); Assert.Equal(0, inverse.X, 8); Assert.Equal(0, inverse.Y, 8);
+                // 匹配框和参考轴共用一条摘要标注，不在参考点处重复叠加；拾取参考轴仍得到同一说明。
+                using var page = new VisionFrameEditorPageModel(document.CanvasProjection.Nodes.Single(n => n.Node.Id == "pose").Node, scope);
+                using var canvas = page.Capture(1);
+                var facts = canvas!.Overlay!.Layers.Single(l => l.Id == "facts").Visuals;
+                Assert.Equal(4, facts.Count); Assert.Single(facts, v => v.Caption is not null);
+                Assert.Equal(pose.Summary, page.Pick(new PointD(pose.ReferenceX + 3, pose.ReferenceY), .2));
             }
         }
         finally { File.Delete(template); File.Delete(scene); }
