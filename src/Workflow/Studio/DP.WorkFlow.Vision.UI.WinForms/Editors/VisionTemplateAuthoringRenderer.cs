@@ -166,7 +166,7 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         public Control CreateEditor(PropertyEditorContext context)
         {
             var entry = ((EntryProperty)context.Property).Entry;
-            var combo = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+            var combo = new ModernUI.WinForms.ModernSelect { Dock = DockStyle.Fill, Theme = ModernUI.WinForms.ModernTheme.Dark, DropDownAnimationDuration = 0 };
             combo.Items.AddRange(entry.Choices.Cast<object>().ToArray()); combo.SelectedItem = entry.Choices.FirstOrDefault(c => Equals(c.Value, entry.Value));
             combo.SelectedIndexChanged += (_, _) => { if (combo.SelectedItem is WorkflowPropertyChoice choice) context.CommitValue(choice.Value); };
             return combo;

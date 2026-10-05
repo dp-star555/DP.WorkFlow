@@ -21,7 +21,7 @@ internal sealed class VisionFrameEditorControl : UserControl
 {
     private readonly VisionFrameEditorPageModel _model;
     private readonly DP.Vision.Winform.VisionCanvasControl _canvas = new() { Dock = DockStyle.Fill };
-    private readonly ComboBox _source = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
+    private readonly ModernUI.WinForms.ModernSelect _source = ToolSelect(120);
     private readonly Label _status = new() { Dock = DockStyle.Bottom, Height = 52, AutoEllipsis = true };
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 100 };
     private readonly VisionTemplateEditorControl? _template;
@@ -40,13 +40,14 @@ internal sealed class VisionFrameEditorControl : UserControl
         DP.Vision.UI.RoiEditor Editing() => _source.SelectedIndex == 4 && model.Template != null ? model.Template.Editor : model.IsTemplateEditor ? throw new InvalidOperationException("请切换到模板制作样图后编辑制作区域。") : model.Editor;
         void Button(string text, Action action, bool enabled = true)
         {
-            var button = new Button { Text = text, AutoSize = true, Enabled = enabled };
+            var button = ToolButton(text);
+            button.Enabled = enabled;
             button.Click += (_, _) => { try { action(); RefreshPreview(); _status.Text = model.Status; } catch (Exception ex) { _status.Text = ex.Message; } };
             tools.Controls.Add(button);
         }
         if (model.CanBindCoordinates)
         {
-            var coordinates = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160 };
+            var coordinates = ToolSelect(160);
             coordinates.Items.AddRange(model.CoordinateSources.Cast<object>().ToArray());
             if (coordinates.Items.Count > 0) coordinates.SelectedIndex = 0;
             tools.Controls.Add(coordinates);
@@ -57,7 +58,13 @@ internal sealed class VisionFrameEditorControl : UserControl
         Button("适应窗口", _canvas.FitToWindow);
         if (model.SupportsMaskPreview)
         {
-            var showMask = new CheckBox { Text = "显示有效掩膜", Checked = model.ShowMask, AutoSize = true };
+            var showMask = new ModernUI.WinForms.ModernCheckbox
+            {
+                Text = "显示有效掩膜",
+                Checked = model.ShowMask,
+                Theme = ModernUI.WinForms.ModernTheme.Dark,
+                Size = new Size(TextRenderer.MeasureText("显示有效掩膜", Font).Width + 32, 30)
+            };
             showMask.CheckedChanged += (_, _) => { model.ShowMask = showMask.Checked; RefreshPreview(); };
             tools.Controls.Add(showMask);
         }
@@ -72,7 +79,7 @@ internal sealed class VisionFrameEditorControl : UserControl
         Button("删除ROI", () => Editing().DeleteSelected(), model.CanEdit);
         Button("全图", () => { if (_source.SelectedIndex == 4) Editing().Load(new RoiDocument(Array.Empty<RoiDefinition>())); else if (!model.IsTemplateEditor) model.UseFullImage(); else throw new InvalidOperationException("请切换到模板制作样图。"); }, model.CanEdit);
         Button("撤销ROI", () => Editing().Undo(), model.CanEdit);
-        var read = new Button { Text = "预览文件…", AutoSize = true };
+        var read = ToolButton("预览文件…");
         read.Click += async (_, _) =>
         {
             using var dialog = new OpenFileDialog { Filter = "图像|*.png;*.bmp;*.jpg;*.jpeg;*.tif;*.tiff|所有文件|*.*" };
@@ -106,6 +113,20 @@ internal sealed class VisionFrameEditorControl : UserControl
     }
 
     internal void SetView(int view) { _source.SelectedIndex = view; RefreshPreview(); }
+
+    private static ModernUI.WinForms.ModernSelect ToolSelect(int width) => new()
+    {
+        Size = new Size(width, 30),
+        Theme = ModernUI.WinForms.ModernTheme.Dark,
+        DropDownAnimationDuration = 0
+    };
+
+    private ModernUI.WinForms.ModernButton ToolButton(string text) => new()
+    {
+        Text = text,
+        Theme = ModernUI.WinForms.ModernTheme.Dark,
+        Size = new Size(TextRenderer.MeasureText(text, Font).Width + 28, 30)
+    };
 
     internal void InitializeTemplate(Func<Task> open)
     {

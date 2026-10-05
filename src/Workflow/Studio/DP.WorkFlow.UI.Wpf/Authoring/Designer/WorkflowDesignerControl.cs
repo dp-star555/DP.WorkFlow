@@ -21,21 +21,18 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         new FrameworkPropertyMetadata(null, OnSessionPropertyChanged));
 
     private WorkflowDesignerSession? _session;
-    private WorkflowCanvasNode? _dragNode;
+    private WorkflowNodeDragOperation? _nodeDrag;
     private WorkflowConnectionModel? _dragConnection;
     private WorkflowConnectionModel? _dragLabelConnection;
     private double _dragLabelOrigin;
     private int _dragWaypointIndex = -1;
     private WorkflowPoint _dragWaypointOrigin;
-    private WorkflowPoint _dragStartCanvas;
-    private readonly Dictionary<string, WorkflowPoint> _dragNodeOrigins = new(StringComparer.Ordinal);
-    private readonly Dictionary<WorkflowConnectionModel, WorkflowPoint[]> _dragConnectionWaypointOrigins = new();
     private Point _marqueeStart;
     private Point _marqueeCurrent;
     private bool _marqueeAdditive;
     private Point _panStart;
     private WorkflowPoint _panOrigin;
-    private (WorkflowCanvasNode Node, WorkflowPortDescriptor Port, WorkflowPoint Point, WorkflowPortSide Side)? _connectionStart;
+    private WorkflowPortHit? _connectionStart;
     private WorkflowPortSide? _portDropSide;
     private Point _pointer;
     private InteractionMode _mode;
@@ -107,7 +104,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             DrawOrthogonalPath(
                 drawingContext,
                 new Pen(Freeze(new SolidColorBrush(Color.FromRgb(56, 189, 248))), 2),
-                BuildOrthogonalPath(
+                WorkflowDesignerInteraction.BuildOrthogonalPath(
                     _connectionStart.Value.Point,
                     new WorkflowPoint(_pointer.X, _pointer.Y),
                     Array.Empty<WorkflowPoint>()));
@@ -116,8 +113,6 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     }
 
     /// <summary>验证拖入数据是否为工作流工具箱项目。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private static void OnToolboxDrag(object sender, DragEventArgs e)
     {
         e.Effects = e.Data.GetDataPresent(typeof(WorkflowToolboxItem))
@@ -127,15 +122,13 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     }
 
     /// <summary>处理工具箱项目放置，在空白处或连接线上创建节点。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnToolboxDrop(object sender, DragEventArgs e)
     {
         if (_session is null || e.Data.GetData(typeof(WorkflowToolboxItem)) is not WorkflowToolboxItem item)
             return;
         var point = e.GetPosition(this);
         var canvas = WorkflowDesignerGeometry.ScreenToCanvas(_session, point.X, point.Y);
-        var insertion = HitConnectionInsertion(point.X, point.Y, 14);
+        var insertion = WorkflowDesignerInteraction.HitConnectionInsertion(_session, point.X, point.Y, 14);
         if (insertion is null
             || _session.AddNodeOnConnection(
                 item.NodeType,
@@ -151,7 +144,6 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     }
 
     /// <summary>处理鼠标按下并启动选择、拖动、平移、连接或框选交互。</summary>
-    /// <param name="e">事件参数。</param>
     protected override void OnMouseDown(MouseButtonEventArgs e)
     {
         base.OnMouseDown(e);
@@ -161,7 +153,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         _pointer = e.GetPosition(this);
         if (e.ChangedButton == MouseButton.Right)
         {
-            var contextConnection = HitConnection(_pointer.X, _pointer.Y);
+            var contextConnection = WorkflowDesignerInteraction.HitConnection(_session, _pointer.X, _pointer.Y);
             if (contextConnection is not null)
             {
                 if (ReferenceEquals(_session.SelectedConnection, contextConnection))
@@ -183,7 +175,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         }
         if (e.ChangedButton != MouseButton.Left)
             return;
-        var waypoint = HitWaypoint(_pointer.X, _pointer.Y);
+        var waypoint = WorkflowDesignerInteraction.HitWaypoint(_session, _pointer.X, _pointer.Y);
         if (waypoint.HasValue)
         {
             if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
@@ -208,7 +200,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             CaptureMouse();
             return;
         }
-        var portHit = HitSingleOutputSideTarget(_pointer.X, _pointer.Y)
+        var portHit = WorkflowDesignerInteraction.HitSingleOutputSideTarget(_session, _pointer.X, _pointer.Y)
             ?? HitPort(_pointer.X, _pointer.Y, WorkflowPortDirection.Output)
             ?? HitPort(_pointer.X, _pointer.Y, WorkflowPortDirection.Input);
         if (portHit.HasValue)
@@ -221,10 +213,10 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             InvalidateVisual();
             return;
         }
-        var node = HitNode(_pointer.X, _pointer.Y);
+        var node = WorkflowDesignerInteraction.HitNode(_session, _pointer.X, _pointer.Y);
         if (node is null)
         {
-            var connection = HitConnection(_pointer.X, _pointer.Y);
+            var connection = WorkflowDesignerInteraction.HitConnection(_session, _pointer.X, _pointer.Y);
             if (connection is not null)
                 _session.SelectConnection(connection);
             else
@@ -245,26 +237,14 @@ public sealed class WorkflowDesignerControl : FrameworkElement
                 _session.SelectNode(node.Node.Id, additive);
             if (!_session.SelectedNodeIds.Contains(node.Node.Id))
                 return;
-            _dragNode = node;
-            _dragStartCanvas = WorkflowDesignerGeometry.ScreenToCanvas(_session, _pointer.X, _pointer.Y);
-            _dragNodeOrigins.Clear();
-            foreach (var selected in _session.Canvas.Nodes.Where(item => _session.SelectedNodeIds.Contains(item.Node.Id)))
-                _dragNodeOrigins[selected.Node.Id] = new WorkflowPoint(selected.X, selected.Y);
-            _dragConnectionWaypointOrigins.Clear();
-            foreach (var connection in _session.Canvas.Connections.Where(connection =>
-                         (_session.SelectedNodeIds.Contains(connection.FromNodeId)
-                          || _session.SelectedNodeIds.Contains(connection.ToNodeId))
-                         && connection.Waypoints.Count > 0))
-            {
-                _dragConnectionWaypointOrigins[connection] = connection.Waypoints.ToArray();
-            }
+            _nodeDrag = new WorkflowNodeDragOperation(
+                _session, WorkflowDesignerGeometry.ScreenToCanvas(_session, _pointer.X, _pointer.Y));
             _mode = InteractionMode.MoveNode;
             CaptureMouse();
         }
     }
 
     /// <summary>处理指针移动并实时更新当前交互状态。</summary>
-    /// <param name="e">事件参数。</param>
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
@@ -278,26 +258,9 @@ public sealed class WorkflowDesignerControl : FrameworkElement
                 _panOrigin.X + _pointer.X - _panStart.X,
                 _panOrigin.Y + _pointer.Y - _panStart.Y);
         }
-        else if (_mode == InteractionMode.MoveNode && _dragNode is not null)
+        else if (_mode == InteractionMode.MoveNode && _nodeDrag is not null)
         {
-            var current = WorkflowDesignerGeometry.ScreenToCanvas(_session, _pointer.X, _pointer.Y);
-            var deltaX = current.X - _dragStartCanvas.X;
-            var deltaY = current.Y - _dragStartCanvas.Y;
-            foreach (var selected in _session.Canvas.Nodes.Where(item => _dragNodeOrigins.ContainsKey(item.Node.Id)))
-            {
-                var origin = _dragNodeOrigins[selected.Node.Id];
-                var snapped = _session.SnapNodePosition(selected, new WorkflowPoint(origin.X + deltaX, origin.Y + deltaY));
-                selected.X = snapped.X;
-                selected.Y = snapped.Y;
-            }
-            foreach (var pair in _dragConnectionWaypointOrigins)
-            {
-                var movesBothEnds = _dragNodeOrigins.ContainsKey(pair.Key.FromNodeId)
-                    && _dragNodeOrigins.ContainsKey(pair.Key.ToNodeId);
-                SetLiveWaypoints(pair.Key, movesBothEnds
-                    ? pair.Value.Select(point => new WorkflowPoint(point.X + deltaX, point.Y + deltaY))
-                    : Array.Empty<WorkflowPoint>());
-            }
+            _nodeDrag.Update(WorkflowDesignerGeometry.ScreenToCanvas(_session, _pointer.X, _pointer.Y));
             InvalidateVisual();
         }
         else if (_mode == InteractionMode.MoveWaypoint && _dragConnection is not null && _dragWaypointIndex >= 0)
@@ -308,16 +271,16 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         }
         else if (_mode == InteractionMode.MoveConnectionLabel && _dragLabelConnection is not null)
         {
-            _dragLabelConnection.LabelPosition = ProjectPathPosition(
-                GetConnectionPathForHit(_dragLabelConnection), _pointer.X, _pointer.Y);
+            _dragLabelConnection.LabelPosition = WorkflowDesignerInteraction.ProjectPathPosition(
+                WorkflowDesignerInteraction.GetConnectionPath(_session, _dragLabelConnection), _pointer.X, _pointer.Y);
             InvalidateVisual();
         }
         else if (_mode == InteractionMode.MovePort && _connectionStart.HasValue)
         {
             var rect = WorkflowDesignerGeometry.GetNodeScreenRect(_session, _connectionStart.Value.Node);
-            _portDropSide = NearestSide(rect, _pointer.X, _pointer.Y);
+            _portDropSide = WorkflowDesignerInteraction.NearestSide(rect, _pointer.X, _pointer.Y);
             if (_connectionStart.Value.Port.Direction == WorkflowPortDirection.Output
-                && !IsNearNode(rect, _pointer.X, _pointer.Y, 42))
+                && !WorkflowDesignerInteraction.IsNearRect(rect, _pointer.X, _pointer.Y, 42))
             {
                 _mode = InteractionMode.Connect;
                 _portDropSide = null;
@@ -337,32 +300,15 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     }
 
     /// <summary>完成当前鼠标交互并将最终结果提交到设计会话。</summary>
-    /// <param name="e">事件参数。</param>
     protected override void OnMouseUp(MouseButtonEventArgs e)
     {
         base.OnMouseUp(e);
         if (_session is null)
             return;
         var position = e.GetPosition(this);
-        if (_mode == InteractionMode.MoveNode && _dragNode is not null)
+        if (_mode == InteractionMode.MoveNode && _nodeDrag is not null)
         {
-            var positions = _dragNodeOrigins.Keys.ToDictionary(
-                id => id,
-                id =>
-                {
-                    var selected = _session.Canvas.Nodes.First(item => item.Node.Id == id);
-                    return new WorkflowPoint(selected.X, selected.Y);
-                },
-                StringComparer.Ordinal);
-            foreach (var pair in _dragNodeOrigins)
-            {
-                var selected = _session.Canvas.Nodes.First(item => item.Node.Id == pair.Key);
-                selected.X = pair.Value.X;
-                selected.Y = pair.Value.Y;
-            }
-            foreach (var pair in _dragConnectionWaypointOrigins)
-                SetLiveWaypoints(pair.Key, pair.Value);
-            _session.MoveNodes(positions);
+            _nodeDrag.Commit();
         }
         else if (_mode == InteractionMode.MoveWaypoint && _dragConnection is not null && _dragWaypointIndex >= 0)
         {
@@ -373,11 +319,10 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         else if (_mode == InteractionMode.Marquee)
         {
             var marquee = NormalizeRectangle(_marqueeStart, _marqueeCurrent);
-            var selectedIds = _session.Canvas.Nodes
-                .Where(node => Intersects(WorkflowDesignerGeometry.GetNodeScreenRect(_session, node), marquee))
-                .Select(node => node.Node.Id)
-                .ToArray();
-            _session.SelectNodes(selectedIds, _marqueeAdditive);
+            _session.SelectNodes(
+                WorkflowDesignerInteraction.GetNodeIdsInScreenRect(
+                    _session, new WorkflowDesignerRect(marquee.X, marquee.Y, marquee.Width, marquee.Height)),
+                _marqueeAdditive);
         }
         else if (_mode == InteractionMode.MoveConnectionLabel && _dragLabelConnection is not null)
         {
@@ -414,9 +359,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
                 }
             }
         }
-        _dragNode = null;
-        _dragNodeOrigins.Clear();
-        _dragConnectionWaypointOrigins.Clear();
+        _nodeDrag = null;
         _dragConnection = null;
         _dragLabelConnection = null;
         _dragWaypointIndex = -1;
@@ -429,7 +372,6 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     }
 
     /// <summary>以指针位置为中心缩放工作流画布。</summary>
-    /// <param name="e">事件参数。</param>
     protected override void OnMouseWheel(MouseWheelEventArgs e)
     {
         base.OnMouseWheel(e);
@@ -442,20 +384,19 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     }
 
     /// <summary>处理 WPF 左键双击节点或连接。</summary>
-    /// <param name="e">事件参数。</param>
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         if (e.ClickCount == 2)
         {
             var position = e.GetPosition(this);
-            var node = HitNode(position.X, position.Y);
+            var node = _session is null ? null : WorkflowDesignerInteraction.HitNode(_session, position.X, position.Y);
             if (node is not null)
             {
                 NodeEditRequested?.Invoke(this, node.Node);
                 e.Handled = true;
                 return;
             }
-            if (_session is not null && HitConnection(position.X, position.Y) is { } connection)
+            if (_session is not null && WorkflowDesignerInteraction.HitConnection(_session, position.X, position.Y) is { } connection)
             {
                 _session.SelectConnection(connection);
                 _session.AddConnectionWaypoint(
@@ -469,7 +410,6 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     }
 
     /// <summary>处理设计器复制、粘贴、删除和撤销重做快捷键。</summary>
-    /// <param name="e">事件参数。</param>
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
@@ -518,8 +458,10 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             return;
         foreach (var connection in _session.Canvas.Connections)
         {
-            var source = FindPortPoint(connection.FromNodeId, connection.FromPort, WorkflowPortDirection.Output, connection.FromSide);
-            var target = FindPortPoint(connection.ToNodeId, connection.ToPort, WorkflowPortDirection.Input, connection.ToSide);
+            var source = WorkflowDesignerInteraction.FindPortPoint(
+                _session, connection.FromNodeId, connection.FromPort, WorkflowPortDirection.Output, connection.FromSide);
+            var target = WorkflowDesignerInteraction.FindPortPoint(
+                _session, connection.ToNodeId, connection.ToPort, WorkflowPortDirection.Input, connection.ToSide);
             if (source.HasValue && target.HasValue)
             {
                 var selected = ReferenceEquals(_session.SelectedConnection, connection);
@@ -561,7 +503,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             8);
         var stateRadius = Math.Max(1, 4.5 * _session.Zoom);
         context.DrawEllipse(stateBrush, null, new Point(rect.X + 14 * _session.Zoom, rect.Y + 14 * _session.Zoom), stateRadius, stateRadius);
-        var runtimeText = GetRuntimeDisplayText(item);
+        var runtimeText = WorkflowDesignerInteraction.GetRuntimeDisplayText(_session, item);
         var runtimeMeasureSize = Math.Max(3, 7.5 * _session.Zoom);
         var measuredRuntimeWidth = string.IsNullOrEmpty(runtimeText)
             ? 0
@@ -587,19 +529,6 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         DrawConnectionInputTargets(context, item);
         if (selected)
             DrawPortSideTargets(context, item, bounds);
-    }
-
-    /// <summary>生成节点执行序号和耗时显示文本。</summary>
-    /// <param name="node">目标画布节点。</param>
-    /// <returns>返回处理结果。</returns>
-    private string? GetRuntimeDisplayText(WorkflowCanvasNode node)
-    {
-        var info = _session?.GetNodeRuntimeInfo(node.Node.Id);
-        if (info is not { ExecutionCount: > 0 }) return null;
-        var elapsed = info.State == E_NodeState.Running && info.StartedAt.HasValue
-            ? DateTimeOffset.UtcNow - info.StartedAt.Value
-            : info.Elapsed;
-        return $"#{info.ExecutionSequence}  {FormatElapsed(elapsed)}";
     }
 
     /// <summary>在节点标题区域绘制执行序号和耗时。</summary>
@@ -660,11 +589,8 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             : null;
         foreach (var side in Enum.GetValues<WorkflowPortSide>())
         {
-            var hasConnectedEndpoint = _session is not null
-                && _session.GetPorts(node.Node.Id, WorkflowPortDirection.Input)
-                    .Concat(_session.GetPorts(node.Node.Id, WorkflowPortDirection.Output))
-                    .Any(port => IsPortConnectedAtSide(node, port, side));
-            if (hasConnectedEndpoint) continue;
+            if (_session is not null && WorkflowDesignerInteraction.HasConnectedEndpointAtSide(_session, node, side))
+                continue;
             var center = side switch
             {
                 WorkflowPortSide.Left => new Point(bounds.Left, bounds.Top + bounds.Height / 2),
@@ -688,17 +614,6 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         }
     }
 
-    /// <summary>将运行耗时格式化为合适精度的文本。</summary>
-    /// <param name="elapsed">“elapsed”参数。</param>
-    /// <returns>返回处理结果。</returns>
-    private static string FormatElapsed(TimeSpan elapsed) => elapsed.TotalSeconds >= 1
-        ? $"{elapsed.TotalSeconds:F2}s"
-        : elapsed.TotalMilliseconds >= 10
-            ? $"{elapsed.TotalMilliseconds:F0}ms"
-            : elapsed.TotalMilliseconds >= 1
-                ? $"{elapsed.TotalMilliseconds:F1}ms"
-                : $"{elapsed.TotalMilliseconds:F3}ms";
-
     /// <summary>绘制节点指定方向的可见端口及标签。</summary>
     /// <param name="context">绘图上下文或当前编辑上下文。</param>
     /// <param name="node">目标画布节点。</param>
@@ -715,7 +630,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         {
             var port = ports[index];
             var side = node.GetPortSide(port);
-            var connected = IsPortConnectedAtSide(node, port, side);
+            var connected = WorkflowDesignerInteraction.IsPortConnectedAtSide(_session, node, port, side);
             var semanticHandle = !connected
                 && direction == WorkflowPortDirection.Output
                 && ports.Count > 1;
@@ -730,60 +645,9 @@ public sealed class WorkflowDesignerControl : FrameworkElement
                 new Point(point.X, point.Y),
                 radius,
                 radius);
-            if ((connected || semanticHandle) && ShouldDrawPortLabel(node, direction))
+            if ((connected || semanticHandle) && WorkflowDesignerInteraction.ShouldDrawPortLabel(_session, node, direction))
                 DrawPortLabel(context, node, port, point, radius, direction);
         }
-    }
-
-    /// <summary>判断节点指定方向是否需要显示端口标签。</summary>
-    /// <param name="node">目标画布节点。</param>
-    /// <param name="direction">端口方向。</param>
-    /// <returns>返回处理结果。</returns>
-    private bool ShouldDrawPortLabel(WorkflowCanvasNode node, WorkflowPortDirection direction) =>
-        _session?.GetPorts(node.Node.Id, direction).Count > 1;
-
-    /// <summary>判断端口在指定边是否存在连接。</summary>
-    /// <param name="node">目标画布节点。</param>
-    /// <param name="port">“port”参数。</param>
-    /// <param name="side">端口所在边。</param>
-    /// <returns>返回处理结果。</returns>
-    private bool IsPortConnectedAtSide(
-        WorkflowCanvasNode node,
-        WorkflowPortDescriptor port,
-        WorkflowPortSide side) =>
-        _session?.Canvas.Connections.Any(connection => port.Direction == WorkflowPortDirection.Output
-            ? connection.FromNodeId == node.Node.Id && connection.FromPort == port.Key
-              && (connection.FromSide ?? node.GetPortSide(port)) == side
-            : connection.ToNodeId == node.Node.Id && connection.ToPort == port.Key
-              && (connection.ToSide ?? node.GetPortSide(port)) == side) == true;
-
-    /// <summary>命中只有一个输出端口节点的四边快捷连接目标。</summary>
-    /// <param name="x">屏幕横坐标。</param>
-    /// <param name="y">屏幕纵坐标。</param>
-    /// <returns>返回处理结果。</returns>
-    private (WorkflowCanvasNode Node, WorkflowPortDescriptor Port, WorkflowPoint Point, WorkflowPortSide Side)?
-        HitSingleOutputSideTarget(double x, double y)
-    {
-        if (_session is null || _session.SelectedNodeIds.Count != 1) return null;
-        var node = _session.Canvas.Nodes.FirstOrDefault(item => _session.SelectedNodeIds.Contains(item.Node.Id));
-        if (node is null) return null;
-        var outputs = _session.GetPorts(node.Node.Id, WorkflowPortDirection.Output);
-        if (outputs.Count != 1) return null;
-        var bounds = WorkflowDesignerGeometry.GetNodeScreenRect(_session, node);
-        foreach (var side in Enum.GetValues<WorkflowPortSide>())
-        {
-            var point = side switch
-            {
-                WorkflowPortSide.Left => new WorkflowPoint(bounds.X, bounds.Y + bounds.Height / 2),
-                WorkflowPortSide.Top => new WorkflowPoint(bounds.X + bounds.Width / 2, bounds.Y),
-                WorkflowPortSide.Right => new WorkflowPoint(bounds.X + bounds.Width, bounds.Y + bounds.Height / 2),
-                WorkflowPortSide.Bottom => new WorkflowPoint(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height),
-                _ => default
-            };
-            if (Math.Pow(point.X - x, 2) + Math.Pow(point.Y - y, 2) <= 36)
-                return (node, outputs[0], point, side);
-        }
-        return null;
     }
 
     /// <summary>绘制框选区域。</summary>
@@ -802,171 +666,16 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             rect);
     }
 
-    /// <summary>返回指定屏幕坐标命中的最上层节点。</summary>
-    /// <param name="x">屏幕横坐标。</param>
-    /// <param name="y">屏幕纵坐标。</param>
-    /// <returns>返回处理结果。</returns>
-    private WorkflowCanvasNode? HitNode(double x, double y) => _session?.Canvas.Nodes
-        .Reverse()
-        .FirstOrDefault(node => WorkflowDesignerGeometry.GetNodeScreenRect(_session, node).Contains(x, y));
-
-    /// <summary>返回指定屏幕坐标命中的端口及其实际边。</summary>
-    /// <param name="x">屏幕横坐标。</param>
-    /// <param name="y">屏幕纵坐标。</param>
-    /// <param name="direction">端口方向。</param>
-    /// <returns>返回处理结果。</returns>
-    private (WorkflowCanvasNode Node, WorkflowPortDescriptor Port, WorkflowPoint Point, WorkflowPortSide Side)? HitPort(
-        double x,
-        double y,
-        WorkflowPortDirection direction)
-    {
-        if (_session is null)
-            return null;
-        foreach (var node in _session.Canvas.Nodes.Reverse())
-        {
-            var ports = _session.GetPorts(node.Node.Id, direction);
-            for (var index = 0; index < ports.Count; index++)
-            {
-                var port = ports[index];
-                var side = node.GetPortSide(port);
-                var point = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports);
-                if (Math.Sqrt(Math.Pow(point.X - x, 2) + Math.Pow(point.Y - y, 2)) <= 10)
-                    return (node, port, point, side);
-                if (direction == WorkflowPortDirection.Input
-                    && _mode == InteractionMode.Connect
-                    && _connectionStart?.Port.Direction == WorkflowPortDirection.Output
-                    && _connectionStart?.Node != node)
-                {
-                    foreach (var candidateSide in Enum.GetValues<WorkflowPortSide>())
-                    {
-                        var candidate = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports, candidateSide);
-                        if (Math.Sqrt(Math.Pow(candidate.X - x, 2) + Math.Pow(candidate.Y - y, 2)) <= 10)
-                            return (node, port, candidate, candidateSide);
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    /// <summary>查找拖放位置附近可插入节点的连接线段。</summary>
-    /// <param name="x">屏幕横坐标。</param>
-    /// <param name="y">屏幕纵坐标。</param>
-    /// <param name="tolerance">命中测试允许的像素距离。</param>
-    /// <returns>返回处理结果。</returns>
-    private (WorkflowConnectionModel Connection, WorkflowPortSide InputSide, WorkflowPortSide OutputSide)?
-        HitConnectionInsertion(double x, double y, double tolerance)
-    {
-        if (_session is null) return null;
-        foreach (var connection in _session.Canvas.Connections.Reverse())
-        {
-            var start = FindPortPoint(connection.FromNodeId, connection.FromPort, WorkflowPortDirection.Output, connection.FromSide);
-            var end = FindPortPoint(connection.ToNodeId, connection.ToPort, WorkflowPortDirection.Input, connection.ToSide);
-            if (!start.HasValue || !end.HasValue) continue;
-            var points = GetConnectionPath(connection, start.Value, end.Value);
-            for (var index = 0; index < points.Count - 1; index++)
-            {
-                var first = points[index];
-                var second = points[index + 1];
-                if (DistanceToSegment(x, y, first, second) > tolerance) continue;
-                if (Math.Abs(second.X - first.X) >= Math.Abs(second.Y - first.Y))
-                    return second.X >= first.X
-                        ? (connection, WorkflowPortSide.Left, WorkflowPortSide.Right)
-                        : (connection, WorkflowPortSide.Right, WorkflowPortSide.Left);
-                return second.Y >= first.Y
-                    ? (connection, WorkflowPortSide.Top, WorkflowPortSide.Bottom)
-                    : (connection, WorkflowPortSide.Bottom, WorkflowPortSide.Top);
-            }
-        }
-        return null;
-    }
-
-    /// <summary>返回指定屏幕坐标附近的最上层连接。</summary>
-    /// <param name="x">屏幕横坐标。</param>
-    /// <param name="y">屏幕纵坐标。</param>
-    /// <param name="tolerance">命中测试允许的像素距离。</param>
-    /// <returns>返回处理结果。</returns>
-    private WorkflowConnectionModel? HitConnection(double x, double y, double tolerance = 7)
-    {
-        if (_session is null)
-            return null;
-        foreach (var connection in _session.Canvas.Connections.Reverse())
-        {
-            var start = FindPortPoint(connection.FromNodeId, connection.FromPort, WorkflowPortDirection.Output, connection.FromSide);
-            var end = FindPortPoint(connection.ToNodeId, connection.ToPort, WorkflowPortDirection.Input, connection.ToSide);
-            if (!start.HasValue || !end.HasValue)
-                continue;
-            var points = GetConnectionPath(connection, start.Value, end.Value);
-            if (points.Zip(points.Skip(1), (first, second) => DistanceToSegment(x, y, first, second))
-                .Any(distance => distance <= tolerance))
-                return connection;
-        }
-        return null;
-    }
-
-    /// <summary>返回指定屏幕坐标命中的连接拐点。</summary>
-    /// <param name="x">屏幕横坐标。</param>
-    /// <param name="y">屏幕纵坐标。</param>
-    /// <returns>返回处理结果。</returns>
-    private (WorkflowConnectionModel Connection, int Index)? HitWaypoint(double x, double y)
-    {
-        if (_session?.SelectedConnection is not { } connection)
-            return null;
-        for (var index = 0; index < connection.Waypoints.Count; index++)
-        {
-            var point = WorkflowDesignerGeometry.CanvasToScreen(
-                _session, connection.Waypoints[index].X, connection.Waypoints[index].Y);
-            if (Math.Abs(point.X - x) <= 9 && Math.Abs(point.Y - y) <= 9)
-                return (connection, index);
-        }
-        return null;
-    }
-
-    /// <summary>查找连接端口当前使用的节点边。</summary>
-    /// <param name="nodeId">节点标识。</param>
-    /// <param name="portKey">端口键。</param>
-    /// <param name="direction">端口方向。</param>
-    /// <returns>返回处理结果。</returns>
-    private WorkflowPortSide FindPortSide(
-        string nodeId,
-        string portKey,
-        WorkflowPortDirection direction)
-    {
-        if (_session is null) return direction == WorkflowPortDirection.Input
-            ? WorkflowPortSide.Left
-            : WorkflowPortSide.Right;
-        var node = _session.Canvas.Nodes.FirstOrDefault(item => item.Node.Id == nodeId);
-        if (node is null)
-            return direction == WorkflowPortDirection.Input ? WorkflowPortSide.Left : WorkflowPortSide.Right;
-        var port = _session.GetPorts(nodeId, direction).FirstOrDefault(item => item.Key == portKey);
-        return port is null ? (direction == WorkflowPortDirection.Input ? WorkflowPortSide.Left : WorkflowPortSide.Right) : node.GetPortSide(port);
-    }
-
-    /// <summary>计算指定节点端口的屏幕坐标。</summary>
-    /// <param name="nodeId">节点标识。</param>
-    /// <param name="portKey">端口键。</param>
-    /// <param name="direction">端口方向。</param>
-    /// <param name="sideOverride">可选的连接端点边覆盖。</param>
-    /// <returns>返回处理结果。</returns>
-    private WorkflowPoint? FindPortPoint(
-        string nodeId,
-        string portKey,
-        WorkflowPortDirection direction,
-        WorkflowPortSide? sideOverride = null)
-    {
-        if (_session is null)
-            return null;
-        var node = _session.Canvas.Nodes.FirstOrDefault(item => item.Node.Id == nodeId);
-        if (node is null)
-            return null;
-        var ports = _session.GetPorts(nodeId, direction);
-        var port = ports.FirstOrDefault(item => item.Key == portKey);
-        return port is null ? null : WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports, sideOverride);
-    }
+    /// <summary>返回指定屏幕坐标命中的端口；从输出端口拖出连接时，其他节点输入端口的四边均可命中。</summary>
+    private WorkflowPortHit? HitPort(double x, double y, WorkflowPortDirection direction) =>
+        _session is null
+            ? null
+            : WorkflowDesignerInteraction.HitPort(_session, x, y, direction,
+                _mode == InteractionMode.Connect && _connectionStart?.Port.Direction == WorkflowPortDirection.Output
+                    ? _connectionStart.Value.Node
+                    : null);
 
     /// <summary>处理 WPF Session 依赖属性变化并切换事件订阅。</summary>
-    /// <param name="dependencyObject">“dependencyObject”参数。</param>
-    /// <param name="eventArgs">“eventArgs”参数。</param>
     private static void OnSessionPropertyChanged(
         DependencyObject dependencyObject,
         DependencyPropertyChangedEventArgs eventArgs)
@@ -986,20 +695,9 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     {
         if (_dragLabelConnection is not null)
             _dragLabelConnection.LabelPosition = _dragLabelOrigin;
-        if (_session is not null)
-        {
-            foreach (var pair in _dragNodeOrigins)
-            {
-                var node = _session.Canvas.Nodes.FirstOrDefault(item => item.Node.Id == pair.Key);
-                if (node is not null) { node.X = pair.Value.X; node.Y = pair.Value.Y; }
-            }
-            foreach (var pair in _dragConnectionWaypointOrigins)
-                SetLiveWaypoints(pair.Key, pair.Value);
-        }
+        _nodeDrag?.Cancel();
         _dragLabelConnection = null;
-        _dragNode = null;
-        _dragNodeOrigins.Clear();
-        _dragConnectionWaypointOrigins.Clear();
+        _nodeDrag = null;
         _dragConnection = null;
         _dragWaypointIndex = -1;
         _connectionStart = null;
@@ -1011,8 +709,6 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     }
 
     /// <summary>处理设计会话变化并请求 WPF 画布重绘。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnDesignerSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
     {
         if (Dispatcher.CheckAccess())
@@ -1034,7 +730,8 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         WorkflowPoint start,
         WorkflowPoint end)
     {
-        var points = GetConnectionPath(connection, start, end);
+        if (_session is null) return;
+        var points = WorkflowDesignerInteraction.GetConnectionPath(_session, connection, start, end);
         DrawOrthogonalPath(context, pen, points);
         DrawInsetArrow(context, pen.Brush, points);
     }
@@ -1067,125 +764,13 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         context.DrawGeometry(brush, null, geometry);
     }
 
-    /// <summary>取得用于命中测试的连接屏幕路径。</summary>
-    /// <param name="connection">目标连接。</param>
-    /// <returns>返回处理结果。</returns>
-    private IReadOnlyList<WorkflowPoint> GetConnectionPathForHit(WorkflowConnectionModel connection)
-    {
-        var start = FindPortPoint(connection.FromNodeId, connection.FromPort, WorkflowPortDirection.Output, connection.FromSide);
-        var end = FindPortPoint(connection.ToNodeId, connection.ToPort, WorkflowPortDirection.Input, connection.ToSide);
-        return start.HasValue && end.HasValue
-            ? GetConnectionPath(connection, start.Value, end.Value)
-            : Array.Empty<WorkflowPoint>();
-    }
-
     /// <summary>返回指定屏幕坐标命中的连接标签。</summary>
     /// <param name="x">屏幕横坐标。</param>
     /// <param name="y">屏幕纵坐标。</param>
-    /// <returns>返回处理结果。</returns>
     private WorkflowConnectionModel? HitConnectionLabel(double x, double y) =>
         _session?.Canvas.Connections.Reverse().FirstOrDefault(connection =>
-            ShouldDrawConnectionLabel(connection) && GetConnectionLabelBounds(connection).Contains(x, y));
-
-    /// <summary>计算连接路径指定相对位置处的坐标。</summary>
-    /// <param name="points">路径点集合。</param>
-    /// <param name="position">“position”参数。</param>
-    /// <returns>返回处理结果。</returns>
-    private static WorkflowPoint PointAlongPath(IReadOnlyList<WorkflowPoint> points, double position)
-    {
-        if (points.Count == 0) return default;
-        if (points.Count == 1) return points[0];
-        var lengths = points.Zip(points.Skip(1), (first, second) => PathDistance(first, second)).ToArray();
-        var remaining = lengths.Sum() * Math.Clamp(position, 0, 1);
-        for (var index = 0; index < lengths.Length; index++)
-        {
-            if (remaining > lengths[index]) { remaining -= lengths[index]; continue; }
-            var ratio = lengths[index] <= 0 ? 0 : remaining / lengths[index];
-            return new WorkflowPoint(
-                points[index].X + (points[index + 1].X - points[index].X) * ratio,
-                points[index].Y + (points[index + 1].Y - points[index].Y) * ratio);
-        }
-        return points[^1];
-    }
-
-    /// <summary>将屏幕坐标投影为连接路径上的相对位置。</summary>
-    /// <param name="points">路径点集合。</param>
-    /// <param name="x">屏幕横坐标。</param>
-    /// <param name="y">屏幕纵坐标。</param>
-    /// <returns>返回处理结果。</returns>
-    private static double ProjectPathPosition(IReadOnlyList<WorkflowPoint> points, double x, double y)
-    {
-        if (points.Count < 2) return 0.5;
-        var lengths = points.Zip(points.Skip(1), (first, second) => PathDistance(first, second)).ToArray();
-        var total = lengths.Sum();
-        var traversed = 0d;
-        var bestDistance = double.MaxValue;
-        var bestPosition = 0.5;
-        for (var index = 0; index < lengths.Length; index++)
-        {
-            var first = points[index];
-            var second = points[index + 1];
-            var dx = second.X - first.X;
-            var dy = second.Y - first.Y;
-            var ratio = lengths[index] <= 0 ? 0 : Math.Clamp(((x - first.X) * dx + (y - first.Y) * dy) / (lengths[index] * lengths[index]), 0, 1);
-            var nearestX = first.X + dx * ratio;
-            var nearestY = first.Y + dy * ratio;
-            var distance = Math.Pow(nearestX - x, 2) + Math.Pow(nearestY - y, 2);
-            if (distance < bestDistance)
-            {
-                bestDistance = distance;
-                bestPosition = total <= 0 ? 0.5 : (traversed + lengths[index] * ratio) / total;
-            }
-            traversed += lengths[index];
-        }
-        return Math.Clamp(bestPosition, 0.05, 0.95);
-    }
-
-    /// <summary>计算两个路径点之间的欧氏距离。</summary>
-    /// <param name="first">第一个坐标或矩形。</param>
-    /// <param name="second">第二个坐标或矩形。</param>
-    /// <returns>返回处理结果。</returns>
-    private static double PathDistance(WorkflowPoint first, WorkflowPoint second) =>
-        Math.Sqrt(Math.Pow(second.X - first.X, 2) + Math.Pow(second.Y - first.Y, 2));
-
-    /// <summary>计算连接经过视口转换和障碍物路由后的屏幕路径。</summary>
-    /// <param name="connection">目标连接。</param>
-    /// <param name="start">路径起点。</param>
-    /// <param name="end">路径终点。</param>
-    /// <returns>返回处理结果。</returns>
-    private IReadOnlyList<WorkflowPoint> GetConnectionPath(
-        WorkflowConnectionModel connection,
-        WorkflowPoint start,
-        WorkflowPoint end)
-    {
-        if (_session is null) return Array.Empty<WorkflowPoint>();
-        var waypoints = connection.Waypoints
-            .Select(point => WorkflowDesignerGeometry.CanvasToScreen(_session, point.X, point.Y))
-            .ToArray();
-        const double searchMargin = 160;
-        var search = new WorkflowDesignerRect(
-            Math.Min(start.X, end.X) - searchMargin,
-            Math.Min(start.Y, end.Y) - searchMargin,
-            Math.Abs(end.X - start.X) + searchMargin * 2,
-            Math.Abs(end.Y - start.Y) + searchMargin * 2);
-        var obstacles = _session.Canvas.Nodes
-            .Where(node => node.Node.Id != connection.FromNodeId && node.Node.Id != connection.ToNodeId)
-            .Select(node =>
-            {
-                var rect = WorkflowDesignerGeometry.GetNodeScreenRect(_session, node);
-                return new WorkflowDesignerRect(rect.X - 14, rect.Y - 14, rect.Width + 28, rect.Height + 28);
-            })
-            .Where(rect => rect.X <= search.X + search.Width && rect.X + rect.Width >= search.X
-                && rect.Y <= search.Y + search.Height && rect.Y + rect.Height >= search.Y)
-            .ToArray();
-        return WorkflowOrthogonalRouter.Route(
-            start,
-            end,
-            connection.FromSide ?? FindPortSide(connection.FromNodeId, connection.FromPort, WorkflowPortDirection.Output),
-            connection.ToSide ?? FindPortSide(connection.ToNodeId, connection.ToPort, WorkflowPortDirection.Input),
-            waypoints,
-            obstacles);
-    }
+            WorkflowDesignerInteraction.ShouldDrawConnectionLabel(_session, connection)
+            && GetConnectionLabelBounds(connection).Contains(x, y));
 
     /// <summary>在端口内侧绘制端口键文本。</summary>
     /// <param name="context">绘图上下文或当前编辑上下文。</param>
@@ -1249,24 +834,14 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     {
         if (_session is null) return;
         var ports = _session.GetPorts(node.Node.Id, direction);
-        var endpoints = _session.Canvas.Connections
-            .Select(connection => direction == WorkflowPortDirection.Input
-                ? (NodeId: connection.ToNodeId, PortKey: connection.ToPort, Side: connection.ToSide)
-                : (NodeId: connection.FromNodeId, PortKey: connection.FromPort, Side: connection.FromSide))
-            .Where(item => item.NodeId == node.Node.Id && item.Side.HasValue)
-            .Distinct()
-            .ToArray();
-        foreach (var endpoint in endpoints)
+        foreach (var (port, side) in WorkflowDesignerInteraction.GetSideOverrideEndpoints(_session, node, direction))
         {
-            var port = ports.FirstOrDefault(item => item.Key == endpoint.PortKey);
-            if (port is null || node.GetPortSide(port) == endpoint.Side!.Value) continue;
-            var target = WorkflowDesignerGeometry.GetPortScreenPoint(
-                _session, node, port, ports, endpoint.Side.Value);
+            var target = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports, side);
             var radius = Math.Max(2, WorkflowDesignerGeometry.PortRadius * _session.Zoom * 0.72);
             var brush = direction == WorkflowPortDirection.Input ? Brush(167, 139, 250) : Brush(52, 211, 153);
             context.DrawEllipse(brush, new Pen(CanvasBrush, 1.25), new Point(target.X, target.Y), radius, radius);
-            if (ShouldDrawPortLabel(node, direction))
-                DrawPortLabel(context, node, port, target, radius, direction, endpoint.Side);
+            if (WorkflowDesignerInteraction.ShouldDrawPortLabel(_session, node, direction))
+                DrawPortLabel(context, node, port, target, radius, direction, side);
         }
     }
 
@@ -1279,7 +854,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         WorkflowConnectionModel connection,
         WorkflowPoint source)
     {
-        if (_session is null || !ShouldDrawConnectionLabel(connection)) return;
+        if (_session is null || !WorkflowDesignerInteraction.ShouldDrawConnectionLabel(_session, connection)) return;
         var rect = GetConnectionLabelBounds(connection);
         var background = Brush(37, 37, 38);
         var border = Brush(63, 63, 70);
@@ -1295,107 +870,17 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             foreground);
     }
 
-    /// <summary>判断连接是否需要显示输出语义标签。</summary>
-    /// <param name="connection">目标连接。</param>
-    /// <returns>返回处理结果。</returns>
-    private bool ShouldDrawConnectionLabel(WorkflowConnectionModel connection) =>
-        _session is not null
-        && (_session.GetPorts(connection.FromNodeId, WorkflowPortDirection.Output).Count > 1
-            || connection.FromPort != WorkflowPorts.Success);
-
     /// <summary>计算连接标签的屏幕边界。</summary>
     /// <param name="connection">目标连接。</param>
-    /// <returns>返回处理结果。</returns>
     private Rect GetConnectionLabelBounds(WorkflowConnectionModel connection)
     {
-        var center = PointAlongPath(GetConnectionPathForHit(connection), connection.LabelPosition);
+        var center = _session is null
+            ? default
+            : WorkflowDesignerInteraction.PointAlongPath(
+                WorkflowDesignerInteraction.GetConnectionPath(_session, connection), connection.LabelPosition);
         var size = Math.Max(3, 10 * (_session?.Zoom ?? 1));
         var width = MeasureTextWidth(connection.FromPort, size, FontWeights.SemiBold) + 8;
         return new Rect(center.X - width / 2, center.Y - (size + 6) / 2, width, size + 6);
-    }
-
-    /// <summary>构建包含可选手工拐点的基础正交折线路径。</summary>
-    /// <param name="start">路径起点。</param>
-    /// <param name="end">路径终点。</param>
-    /// <param name="waypoints">手工连接拐点集合。</param>
-    /// <param name="startSide">起点端口所在边。</param>
-    /// <param name="endSide">终点端口所在边。</param>
-    /// <returns>返回处理结果。</returns>
-    private static IReadOnlyList<WorkflowPoint> BuildOrthogonalPath(
-        WorkflowPoint start,
-        WorkflowPoint end,
-        IReadOnlyList<WorkflowPoint> waypoints,
-        WorkflowPortSide startSide = WorkflowPortSide.Right,
-        WorkflowPortSide endSide = WorkflowPortSide.Left)
-    {
-        if (waypoints.Count > 0)
-        {
-            var anchors = new[] { start }.Concat(waypoints).Append(end).ToArray();
-            var manual = new List<WorkflowPoint> { start };
-            foreach (var pair in anchors.Zip(anchors.Skip(1)))
-            {
-                AddDistinct(manual, new WorkflowPoint(pair.Second.X, pair.First.Y));
-                AddDistinct(manual, pair.Second);
-            }
-            return manual;
-        }
-        const double clearance = 28;
-        var startLead = Offset(start, startSide, clearance);
-        var endLead = Offset(end, endSide, clearance);
-        var result = new List<WorkflowPoint> { start, startLead };
-        var startHorizontal = startSide is WorkflowPortSide.Left or WorkflowPortSide.Right;
-        var endHorizontal = endSide is WorkflowPortSide.Left or WorkflowPortSide.Right;
-        if (startHorizontal && endHorizontal)
-        {
-            var middleX = (startLead.X + endLead.X) / 2;
-            AddDistinct(result, new WorkflowPoint(middleX, startLead.Y));
-            AddDistinct(result, new WorkflowPoint(middleX, endLead.Y));
-        }
-        else if (!startHorizontal && !endHorizontal)
-        {
-            var middleY = (startLead.Y + endLead.Y) / 2;
-            AddDistinct(result, new WorkflowPoint(startLead.X, middleY));
-            AddDistinct(result, new WorkflowPoint(endLead.X, middleY));
-        }
-        else
-        {
-            AddDistinct(result, new WorkflowPoint(endLead.X, startLead.Y));
-        }
-        AddDistinct(result, endLead);
-        AddDistinct(result, end);
-        return result;
-    }
-
-    /// <summary>沿指定端口边的外法线偏移坐标。</summary>
-    /// <param name="point">目标坐标。</param>
-    /// <param name="side">端口所在边。</param>
-    /// <param name="distance">偏移距离。</param>
-    /// <returns>返回处理结果。</returns>
-    private static WorkflowPoint Offset(WorkflowPoint point, WorkflowPortSide side, double distance) => side switch
-    {
-        WorkflowPortSide.Left => new WorkflowPoint(point.X - distance, point.Y),
-        WorkflowPortSide.Top => new WorkflowPoint(point.X, point.Y - distance),
-        WorkflowPortSide.Right => new WorkflowPoint(point.X + distance, point.Y),
-        WorkflowPortSide.Bottom => new WorkflowPoint(point.X, point.Y + distance),
-        _ => point
-    };
-
-    /// <summary>直接替换连接拐点，用于拖动期间的实时预览。</summary>
-    /// <param name="connection">目标连接。</param>
-    /// <param name="points">路径点集合。</param>
-    private static void SetLiveWaypoints(WorkflowConnectionModel connection, IEnumerable<WorkflowPoint> points)
-    {
-        connection.Waypoints.Clear();
-        foreach (var point in points)
-            connection.Waypoints.Add(point);
-    }
-
-    /// <summary>仅在坐标不同于最后一点时追加路径点。</summary>
-    /// <param name="points">路径点集合。</param>
-    /// <param name="point">目标坐标。</param>
-    private static void AddDistinct(ICollection<WorkflowPoint> points, WorkflowPoint point)
-    {
-        if (points.LastOrDefault() != point) points.Add(point);
     }
 
     /// <summary>使用平台绘图 API 绘制正交折线路径。</summary>
@@ -1434,70 +919,16 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         }
     }
 
-    /// <summary>判断坐标是否位于节点扩展区域内。</summary>
-    /// <param name="rect">目标矩形。</param>
-    /// <param name="x">屏幕横坐标。</param>
-    /// <param name="y">屏幕纵坐标。</param>
-    /// <param name="margin">扩展命中区域大小。</param>
-    /// <returns>返回处理结果。</returns>
-    private static bool IsNearNode(WorkflowDesignerRect rect, double x, double y, double margin) =>
-        x >= rect.X - margin && x <= rect.X + rect.Width + margin
-        && y >= rect.Y - margin && y <= rect.Y + rect.Height + margin;
-
-    /// <summary>计算指定坐标距离节点最近的边。</summary>
-    /// <param name="rect">目标矩形。</param>
-    /// <param name="x">屏幕横坐标。</param>
-    /// <param name="y">屏幕纵坐标。</param>
-    /// <returns>返回处理结果。</returns>
-    private static WorkflowPortSide NearestSide(WorkflowDesignerRect rect, double x, double y)
-    {
-        var distances = new[]
-        {
-            (Side: WorkflowPortSide.Left, Distance: Math.Abs(x - rect.X)),
-            (Side: WorkflowPortSide.Top, Distance: Math.Abs(y - rect.Y)),
-            (Side: WorkflowPortSide.Right, Distance: Math.Abs(x - (rect.X + rect.Width))),
-            (Side: WorkflowPortSide.Bottom, Distance: Math.Abs(y - (rect.Y + rect.Height)))
-        };
-        return distances.MinBy(item => item.Distance).Side;
-    }
-
     private static Rect NormalizeRectangle(Point first, Point second) => new(
         Math.Min(first.X, second.X),
         Math.Min(first.Y, second.Y),
         Math.Abs(first.X - second.X),
         Math.Abs(first.Y - second.Y));
 
-    /// <summary>判断节点矩形是否与框选矩形相交。</summary>
-    /// <param name="node">目标画布节点。</param>
-    /// <param name="marquee">“marquee”参数。</param>
-    /// <returns>返回处理结果。</returns>
-    private static bool Intersects(WorkflowDesignerRect node, Rect marquee) =>
-        node.X < marquee.Right && node.X + node.Width > marquee.Left
-        && node.Y < marquee.Bottom && node.Y + node.Height > marquee.Top;
-
-    /// <summary>计算点到有限线段的最短距离。</summary>
-    /// <param name="x">屏幕横坐标。</param>
-    /// <param name="y">屏幕纵坐标。</param>
-    /// <param name="start">路径起点。</param>
-    /// <param name="end">路径终点。</param>
-    /// <returns>返回处理结果。</returns>
-    private static double DistanceToSegment(double x, double y, WorkflowPoint start, WorkflowPoint end)
-    {
-        var dx = end.X - start.X;
-        var dy = end.Y - start.Y;
-        if (dx == 0 && dy == 0)
-            return Math.Sqrt(Math.Pow(x - start.X, 2) + Math.Pow(y - start.Y, 2));
-        var t = Math.Clamp(((x - start.X) * dx + (y - start.Y) * dy) / (dx * dx + dy * dy), 0, 1);
-        var nearestX = start.X + t * dx;
-        var nearestY = start.Y + t * dy;
-        return Math.Sqrt(Math.Pow(x - nearestX, 2) + Math.Pow(y - nearestY, 2));
-    }
-
     /// <summary>测量指定文本的显示宽度。</summary>
     /// <param name="text">要显示或处理的文本。</param>
     /// <param name="size">字体大小。</param>
     /// <param name="weight">字体粗细。</param>
-    /// <returns>返回处理结果。</returns>
     private static double MeasureTextWidth(string text, double size, FontWeight weight) =>
         CreateFormattedText(text, size, weight, Brushes.White).WidthIncludingTrailingWhitespace;
 
@@ -1558,7 +989,6 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     /// <param name="size">字体大小。</param>
     /// <param name="weight">字体粗细。</param>
     /// <param name="brush">绘制使用的画刷。</param>
-    /// <returns>返回处理结果。</returns>
     private static FormattedText CreateFormattedText(string text, double size, FontWeight weight, Brush brush) =>
         new(
             text,
@@ -1570,16 +1000,11 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             1);
 
     /// <summary>创建并冻结指定 RGB 颜色的 WPF 画刷。</summary>
-    /// <param name="red">“red”参数。</param>
-    /// <param name="green">“green”参数。</param>
-    /// <param name="blue">“blue”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static Brush Brush(byte red, byte green, byte blue) =>
         Freeze(new SolidColorBrush(Color.FromRgb(red, green, blue)));
 
     /// <summary>取得节点运行状态对应的 WPF 画刷。</summary>
     /// <param name="state">节点运行状态。</param>
-    /// <returns>返回处理结果。</returns>
     private static Brush StateBrush(E_NodeState state) => state switch
     {
         E_NodeState.Running => Freeze(new SolidColorBrush(Color.FromRgb(56, 189, 248))),
@@ -1591,7 +1016,6 @@ public sealed class WorkflowDesignerControl : FrameworkElement
 
     /// <summary>冻结 WPF Freezable 对象以降低绘制开销。</summary>
     /// <param name="freezable">需要冻结的 WPF 对象。</param>
-    /// <returns>返回处理结果。</returns>
     private static T Freeze<T>(T freezable) where T : Freezable
     {
         freezable.Freeze();

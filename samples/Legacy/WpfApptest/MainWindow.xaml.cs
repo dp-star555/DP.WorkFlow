@@ -63,78 +63,15 @@ public partial class MainWindow : Window
         _algorithmBindings = new WorkflowVisionAlgorithmBindings(_algorithmRuntime, _frameScope, Resources);
         _algorithmDiagnostics = new WorkflowVisionAlgorithmDiagnostics(algorithmCatalog, _algorithmRuntime, _algorithmBindings, Resources);
         _workspace.DocumentChanged += (_, _) => _algorithmDiagnostics.Invalidate();
-        // V2 机器配置：插件自动发现 + 版本化CameraDefinition；工作流文档只保存SourceId。
-        // 宿主只按插件目录自动发现Driver Module，编译期不选择任何具体Provider。
-        // deviceSettings由对应Plugin解析，生成内部绑定、规范资源键与进入CompositionId的私有配置摘要。
-        const string machineConfigurationJson = """
-            [
-              {
-                "sourceId": "Camera.Top",
-                "acquisitionType": "dp.acquisition.halcon.area",
-                "settingsVersion": 1,
-                "connection": { "openOnApplicationStart": true, "transferStart": "PerRequest" },
-                "deviceSettings": {
-                  "interfaceName": "GigEVision2",
-                  "deviceName": "cam-top",
-                  "serialNumber": "DEMO0001"
-                }
-              },
-              {
-                "sourceId": "Camera.Side",
-                "acquisitionType": "dp.acquisition.basler.area",
-                "settingsVersion": 1,
-                "connection": { "openOnApplicationStart": true, "transferStart": "PerRequest" },
-                "deviceSettings": { "serialNumber": "DEMO-BASLER-0001" }
-              }
-            ]
-            """;
-        var providerPluginDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "plugins");
-        var driverModules = driverLoader.Load(providerPluginDirectory);
-        var typeCatalog = new VisionAcquisitionTypeCatalogComposer().Compose(driverModules.Modules);
-        var cameras = VisionAcquisitionMachineConfigurationParser.Parse(machineConfigurationJson);
-        var composition = new VisionAcquisitionMachineConfigurationComposer()
-            .Compose(typeCatalog, cameras);
-        _visionAcquisition = new VisionAcquisitionRuntime(composition);
-        // V2-3：设备连接属于软件生命周期，宿主在进入可运行状态前启动Runtime：
-        // 按ResourceKey真正打开设备；Required失败→NotReady，Optional失败→Degraded。
-        var runtimeState = _visionAcquisition.StartAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
-        // 插件包整体加载失败（例如投放不完整、缺厂商程序集）必须出现在诊断里，
-        // 否则界面只会显示"未安装"，把真实原因藏起来。
-        var driverLoadFailure = driverModules.Failures.Count == 0
-            ? null
-            : "Driver Module 加载失败：" + string.Join(
-                "；",
-                driverModules.Failures.Select(failure => failure.AssemblyPath + " -> " + failure.Reason));
-        var runtimeFailure = runtimeState == EVisionRuntimeState.Ready
-            ? null
-            : $"采集运行时未就绪（{runtimeState}），部分或全部设备未连接。";
-        var projectedSources = WorkflowVisionSourceCatalog.FromAcquisition(composition);
-        var startupDiagnostic = string.Join(
-            " ",
-            new[] { driverLoadFailure, runtimeFailure }.Where(item => item is not null));
-        _visionSources = startupDiagnostic.Length == 0
-            ? projectedSources
-            : new WorkflowVisionSourceCatalog(projectedSources.Sources.Select(source =>
-                source.IsAvailable || source.Diagnostic is null
-                    ? source
-                    : new WorkflowVisionSourceInfo(
-                        source.SourceId,
-                        source.ProviderId,
-                        source.SharingPolicy,
-                        source.IsAvailable,
-                        source.Diagnostic + " " + startupDiagnostic,
-                        source.AcquisitionMode,
-                        source.Kind)));
+        // 机器配置、采集插件组合与启动诊断见 SampleVisionHost。
+        (_visionAcquisition, _visionSources) = SampleVisionHost.StartAcquisition(driverLoader);
         _workspace.New(recoveryDemo is null ? "视觉文件分析" : "异常恢复演示（仅软件模拟）");
         if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--barcode-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateBarcode(_workspace.Navigator!.RootSession);
         else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--coordinate-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateCoordinates(_workspace.Navigator!.RootSession);
         else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--geometry-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateGeometry(_workspace.Navigator!.RootSession);
         else if (recoveryDemo is null) WorkflowImageDemo.PopulateProcessing(_workspace.Navigator!.RootSession);
         else recoveryDemo.Populate(_workspace.Navigator!.RootSession);
-        _workspace.Navigator.RootSession.PublicDataCatalog
-            .Register<DP.Vision.ImageFrame>("VisionFrame", "显式发布的图像帧", "视觉数据")
-            .Register<BlobAnalysisResult>("VisionBlobs", "显式发布的连通域事实", "视觉数据")
-            .Register<ColorAnalysisResult>("VisionColor", "显式发布的颜色事实", "视觉数据");
+        SampleVisionHost.RegisterPublicData(_workspace.Navigator.RootSession);
         Studio.Workspace = _workspace;
         Studio.Diagnostics.Provider = _algorithmDiagnostics;
         Studio.AddToolPage("插件与算法", new WorkflowVisionAlgorithmPanel(_algorithmDiagnostics,

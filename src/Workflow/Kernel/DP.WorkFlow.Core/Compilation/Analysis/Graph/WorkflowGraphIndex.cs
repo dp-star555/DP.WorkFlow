@@ -228,29 +228,6 @@ internal sealed class WorkflowGraphIndex
         return new ReadOnlyDictionary<string, HashSet<string>>(result);
     }
 
-    /// <summary>Determines whether a target remains reachable while excluding one node.</summary>
-    /// <param name="startNodeId">The traversal start.</param>
-    /// <param name="targetNodeId">The target node.</param>
-    /// <param name="excludedNodeId">The node that may not be traversed.</param>
-    /// <returns><see langword="true"/> when an alternate path exists.</returns>
-    public bool CanReachExcluding(string startNodeId, string targetNodeId, string excludedNodeId)
-    {
-        var pending = new Stack<string>();
-        var visited = new HashSet<string>(StringComparer.Ordinal) { excludedNodeId };
-        pending.Push(startNodeId);
-        while (pending.Count > 0)
-        {
-            var current = pending.Pop();
-            if (!visited.Add(current))
-                continue;
-            if (string.Equals(current, targetNodeId, StringComparison.Ordinal))
-                return true;
-            foreach (var target in GetSuccessors(current))
-                pending.Push(target);
-        }
-        return false;
-    }
-
     private static IReadOnlyList<string> AsReadOnlyDistinct(IEnumerable<string> values) =>
         Array.AsReadOnly(values.Distinct(StringComparer.Ordinal).ToArray());
 }

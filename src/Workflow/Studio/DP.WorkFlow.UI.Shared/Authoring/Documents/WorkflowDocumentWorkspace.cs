@@ -43,7 +43,6 @@ public sealed class WorkflowDocumentWorkspace : IDisposable
 
     /// <summary>创建空白文档，并添加一个 Start 节点。</summary>
     /// <param name="name">名称。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public WorkflowDesignerNavigator New(string name = "未命名流程")
     {
         ThrowIfDisposed();
@@ -60,7 +59,6 @@ public sealed class WorkflowDocumentWorkspace : IDisposable
     /// <summary>打开当前或旧版 JSON 文档。</summary>
     /// <param name="filePath">工作流文档文件路径。</param>
     /// <param name="startNodeId">工作流开始节点标识。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public WorkflowDesignerNavigator Open(string filePath, string? startNodeId = null)
     {
         ThrowIfDisposed();
@@ -137,8 +135,6 @@ public sealed class WorkflowDocumentWorkspace : IDisposable
     }
 
     /// <summary>处理导航层级变化并转发工作区变更事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnNavigatorChanged(object? sender, EventArgs e)
     {
         if (_navigator is not null)
@@ -168,8 +164,6 @@ public sealed class WorkflowDocumentWorkspace : IDisposable
     }
 
     /// <summary>处理设计会话变更，并同步刷新派生模型。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
     {
         if (e.Kind == WorkflowDesignerChangeKind.Document)

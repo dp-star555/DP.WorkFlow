@@ -15,7 +15,6 @@ public static class WorkflowOrthogonalRouter
     /// <param name="waypoints">新的连接拐点集合。</param>
     /// <param name="obstacles">需要避开的矩形障碍物。</param>
     /// <param name="leadDistance">连接端点离开节点边界的引线长度。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static IReadOnlyList<WorkflowPoint> Route(
         WorkflowPoint start,
         WorkflowPoint end,
@@ -53,7 +52,6 @@ public static class WorkflowOrthogonalRouter
     /// <param name="obstacles">需要避开的矩形障碍物。</param>
     /// <param name="initialDirection">离开起点时要求的行进方向。</param>
     /// <param name="terminalDirection">到达终点时要求的行进方向。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static IReadOnlyList<WorkflowPoint> RouteLeg(
         WorkflowPoint start,
         WorkflowPoint end,
@@ -155,7 +153,6 @@ public static class WorkflowOrthogonalRouter
     /// <summary>为候选路由点构建水平和垂直邻接表。</summary>
     /// <param name="points">路径点或候选点集合。</param>
     /// <param name="obstacles">需要避开的矩形障碍物。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static List<int>[] BuildAdjacency(
         IReadOnlyList<WorkflowPoint> points,
         IReadOnlyList<WorkflowDesignerRect> obstacles)
@@ -200,7 +197,6 @@ public static class WorkflowOrthogonalRouter
     /// <param name="first">第一个值或坐标。</param>
     /// <param name="second">第二个值或坐标。</param>
     /// <param name="obstacles">需要避开的矩形障碍物。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static bool SegmentClear(
         WorkflowPoint first,
         WorkflowPoint second,
@@ -211,7 +207,6 @@ public static class WorkflowOrthogonalRouter
     /// <param name="first">第一个值或坐标。</param>
     /// <param name="second">第二个值或坐标。</param>
     /// <param name="rect">目标矩形。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static bool CrossesInterior(WorkflowPoint first, WorkflowPoint second, WorkflowDesignerRect rect)
     {
         if (NearlyEqual(first.Y, second.Y))
@@ -228,7 +223,6 @@ public static class WorkflowOrthogonalRouter
     /// <summary>在路由搜索失败时生成简单的直角折线路径。</summary>
     /// <param name="start">路径起点。</param>
     /// <param name="end">路径终点。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static IReadOnlyList<WorkflowPoint> SimpleFallback(WorkflowPoint start, WorkflowPoint end)
     {
         var middleX = (start.X + end.X) / 2;
@@ -237,7 +231,6 @@ public static class WorkflowOrthogonalRouter
 
     /// <summary>将端口所在边转换为路径初始行进方向。</summary>
     /// <param name="side">端口所在边。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static TravelDirection DirectionOf(WorkflowPortSide side) => side is WorkflowPortSide.Left or WorkflowPortSide.Right
         ? TravelDirection.Horizontal
         : TravelDirection.Vertical;
@@ -246,7 +239,6 @@ public static class WorkflowOrthogonalRouter
     /// <param name="point">目标坐标。</param>
     /// <param name="side">端口所在边。</param>
     /// <param name="distance">沿端口边外法线偏移的距离。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static WorkflowPoint Offset(WorkflowPoint point, WorkflowPortSide side, double distance) => side switch
     {
         WorkflowPortSide.Left => new WorkflowPoint(point.X - distance, point.Y),
@@ -258,7 +250,6 @@ public static class WorkflowOrthogonalRouter
 
     /// <summary>删除路径中的重复点及不必要的共线点。</summary>
     /// <param name="source">源数据或路径点集合。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static IReadOnlyList<WorkflowPoint> Compact(IEnumerable<WorkflowPoint> source)
     {
         var points = new List<WorkflowPoint>();
@@ -300,7 +291,6 @@ public static class WorkflowOrthogonalRouter
     /// <summary>查找与给定坐标近似相等的候选点索引。</summary>
     /// <param name="points">路径点或候选点集合。</param>
     /// <param name="point">目标坐标。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static int FindPoint(IReadOnlyList<WorkflowPoint> points, WorkflowPoint point)
     {
         for (var index = 0; index < points.Count; index++)
@@ -312,7 +302,6 @@ public static class WorkflowOrthogonalRouter
     /// <summary>判断点是否严格位于矩形内部，不包含边界。</summary>
     /// <param name="point">目标坐标。</param>
     /// <param name="rect">目标矩形。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static bool IsStrictlyInside(WorkflowPoint point, WorkflowDesignerRect rect) =>
         point.X > rect.X + Epsilon && point.X < rect.X + rect.Width - Epsilon
         && point.Y > rect.Y + Epsilon && point.Y < rect.Y + rect.Height - Epsilon;
@@ -320,25 +309,21 @@ public static class WorkflowOrthogonalRouter
     /// <summary>计算两点之间的曼哈顿距离。</summary>
     /// <param name="first">第一个值或坐标。</param>
     /// <param name="second">第二个值或坐标。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static double Manhattan(WorkflowPoint first, WorkflowPoint second) =>
         Math.Abs(first.X - second.X) + Math.Abs(first.Y - second.Y);
 
     /// <summary>判断两个值或坐标是否在允许误差内相等。</summary>
     /// <param name="first">第一个值或坐标。</param>
     /// <param name="second">第二个值或坐标。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static bool NearlyEqual(double first, double second) => Math.Abs(first - second) <= Epsilon;
 
     /// <summary>将浮点坐标量化为用于去重的整数。</summary>
     /// <param name="value">要校验、转换或写入的值。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static long RoundCoordinate(double value) => (long)Math.Round(value * 100);
 
     /// <summary>按照转弯数优先、路径长度次优的规则比较路由代价。</summary>
     /// <param name="first">第一个值或坐标。</param>
     /// <param name="second">第二个值或坐标。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static int Compare(RouteCost first, RouteCost second)
     {
         var bendComparison = first.Bends.CompareTo(second.Bends);

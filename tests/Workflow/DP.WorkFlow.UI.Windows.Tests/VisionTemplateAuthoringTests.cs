@@ -224,7 +224,7 @@ public sealed class VisionTemplateAuthoringTests
                 {
                     using var view = new DP.WorkFlow.Vision.UI.WinForms.VisionTemplateAuthoringRenderer().CreateControl(descriptor);
                     view.Size = new System.Drawing.Size(1000, 700); view.CreateControl();
-                    var combo = FormsDescendants(view).OfType<System.Windows.Forms.ComboBox>().Single(c => c.Items.OfType<WorkflowPropertyChoice>().Any(choice => Equals(choice.Value, reference)));
+                    var combo = FormsDescendants(view).OfType<ModernUI.WinForms.ModernSelect>().Single(c => c.Items.OfType<WorkflowPropertyChoice>().Any(choice => Equals(choice.Value, reference)));
                     Assert.Equal(reference, Assert.IsType<WorkflowPropertyChoice>(combo.SelectedItem).Value);
                 }
             }
@@ -346,7 +346,7 @@ public sealed class VisionTemplateAuthoringTests
                         for (int visit = 0; visit < 16; visit++)
                         {
                             var reference = references[visit % 2];
-                            var combo = FormsDescendants(root).OfType<System.Windows.Forms.ComboBox>().Single(c => c.Items.OfType<WorkflowPropertyChoice>().Any(choice => Equals(choice.Value, reference)));
+                            var combo = FormsDescendants(root).OfType<ModernUI.WinForms.ModernSelect>().Single(c => c.Items.OfType<WorkflowPropertyChoice>().Any(choice => Equals(choice.Value, reference)));
                             combo.SelectedItem = combo.Items.OfType<WorkflowPropertyChoice>().Single(choice => Equals(choice.Value, reference));
                             var load = FormsDescendants(root).OfType<ModernUI.WinForms.ModernButton>().Single(b => b.Text == "读取所选模板");
                             load.PerformClick(); await Settled();
@@ -665,7 +665,7 @@ public sealed class VisionTemplateAuthoringTests
                 };
                 for (int i = 0; i < 8 && failure == null; i++)
                 {
-                    FormsDescendants(panel).OfType<System.Windows.Forms.Button>().Single(b => b.Text.Contains("制作/选择")).PerformClick();
+                    FormsDescendants(panel).OfType<ModernUI.WinForms.ModernButton>().Single(b => b.Text.Contains("制作/选择")).PerformClick();
                     Assert.Empty(node.ModelAlgorithm.Settings);
                     Assert.False(Directory.Exists(Path.Combine(fixture.Root, "Resources")));
                     GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
@@ -1271,7 +1271,7 @@ public sealed class VisionTemplateAuthoringTests
                         using var panel = new DP.WorkFlow.UI.WinForms.WorkflowPropertyPanel { Session = session, EntryNodeId = node.Id, Dock = System.Windows.Forms.DockStyle.Fill };
                         panel.PropertyActionRequested += (_, request) => requested = request;
                         host.Controls.Add(panel); host.Show(); System.Windows.Forms.Application.DoEvents();
-                        var button = FormsDescendants(panel).OfType<System.Windows.Forms.Button>().Single(b => b.Text.Contains("制作/选择"));
+                        var button = FormsDescendants(panel).OfType<ModernUI.WinForms.ModernButton>().Single(b => b.Text.Contains("制作/选择"));
                         Assert.True(button.Enabled); button.PerformClick();
                         using var dialog = new DP.WorkFlow.UI.WinForms.WorkflowNodeEditorDialog(editor,
                             new DP.WorkFlow.UI.WinForms.IWorkflowWinFormsNodeEditorPageRenderer[] { new DP.WorkFlow.Vision.UI.WinForms.VisionFrameEditorRenderer(), new DP.WorkFlow.Vision.UI.WinForms.VisionTemplateAuthoringRenderer() });
@@ -1466,7 +1466,7 @@ public sealed class VisionTemplateAuthoringTests
                     using var control = new DP.WorkFlow.Vision.UI.WinForms.VisionFrameEditorRenderer().CreateControl(descriptor);
                     control.CreateControl();
                     var section = control.Controls.Cast<System.Windows.Forms.Control>().Single(c => c.GetType().Name == "VisionTemplateEditorControl");
-                    var toggle = section.Controls.OfType<System.Windows.Forms.Button>().Single();
+                    var toggle = section.Controls.OfType<ModernUI.WinForms.ModernButton>().Single();
                     Assert.Equal(38, section.Height); toggle.PerformClick(); Assert.Equal(320, section.Height);
                     Assert.True(section.Controls.OfType<System.Windows.Forms.FlowLayoutPanel>().Single().Visible);
                 }

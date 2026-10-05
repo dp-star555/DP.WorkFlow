@@ -29,7 +29,6 @@ public sealed partial class WorkflowBindingSelectorDialog : Form
     }
 
     /// <summary>使用强类型候选集合初始化绑定选择窗口。</summary>
-    /// <returns>返回处理结果。</returns>
     public WorkflowBindingSelectorDialog(
         IEnumerable<WorkflowBindingCandidate> candidates,
         WorkflowBindingKey? current = null)
@@ -96,7 +95,6 @@ public sealed partial class WorkflowBindingSelectorDialog : Form
     /// <param name="source">源路径点集合。</param>
     /// <param name="current">“current”参数。</param>
     /// <param name="selected">“selected”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static TreeNode CreateTreeNode(
         WorkflowBindingTreeNode source,
         WorkflowBindingKey? current,

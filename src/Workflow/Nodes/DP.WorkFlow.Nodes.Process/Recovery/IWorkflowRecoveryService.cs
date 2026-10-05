@@ -125,6 +125,3 @@ public interface IWorkflowRecoveryService
     /// <summary>请求宿主将流程恢复到指定安全点。</summary>
     ValueTask ReturnToSafePointAsync(string safePointKey, WorkflowExecutionIdentity executionIdentity, CancellationToken cancellationToken);
 }
-
-/// <summary>表示安全点节点输出。</summary>
-public sealed record SafePointNodeResult(string SafePointKey, WorkflowExecutionIdentity ExecutionIdentity);

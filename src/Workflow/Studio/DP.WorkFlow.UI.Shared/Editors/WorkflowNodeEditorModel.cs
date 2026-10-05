@@ -136,7 +136,6 @@ public sealed class WorkflowSubWorkflowEditorPageModel : IDisposable
     public void Dispose() => Session.Changed -= OnChildSessionChanged;
 
     /// <summary>只读解析子文档入口；打开编辑页不得修改节点配置。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private string ResolveEntryNodeId()
     {
         if (!string.IsNullOrWhiteSpace(Node.SubDocument.EntryNodeId))
@@ -208,7 +207,6 @@ public sealed class WorkflowScriptEditorPageModel
 
     /// <summary>编译指定文本或节点当前脚本，并返回诊断。</summary>
     /// <param name="script">脚本文本。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public IReadOnlyList<string> Compile(string? script = null)
     {
         var source = script ?? Node.Script;
@@ -239,7 +237,6 @@ public sealed class WorkflowScriptEditorPageModel
 
     /// <summary>编译脚本并返回适合界面显示的诊断文本。</summary>
     /// <param name="script">脚本文本。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public IReadOnlyList<string> GetDiagnostics(string? script = null) =>
         Language.Equals("CSharp", StringComparison.OrdinalIgnoreCase)
             ? WorkflowCSharpScriptEditorModel.GetDiagnostics(
@@ -384,7 +381,6 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
     }
 
     /// <summary>异步停止外部资源并解除事件订阅。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;

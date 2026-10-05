@@ -97,21 +97,3 @@ public sealed class WorkflowValueSignalService : IWorkflowValueSignalService
         return key.Trim();
     }
 }
-
-/// <summary>描述一个布尔信号初始值。</summary>
-public sealed class WorkflowSignalStateItem
-{
-    /// <summary>获取或设置信号键。</summary>
-    public string SignalKey { get; set; } = string.Empty;
-    /// <summary>获取或设置初始状态。</summary>
-    public bool Value { get; set; }
-}
-
-/// <summary>描述一个数据信号初始值。</summary>
-public sealed class WorkflowSignalValueItem
-{
-    /// <summary>获取或设置信号键。</summary>
-    public string SignalKey { get; set; } = string.Empty;
-    /// <summary>获取或设置初始值。</summary>
-    public string Value { get; set; } = string.Empty;
-}

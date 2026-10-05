@@ -112,7 +112,6 @@ public sealed class WorkflowBlockMappingEditorModel : IDisposable
 
     /// <summary>删除指定索引的子流程输入映射。</summary>
     /// <param name="index">目标元素索引。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool RemoveInput(int index)
     {
         if (index < 0 || index >= Block.InputMappings.Count)
@@ -163,7 +162,6 @@ public sealed class WorkflowBlockMappingEditorModel : IDisposable
 
     /// <summary>删除指定索引的子流程输出映射。</summary>
     /// <param name="index">目标元素索引。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool RemoveOutput(int index)
     {
         if (index < 0 || index >= Block.OutputMappings.Count)
@@ -212,14 +210,12 @@ public sealed class WorkflowBlockMappingEditorModel : IDisposable
 
     /// <summary>获取当前父画布中在 Block 前可用的候选。</summary>
     /// <param name="startNodeId">工作流开始节点标识。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public IReadOnlyList<WorkflowBindingCandidate> GetParentCandidates(string startNodeId) =>
         new WorkflowBindingAnalyzer(_session.Catalog)
             .Analyze(_session.Document, startNodeId)
             .GetCandidates(Block.Id, typeof(object));
 
     /// <summary>获取子画布中所有具有静态输出 Schema 的候选。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public IReadOnlyList<WorkflowBindingCandidate> GetChildCandidates() =>
         new WorkflowBindingAnalyzer(_session.Catalog).GetOutputCandidates(Block.SubDocument);
 
@@ -227,8 +223,6 @@ public sealed class WorkflowBlockMappingEditorModel : IDisposable
     public void Dispose() => _session.Changed -= OnSessionChanged;
 
     /// <summary>处理设计会话变更，并同步刷新派生模型。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
     {
         if (e.Kind == WorkflowDesignerChangeKind.Document)
@@ -238,7 +232,6 @@ public sealed class WorkflowBlockMappingEditorModel : IDisposable
     /// <summary>生成在现有名称集合中不重复的名称。</summary>
     /// <param name="prefix">名称前缀。</param>
     /// <param name="existingNames">已经占用的名称集合。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static string CreateUniqueName(string prefix, IEnumerable<string> existingNames)
     {
         var existing = existingNames.ToHashSet(StringComparer.Ordinal);

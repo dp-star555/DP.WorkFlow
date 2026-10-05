@@ -20,7 +20,6 @@ public sealed partial class WorkflowBlockMappingEditorDialog : Form
     }
 
     /// <summary>使用指定 Block 映射模型初始化窗口。</summary>
-    /// <returns>返回处理结果。</returns>
     public WorkflowBlockMappingEditorDialog(
         WorkflowBlockMappingEditorModel model,
         string startNodeId)
@@ -36,7 +35,6 @@ public sealed partial class WorkflowBlockMappingEditorDialog : Form
     }
 
     /// <summary>配置父流程到子流程的输入映射列。</summary>
-    /// <param name="startNodeId">“startNodeId”参数。</param>
     private void ConfigureInputGrid(string startNodeId)
     {
         var model = RequireModel();
@@ -112,8 +110,6 @@ public sealed partial class WorkflowBlockMappingEditorDialog : Form
     }
 
     /// <summary>绑定分析失败时返回空候选，使用户仍可打开并修复旧文档。</summary>
-    /// <param name="factory">“factory”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static IReadOnlyList<WorkflowBindingCandidate> TryCandidates(
         Func<IReadOnlyList<WorkflowBindingCandidate>> factory)
     {
@@ -128,7 +124,6 @@ public sealed partial class WorkflowBlockMappingEditorDialog : Form
     }
 
     /// <summary>执行 Require Model 相关处理。</summary>
-    /// <returns>返回处理结果。</returns>
     private WorkflowBlockMappingEditorModel RequireModel() =>
         _model ?? throw new InvalidOperationException("映射窗口尚未绑定 WorkflowBlockMappingEditorModel。");
 
@@ -148,10 +143,6 @@ public sealed partial class WorkflowBlockMappingEditorDialog : Form
     };
 
     /// <summary>创建由强类型绑定候选驱动的下拉列。</summary>
-    /// <param name="name">“name”参数。</param>
-    /// <param name="title">“title”参数。</param>
-    /// <param name="candidates">“candidates”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static ModernDataGridViewComboBoxColumn BindingColumn(
         string name,
         string title,
@@ -172,21 +163,18 @@ public sealed partial class WorkflowBlockMappingEditorDialog : Form
     /// <summary>执行 Cell 相关处理。</summary>
     /// <param name="row">“row”参数。</param>
     /// <param name="index">目标元素索引。</param>
-    /// <returns>返回处理结果。</returns>
     private static string Cell(DataGridViewRow row, int index) =>
         Convert.ToString(row.Cells[index].Value)?.Trim() ?? string.Empty;
 
     /// <summary>执行 Value 相关处理。</summary>
     /// <param name="row">“row”参数。</param>
     /// <param name="index">目标元素索引。</param>
-    /// <returns>返回处理结果。</returns>
     private static T Value<T>(DataGridViewRow row, int index) where T : struct, Enum =>
         row.Cells[index].Value is T value ? value : Enum.Parse<T>(Cell(row, index), true);
 
     /// <summary>解析可为空的持久化绑定键。</summary>
     /// <param name="row">“row”参数。</param>
     /// <param name="index">目标元素索引。</param>
-    /// <returns>返回处理结果。</returns>
     private static WorkflowBindingKey? Binding(DataGridViewRow row, int index)
     {
         var text = Cell(row, index);

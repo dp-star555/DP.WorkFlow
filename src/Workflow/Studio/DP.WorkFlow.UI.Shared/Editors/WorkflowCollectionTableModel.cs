@@ -34,7 +34,6 @@ public sealed class WorkflowCollectionTableModel
     /// <summary>尝试为受支持集合创建表格投影。</summary>
     /// <param name="entry">目标属性条目。</param>
     /// <param name="table">集合表格模型。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static bool TryCreate(WorkflowPropertyEntry entry, out WorkflowCollectionTableModel? table)
     {
         ArgumentNullException.ThrowIfNull(entry);
@@ -127,7 +126,6 @@ public sealed class WorkflowCollectionTableModel
     /// <summary>在类型及其接口中查找指定泛型类型定义。</summary>
     /// <param name="type">目标 CLR 类型。</param>
     /// <param name="definition">要查找的泛型类型定义。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static Type? FindGeneric(Type type, Type definition)
     {
         if (type.IsGenericType && type.GetGenericTypeDefinition() == definition) return type;
@@ -136,7 +134,6 @@ public sealed class WorkflowCollectionTableModel
 
     /// <summary>判断类型是否适合使用单个文本单元格编辑。</summary>
     /// <param name="type">目标 CLR 类型。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static bool IsScalar(Type type)
     {
         var core = Nullable.GetUnderlyingType(type) ?? type;
@@ -147,7 +144,6 @@ public sealed class WorkflowCollectionTableModel
     /// <summary>将单元格文本转换为目标 CLR 类型。</summary>
     /// <param name="text">输入文本。</param>
     /// <param name="type">目标 CLR 类型。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static object? ConvertText(string text, Type type)
     {
         var nullable = Nullable.GetUnderlyingType(type);

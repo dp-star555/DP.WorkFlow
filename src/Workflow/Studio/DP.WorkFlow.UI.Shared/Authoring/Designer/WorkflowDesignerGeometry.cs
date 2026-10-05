@@ -10,7 +10,6 @@ public readonly record struct WorkflowDesignerRect(double X, double Y, double Wi
     /// <summary>判断指定坐标是否位于矩形边界内（包含边界）。</summary>
     /// <param name="x">横坐标。</param>
     /// <param name="y">纵坐标。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool Contains(double x, double y) =>
         x >= X && x <= X + Width && y >= Y && y <= Y + Height;
 }
@@ -67,7 +66,6 @@ public static class WorkflowDesignerGeometry
     /// <param name="session">设计器会话。</param>
     /// <param name="x">横坐标。</param>
     /// <param name="y">纵坐标。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static WorkflowPoint CanvasToScreen(WorkflowDesignerSession session, double x, double y) =>
         new(x * session.Zoom + session.PanX, y * session.Zoom + session.PanY);
 
@@ -75,14 +73,12 @@ public static class WorkflowDesignerGeometry
     /// <param name="session">设计器会话。</param>
     /// <param name="x">横坐标。</param>
     /// <param name="y">纵坐标。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static WorkflowPoint ScreenToCanvas(WorkflowDesignerSession session, double x, double y) =>
         new((x - session.PanX) / session.Zoom, (y - session.PanY) / session.Zoom);
 
     /// <summary>计算节点经过当前视口变换后的屏幕矩形。</summary>
     /// <param name="session">设计器会话。</param>
     /// <param name="node">目标画布节点或节点模型。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static WorkflowDesignerRect GetNodeScreenRect(
         WorkflowDesignerSession session,
         WorkflowCanvasNode node) =>
@@ -98,7 +94,6 @@ public static class WorkflowDesignerGeometry
     /// <param name="port">目标端口描述。</param>
     /// <param name="ports">参与同边排列的端口集合。</param>
     /// <param name="sideOverride">可选的连接端点所在边覆盖。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static WorkflowPoint GetPortScreenPoint(
         WorkflowDesignerSession session,
         WorkflowCanvasNode node,
@@ -145,7 +140,6 @@ public static class WorkflowDesignerGeometry
     /// <param name="direction">端口方向或路径方向。</param>
     /// <param name="index">目标元素索引。</param>
     /// <param name="count">元素总数。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public static WorkflowPoint GetPortScreenPoint(
         WorkflowDesignerSession session,
         WorkflowCanvasNode node,

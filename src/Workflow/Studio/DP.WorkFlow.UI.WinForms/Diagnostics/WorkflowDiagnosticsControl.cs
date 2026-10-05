@@ -106,9 +106,6 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
         _model = null;
     }
 
-    /// <summary>处理“Model Changed”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnModelChanged(object? sender, EventArgs e)
     {
         if (InvokeRequired)

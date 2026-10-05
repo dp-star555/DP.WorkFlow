@@ -127,9 +127,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     /// <summary>获取或设置 Block Mapping Edit Requested 成员。</summary>
     public event EventHandler<IWorkflowBlockMappingNode>? BlockMappingEditRequested;
 
-    /// <summary>处理“Configuration Changed”事件。</summary>
-    /// <param name="dependencyObject">“dependencyObject”参数。</param>
-    /// <param name="e">事件参数。</param>
     private static void OnConfigurationChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs e) =>
         ((WorkflowPropertyPanel)dependencyObject).RecreateModel();
 
@@ -155,9 +152,6 @@ public sealed class WorkflowPropertyPanel : UserControl
         _model = null;
     }
 
-    /// <summary>处理“Model Changed”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnModelChanged(object? sender, EventArgs e)
     {
         if (Dispatcher.CheckAccess())
@@ -222,8 +216,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>创建Category。</summary>
-    /// <param name="category">“category”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private FrameworkElement CreateCategory(string category)
     {
         var button = new Button
@@ -296,8 +288,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>执行 Matches Search 相关处理。</summary>
-    /// <param name="entry">“entry”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private bool MatchesSearch(WorkflowPropertyEntry entry)
     {
         var search = _search.Text.Trim();
@@ -311,22 +301,8 @@ public sealed class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>显示Details。</summary>
-    /// <param name="entry">“entry”参数。</param>
     private void ShowDetails(WorkflowPropertyEntry entry) =>
         _details.Text = $"{entry.DisplayName}\n{entry.Description}\n属性：{entry.Name}    类型：{entry.ValueType.Name}";
-
-    /// <summary>构建Property Tree。</summary>
-    /// <param name="entries">“entries”参数。</param>
-    private void BuildPropertyTree(IReadOnlyList<WorkflowPropertyEntry> entries)
-    {
-        foreach (var category in entries.GroupBy(entry => entry.Category, StringComparer.Ordinal))
-        {
-            var categoryItem = new TreeViewItem { Header = category.Key, IsExpanded = true };
-            foreach (var entry in category)
-                categoryItem.Items.Add(new TreeViewItem { Header = entry.DisplayName, Tag = entry });
-            _propertyTree.Items.Add(categoryItem);
-        }
-    }
 
     /// <summary>添加Output Port Visibility Editors。</summary>
     private void AddOutputPortVisibilityEditors()
@@ -364,7 +340,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>创建Column Header。</summary>
-    /// <returns>返回处理结果。</returns>
     private FrameworkElement CreateColumnHeader()
     {
         var grid = new Grid { Height = 27, Background = Brush(30, 41, 59) };
@@ -378,8 +353,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>创建Row。</summary>
-    /// <param name="entry">“entry”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private FrameworkElement CreateRow(WorkflowPropertyEntry entry)
     {
         var grid = new Grid
@@ -415,8 +388,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>创建Editor。</summary>
-    /// <param name="entry">“entry”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private FrameworkElement CreateEditor(WorkflowPropertyEntry entry)
     {
         if (entry.EditorKind == WorkflowPropertyEditorKind.Action)
@@ -503,8 +474,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     public event EventHandler<WorkflowPropertyActionRequest>? PropertyActionRequested;
 
     /// <summary>创建Path Editor。</summary>
-    /// <param name="entry">“entry”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private FrameworkElement CreatePathEditor(WorkflowPropertyEntry entry)
     {
         var text = Text(Convert.ToString(entry.Value) ?? string.Empty, true);
@@ -554,7 +523,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>执行 Edit Script 相关处理。</summary>
-    /// <param name="entry">“entry”参数。</param>
     private void EditScript(WorkflowPropertyEntry entry)
     {
         var page = WorkflowScriptEditorPageModel.CreateBuffer(Convert.ToString(entry.Value));
@@ -603,7 +571,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>执行 Edit Structured Value 相关处理。</summary>
-    /// <param name="entry">“entry”参数。</param>
     private void EditStructuredValue(WorkflowPropertyEntry entry)
     {
         if (WorkflowCollectionTableModel.TryCreate(entry, out var table) && table is not null)
@@ -647,8 +614,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>执行 Edit Collection Table 相关处理。</summary>
-    /// <param name="table">“table”参数。</param>
-    /// <param name="displayName">“displayName”参数。</param>
     private void EditCollectionTable(WorkflowCollectionTableModel table, string displayName)
     {
         var data = new DataTable();
@@ -691,8 +656,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>创建Input Editor。</summary>
-    /// <param name="entry">“entry”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private FrameworkElement CreateInputEditor(WorkflowPropertyEntry entry)
     {
         var generation = _inputEditorGeneration;
@@ -782,8 +745,6 @@ public sealed class WorkflowPropertyPanel : UserControl
         return panel;
     }
 
-    /// <summary>尝试执行“Edit”。</summary>
-    /// <param name="action">“action”参数。</param>
     private void TryEdit(Action action)
     {
         if (_building)
@@ -801,7 +762,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>应用Fixed Style。</summary>
-    /// <param name="root">“root”参数。</param>
     private void ApplyFixedStyle(DependencyObject root)
     {
         var background = Brush(15, 23, 42);
@@ -833,8 +793,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     };
 
     /// <summary>执行 Combo 相关处理。</summary>
-    /// <param name="values">“values”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private ComboBox Combo(IEnumerable<object> values)
     {
         var itemStyle = new Style(typeof(ComboBoxItem));
@@ -856,10 +814,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>创建并冻结指定 RGB 颜色的 WPF 画刷。</summary>
-    /// <param name="red">“red”参数。</param>
-    /// <param name="green">“green”参数。</param>
-    /// <param name="blue">“blue”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static SolidColorBrush Brush(byte red, byte green, byte blue)
     {
         var brush = new SolidColorBrush(Color.FromRgb(red, green, blue));

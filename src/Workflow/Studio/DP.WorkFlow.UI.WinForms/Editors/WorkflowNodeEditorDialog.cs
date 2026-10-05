@@ -25,8 +25,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
 {
     /// <summary>节点编辑事务模型；无参设计器实例中为空。</summary>
     private WorkflowNodeEditorModel? _model;
-    private readonly ListBox _navigation = new() { Visible = false };
-    private readonly Dictionary<string, Control> _controls = new(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, IWorkflowWinFormsNodeEditorPageRenderer> _renderers =
         new Dictionary<string, IWorkflowWinFormsNodeEditorPageRenderer>(StringComparer.Ordinal);
     private Action<IWorkflowBlockMappingNode>? _editMappings;
@@ -42,7 +40,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     }
 
     /// <summary>使用节点编辑模型和平台扩展渲染器初始化运行时窗口。</summary>
-    /// <returns>返回处理结果。</returns>
     public WorkflowNodeEditorDialog(
         WorkflowNodeEditorModel model,
         IEnumerable<IWorkflowWinFormsNodeEditorPageRenderer>? renderers = null,
@@ -69,7 +66,7 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             headerLayout.Visible = false;
             rootLayout.RowStyles[0].Height = 0;
         }
-        titleTextBox.Validated += (_, _) => CommitEditedTitle();
+        titleTextBox.InnerTextBox.Validated += (_, _) => CommitEditedTitle();
         applyButton.Click += (_, _) => ApplyChanges();
         okButton.Click += (_, _) =>
         {
@@ -131,7 +128,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     /// 构建节点窗口主体。普通节点只返回参数面板；存在特殊能力时返回左右分栏，
     /// 左侧固定为参数，右侧按页面顺序纵向放置子流程、脚本、图像或自定义内容。
     /// </summary>
-    /// <returns>返回处理结果。</returns>
     private Control CreateWorkspace()
     {
         if (Model.PropertyEditorKey is { } key)
@@ -182,7 +178,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     }
 
     /// <summary>校验当前子控件，并将编辑副本作为一次可撤销操作提交到正式节点。</summary>
-    /// <returns>返回处理结果。</returns>
     private bool ApplyChanges()
     {
         try
@@ -199,28 +194,9 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     }
 
     /// <summary>
-    /// 兼容旧页面导航模式的延迟加载入口。当前自适应布局通常直接平铺特殊页面，
-    /// 但保留该方法便于以后在窄屏模式恢复页面导航。
-    /// </summary>
-    private void ShowSelectedPage()
-    {
-        if (_navigation.SelectedItem is not EditorPageItem item) return;
-        workspacePanel.Controls.Clear();
-        if (!_controls.TryGetValue(item.Page.PageId, out var control))
-        {
-            control = CreatePageControl(item.Page);
-            control.Dock = DockStyle.Fill;
-            _controls.Add(item.Page.PageId, control);
-        }
-        workspacePanel.Controls.Add(control);
-    }
-
-    /// <summary>
     /// 将 UI 无关页面描述转换为 WinForms 控件。宿主 Renderer 优先于内置 PageKind，
     /// 因而视觉、厂商工具等模块可以替换默认页面而不修改本窗口。
     /// </summary>
-    /// <param name="page">“page”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private Control CreatePageControl(WorkflowNodeEditorPageDescriptor page)
     {
         var rendererKey = ResolveRendererKey(page);
@@ -242,8 +218,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     }
 
     /// <summary>创建共享属性模型对应的 WinForms 参数面板。</summary>
-    /// <param name="page">“page”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private Control CreateProperties(WorkflowPropertyEditorPageModel page)
     {
         var panel = new WorkflowPropertyPanel
@@ -274,21 +248,19 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     }
 
     /// <summary>创建嵌入式子流程设计器及其局部工具栏。</summary>
-    /// <param name="page">“page”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private Control CreateSubWorkflow(WorkflowSubWorkflowEditorPageModel page)
     {
         var designer = new WorkflowDesignerControl { Session = page.Session, Dock = DockStyle.Fill };
         var toolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, Padding = new Padding(5) };
-        var fit = new Button { Text = "适合画布", AutoSize = true };
-        var layout = new Button { Text = "自动布局", AutoSize = true };
+        var fit = ToolbarButton("适合画布");
+        var layout = ToolbarButton("自动布局");
         fit.Click += (_, _) => page.Session.FitToView(designer.ClientSize.Width, designer.ClientSize.Height);
         layout.Click += (_, _) => page.Session.AutoLayout();
         toolbar.Controls.Add(fit);
         toolbar.Controls.Add(layout);
         if (Model.Node is IWorkflowBlockMappingNode block && _editMappings is not null)
         {
-            var mappings = new Button { Text = "输入/输出映射", AutoSize = true };
+            var mappings = ToolbarButton("输入/输出映射");
             mappings.Click += (_, _) => _editMappings(block);
             toolbar.Controls.Add(mappings);
         }
@@ -298,32 +270,21 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         return panel;
     }
 
+    private ModernUI.WinForms.ModernButton ToolbarButton(string text) => new()
+    {
+        Text = text,
+        Size = new Size(TextRenderer.MeasureText(text, Font).Width + 32, 30),
+        Margin = new Padding(0, 0, 6, 0)
+    };
+
     /// <summary>创建 Roslyn 脚本编辑器、命令栏和编译诊断列表。</summary>
-    /// <param name="page">“page”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private Control CreateScript(WorkflowScriptEditorPageModel page) => new WorkflowCSharpScriptEditorControl
     {
         Dock = DockStyle.Fill,
         Page = page
     };
 
-    /// <summary>更新Diagnostics。</summary>
-    /// <param name="page">“page”参数。</param>
-    /// <param name="text">要显示或处理的文本。</param>
-    /// <param name="list">“list”参数。</param>
-    private static void UpdateDiagnostics(WorkflowScriptEditorPageModel page, string text, ListBox list)
-    {
-        list.BeginUpdate();
-        list.Items.Clear();
-        var diagnostics = page.GetDiagnostics(text);
-        if (diagnostics.Count == 0) list.Items.Add("✓ 未发现脚本诊断。");
-        else foreach (var diagnostic in diagnostics) list.Items.Add(diagnostic);
-        list.EndUpdate();
-    }
-
     /// <summary>创建Diagnostics。</summary>
-    /// <param name="page">“page”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static Control CreateDiagnostics(WorkflowScriptEditorPageModel page)
     {
         var list = new ListBox { Dock = DockStyle.Fill };
@@ -371,12 +332,9 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     }
 
     /// <summary>应用。</summary>
-    /// <param name="root">“root”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static void ApplyFixedStyle(Control root) => WorkflowWinFormsStyle.Apply(root);
 
     /// <summary>定义 EditorPageItem 类型。</summary>
-    /// <param name="Page">“Page”参数。</param>
     private sealed record EditorPageItem(WorkflowNodeEditorPageDescriptor Page)
     {
         public string Title => Page.Title;

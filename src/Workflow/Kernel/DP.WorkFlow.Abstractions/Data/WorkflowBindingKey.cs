@@ -43,22 +43,6 @@ public readonly record struct WorkflowBindingKey
         return new WorkflowBindingKey(GlobalVariablePrefix + key.Trim(), memberPath);
     }
 
-    /// <summary>兼容旧名称；语义现为独立公共数据仓，而不是 WorkflowContext 局部变量。</summary>
-    public bool IsGlobalVariable => IsPublicData;
-
-    /// <summary>兼容旧名称；语义现为公共数据键。</summary>
-    public string? GlobalVariableKey => PublicDataKey;
-
-    /// <summary>兼容旧名称创建公共数据绑定。</summary>
-    /// <param name="variableKey">公共数据键，不应包含序列化分隔符 <c>|</c>。</param>
-    /// <param name="memberPath">公开值的属性路径；默认的 <c>$</c> 表示整个值。</param>
-    /// <returns>带有公共数据来源标记的绑定键。</returns>
-    /// <exception cref="ArgumentException"><paramref name="variableKey"/> 为空或包含 <c>|</c>。</exception>
-    public static WorkflowBindingKey FromGlobalVariable(string variableKey, string memberPath = "$")
-    {
-        return FromPublicData(variableKey, memberPath);
-    }
-
     /// <inheritdoc />
     public override string ToString() => $"{NodeId}|{MemberPath}";
 

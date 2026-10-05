@@ -35,7 +35,7 @@ public sealed class VisionMaskEditingTests
                 else
                 {
                     using var control = new DP.WorkFlow.Vision.UI.WinForms.VisionFrameEditorRenderer().CreateControl(page);
-                    var toggle = Assert.Single(control.Controls.OfType<System.Windows.Forms.FlowLayoutPanel>().SelectMany(p => p.Controls.OfType<System.Windows.Forms.CheckBox>()));
+                    var toggle = Assert.Single(control.Controls.OfType<System.Windows.Forms.FlowLayoutPanel>().SelectMany(p => p.Controls.OfType<ModernUI.WinForms.ModernCheckbox>()));
                     Assert.Equal("显示有效掩膜", toggle.Text); toggle.Checked = false; Assert.False(model.ShowMask);
                     toggle.Checked = true; Assert.True(model.ShowMask);
                 }

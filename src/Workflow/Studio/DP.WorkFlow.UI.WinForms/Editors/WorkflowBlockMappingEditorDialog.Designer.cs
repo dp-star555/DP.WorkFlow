@@ -23,8 +23,8 @@ partial class WorkflowBlockMappingEditorDialog
         outputTabPage = new TabPage();
         outputGrid = new DataGridView();
         commandPanel = new FlowLayoutPanel();
-        cancelButton = new Button();
-        okButton = new Button();
+        cancelButton = new ModernUI.WinForms.ModernButton();
+        okButton = new ModernUI.WinForms.ModernButton();
         mappingTabs.SuspendLayout();
         inputTabPage.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize)inputGrid).BeginInit();
@@ -108,19 +108,18 @@ partial class WorkflowBlockMappingEditorDialog
         // 
         cancelButton.DialogResult = DialogResult.Cancel;
         cancelButton.Name = "cancelButton";
-        cancelButton.Size = new Size(88, 28);
+        cancelButton.Size = new Size(88, 30);
         cancelButton.TabIndex = 1;
         cancelButton.Text = "取消";
-        cancelButton.UseVisualStyleBackColor = true;
         // 
         // okButton
         // 
         okButton.DialogResult = DialogResult.None;
+        okButton.ButtonType = ModernUI.WinForms.ModernButtonType.Primary;
         okButton.Name = "okButton";
-        okButton.Size = new Size(88, 28);
+        okButton.Size = new Size(88, 30);
         okButton.TabIndex = 0;
         okButton.Text = "确定";
-        okButton.UseVisualStyleBackColor = true;
         // 
         // WorkflowBlockMappingEditorDialog
         // 
@@ -154,6 +153,6 @@ partial class WorkflowBlockMappingEditorDialog
     private DataGridView inputGrid = null!;
     private DataGridView outputGrid = null!;
     private FlowLayoutPanel commandPanel = null!;
-    private Button okButton = null!;
-    private Button cancelButton = null!;
+    private ModernUI.WinForms.ModernButton okButton = null!;
+    private ModernUI.WinForms.ModernButton cancelButton = null!;
 }

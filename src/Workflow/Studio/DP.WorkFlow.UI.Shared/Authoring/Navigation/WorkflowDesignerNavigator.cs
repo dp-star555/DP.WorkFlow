@@ -48,7 +48,6 @@ public sealed class WorkflowDesignerNavigator
 
     /// <summary>进入指定复合节点的子画布。</summary>
     /// <param name="nodeId">节点标识。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool EnterSubCanvas(string nodeId)
     {
         var parentSession = CurrentSession;
@@ -70,12 +69,10 @@ public sealed class WorkflowDesignerNavigator
     }
 
     /// <summary>返回上一层子画布。</summary>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool NavigateUp() => NavigateToDepth(Depth - 1);
 
     /// <summary>导航到指定面包屑深度。</summary>
     /// <param name="depth">目标导航深度。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool NavigateToDepth(int depth)
     {
         if (depth < 0 || depth >= _frames.Count || depth == Depth)
@@ -105,7 +102,6 @@ public sealed class WorkflowDesignerNavigator
 
     /// <summary>只读解析子文档入口；导航本身不得修复或修改文档。</summary>
     /// <param name="composite">复合节点。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static string? ResolveEntryNodeId(IWorkflowSubDocumentNode composite)
     {
         if (!string.IsNullOrWhiteSpace(composite.SubDocument.EntryNodeId))

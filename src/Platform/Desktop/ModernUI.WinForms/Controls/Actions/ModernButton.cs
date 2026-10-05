@@ -218,6 +218,19 @@ public sealed class ModernButton : ModernControl, IButtonControl
             ContentAlignment.MiddleRight => bounds.Right - horizontalPadding - contentWidth,
             _ => bounds.Left + Math.Max(0, (bounds.Width - contentWidth) / 2f)
         };
+        if (IconPlacement == ModernIconPlacement.Right && TextAlign == ContentAlignment.MiddleLeft && !string.IsNullOrEmpty(text))
+        {
+            // 下拉触发器布局：图标贴右边缘，文本占据剩余宽度，过长时省略，与 ModernSelect 外观一致。
+            var pinned = new RectangleF(bounds.Right - horizontalPadding - iconSize,
+                bounds.Top + (bounds.Height - iconSize) / 2f, iconSize, iconSize);
+            if (icon == ModernIconKind.Loading)
+                canvas.DrawIcon(icon, foreground, pinned, ScaleLogical(1.6f), _loadingAngle);
+            else
+                canvas.DrawIcon(icon, foreground, pinned, ScaleLogical(1.6f));
+            canvas.DrawText(text, Font, foreground, Rectangle.Round(RectangleF.FromLTRB(
+                contentLeft, bounds.Top, Math.Max(contentLeft, pinned.Left - gap), bounds.Bottom)), ContentAlignment.MiddleLeft);
+            return;
+        }
         var iconLeft = IconPlacement == ModernIconPlacement.Left || string.IsNullOrEmpty(text)
             ? contentLeft : contentLeft + textSize.Width + gap;
         var iconBounds = new RectangleF(iconLeft, bounds.Top + (bounds.Height - iconSize) / 2f, iconSize, iconSize);
@@ -347,6 +360,8 @@ public sealed class ModernButton : ModernControl, IButtonControl
         if (Loading || Command is { CanExecute: false }) return;
         base.OnClick(e);
         Command?.TryExecute();
+        // 与 WinForms Button 一致：鼠标点击、键盘和 PerformClick 都经由这里把 DialogResult 交给所在窗体。
+        if (FindForm() is { } form && DialogResult != DialogResult.None) form.DialogResult = DialogResult;
     }
 
     private void CommandChanged(object? sender, PropertyChangedEventArgs e) => ApplyCommand();
@@ -368,7 +383,6 @@ public sealed class ModernButton : ModernControl, IButtonControl
     {
         if (!Enabled || Loading) return;
         OnClick(EventArgs.Empty);
-        if (FindForm() is { } form && DialogResult != DialogResult.None) form.DialogResult = DialogResult;
     }
 
     private sealed class ButtonAccessibleObject(ModernButton owner) : ControlAccessibleObject(owner)

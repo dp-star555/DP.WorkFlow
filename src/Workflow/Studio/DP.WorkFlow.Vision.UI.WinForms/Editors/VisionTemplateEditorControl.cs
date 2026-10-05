@@ -21,7 +21,11 @@ internal sealed class VisionTemplateEditorControl : UserControl
     {
         _model = model; _show = show; _tryInput = tryInput; _tryManual = tryManual; _reference = reference;
         Dock = DockStyle.Top; Height = 38;
-        var toggle = new Button { Text = "▶ 模板制作", Dock = DockStyle.Top, Height = 32 };
+        var toggle = new ModernUI.WinForms.ModernButton
+        {
+            Text = "▶ 模板制作", Dock = DockStyle.Top, Height = 32,
+            TextAlign = ContentAlignment.MiddleLeft, Theme = ModernUI.WinForms.ModernTheme.Dark
+        };
         _fields.Visible = false;
         toggle.Click += (_, _) => { _fields.Visible = !_fields.Visible; Height = _fields.Visible ? 320 : 38; toggle.Text = _fields.Visible ? "▼ 模板制作" : "▶ 模板制作"; if (_fields.Visible) _show(4); };
         Controls.Add(_fields); Controls.Add(toggle); Rebuild();
@@ -38,14 +42,15 @@ internal sealed class VisionTemplateEditorControl : UserControl
     {
         _generation++; foreach (Control control in _fields.Controls.Cast<Control>().ToArray()) { _fields.Controls.Remove(control); if (control != _status) control.Dispose(); }
         var generation = _generation;
-        var implementations = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 520, DisplayMember = "Label", ValueMember = "Id" };
+        var implementations = TemplateSelect();
+        implementations.DisplayMember = "Label"; implementations.ValueMember = "Id";
         var choices = _model.Choices.Select(d => new Choice(d.ImplementationId, d.Engine + " / " + ((DP.Vision.Algorithms.IVisionTemplateFactoryDescription)d.Factory).MethodDisplayName)).ToList();
         if (!choices.Any(c => c.Id == _model.ImplementationId)) choices.Add(new Choice(_model.ImplementationId, _model.ImplementationId + "（未安装或不兼容）"));
         implementations.DataSource = choices; implementations.SelectedValue = _model.ImplementationId;
         implementations.SelectedIndexChanged += (_, _) => { if (generation != _generation || implementations.SelectedItem is not Choice choice) return;
             try { _model.ImplementationId = choice.Id; Rebuild(); } catch (Exception ex) { _status.Text = ex.Message; } };
         _fields.Controls.Add(implementations);
-        var resources = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 520 };
+        var resources = TemplateSelect();
         resources.Items.AddRange(_model.Resources.Cast<object>().ToArray());
         resources.SelectedIndexChanged += async (_, _) =>
         {
@@ -56,7 +61,14 @@ internal sealed class VisionTemplateEditorControl : UserControl
         _fields.Controls.Add(resources);
         var actions = new FlowLayoutPanel { AutoSize = true, MaximumSize = new Size(560, 0) };
         void Button(string caption, Func<Task> action)
-        { var button = new Button { Text = caption, AutoSize = true }; button.Click += async (_, _) => await Run(action); actions.Controls.Add(button); }
+        {
+            var button = new ModernUI.WinForms.ModernButton
+            {
+                Text = caption, Theme = ModernUI.WinForms.ModernTheme.Dark,
+                Size = new Size(TextRenderer.MeasureText(caption, Font).Width + 28, 30)
+            };
+            button.Click += async (_, _) => await Run(action); actions.Controls.Add(button);
+        }
         Button("刷新模板列表", _model.RefreshResourcesAsync);
         Button("读取样图…", async () =>
         { using var dialog = new OpenFileDialog { Filter = "图像|*.png;*.bmp;*.jpg;*.jpeg;*.tif;*.tiff;*.pgm|所有文件|*.*" };
@@ -87,9 +99,12 @@ internal sealed class VisionTemplateEditorControl : UserControl
         void Field(string caption, string value, Action<string> write, string? description = null)
         {
             var row = new FlowLayoutPanel { AutoSize = true }; var label = new Label { Text = caption, Width = 210, AutoSize = false, Height = 26 };
-            var text = new TextBox { Text = value, Width = 300, AccessibleDescription = description };
+            var text = new ModernUI.WinForms.ModernInput
+            {
+                Text = value, Size = new Size(300, 30), AccessibleDescription = description, Theme = ModernUI.WinForms.ModernTheme.Dark
+            };
             var accepted = value;
-            text.Validated += (_, _) => { if (generation != _generation || IsDisposed || _model.IsDisposed) return;
+            text.InnerTextBox.Validated += (_, _) => { if (generation != _generation || IsDisposed || _model.IsDisposed) return;
                 try { write(text.Text); accepted = text.Text; _status.Text = _model.Status; } catch (Exception ex) { text.Text = accepted; _status.Text = ex.Message; } };
             row.Controls.Add(label); row.Controls.Add(text); _fields.Controls.Add(row);
         }
@@ -103,5 +118,9 @@ internal sealed class VisionTemplateEditorControl : UserControl
             PickOrigin = PickDirection = false; Rebuild(); }
         catch (Exception ex) { _status.Text = ex.Message; }
     }
+    private static ModernUI.WinForms.ModernSelect TemplateSelect() => new()
+    {
+        Size = new Size(520, 30), Theme = ModernUI.WinForms.ModernTheme.Dark, DropDownAnimationDuration = 0
+    };
     private sealed record Choice(string Id, string Label);
 }

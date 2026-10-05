@@ -109,7 +109,6 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
 
     /// <summary>选择诊断关联节点。</summary>
     /// <param name="item">目标数据项。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     public bool NavigateTo(WorkflowDiagnosticItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
@@ -142,8 +141,6 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
     public void Dispose() => _session.Changed -= OnSessionChanged;
 
     /// <summary>处理设计会话变更，并同步刷新派生模型。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
     {
         if (e.Kind == WorkflowDesignerChangeKind.Document)

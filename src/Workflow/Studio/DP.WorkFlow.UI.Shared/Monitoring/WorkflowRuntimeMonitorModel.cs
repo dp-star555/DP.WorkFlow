@@ -285,6 +285,5 @@ public sealed class WorkflowRuntimeMonitorModel
 
     /// <summary>转义一个符合 CSV 规则的字段。</summary>
     /// <param name="value">要校验、转换或写入的值。</param>
-    /// <returns>返回操作结果；具体含义参见方法说明。</returns>
     private static string Csv(string value) => $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
 }

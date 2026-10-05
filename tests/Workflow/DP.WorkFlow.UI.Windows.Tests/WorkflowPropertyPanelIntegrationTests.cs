@@ -62,7 +62,7 @@ public sealed class WorkflowPropertyPanelIntegrationTests
             else
             {
                 using var panel = new DP.WorkFlow.UI.WinForms.WorkflowPropertyPanel { AdditionalProperties = Actions, Session = session, EntryNodeId = "first" };
-                var button = Descendants(panel).OfType<Button>().Single(b => b.Text == "执行操作");
+                var button = Descendants(panel).OfType<ModernUI.WinForms.ModernButton>().Single(b => b.Text == "执行操作");
                 Assert.Equal("PropertyRowPanel", button.Parent!.GetType().Name);
                 typeof(Control).GetMethod("OnClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(button, [EventArgs.Empty]);
                 session.SelectedNodeId = "second";
@@ -173,7 +173,7 @@ public sealed class WorkflowPropertyPanelIntegrationTests
             host.Show(); Application.DoEvents(); host.PerformLayout(); Application.DoEvents();
             foreach (var panel in host.Controls.OfType<DP.WorkFlow.UI.WinForms.WorkflowPropertyPanel>())
             {
-                var browse = Descendants(panel).OfType<Button>().Single(b => b.AccessibleName?.StartsWith("浏览图像", StringComparison.Ordinal) == true);
+                var browse = Descendants(panel).OfType<ModernUI.WinForms.ModernButton>().Single(b => b.AccessibleName?.StartsWith("浏览图像", StringComparison.Ordinal) == true);
                 var layout = Assert.IsType<TableLayoutPanel>(browse.Parent);
                 var text = Assert.Single(layout.Controls.OfType<ModernUI.WinForms.ModernInput>());
                 var row = Ancestors(layout).Single(c => c.GetType().Name == "PropertyRowPanel");

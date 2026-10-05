@@ -313,9 +313,6 @@ public sealed class WorkflowStudioControl : UserControl
         control.UpdateCommands();
     }
 
-    /// <summary>处理“Start Node Id Changed”事件。</summary>
-    /// <param name="dependencyObject">“dependencyObject”参数。</param>
-    /// <param name="e">事件参数。</param>
     private static void OnEntryNodeIdChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs e)
     {
         var control = (WorkflowStudioControl)dependencyObject;
@@ -388,12 +385,8 @@ public sealed class WorkflowStudioControl : UserControl
     }
 
     /// <summary>执行 Invoke 相关处理。</summary>
-    /// <returns>返回处理结果。</returns>
     private bool CanDiscardCurrentDocument() => Workspace?.IsDirty != true || ConfirmDiscardChanges?.Invoke() == true;
 
-    /// <summary>处理“Workspace Changed”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnWorkspaceChanged(object? sender, EventArgs e)
     {
         if (Workspace?.Navigator is not null && !ReferenceEquals(Navigator, Workspace.Navigator))
@@ -401,9 +394,6 @@ public sealed class WorkflowStudioControl : UserControl
         UpdateNavigation();
     }
 
-    /// <summary>处理“Block Mapping Edit Requested”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="block">“block”参数。</param>
     private void OnBlockMappingEditRequested(object? sender, IWorkflowBlockMappingNode block)
     {
         if (Session is null || string.IsNullOrWhiteSpace(EntryNodeId))
@@ -458,7 +448,6 @@ public sealed class WorkflowStudioControl : UserControl
     }
 
     /// <summary>应用Navigator。</summary>
-    /// <returns>返回处理结果。</returns>
     private void OnNavigatorChanged(object? sender, EventArgs e) => ApplyNavigator();
 
     /// <summary>应用Navigator。</summary>
@@ -479,7 +468,6 @@ public sealed class WorkflowStudioControl : UserControl
     }
 
     /// <summary>执行 Run DP.WorkFlow 相关处理。</summary>
-    /// <returns>返回处理结果。</returns>
     private async Task RunWorkflowAsync()
     {
         Diagnostics.RefreshDiagnostics();
@@ -502,9 +490,6 @@ public sealed class WorkflowStudioControl : UserControl
         }
     }
 
-    /// <summary>处理“Runtime State Changed”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnRuntimeStateChanged(object? sender, EventArgs e)
     {
         if (Dispatcher.CheckAccess())
@@ -514,8 +499,6 @@ public sealed class WorkflowStudioControl : UserControl
     }
 
     /// <summary>处理设计会话变化并请求 WPF 画布重绘。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="e">事件参数。</param>
     private void OnDesignerSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
     {
         if (Dispatcher.CheckAccess())
@@ -570,11 +553,6 @@ public sealed class WorkflowStudioControl : UserControl
     }
 
     /// <summary>添加To Grid。</summary>
-    /// <param name="grid">“grid”参数。</param>
-    /// <param name="element">“element”参数。</param>
-    /// <param name="column">“column”参数。</param>
-    /// <param name="rowSpan">“rowSpan”参数。</param>
-    /// <param name="row">“row”参数。</param>
     private static void AddToGrid(
         Grid grid,
         UIElement element,
@@ -599,10 +577,6 @@ public sealed class WorkflowStudioControl : UserControl
     };
 
     /// <summary>创建并冻结指定 RGB 颜色的 WPF 画刷。</summary>
-    /// <param name="red">“red”参数。</param>
-    /// <param name="green">“green”参数。</param>
-    /// <param name="blue">“blue”参数。</param>
-    /// <returns>返回处理结果。</returns>
     private static SolidColorBrush Brush(byte red, byte green, byte blue)
     {
         var brush = new SolidColorBrush(Color.FromRgb(red, green, blue));
