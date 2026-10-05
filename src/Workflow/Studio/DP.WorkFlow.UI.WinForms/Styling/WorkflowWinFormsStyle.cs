@@ -16,17 +16,13 @@ internal static class WorkflowWinFormsStyle
         Color SelectionText,
         Color Grid);
 
-    internal static Palette Get() => new(
-        Color.FromArgb(30, 30, 30),
-        Color.FromArgb(37, 37, 38),
-        Color.FromArgb(51, 51, 55),
-        Color.FromArgb(63, 63, 70),
-        Color.FromArgb(241, 241, 241),
-        Color.FromArgb(200, 200, 200),
-        Color.FromArgb(55, 148, 255),
-        Color.FromArgb(0, 122, 204),
-        Color.White,
-        Color.FromArgb(67, 67, 70));
+    /// <summary>调色板取自 ModernUI 深色主题，使原生宿主控件与 Modern 控件颜色一致。</summary>
+    internal static Palette Get()
+    {
+        var theme = ModernUI.WinForms.ModernTheme.Dark;
+        return new(theme.Background, theme.Container, theme.Control, theme.Border, theme.Text, theme.TextSecondary,
+            theme.Primary, theme.Primary, Color.White, theme.BorderSecondary);
+    }
 
     /// <summary>应用。</summary>
     internal static void Apply(Control root)
@@ -54,10 +50,20 @@ internal static class WorkflowWinFormsStyle
                     ApplyControl(child, palette);
             return;
         }
-        if (control is ModernUI.WinForms.ModernControl or ModernUI.WinForms.ModernMenuStrip or
-            ModernUI.WinForms.ModernToolStrip or ModernUI.WinForms.ModernGroupBox or
-            ModernUI.WinForms.ModernListBox or ModernUI.WinForms.ModernStatusBar or
-            ModernUI.WinForms.ModernDataGridView)
+        // 分栏只是宿主容器：分隔条使用 Modern 主题，两侧内容继续按宿主规则着色。
+        if (control is ModernUI.WinForms.ModernSplitter splitter)
+        {
+            splitter.Theme = ModernUI.WinForms.ModernTheme.Dark;
+            foreach (var panel in new[] { splitter.Panel1, splitter.Panel2 })
+            {
+                panel.BackColor = palette.Window;
+                foreach (Control child in panel.Controls)
+                    ApplyControl(child, palette);
+            }
+            return;
+        }
+        // 其余 Modern 控件（树、列表、输入框、工具栏等）自带完整主题树。
+        if (control.GetType().Namespace == typeof(ModernUI.WinForms.ModernTheme).Namespace)
         {
             ModernUI.WinForms.ModernUiSettings.ApplyTheme(control, ModernUI.WinForms.ModernTheme.Dark);
             return;

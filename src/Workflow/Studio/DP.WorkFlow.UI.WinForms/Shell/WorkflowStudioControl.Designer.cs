@@ -26,11 +26,11 @@ partial class WorkflowStudioControl
         _resumeButton = new ToolStripButton();
         _stopButton = new ToolStripButton();
         _runtimeLabel = new ToolStripLabel();
-        toolboxAndEditor = new SplitContainer();
+        toolboxAndEditor = new ModernUI.WinForms.ModernSplitter();
         toolboxControl = new WorkflowToolboxControl();
-        canvasAndDiagnostics = new SplitContainer();
+        canvasAndDiagnostics = new ModernUI.WinForms.ModernSplitter();
         designerControl = new WorkflowDesignerControl();
-        bottomTabs = new TabControl();
+        bottomTabs = new ModernUI.WinForms.ModernTabControl();
         diagnosticsPage = new TabPage();
         diagnosticsControl = new WorkflowDiagnosticsControl();
         runtimePage = new TabPage();
@@ -45,7 +45,6 @@ partial class WorkflowStudioControl
         canvasAndDiagnostics.Panel1.SuspendLayout();
         canvasAndDiagnostics.Panel2.SuspendLayout();
         canvasAndDiagnostics.SuspendLayout();
-        bottomTabs.SuspendLayout();
         diagnosticsPage.SuspendLayout();
         runtimePage.SuspendLayout();
         SuspendLayout();
@@ -157,8 +156,9 @@ partial class WorkflowStudioControl
         // 
         // toolboxAndEditor
         // 
-        toolboxAndEditor.BackColor = Color.FromArgb(30, 41, 59);
         toolboxAndEditor.Dock = DockStyle.Fill;
+        toolboxAndEditor.FixedPanel = FixedPanel.Panel1;
+        toolboxAndEditor.InitialPanel2Size = 0;
         toolboxAndEditor.Location = new Point(0, 25);
         toolboxAndEditor.Name = "toolboxAndEditor";
         // 
@@ -171,14 +171,11 @@ partial class WorkflowStudioControl
         toolboxAndEditor.Panel2.Controls.Add(canvasAndDiagnostics);
         toolboxAndEditor.Size = new Size(1180, 695);
         toolboxAndEditor.SplitterDistance = 259;
-        toolboxAndEditor.SplitterWidth = 5;
         toolboxAndEditor.TabIndex = 0;
         // 
         // toolboxControl
         // 
-        toolboxControl.BackColor = Color.FromArgb(15, 23, 42);
         toolboxControl.Dock = DockStyle.Fill;
-        toolboxControl.ForeColor = Color.FromArgb(226, 232, 240);
         toolboxControl.Location = new Point(0, 0);
         toolboxControl.Name = "toolboxControl";
         toolboxControl.Session = null;
@@ -187,16 +184,15 @@ partial class WorkflowStudioControl
         // 
         // canvasAndDiagnostics
         //
-        canvasAndDiagnostics.BackColor = Color.FromArgb(30, 41, 59);
         canvasAndDiagnostics.Dock = DockStyle.Fill;
+        canvasAndDiagnostics.InitialPanel2Size = 220;
         canvasAndDiagnostics.Location = new Point(0, 0);
         canvasAndDiagnostics.Name = "canvasAndDiagnostics";
         canvasAndDiagnostics.Orientation = Orientation.Horizontal;
         canvasAndDiagnostics.Panel1.Controls.Add(designerControl);
         canvasAndDiagnostics.Panel2.Controls.Add(bottomTabs);
         canvasAndDiagnostics.Size = new Size(916, 695);
-        canvasAndDiagnostics.SplitterDistance = 535;
-        canvasAndDiagnostics.SplitterWidth = 5;
+        canvasAndDiagnostics.SplitterDistance = 475;
         canvasAndDiagnostics.TabIndex = 0;
         //
         // designerControl
@@ -213,20 +209,20 @@ partial class WorkflowStudioControl
         //
         // bottomTabs
         //
-        bottomTabs.Controls.Add(diagnosticsPage);
-        bottomTabs.Controls.Add(runtimePage);
+        bottomTabs.TabPages.Add(diagnosticsPage);
+        bottomTabs.TabPages.Add(runtimePage);
         bottomTabs.Dock = DockStyle.Fill;
         bottomTabs.Location = new Point(0, 0);
         bottomTabs.Name = "bottomTabs";
         bottomTabs.SelectedIndex = 0;
-        bottomTabs.Size = new Size(916, 155);
+        bottomTabs.Size = new Size(916, 220);
         bottomTabs.TabIndex = 0;
         //
         // diagnosticsPage
         //
         diagnosticsPage.Controls.Add(diagnosticsControl);
-        diagnosticsPage.Location = new Point(4, 26);
         diagnosticsPage.Name = "diagnosticsPage";
+        diagnosticsPage.Padding = new Padding(6);
         diagnosticsPage.Text = "诊断";
         diagnosticsControl.Dock = DockStyle.Fill;
         diagnosticsControl.Name = "diagnosticsControl";
@@ -234,8 +230,8 @@ partial class WorkflowStudioControl
         // runtimePage
         //
         runtimePage.Controls.Add(runtimeMonitorControl);
-        runtimePage.Location = new Point(4, 26);
         runtimePage.Name = "runtimePage";
+        runtimePage.Padding = new Padding(6);
         runtimePage.Text = "运行监视";
         runtimeMonitorControl.Dock = DockStyle.Fill;
         runtimeMonitorControl.Name = "runtimeMonitorControl";
@@ -273,7 +269,6 @@ partial class WorkflowStudioControl
         canvasAndDiagnostics.Panel2.ResumeLayout(false);
         ((System.ComponentModel.ISupportInitialize)canvasAndDiagnostics).EndInit();
         canvasAndDiagnostics.ResumeLayout(false);
-        bottomTabs.ResumeLayout(false);
         diagnosticsPage.ResumeLayout(false);
         runtimePage.ResumeLayout(false);
         ResumeLayout(false);
@@ -299,11 +294,11 @@ partial class WorkflowStudioControl
     private ToolStripButton _resumeButton = null!;
     private ToolStripButton _stopButton = null!;
     private ToolStripLabel _runtimeLabel = null!;
-    private SplitContainer toolboxAndEditor = null!;
+    private ModernUI.WinForms.ModernSplitter toolboxAndEditor = null!;
     private WorkflowToolboxControl toolboxControl = null!;
-    private SplitContainer canvasAndDiagnostics = null!;
+    private ModernUI.WinForms.ModernSplitter canvasAndDiagnostics = null!;
     private WorkflowDesignerControl designerControl = null!;
-    private TabControl bottomTabs = null!;
+    private ModernUI.WinForms.ModernTabControl bottomTabs = null!;
     private TabPage diagnosticsPage = null!;
     private WorkflowDiagnosticsControl diagnosticsControl = null!;
     private TabPage runtimePage = null!;

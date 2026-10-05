@@ -70,11 +70,11 @@ WorkflowStudioControl
 │  ├─ 停止
 │  └─ 运行状态
 │
-└─ toolboxAndEditor 左右 SplitContainer
+└─ toolboxAndEditor 左右 ModernSplitter（固定左侧宽度）
    ├─ 左侧：WorkflowToolboxControl
-   └─ 右侧：canvasAndDiagnostics 上下 SplitContainer
+   └─ 右侧：canvasAndDiagnostics 上下 ModernSplitter（固定底部高度）
       ├─ 上方：WorkflowDesignerControl
-      └─ 下方：TabControl
+      └─ 下方：ModernTabControl
          ├─ 诊断：WorkflowDiagnosticsControl
          └─ 运行监视：WorkflowRuntimeMonitorControl
 ```
@@ -180,7 +180,8 @@ src/Workflow/Studio/DP.WorkFlow.UI.WinForms/Toolbox/
 
 ```text
 WorkflowToolboxControl
-└─ TreeView
+├─ 搜索框：ModernInput（按名称、类型、分类、说明过滤）
+└─ ModernTreeView
    ├─ 标准
    ├─ 复合
    ├─ 运动
@@ -190,13 +191,10 @@ WorkflowToolboxControl
 
 Designer 文件负责：
 
-- TreeView 尺寸。
-- Dock。
-- 行高。
-- 颜色。
-- 边框。
-- 展开线。
-- Tooltip 等静态外观。
+- 搜索框与 ModernTreeView 的尺寸、Dock、行高、Tooltip 等静态外观。
+
+颜色由 ModernUI 深色主题统一提供；`WorkflowWinFormsStyle` 的调色板也取自 `ModernTheme.Dark`，
+原生宿主控件与 Modern 控件颜色一致。
 
 普通 `.cs` 负责：
 
