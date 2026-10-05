@@ -174,6 +174,10 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     public bool CanEdit => SupportsRegions || _node is AnalyzeVisionFrameNodeModel { RangeCapability: EWorkflowVisionRange.Rectangle };
     /// <summary>根据节点范围能力启用完整面积形状及包含/排除，不维护节点类型白名单。</summary>
     public bool SupportsRegions => IsTemplateEditor || _node is AnalyzeVisionFrameNodeModel { RangeCapability: EWorkflowVisionRange.Region };
+    /// <summary>“区域类型”下拉框的工具：有面积范围能力时为选择、矩形、旋转矩形、椭圆、多边形；只支持矩形时为选择和矩形。</summary>
+    public IReadOnlyList<RoiToolChoice> RegionTools => SupportsRegions
+        ? RoiToolChoice.Areas.Where(c => c.Tool is ERoiTool.Select or ERoiTool.Rectangle or ERoiTool.RotatedRectangle or ERoiTool.Ellipse or ERoiTool.Polygon).ToArray()
+        : RoiToolChoice.Areas.Where(c => c.Tool is ERoiTool.Select or ERoiTool.Rectangle).ToArray();
     /// <summary>最近的明确状态或错误。</summary>
     public string Status { get; private set; } = "选择运行输入/结果，或显式读取文件预览。范围使用原图整数半开矩形。";
 
