@@ -34,7 +34,6 @@ partial class Form1
         // 
         // workflowStudioControl1
         // 
-        workflowStudioControl1.BackColor = Color.FromArgb(15, 23, 42);
         workflowStudioControl1.ConfirmDiscardChanges = null;
         workflowStudioControl1.Dock = DockStyle.Fill;
         workflowStudioControl1.ForeColor = Color.FromArgb(241, 241, 241);
@@ -55,7 +54,7 @@ partial class Form1
         ClientSize = new Size(1021, 623);
         Controls.Add(workflowStudioControl1);
         Name = "Form1";
-        Text = "Form1";
+        Text = "DP.WorkFlow 流程工作台";
         ResumeLayout(false);
     }
 

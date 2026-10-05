@@ -52,9 +52,6 @@ public sealed partial class WorkflowStudioControl : UserControl
                 toolboxAndEditor.SplitterDistance = Math.Min(210, toolboxAndEditor.Width - 300);
         };
         WorkflowWinFormsStyle.Apply(this);
-        var palette = WorkflowWinFormsStyle.Get();
-        _toolbar.BackColor = palette.Surface;
-        _toolbar.ForeColor = palette.Text;
     }
 
     /// <summary>获取画布控件。</summary>
@@ -70,7 +67,13 @@ public sealed partial class WorkflowStudioControl : UserControl
     public WorkflowDiagnosticsControl Diagnostics => diagnosticsControl;
     /// <summary>为领域工具添加独立工作台页面。</summary>
     public void AddToolPage(string title, Control page)
-    { var tab = new TabPage(title); page.Dock = DockStyle.Fill; tab.Controls.Add(page); bottomTabs.TabPages.Add(tab); }
+    {
+        var tab = new TabPage(title) { Padding = new Padding(6) };
+        page.Dock = DockStyle.Fill;
+        tab.Controls.Add(page);
+        WorkflowWinFormsStyle.Apply(page);
+        bottomTabs.TabPages.Add(tab);
+    }
 
     /// <summary>获取运行监视器。</summary>
     public WorkflowRuntimeMonitorControl RuntimeMonitor => runtimeMonitorControl;

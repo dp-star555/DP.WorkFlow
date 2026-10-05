@@ -3,8 +3,8 @@ using DP.WorkFlow.UI;
 namespace DP.WorkFlow.UI.WinForms;
 
 /// <summary>
-/// 按分类树展示节点，并支持双击或拖放到画布。
-/// TreeView 的静态外观位于同名 Designer.cs，分类和节点项由目录动态生成。
+/// 按分类树展示节点，支持搜索过滤以及双击或拖放到画布。
+/// 搜索框与 ModernTreeView 的静态外观位于同名 Designer.cs，分类和节点项由目录动态生成。
 /// </summary>
 public sealed partial class WorkflowToolboxControl : UserControl
 {
@@ -14,6 +14,8 @@ public sealed partial class WorkflowToolboxControl : UserControl
     public WorkflowToolboxControl()
     {
         InitializeComponent();
+        ModernUI.WinForms.ModernUiSettings.ApplyTheme(this, ModernUI.WinForms.ModernTheme.Dark);
+        searchInput.TextChanged += (_, _) => RebuildTree();
         toolboxTreeView.NodeMouseDoubleClick += (_, e) => Activate(e.Node);
         toolboxTreeView.ItemDrag += (_, e) =>
         {
@@ -51,12 +53,18 @@ public sealed partial class WorkflowToolboxControl : UserControl
         toolboxTreeView.Nodes.Clear();
         if (_session is not null)
         {
-            foreach (var item in _session.GetToolboxItems())
+            var filter = searchInput.Text.Trim();
+            foreach (var item in _session.GetToolboxItems().Where(item => Matches(item, filter)))
                 AddItem(item);
             toolboxTreeView.ExpandAll();
         }
         toolboxTreeView.EndUpdate();
     }
+
+    /// <summary>按显示名、节点类型、分类或说明做不区分大小写的包含匹配；空过滤条件匹配全部。</summary>
+    private static bool Matches(WorkflowToolboxItem item, string filter) =>
+        filter.Length == 0 || new[] { item.DisplayName, item.NodeType, item.Category, item.Description }
+            .Any(text => text?.Contains(filter, StringComparison.OrdinalIgnoreCase) == true);
 
     /// <summary>添加Item。</summary>
     /// <param name="item">目标数据项。</param>
@@ -73,7 +81,7 @@ public sealed partial class WorkflowToolboxControl : UserControl
             {
                 category = new TreeNode(segment)
                 {
-                    ForeColor = Color.FromArgb(55, 148, 255),
+                    ForeColor = toolboxTreeView.Theme.TextSecondary,
                     NodeFont = new Font(Font, FontStyle.Bold)
                 };
                 nodes.Add(category);
@@ -83,8 +91,7 @@ public sealed partial class WorkflowToolboxControl : UserControl
         nodes.Add(new TreeNode(item.DisplayName)
         {
             Tag = item,
-            ToolTipText = item.Description ?? item.NodeType,
-            ForeColor = ForeColor
+            ToolTipText = item.Description ?? item.NodeType
         });
     }
 }
