@@ -51,21 +51,26 @@ public sealed class WorkflowDesignerSessionTests
     }
 
     [Fact]
-    public void NodeHeaderLayout_GivesTitleFullHeaderAndPutsRuntimeInBody()
+    public void NodeHeaderLayout_KeepsTitleAndRuntimeOnHeaderRowWithCenteredIndicator()
     {
         var layout = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(
             new WorkflowDesignerRect(100, 50, 180, 64),
             zoom: 1,
-            measuredRuntimeWidth: 96);
+            measuredRuntimeWidth: 60);
 
-        // 标题独占标题栏整行；运行摘要位于正文区，与标题不重叠且同样左对齐。
-        Assert.Equal(180 - 34, layout.TitleBounds.Width, 6);
-        Assert.True(layout.RuntimeBounds.Y >= 50 + WorkflowDesignerGeometry.HeaderHeight);
-        Assert.True(layout.RuntimeBounds.Y + layout.RuntimeBounds.Height <= 50 + 64);
-        Assert.Equal(layout.TitleBounds.X, layout.RuntimeBounds.X);
-        Assert.Equal(layout.TitleBounds.Width, layout.RuntimeBounds.Width);
-        Assert.Equal(9, layout.TitleFontSize);
-        Assert.Equal(7.5, layout.RuntimeFontSize);
+        Assert.True(layout.TitleBounds.X + layout.TitleBounds.Width <= layout.RuntimeBounds.X);
+        Assert.Equal(60, layout.RuntimeBounds.Width);
+        Assert.Equal(50, layout.TitleBounds.Y);
+        Assert.Equal(layout.TitleBounds.Y, layout.RuntimeBounds.Y);
+        Assert.Equal(WorkflowDesignerGeometry.HeaderHeight, layout.RuntimeBounds.Height);
+        var indicatorCenter = layout.IndicatorBounds.Y + layout.IndicatorBounds.Height / 2;
+        Assert.Equal(50 + WorkflowDesignerGeometry.HeaderHeight / 2, indicatorCenter, 6);
+        Assert.True(layout.IndicatorBounds.X + layout.IndicatorBounds.Width < layout.TitleBounds.X);
+        Assert.Equal(WorkflowDesignerGeometry.TitleFontPixels, layout.TitleFontSize);
+        Assert.Equal(WorkflowDesignerGeometry.DetailFontPixels, layout.RuntimeFontSize);
+
+        var crowded = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(new WorkflowDesignerRect(0, 0, 180, 64), 1, 500);
+        Assert.True(crowded.RuntimeBounds.Width <= (180 - 34) * 0.5 + 0.01);
     }
 
     [Fact]
