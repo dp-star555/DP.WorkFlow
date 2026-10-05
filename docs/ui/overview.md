@@ -27,7 +27,7 @@
 - Studio 工具栏支持接近 Visual Studio 2022 配色的深色/浅色主题即时切换；映射表格、工具箱和参数弹窗同步更新；
 - `WorkflowInput<T>` Literal/Binding 编辑和强类型候选；
 - 组合式 `WorkflowStudioControl`；
-- Block 双击进入子画布、上一级和面包屑；
+- Block 双击弹出节点窗口编辑子画布（左侧含工具箱）；
 - 根流程运行后再进入 Block，子节点仍显示已映射运行状态；
 - 进入 Block 后可用“运行当前子流程”独立调试，不启动根流程；
 - 空 Block 首次进入时自动创建可撤销的 Start 节点；

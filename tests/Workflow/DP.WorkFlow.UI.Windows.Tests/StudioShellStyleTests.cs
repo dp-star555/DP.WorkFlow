@@ -31,12 +31,13 @@ public sealed class StudioShellStyleTests
             var toolbar = Descendants(studio).OfType<ModernToolStrip>().Single();
             var buttons = toolbar.Items.OfType<ToolStripButton>().ToDictionary(item => item.Name ?? string.Empty);
 
-            foreach (var name in new[] { "_undoButton", "_redoButton", "_upButton", "_runButton", "_pauseButton", "_resumeButton", "_stopButton" })
+            foreach (var name in new[] { "_undoButton", "_redoButton", "_runButton", "_pauseButton", "_resumeButton", "_stopButton" })
             {
                 Assert.Equal(ToolStripItemDisplayStyle.Image, buttons[name].DisplayStyle);
                 Assert.NotNull(buttons[name].Image);
                 Assert.False(string.IsNullOrWhiteSpace(buttons[name].ToolTipText));
             }
+            Assert.DoesNotContain("_upButton", buttons.Keys);
             Assert.All(toolbar.Items.OfType<ToolStripDropDownButton>().SelectMany(menu => menu.DropDownItems.Cast<ToolStripItem>()),
                 item => Assert.NotNull(item.Image));
         });
