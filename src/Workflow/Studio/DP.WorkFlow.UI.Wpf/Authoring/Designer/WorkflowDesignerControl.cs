@@ -604,13 +604,12 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             var activeColor = _connectionStart?.Port.Direction == WorkflowPortDirection.Input
                 ? Color.FromRgb(167, 139, 250)
                 : Color.FromRgb(52, 211, 153);
-            var radius = highlighted ? 4 : 2;
-            var fill = Freeze(new SolidColorBrush(highlighted
-                ? activeColor
-                : Color.FromArgb(30, 15, 23, 42)));
+            // 选中节点四边的换边把手：空闲时为深底浅色描边的圆点，拖到某一边时放大并填充端口色。
+            var radius = Math.Max(3, (highlighted ? 6 : 4.5) * (_session?.Zoom ?? 1));
+            var fill = Freeze(new SolidColorBrush(highlighted ? activeColor : Color.FromRgb(30, 41, 59)));
             var border = new Pen(Freeze(new SolidColorBrush(highlighted
-                ? Color.FromRgb(226, 232, 240)
-                : Color.FromRgb(71, 85, 105))), highlighted ? 1.5 : 1);
+                ? Color.FromRgb(241, 245, 249)
+                : Color.FromRgb(148, 163, 184))), 1.5);
             context.DrawEllipse(fill, border, center, radius, radius);
         }
     }

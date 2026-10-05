@@ -18,7 +18,7 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
     private WorkflowDesignerNavigator? _navigator;
     private readonly ILocalizationManager _defaultLocalizationManager = WorkflowUiLocalization.CreateManager(CultureInfo.GetCultureInfo("zh-CN"));
     private ILocalizationContext _localizationContext = null!;
-    private readonly ModernCommand _navigateCommand;
+    private string _summaryText = string.Empty;
 
     /// <summary>初始化工作流诊断列表控件。</summary>
     public WorkflowDiagnosticsControl()
@@ -26,10 +26,8 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
         InitializeComponent();
         diagnosticsListView.ShowItemToolTips = true;
         _localizationContext = _defaultLocalizationManager.Context;
-        _navigateCommand = new ModernCommand(NavigateSelected) { Icon = ModernIconKind.Search, CanExecutePredicate = CanNavigate };
-        diagnosticsCommandBar.Commands.Add(_navigateCommand);
+        // 双击诊断行定位到对应节点。
         diagnosticsListView.DoubleClick += (_, _) => NavigateSelected();
-        diagnosticsListView.SelectedIndexChanged += (_, _) => _navigateCommand.RaiseCanExecuteChanged();
         LocalizationContext = _defaultLocalizationManager.Context;
     }
 
@@ -44,8 +42,6 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
             _localizationContext = value;
             _localizationContext.Changed += LocalizationChanged;
             localizationProvider.LocalizationContext = value;
-            diagnosticsCommandBar.LocalizationContext = value;
-            diagnosticsAlert.LocalizationContext = value;
             ApplyLocalization();
         }
     }
@@ -82,7 +78,7 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
     }
 
     /// <summary>获取当前语言下的诊断摘要文本。</summary>
-    public string SummaryText => diagnosticsAlert.Text;
+    public string SummaryText => _summaryText;
 
     /// <summary>执行 Recreate Model 相关处理。</summary>
     private void RecreateModel()
@@ -114,9 +110,6 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
             RefreshItems();
     }
 
-    private bool CanNavigate() => diagnosticsListView.SelectedItems.Count == 1 &&
-        diagnosticsListView.SelectedItems[0].Tag is WorkflowDiagnosticItem;
-
     private void NavigateSelected()
     {
         if (diagnosticsListView.SelectedItems.Count == 1 &&
@@ -135,7 +128,6 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
         codeColumn.Text = LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsCode);
         nodeColumn.Text = LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsNode);
         messageColumn.Text = LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsMessage);
-        _navigateCommand.Text = LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsNavigate);
         AccessibleName = LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsAccessibleName);
         diagnosticsListView.AccessibleName = AccessibleName;
         RefreshItems();
@@ -167,12 +159,10 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
         diagnosticsListView.EndUpdate();
         var errors = (_model?.Items ?? Array.Empty<WorkflowDiagnosticItem>()).Count(item => item.Severity == WorkflowValidationSeverity.Error);
         var warnings = (_model?.Items ?? Array.Empty<WorkflowDiagnosticItem>()).Count - errors;
-        diagnosticsAlert.Status = errors > 0 ? ModernVisualStatus.Error : warnings > 0 ? ModernVisualStatus.Warning : ModernVisualStatus.Success;
-        diagnosticsAlert.Text = errors + warnings == 0
+        _summaryText = errors + warnings == 0
             ? LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsEmpty)
             : LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsSummary,
                 new Dictionary<string, object?> { ["errors"] = errors, ["warnings"] = warnings });
-        _navigateCommand.RaiseCanExecuteChanged();
     }
 
     private void DisposeLocalization()
