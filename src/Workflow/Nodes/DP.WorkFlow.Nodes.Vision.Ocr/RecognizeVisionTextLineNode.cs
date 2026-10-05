@@ -31,10 +31,13 @@ public sealed class WorkflowVisionTextLineFact : IWorkflowVisionFrameFact
     /// <summary>保留模型身份、置信度、CTC 观测及原图矩形。</summary>
     public WorkflowVisionTextLineFact(string frameId, TextLineRecognition recognition) { FrameId = frameId; Recognition = recognition; }
     /// <inheritdoc/>
+    [DisplayName("图像标识")]
     public string FrameId { get; }
     /// <summary>原始识别证据。</summary>
+    [DisplayName("识别结果")]
     public TextLineRecognition Recognition { get; }
     /// <inheritdoc/>
+    [DisplayName("摘要")]
     public string Summary => string.IsNullOrEmpty(Recognition.Text) ? "未识别出文字" : $"{Recognition.Text}（置信度 {Recognition.Confidence:P1}）";
 }
 

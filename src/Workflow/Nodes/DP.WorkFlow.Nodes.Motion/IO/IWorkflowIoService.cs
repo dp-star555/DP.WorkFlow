@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace DP.WorkFlow;
 
 /// <summary>提供与厂商板卡无关的数字 IO 访问能力。</summary>
@@ -19,10 +21,10 @@ public sealed record WorkflowIoAddress(string DriveId, int Index, WorkflowIoPoin
 public sealed record WorkflowIoWriteRequest(WorkflowIoAddress Address, WorkflowIoWriteCommand Command, bool Value, bool WaitForSignal, int TimeoutMs, int ActionDelayMs);
 
 /// <summary>IO 节点结构化结果。</summary>
-public sealed record WorkflowIoNodeResult(string DriveId, int Index, object? Value, bool Success, string? Message = null);
+public sealed record WorkflowIoNodeResult([property: DisplayName("驱动")] string DriveId, [property: DisplayName("索引")] int Index, [property: DisplayName("值")] object? Value, [property: DisplayName("是否成功")] bool Success, [property: DisplayName("消息")] string? Message = null);
 
 /// <summary>IO 写入结构化结果。</summary>
-public sealed record WorkflowIoWriteResult(WorkflowIoAddress Address, WorkflowIoWriteCommand Command, bool TargetValue, bool Success, string? Message = null);
+public sealed record WorkflowIoWriteResult([property: DisplayName("地址")] WorkflowIoAddress Address, [property: DisplayName("命令")] WorkflowIoWriteCommand Command, [property: DisplayName("目标值")] bool TargetValue, [property: DisplayName("是否成功")] bool Success, [property: DisplayName("消息")] string? Message = null);
 
 public interface IWorkflowIoService
 {

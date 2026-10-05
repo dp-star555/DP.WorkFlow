@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace DP.WorkFlow;
 
 /// <summary>机器人停止方式。</summary>
@@ -14,13 +16,13 @@ public sealed record WaferRobotStateResult(bool IsConnected, bool IsInitialized,
 /// <summary>机器人报警。</summary>
 public sealed record WaferRobotAlarm(string? Code, string? Message, string? Level);
 /// <summary>机器人原始快照，字段与旧版 WaferRobotSnapshot 一致。</summary>
-public sealed record WaferRobotSnapshotResult(DateTime Timestamp, WaferRobotStateResult State, bool? HasWafer, IReadOnlyList<WaferRobotAlarm> Alarms, string? ErrorCode, string? ErrorMessage);
+public sealed record WaferRobotSnapshotResult([property: DisplayName("时间戳")] DateTime Timestamp, [property: DisplayName("机器人状态")] WaferRobotStateResult State, [property: DisplayName("有晶圆")] bool? HasWafer, [property: DisplayName("报警")] IReadOnlyList<WaferRobotAlarm> Alarms, [property: DisplayName("错误码")] string? ErrorCode, [property: DisplayName("错误信息")] string? ErrorMessage);
 /// <summary>设备命令返回。</summary>
 public sealed record WaferRobotDeviceCommandResult(bool Success, string? Code = null, string? Message = null, string? RawRequest = null, string? RawResponse = null);
 /// <summary>工作流机器人命令结果，字段与旧版一致。</summary>
-public sealed record WaferRobotCommandNodeResult(string RobotKey, string OperationName, string? StationId, int? Slot, E_EndEffectorType Arm, bool Success, string? Code, string? Message, string? RawRequest, string? RawResponse, bool WaitForCompleted, bool WaitCompleted, bool IsConnected, bool IsInitialized, bool IsBusy, bool IsPaused, bool HasAlarm, bool CanStartMotion, string? StatusCode, string? StatusText);
+public sealed record WaferRobotCommandNodeResult([property: DisplayName("机器人")] string RobotKey, [property: DisplayName("操作")] string OperationName, [property: DisplayName("工站")] string? StationId, [property: DisplayName("槽位")] int? Slot, [property: DisplayName("手臂")] E_EndEffectorType Arm, [property: DisplayName("是否成功")] bool Success, [property: DisplayName("返回码")] string? Code, [property: DisplayName("消息")] string? Message, [property: DisplayName("原始请求")] string? RawRequest, [property: DisplayName("原始响应")] string? RawResponse, [property: DisplayName("等待完成")] bool WaitForCompleted, [property: DisplayName("已等到完成")] bool WaitCompleted, [property: DisplayName("已连接")] bool IsConnected, [property: DisplayName("已初始化")] bool IsInitialized, [property: DisplayName("忙碌")] bool IsBusy, [property: DisplayName("已暂停")] bool IsPaused, [property: DisplayName("有报警")] bool HasAlarm, [property: DisplayName("可开始运动")] bool CanStartMotion, [property: DisplayName("状态码")] string? StatusCode, [property: DisplayName("状态说明")] string? StatusText);
 /// <summary>机器人空闲等待结果。</summary>
-public sealed record WaferRobotWaitIdleNodeResult(string RobotKey, bool Success, bool IsConnected, bool IsInitialized, bool IsBusy, bool IsPaused, bool HasAlarm, bool CanStartMotion, string? StatusCode, string? StatusText);
+public sealed record WaferRobotWaitIdleNodeResult([property: DisplayName("机器人")] string RobotKey, [property: DisplayName("是否成功")] bool Success, [property: DisplayName("已连接")] bool IsConnected, [property: DisplayName("已初始化")] bool IsInitialized, [property: DisplayName("忙碌")] bool IsBusy, [property: DisplayName("已暂停")] bool IsPaused, [property: DisplayName("有报警")] bool HasAlarm, [property: DisplayName("可开始运动")] bool CanStartMotion, [property: DisplayName("状态码")] string? StatusCode, [property: DisplayName("状态说明")] string? StatusText);
 
 /// <summary>提供强类型晶圆机器人设备能力。</summary>
 public interface IWorkflowWaferRobotService

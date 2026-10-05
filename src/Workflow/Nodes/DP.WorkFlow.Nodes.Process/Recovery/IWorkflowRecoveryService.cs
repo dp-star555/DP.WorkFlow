@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace DP.WorkFlow;
 
 /// <summary>流程中断来源。</summary>
@@ -9,12 +11,16 @@ public enum E_WorkflowFaultSeverity { Recoverable = 0, Fatal = 1 }
 public sealed class WorkflowSafePointContext
 {
     /// <summary>安全点键。</summary>
+    [DisplayName("安全点")]
     public string SafePointKey { get; set; } = string.Empty;
     /// <summary>节点 ID。</summary>
+    [DisplayName("节点标识")]
     public string NodeId { get; set; } = string.Empty;
     /// <summary>节点标题。</summary>
+    [DisplayName("节点标题")]
     public string Title { get; set; } = string.Empty;
     /// <summary>记录时间。</summary>
+    [DisplayName("记录时间")]
     public DateTime Time { get; set; } = DateTime.Now;
 }
 
@@ -22,48 +28,70 @@ public sealed class WorkflowSafePointContext
 public sealed class WorkflowInterruptContext
 {
     /// <summary>中断来源。</summary>
+    [DisplayName("中断来源")]
     public E_WorkflowInterruptSource Source { get; set; }
     /// <summary>严重度。</summary>
+    [DisplayName("严重度")]
     public E_WorkflowFaultSeverity Severity { get; set; }
     /// <summary>报警编码。</summary>
+    [DisplayName("报警编码")]
     public int AlarmCode { get; set; }
     /// <summary>报警名称。</summary>
+    [DisplayName("报警名称")]
     public string AlarmName { get; set; } = string.Empty;
     /// <summary>流程名称。</summary>
+    [DisplayName("流程名称")]
     public string WorkflowName { get; set; } = string.Empty;
     /// <summary>异常分类。</summary>
+    [DisplayName("异常分类")]
     public string Category { get; set; } = string.Empty;
     /// <summary>业务模块。</summary>
+    [DisplayName("业务模块")]
     public string Module { get; set; } = string.Empty;
     /// <summary>原因编码。</summary>
+    [DisplayName("原因编码")]
     public string ReasonCode { get; set; } = string.Empty;
     /// <summary>恢复指引。</summary>
+    [DisplayName("恢复指引")]
     public string RecoveryGuide { get; set; } = string.Empty;
     /// <summary>建议检查项。</summary>
+    [DisplayName("建议检查项")]
     public List<string> SuggestedChecks { get; set; } = new();
     /// <summary>扩展负载。</summary>
+    [DisplayName("扩展负载")]
     public Dictionary<string, object> Payload { get; set; } = new(StringComparer.Ordinal);
     /// <summary>故障节点 ID。</summary>
+    [DisplayName("故障节点")]
     public string FaultNodeId { get; set; } = string.Empty;
     /// <summary>故障节点标题。</summary>
+    [DisplayName("故障节点标题")]
     public string FaultNodeTitle { get; set; } = string.Empty;
     /// <summary>人类可读描述。</summary>
+    [DisplayName("描述")]
     public string Message { get; set; } = string.Empty;
     /// <summary>工站 ID。</summary>
+    [DisplayName("工站")]
     public string StationId { get; set; } = string.Empty;
     /// <summary>产品 ID。</summary>
+    [DisplayName("产品")]
     public string ProductId { get; set; } = string.Empty;
     /// <summary>运输会话 ID。</summary>
+    [DisplayName("运输会话")]
     public string SessionId { get; set; } = string.Empty;
     /// <summary>来源槽位。</summary>
+    [DisplayName("来源槽位")]
     public string FromSlotId { get; set; } = string.Empty;
     /// <summary>目标工站。</summary>
+    [DisplayName("目标工站")]
     public string ToStationId { get; set; } = string.Empty;
     /// <summary>目标槽位。</summary>
+    [DisplayName("目标槽位")]
     public string ToSlotId { get; set; } = string.Empty;
     /// <summary>发生时间。</summary>
+    [DisplayName("发生时间")]
     public DateTime Time { get; set; } = DateTime.Now;
     /// <summary>最近安全点。</summary>
+    [DisplayName("最近安全点")]
     public WorkflowSafePointContext? SafePoint { get; set; }
 }
 
@@ -85,18 +113,25 @@ public enum E_WarningExitAction
 public sealed class WarningResolution
 {
     /// <summary>恢复动作。</summary>
+    [DisplayName("恢复动作")]
     public E_WarningExitAction ExitAction { get; set; }
     /// <summary>跳转目标节点。</summary>
+    [DisplayName("跳转目标节点")]
     public string? TargetNodeId { get; set; }
     /// <summary>命名恢复入口键。</summary>
+    [DisplayName("恢复入口")]
     public string? RecoveryEntryKey { get; set; }
     /// <summary>操作员标识。</summary>
+    [DisplayName("操作员")]
     public string? OperatorId { get; set; }
     /// <summary>操作员选择。</summary>
+    [DisplayName("操作员选择")]
     public string? OperatorChoice { get; set; }
     /// <summary>裁决时间。</summary>
+    [DisplayName("裁决时间")]
     public DateTime DecidedAt { get; set; } = DateTime.Now;
     /// <summary>备注。</summary>
+    [DisplayName("备注")]
     public string? Note { get; set; }
 }
 

@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace DP.WorkFlow;
 
 /// <summary>气缸控制命令。</summary>
@@ -10,7 +12,7 @@ public enum WorkflowVacuumCommand { VacuumOn = 0, VacuumOff = 1, VacuumOffWithBl
 public enum WorkflowVacuumTargetState { VacuumOk = 0, VacuumNotOk = 1 }
 
 /// <summary>气动节点执行结果。</summary>
-public sealed record PneumaticNodeResult(string ActuatorName, bool Success, string State, string? Message = null);
+public sealed record PneumaticNodeResult([property: DisplayName("执行器")] string ActuatorName, [property: DisplayName("是否成功")] bool Success, [property: DisplayName("动作状态")] string State, [property: DisplayName("消息")] string? Message = null);
 
 /// <summary>提供与阀岛无关但保留旧版气缸/真空命令语义的服务。</summary>
 public interface IWorkflowPneumaticService

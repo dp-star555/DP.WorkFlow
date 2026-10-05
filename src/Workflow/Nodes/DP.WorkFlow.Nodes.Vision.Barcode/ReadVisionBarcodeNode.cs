@@ -30,14 +30,19 @@ public sealed class WorkflowVisionBarcodeFact : IWorkflowVisionFrameFact
     public WorkflowVisionBarcodeFact(string frameId, BarcodeReadResult reading, WorkflowVisionResolvedRange range)
     { FrameId = frameId; Reading = reading; Bounds = range.Bounds; Coordinates = range.Coordinates; }
     /// <inheritdoc/>
+    [DisplayName("图像标识")]
     public string FrameId { get; }
     /// <summary>原始码数据、选定范围及完成状态。</summary>
+    [DisplayName("读码结果")]
     public BarcodeReadResult Reading { get; }
     /// <summary>原图搜索范围。</summary>
+    [DisplayName("搜索范围")]
     public PixelBounds Bounds { get; }
     /// <summary>使用的同帧定位来源；观测仍为原图坐标。</summary>
+    [DisplayName("定位来源")]
     public VisionCoordinateSystem? Coordinates { get; }
     /// <inheritdoc/>
+    [DisplayName("摘要")]
     public string Summary => Reading.Observations.Count == 0 ? "未读到条码（not_decoded）"
         : string.Join("；", Reading.Observations.Select(o => o.Text)) + (Reading.Observations.Count > 1 ? "（多码，ambiguous）" : "");
 }

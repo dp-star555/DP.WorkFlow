@@ -26,6 +26,7 @@ public static class WorkflowImageNodes
     public static WorkflowNodeCatalog RegisterImageNodes(this WorkflowNodeCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);
+        WorkflowVisionOutputNames.EnsureRegistered();
         var ports = new[] { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success) };
         return catalog
             .Register(WorkflowNodeDescriptor.Create<AcquireVisionImageNodeModel, ImageFrame>(ports: ports))

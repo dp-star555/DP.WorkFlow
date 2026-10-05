@@ -84,6 +84,38 @@ public sealed class WorkflowNodeResultPageTests
     }
 
     [Fact]
+    public void Output_UsesDisplayNameAttributesAndRegisteredNames()
+    {
+        WorkflowOutputDisplayNames.Register(typeof(RegisteredOutput), new Dictionary<string, string> { ["Score"] = "分数" });
+        var items = new List<WorkflowNodeResultItem>();
+
+        WorkflowNodeResultPageModel.AddOutput(items, new AttributedOutput(true, 7));
+        WorkflowNodeResultPageModel.AddOutput(items, new RegisteredOutput());
+
+        Assert.Equal(new[] { "是否成功", "Code", "分数" }, items.Select(item => item.Name));
+    }
+
+    [Fact]
+    public void BuiltInNodeOutputs_HaveChineseNamesForEveryMember()
+    {
+        var catalog = new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes().RegisterImageNodes();
+
+        Assert.Empty(catalog.Snapshot().Values.SelectMany(descriptor => UnnamedMembers(descriptor.OutputType)).Distinct());
+        Assert.Equal("匹配分数", WorkflowOutputDisplayNames.Resolve(typeof(DP.Vision.Algorithms.TemplatePoseResult).GetProperty("Score")!));
+    }
+
+    /// <summary>列出输出类型中没有中文显示名称的公开成员；坐标分量 X/Y 本身即为显示名。</summary>
+    internal static IEnumerable<string> UnnamedMembers(Type? type)
+    {
+        if (type is null || type.IsPrimitive || type.IsEnum || type == typeof(string) || typeof(System.Collections.IEnumerable).IsAssignableFrom(type))
+            return Array.Empty<string>();
+        return type.GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public)
+            .Where(property => property.CanRead && property.GetIndexParameters().Length == 0 && property.Name is not ("X" or "Y" or "EqualityContract"))
+            .Where(property => WorkflowOutputDisplayNames.Resolve(property) == property.Name)
+            .Select(property => $"{type.Name}.{property.Name}");
+    }
+
+    [Fact]
     public void RuntimeSnapshotChanges_RaiseChangedUntilDisposed()
     {
         var (session, start) = CreateSession();
@@ -127,5 +159,12 @@ public sealed class WorkflowNodeResultPageTests
         public IReadOnlyList<int> Items { get; } = new[] { 1, 2 };
         public string? Missing => null;
         public string Broken => throw new InvalidOperationException("broken");
+    }
+
+    private sealed record AttributedOutput([property: System.ComponentModel.DisplayName("是否成功")] bool Success, int Code);
+
+    private sealed class RegisteredOutput
+    {
+        public double Score => 0.5;
     }
 }

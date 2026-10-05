@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace DP.WorkFlow;
 
 /// <summary>指定判断节点的条件来源。名称沿用旧版。</summary>
@@ -11,7 +13,7 @@ public enum E_DecisionConditionSource
 }
 
 /// <summary>表示判断节点产生的标准输出。</summary>
-public sealed record DecisionNodeResult(bool Value);
+public sealed record DecisionNodeResult([property: DisplayName("判定结果")] bool Value);
 
 /// <summary>
 /// 根据布尔条件选择 True 或 False 出口。

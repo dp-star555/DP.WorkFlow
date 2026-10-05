@@ -1,7 +1,9 @@
+using System.ComponentModel;
+
 namespace DP.WorkFlow;
 
 /// <summary>表示延时节点的标准输出。</summary>
-public sealed record DelayNodeResult(TimeSpan RequestedDelay, TimeSpan Elapsed);
+public sealed record DelayNodeResult([property: DisplayName("设定延时")] TimeSpan RequestedDelay, [property: DisplayName("耗时")] TimeSpan Elapsed);
 
 /// <summary>
 /// 使用可取消的异步等待暂停当前执行路径。

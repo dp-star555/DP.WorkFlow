@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Globalization;
 
 namespace DP.WorkFlow;
@@ -5,7 +6,7 @@ namespace DP.WorkFlow;
 /// <summary>转换输入来源。</summary>
 public enum E_CompareValueSource { Literal = 0, Binding = 1 }
 /// <summary>类型转换标准结果。</summary>
-public sealed record ConvertValueNodeResult(E_SignalValueType TargetType, bool Success, string OriginalText, string ConvertedValueText, string StringValue, int Int32Value, long Int64Value, double DoubleValue, bool BoolValue);
+public sealed record ConvertValueNodeResult([property: DisplayName("目标类型")] E_SignalValueType TargetType, [property: DisplayName("是否成功")] bool Success, [property: DisplayName("原始文本")] string OriginalText, [property: DisplayName("转换结果")] string ConvertedValueText, [property: DisplayName("字符串值")] string StringValue, [property: DisplayName("整数值")] int Int32Value, [property: DisplayName("长整数值")] long Int64Value, [property: DisplayName("浮点值")] double DoubleValue, [property: DisplayName("布尔值")] bool BoolValue);
 
 /// <summary>将常量或绑定值转换为五种旧版标准类型。</summary>
 [WorkflowNode("ConvertValue", DisplayName = "类型转换节点", Category = "2.Function/转换")]

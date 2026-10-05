@@ -1,12 +1,15 @@
+using System.ComponentModel;
+
 namespace DP.WorkFlow;
 
 /// <summary>扫码匹配模式。</summary>
 public enum CodeReaderScanMatchMode { Any = 0, Exact = 1, Contains = 2, StartsWith = 3, EndsWith = 4 }
 
 /// <summary>表示一次扫码结果，字段与旧版统一结果对应。</summary>
-public sealed record CodeReaderScanResult(string Code, byte[]? RawBytes, DateTime Time, string? SourceAddress)
+public sealed record CodeReaderScanResult([property: DisplayName("码值")] string Code, [property: DisplayName("原始字节")] byte[]? RawBytes, [property: DisplayName("时间")] DateTime Time, [property: DisplayName("来源地址")] string? SourceAddress)
 {
     /// <summary>获取是否包含有效码值。</summary>
+    [DisplayName("有效码值")]
     public bool Success => !string.IsNullOrWhiteSpace(Code);
 }
 
