@@ -22,7 +22,23 @@ public enum ModernIconKind
     Minus,
     Eye,
     EyeOff,
-    Loading
+    Loading,
+    /// <summary>选择/移动指针。</summary>
+    Pointer,
+    /// <summary>轴对齐矩形。</summary>
+    Rectangle,
+    /// <summary>旋转矩形。</summary>
+    RotatedRectangle,
+    /// <summary>椭圆。</summary>
+    Ellipse,
+    /// <summary>多边形。</summary>
+    Polygon,
+    /// <summary>画笔（涂抹）。</summary>
+    Brush,
+    /// <summary>橡皮。</summary>
+    Eraser,
+    /// <summary>适应窗口（四角向外）。</summary>
+    FitWindow
 }
 
 /// <summary>Specifies where a button icon is placed relative to its text.</summary>
@@ -144,6 +160,41 @@ internal static class ModernIconRenderer
                 }
                 graphics.DrawEllipse(pen, new RectangleF(left + width * .39f, top + height * .39f, width * .22f, height * .22f));
                 if (icon == ModernIconKind.EyeOff) graphics.DrawLine(pen, Point(.16f, .16f), Point(.84f, .84f));
+                break;
+            case ModernIconKind.Pointer:
+                graphics.DrawPolygon(pen, [Point(.26f, .14f), Point(.26f, .8f), Point(.42f, .64f), Point(.54f, .88f), Point(.64f, .83f), Point(.52f, .6f), Point(.74f, .58f)]);
+                break;
+            case ModernIconKind.Rectangle:
+                graphics.DrawRectangle(pen, left + width * .16f, top + height * .26f, width * .68f, height * .48f);
+                break;
+            case ModernIconKind.RotatedRectangle:
+                graphics.DrawPolygon(pen, [Point(.34f, .12f), Point(.9f, .42f), Point(.66f, .88f), Point(.1f, .58f)]);
+                break;
+            case ModernIconKind.Ellipse:
+                graphics.DrawEllipse(pen, new RectangleF(left + width * .12f, top + height * .24f, width * .76f, height * .52f));
+                break;
+            case ModernIconKind.Polygon:
+                graphics.DrawPolygon(pen, [Point(.5f, .12f), Point(.88f, .4f), Point(.74f, .86f), Point(.26f, .86f), Point(.12f, .4f)]);
+                break;
+            case ModernIconKind.Brush:
+                graphics.DrawLine(pen, Point(.86f, .14f), Point(.46f, .54f));
+                using (var path = new GraphicsPath())
+                {
+                    path.AddBezier(Point(.46f, .54f), Point(.3f, .5f), Point(.22f, .66f), Point(.2f, .86f));
+                    path.AddBezier(Point(.2f, .86f), Point(.42f, .86f), Point(.56f, .76f), Point(.46f, .54f));
+                    graphics.DrawPath(pen, path);
+                }
+                break;
+            case ModernIconKind.Eraser:
+                graphics.DrawPolygon(pen, [Point(.12f, .62f), Point(.5f, .24f), Point(.86f, .6f), Point(.6f, .86f), Point(.36f, .86f)]);
+                graphics.DrawLine(pen, Point(.31f, .43f), Point(.67f, .79f));
+                graphics.DrawLine(pen, Point(.36f, .86f), Point(.88f, .86f));
+                break;
+            case ModernIconKind.FitWindow:
+                graphics.DrawLines(pen, [Point(.14f, .36f), Point(.14f, .14f), Point(.36f, .14f)]);
+                graphics.DrawLines(pen, [Point(.64f, .14f), Point(.86f, .14f), Point(.86f, .36f)]);
+                graphics.DrawLines(pen, [Point(.86f, .64f), Point(.86f, .86f), Point(.64f, .86f)]);
+                graphics.DrawLines(pen, [Point(.36f, .86f), Point(.14f, .86f), Point(.14f, .64f)]);
                 break;
             case ModernIconKind.Loading:
                 pen.StartCap = LineCap.Round;

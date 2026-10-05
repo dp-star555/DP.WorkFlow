@@ -46,6 +46,15 @@ public sealed class VisionFrameEditorPageProvider(IWorkflowVisionPreviewSource? 
     }
 }
 
+/// <summary>帧编辑页视图下拉框的一项：稳定编号与显示文字。</summary>
+/// <param name="Code">视图编号，传给<see cref="VisionFrameEditorPageModel.Capture"/>。</param>
+/// <param name="Text">显示文字。</param>
+public sealed record VisionFrameView(int Code, string Text)
+{
+    /// <inheritdoc/>
+    public override string ToString() => Text;
+}
+
 /// <summary>共享编辑模型：只改隔离EditingNode；读图/查看预览不隐式修改配置。</summary>
 public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowNodeEditorCommitParticipant
 {
@@ -160,7 +169,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         var template = Template ?? throw new InvalidOperationException("此节点不支持模板制作。");
         var node = (AnalyzeVisionFrameNodeModel)_node;
         using var preview = manual ? null : CaptureInput(node);
-        using var frame = (manual ? _manual : preview?.Frame)?.Retain() ?? throw new InvalidOperationException("没有试匹配图像，请先读取手动预览或运行输入。");
+        using var frame = (manual ? _manual : preview?.Frame)?.Retain() ?? throw new InvalidOperationException("没有试匹配图像，请先读取测试图像或运行输入。");
         var parent = node.Coordinates == null ? null : CaptureCoordinates(node.Coordinates, frame);
         using var maskPreview = node.Mask.Binding is { IsPublicData: false } maskBinding ? _frames?.Capture(maskBinding.NodeId) : null;
         var range = node.ResolvePreviewRange(frame, parent, maskPreview?.Facts as RegionAnalysisResult);
@@ -174,12 +183,25 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     public bool CanEdit => SupportsRegions || _node is AnalyzeVisionFrameNodeModel { RangeCapability: EWorkflowVisionRange.Rectangle };
     /// <summary>根据节点范围能力启用完整面积形状及包含/排除，不维护节点类型白名单。</summary>
     public bool SupportsRegions => IsTemplateEditor || _node is AnalyzeVisionFrameNodeModel { RangeCapability: EWorkflowVisionRange.Region };
-    /// <summary>“区域类型”下拉框的工具：有面积范围能力时为选择、矩形、旋转矩形、椭圆、多边形；只支持矩形时为选择和矩形。</summary>
-    public IReadOnlyList<RoiToolChoice> RegionTools => SupportsRegions
-        ? RoiToolChoice.Areas.Where(c => c.Tool is ERoiTool.Select or ERoiTool.Rectangle or ERoiTool.RotatedRectangle or ERoiTool.Ellipse or ERoiTool.Polygon).ToArray()
-        : RoiToolChoice.Areas.Where(c => c.Tool is ERoiTool.Select or ERoiTool.Rectangle).ToArray();
+    /// <summary>
+    /// “区域类型”下拉框的工具。模板制作样图（画布编辑模板制作区域，结果存为ROI文档）可用全部面积形状及画笔/橡皮；
+    /// 节点范围只能保存矩形、椭圆和多边形，有面积范围能力时为选择、矩形、旋转矩形、椭圆、多边形，只支持矩形时为选择和矩形。
+    /// </summary>
+    /// <param name="templateMaking">当前画布是否在编辑模板制作区域。</param>
+    public IReadOnlyList<RoiToolChoice> RegionTools(bool templateMaking) => templateMaking
+        ? RoiToolChoice.Areas.Where(c => c.Tool is not (ERoiTool.InsertVertex or ERoiTool.DeleteVertex)).ToArray()
+        : SupportsRegions
+            ? RoiToolChoice.Areas.Where(c => c.Tool is ERoiTool.Select or ERoiTool.Rectangle or ERoiTool.RotatedRectangle or ERoiTool.Ellipse or ERoiTool.Polygon).ToArray()
+            : RoiToolChoice.Areas.Where(c => c.Tool is ERoiTool.Select or ERoiTool.Rectangle).ToArray();
+    /// <summary>
+    /// 视图下拉框的项。编号保持不变（0输入、1结果、2模板、3测试图像、4模板制作样图、5模板试匹配），
+    /// 测试图像只能由模板试匹配读取，所以只在有模板的页面出现。
+    /// </summary>
+    public IReadOnlyList<VisionFrameView> Views => Template == null
+        ? new VisionFrameView[] { new(0, "输入图像"), new(1, "结果图像"), new(2, "模板图像") }
+        : new VisionFrameView[] { new(0, "输入图像"), new(1, "结果图像"), new(2, "模板图像"), new(3, "测试图像"), new(4, "模板制作样图"), new(5, "模板试匹配") };
     /// <summary>最近的明确状态或错误。</summary>
-    public string Status { get; private set; } = "选择运行输入/结果，或显式读取文件预览。范围使用原图整数半开矩形。";
+    public string Status { get; private set; } = "选择运行输入或结果图像。范围使用原图整数半开矩形。";
 
     private void OnDocumentChanged(object? sender, RoiDocumentChangedEventArgs e)
     {
@@ -252,7 +274,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         }
     }
 
-    /// <summary>捕获要提交到平台画布的新快照，未变化时为空。0输入、1结果、2模板、3手动预览。</summary>
+    /// <summary>捕获要提交到平台画布的新快照，未变化时为空。0输入、1结果、2模板、3测试图像、4模板制作样图、5模板试匹配。</summary>
     /// <param name="view">图像来源。</param>
     /// <returns>调用者拥有的CanvasFrame。</returns>
     public CanvasFrame? Capture(int view)

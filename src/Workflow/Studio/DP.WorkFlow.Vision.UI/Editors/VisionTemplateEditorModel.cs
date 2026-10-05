@@ -243,7 +243,7 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
         catch (Exception ex) { ReportFailure(ex); throw; }
         finally { _busy = false; }
     }
-    /// <summary>在当前输入或手动预览上试匹配，持有资源直到原生调用退出。</summary>
+    /// <summary>在当前输入或测试图像上试匹配，持有资源直到原生调用退出。</summary>
     public async Task TryMatchAsync(ImageFrame frame, PixelBounds bounds, TemplatePoseOptions options, RegionGeometry? region = null, VisionCoordinateSystem? parent = null)
     {
         ThrowIfDisposed(); if (_busy || !IsBuilt) throw new InvalidOperationException("请先为当前配置生成模型。");

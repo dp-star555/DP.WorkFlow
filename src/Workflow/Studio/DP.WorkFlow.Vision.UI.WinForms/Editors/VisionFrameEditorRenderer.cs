@@ -19,12 +19,20 @@ public sealed class VisionFrameEditorRenderer : IWorkflowWinFormsNodeEditorPageR
 
 internal sealed class VisionFrameEditorControl : UserControl
 {
+    private static readonly ModernUI.WinForms.ModernTheme Theme = ModernUI.WinForms.ModernTheme.Dark;
     private readonly VisionFrameEditorPageModel _model;
     private readonly DP.Vision.Winform.VisionCanvasControl _canvas = new() { Dock = DockStyle.Fill };
-    private readonly ModernUI.WinForms.ModernSelect _source = ToolSelect(120);
-    private readonly ModernUI.WinForms.ModernSelect _tool = ToolSelect(120);
+    private readonly ModernUI.WinForms.ModernToolStrip _toolbar = new() { Dock = DockStyle.Top, Theme = Theme, ImageScalingSize = new Size(16, 16) };
+    private readonly ModernUI.WinForms.ModernSelect _source = ToolSelect(130);
+    private readonly ModernUI.WinForms.ModernSelect _tool = ToolSelect(140);
+    private readonly ModernUI.WinForms.ModernSelect _purpose = ToolSelect(80);
+    private readonly ModernUI.WinForms.ModernInputNumber _radius = new() { Size = new Size(90, 30), Minimum = 1, Maximum = 500, Value = 10, Theme = Theme };
+    private readonly ToolStripControlHost _toolHost, _purposeHost, _radiusHost;
+    private readonly ImageList _toolIcons = new() { ImageSize = new Size(16, 16), ColorDepth = ColorDepth.Depth32Bit };
+    private readonly IReadOnlyList<VisionFrameView> _views;
     private IReadOnlyList<RoiToolChoice> _tools = Array.Empty<RoiToolChoice>();
-    private bool _syncingTool;
+    private bool? _toolsForTemplate;
+    private bool _syncing;
     private readonly Label _status = new() { Dock = DockStyle.Bottom, Height = 52, AutoEllipsis = true };
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 100 };
     private readonly VisionTemplateEditorControl? _template;
@@ -35,82 +43,77 @@ internal sealed class VisionFrameEditorControl : UserControl
     internal VisionFrameEditorControl(VisionFrameEditorPageModel model, bool templatePane = true, Action<PointD>? pick = null, Func<bool>? picking = null)
     {
         _model = model; _pick = pick; _picking = picking;
-        var tools = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 40, AutoSize = true };
-        _source.Items.AddRange(model.Template == null ? new object[] { "输入图像", "结果图像", "模板图像", "手动预览" }
-            : new object[] { "输入图像", "结果图像", "模板图像", "手动预览", "模板制作样图", "模板试匹配" });
-        _source.SelectedIndex = model.IsTemplateEditor ? 4 : 1;
-        tools.Controls.Add(_source);
-        DP.Vision.UI.RoiEditor Editing() => _source.SelectedIndex == 4 && model.Template != null ? model.Template.Editor : model.IsTemplateEditor ? throw new InvalidOperationException("请切换到模板制作样图后编辑制作区域。") : model.Editor;
-        void Button(string text, Action action, bool enabled = true)
+        _views = model.Views;
+        _source.Items.AddRange(_views.Cast<object>().ToArray());
+        SetViewCore(model.IsTemplateEditor ? 4 : 1);
+        _toolbar.Items.Add(Host(_source, "显示的图像"));
+        _toolbar.Items.Add(new ToolStripSeparator());
+
+        // 区域类型下拉框带图标；用途同时作用于选中的ROI和画笔；半径只在画笔/橡皮下出现。
+        foreach (var (tool, icon) in ToolIcons)
+            _toolIcons.Images.Add(tool.ToString(), ModernUI.WinForms.ModernIcons.CreateBitmap(icon, Theme.Text, 16));
+        _tool.ImageList = _toolIcons; _tool.ImageKeyMember = nameof(RoiToolChoice.Tool);
+        _tool.SelectedIndexChanged += (_, _) =>
         {
-            var button = ToolButton(text);
-            button.Enabled = enabled;
-            button.Click += (_, _) => { try { action(); RefreshPreview(); _status.Text = model.Status; } catch (Exception ex) { _status.Text = ex.Message; } };
-            tools.Controls.Add(button);
+            if (_syncing || _tool.SelectedItem is not RoiToolChoice choice || _canvas.Editor is not { } editor) return;
+            Guard(() => editor.Tool = choice.Tool); _canvas.Focus();
+        };
+        _toolbar.Items.Add(_toolHost = Host(_tool, "区域类型"));
+        _purpose.Items.AddRange(new object[] { "包含", "排除" });
+        _purpose.SelectedIndexChanged += (_, _) =>
+        {
+            if (_syncing || _purpose.SelectedIndex < 0 || _canvas.Editor is not { } editor) return;
+            var purpose = _purpose.SelectedIndex == 1 ? ERoiPurpose.Exclude : ERoiPurpose.Include;
+            Guard(() =>
+            {
+                editor.PaintPurpose = purpose;
+                if (editor.Document.Rois.FirstOrDefault(r => r.Id == editor.SelectedId) is { } selected && !RoiEditor.IsPaintId(selected.Id))
+                    editor.SetSelectedMetadata(purpose, selected.Enabled);
+            });
+        };
+        _toolbar.Items.Add(_purposeHost = Host(_purpose, "包含/排除：作用于选中的区域；画笔写入所选用途"));
+        _radius.ValueChanged += (_, _) => { if (!_syncing && _canvas.Editor is { } editor) Guard(() => editor.BrushRadius = (double)_radius.Value); };
+        _toolbar.Items.Add(_radiusHost = Host(_radius, "笔刷半径（像素）"));
+        _toolbar.Items.Add(new ToolStripSeparator());
+
+        if (model.SupportsMaskPreview || model.Template != null)
+        {
+            var showMask = IconButton("显示有效掩膜", model.ShowMask ? ModernUI.WinForms.ModernIconKind.Eye : ModernUI.WinForms.ModernIconKind.EyeOff, () => { });
+            showMask.CheckOnClick = true; showMask.Checked = model.ShowMask;
+            showMask.CheckedChanged += (_, _) =>
+            {
+                model.ShowMask = showMask.Checked;
+                var old = showMask.Image;
+                showMask.Image = ModernUI.WinForms.ModernIcons.CreateBitmap(showMask.Checked ? ModernUI.WinForms.ModernIconKind.Eye : ModernUI.WinForms.ModernIconKind.EyeOff, Theme.Text, 16);
+                old?.Dispose(); RefreshPreview();
+            };
         }
+        IconButton("适应窗口", ModernUI.WinForms.ModernIconKind.FitWindow, _canvas.FitToWindow);
         if (model.CanBindCoordinates)
         {
+            _toolbar.Items.Add(new ToolStripSeparator());
             var coordinates = ToolSelect(160);
             coordinates.Items.AddRange(model.CoordinateSources.Cast<object>().ToArray());
             if (coordinates.Items.Count > 0) coordinates.SelectedIndex = 0;
-            tools.Controls.Add(coordinates);
-            Button(model.SupportsRegions ? "绑定/更换坐标系" : "绑定/更换坐标系", () => model.BindCoordinates((coordinates.SelectedItem as VisionCoordinateSource)?.NodeId
+            _toolbar.Items.Add(Host(coordinates, "定位节点"));
+            TextButton("绑定/更换坐标系", () => model.BindCoordinates((coordinates.SelectedItem as VisionCoordinateSource)?.NodeId
                 ?? throw new InvalidOperationException("请选择定位节点。")));
-            Button("解除坐标系转原图", model.UnbindCoordinates);
+            TextButton("解除坐标系转原图", model.UnbindCoordinates);
         }
-        Button("适应窗口", _canvas.FitToWindow);
-        if (model.SupportsMaskPreview)
-        {
-            var showMask = new ModernUI.WinForms.ModernCheckbox
-            {
-                Text = "显示有效掩膜",
-                Checked = model.ShowMask,
-                Theme = ModernUI.WinForms.ModernTheme.Dark,
-                Size = new Size(TextRenderer.MeasureText("显示有效掩膜", Font).Width + 32, 30)
-            };
-            showMask.CheckedChanged += (_, _) => { model.ShowMask = showMask.Checked; RefreshPreview(); };
-            tools.Controls.Add(showMask);
-        }
-        _tools = model.RegionTools;
-        _tool.Items.AddRange(_tools.Cast<object>().ToArray());
-        _tool.SelectedIndex = 0;
-        _tool.Enabled = model.CanEdit;
-        _tool.SelectedIndexChanged += (_, _) =>
-        {
-            if (_syncingTool || _tool.SelectedIndex < 0) return;
-            try { Editing().Tool = _tools[_tool.SelectedIndex].Tool; _canvas.Focus(); }
-            catch (Exception ex) { _status.Text = ex.Message; }
-        };
-        tools.Controls.Add(_tool);
-        Button("完成轮廓", () => Editing().Finish(), model.SupportsRegions);
-        Button("设为排除", () => Editing().SetSelectedMetadata(ERoiPurpose.Exclude, true), model.SupportsRegions);
-        Button("设为包含", () => Editing().SetSelectedMetadata(ERoiPurpose.Include, true), model.SupportsRegions);
-        Button("删除ROI", () => Editing().DeleteSelected(), model.CanEdit);
-        Button("全图", () => { if (_source.SelectedIndex == 4) Editing().Load(new RoiDocument(Array.Empty<RoiDefinition>())); else if (!model.IsTemplateEditor) model.UseFullImage(); else throw new InvalidOperationException("请切换到模板制作样图。"); }, model.CanEdit);
-        Button("撤销ROI", () => Editing().Undo(), model.CanEdit);
-        var read = ToolButton("预览文件…");
-        read.Click += async (_, _) =>
-        {
-            using var dialog = new OpenFileDialog { Filter = "图像|*.png;*.bmp;*.jpg;*.jpeg;*.tif;*.tiff|所有文件|*.*" };
-            if (dialog.ShowDialog(this) != DialogResult.OK) return;
-            read.Enabled = false;
-            try { await model.ReadPreviewAsync(dialog.FileName); if (!IsDisposed) { _source.SelectedIndex = 3; RefreshPreview(); } }
-            catch (Exception ex) { if (!IsDisposed) _status.Text = ex.Message; }
-            finally { if (!IsDisposed) read.Enabled = true; }
-        };
-        tools.Controls.Add(read);
+
         Controls.Add(_canvas); Controls.Add(_status);
         if (model.Template != null && templatePane)
         {
-            _template = new VisionTemplateEditorControl(model.Template, view => { _source.SelectedIndex = view; RefreshPreview(); },
-                () => model.TryTemplateAsync(), () => model.TryTemplateAsync(true), () => model.TemplateReference, model.IsTemplateEditor);
+            _template = new VisionTemplateEditorControl(model.Template, SetView,
+                () => model.TryTemplateAsync(), async path => { await model.ReadPreviewAsync(path); await model.TryTemplateAsync(true); },
+                () => model.TemplateReference, model.IsTemplateEditor);
             Controls.Add(_template);
         }
-        Controls.Add(tools);
+        Controls.Add(_toolbar);
         _canvas.Editor = model.CanEdit ? model.Editor : null;
         _canvas.MouseClick += (_, e) =>
         {
-            if (_source.SelectedIndex == 4) { var point = _canvas.Viewport.ToImage(new PointD(e.X, e.Y)); if (_pick != null) _pick(point); else _template?.Pick(point); RefreshPreview(); return; }
+            if (View == 4) { var point = _canvas.Viewport.ToImage(new PointD(e.X, e.Y)); if (_pick != null) _pick(point); else _template?.Pick(point); RefreshPreview(); return; }
             var caption = model.Pick(_canvas.Viewport.ToImage(new PointD(e.X, e.Y)), 5 / _canvas.Viewport.Scale);
             if (caption is not null) _status.Text = caption;
         };
@@ -118,23 +121,65 @@ internal sealed class VisionFrameEditorControl : UserControl
         _timer.Tick += (_, _) => RefreshPreview();
         VisibleChanged += (_, _) => { if (Visible) _timer.Start(); else _timer.Stop(); };
         model.RegisterViewLifetime(Dispose);
+        SyncToolbar();
         _timer.Start();
+
+        void Guard(Action action)
+        {
+            try { action(); _status.Text = _canvas.Editor?.ValidationError ?? _status.Text; }
+            catch (Exception ex) { _status.Text = ex.Message; }
+        }
+        ToolStripButton IconButton(string text, ModernUI.WinForms.ModernIconKind icon, Action action)
+        {
+            var button = new ToolStripButton(text, ModernUI.WinForms.ModernIcons.CreateBitmap(icon, Theme.Text, 16))
+            { DisplayStyle = ToolStripItemDisplayStyle.Image, ToolTipText = text, AutoToolTip = false };
+            button.Click += (_, _) => Guard(action);
+            _toolbar.Items.Add(button);
+            return button;
+        }
+        void TextButton(string text, Action action)
+        {
+            var button = new ToolStripButton(text) { DisplayStyle = ToolStripItemDisplayStyle.Text };
+            button.Click += (_, _) => { Guard(action); RefreshPreview(); _status.Text = model.Status; };
+            _toolbar.Items.Add(button);
+        }
     }
 
-    internal void SetView(int view) { _source.SelectedIndex = view; RefreshPreview(); }
+    // 区域工具与ModernUI矢量图标的对应关系，图标键为工具名。
+    private static readonly (ERoiTool Tool, ModernUI.WinForms.ModernIconKind Icon)[] ToolIcons =
+    {
+        (ERoiTool.Select, ModernUI.WinForms.ModernIconKind.Pointer),
+        (ERoiTool.Rectangle, ModernUI.WinForms.ModernIconKind.Rectangle),
+        (ERoiTool.RotatedRectangle, ModernUI.WinForms.ModernIconKind.RotatedRectangle),
+        (ERoiTool.Circle, ModernUI.WinForms.ModernIconKind.Ellipse),
+        (ERoiTool.Ellipse, ModernUI.WinForms.ModernIconKind.Ellipse),
+        (ERoiTool.Polygon, ModernUI.WinForms.ModernIconKind.Polygon),
+        (ERoiTool.Brush, ModernUI.WinForms.ModernIconKind.Brush),
+        (ERoiTool.Eraser, ModernUI.WinForms.ModernIconKind.Eraser),
+    };
+
+    /// <summary>当前视图编号（见<see cref="VisionFrameEditorPageModel.Views"/>）。</summary>
+    private int View => _source.SelectedItem is VisionFrameView view ? view.Code : -1;
+
+    /// <summary>按视图编号切换；页面没有该视图时保持不变。</summary>
+    internal void SetView(int view) { SetViewCore(view); RefreshPreview(); }
+
+    private void SetViewCore(int view)
+    {
+        int index = _views.ToList().FindIndex(v => v.Code == view);
+        if (index >= 0) _source.SelectedIndex = index;
+    }
+
+    private static ToolStripControlHost Host(Control control, string tip) => new(control)
+    {
+        AutoSize = false, Size = control.Size, Margin = new Padding(2, 1, 2, 1), ToolTipText = tip
+    };
 
     private static ModernUI.WinForms.ModernSelect ToolSelect(int width) => new()
     {
         Size = new Size(width, 30),
-        Theme = ModernUI.WinForms.ModernTheme.Dark,
+        Theme = Theme,
         DropDownAnimationDuration = 0
-    };
-
-    private ModernUI.WinForms.ModernButton ToolButton(string text) => new()
-    {
-        Text = text,
-        Theme = ModernUI.WinForms.ModernTheme.Dark,
-        Size = new Size(TextRenderer.MeasureText(text, Font).Width + 28, 30)
     };
 
     internal void InitializeTemplate(Func<Task> open)
@@ -153,33 +198,53 @@ internal sealed class VisionFrameEditorControl : UserControl
         if (IsDisposed) return;
         try
         {
-            using var frame = _model.Capture(_source.SelectedIndex);
-            _canvas.Editor = _source.SelectedIndex == 4 ? (_picking?.Invoke() == true || _template is { PickOrigin: true } or { PickDirection: true }) ? null : _model.Template?.Editor
-                : _source.SelectedIndex == 5 ? null : !_model.IsTemplateEditor && _model.CanEdit && _model.CoordinateEditingReady ? _model.Editor : null;
-            SyncTool();
-            if (frame is not null) { _canvas.Present(frame); if (_model.IsTemplateEditor && _fittedFrame != frame.FrameId) { _fittedFrame = frame.FrameId; _canvas.FitToWindow(); } _status.Text = _source.SelectedIndex is 4 or 5 ? _model.Template?.Status : _model.Status; }
+            int view = View;
+            using var frame = _model.Capture(view);
+            _canvas.Editor = view == 4 ? (_picking?.Invoke() == true || _template is { PickOrigin: true } or { PickDirection: true }) ? null : _model.Template?.Editor
+                : view == 5 ? null : !_model.IsTemplateEditor && _model.CanEdit && _model.CoordinateEditingReady ? _model.Editor : null;
+            SyncToolbar();
+            if (frame is not null) { _canvas.Present(frame); if (_model.IsTemplateEditor && _fittedFrame != frame.FrameId) { _fittedFrame = frame.FrameId; _canvas.FitToWindow(); } _status.Text = view is 4 or 5 ? _model.Template?.Status : _model.Status; }
             else
             {
-                if (_source.SelectedIndex is 4 or 5 && _canvas.DisplayedFrameId != null) _canvas.ClearImage();
-                if (_status.Text.Length == 0) _status.Text = _source.SelectedIndex is 4 or 5 ? _model.Template?.Status : _model.Status;
+                if (view is 4 or 5 && _canvas.DisplayedFrameId != null) _canvas.ClearImage();
+                if (_status.Text.Length == 0) _status.Text = view is 4 or 5 ? _model.Template?.Status : _model.Status;
             }
         }
         catch (Exception ex) { _canvas.Editor = null; _status.Text = ex.Message; }
     }
 
-    // 编辑器创建形状后会自动回到“选择”，下拉框跟随当前编辑器的工具。
-    private void SyncTool()
+    // 工具栏跟随当前视图和编辑器：编辑模板制作区域时才有画笔/橡皮；画完形状后编辑器自动回到“选择”，下拉框随之同步。
+    private void SyncToolbar()
     {
-        if (_canvas.Editor is not { } editor || RoiToolChoice.Find(_tools, editor.Tool) is not { } choice) return;
-        int index = _tools.ToList().IndexOf(choice);
-        if (_tool.SelectedIndex == index) return;
-        _syncingTool = true;
-        try { _tool.SelectedIndex = index; } finally { _syncingTool = false; }
+        bool templateMaking = View == 4 && _model.Template != null;
+        var editor = _canvas.Editor;
+        _syncing = true;
+        try
+        {
+            if (_toolsForTemplate != templateMaking)
+            {
+                _toolsForTemplate = templateMaking;
+                _tools = _model.RegionTools(templateMaking);
+                _tool.Items.Clear(); _tool.Items.AddRange(_tools.Cast<object>().ToArray());
+            }
+            bool regions = templateMaking || _model.SupportsRegions;
+            _toolHost.Enabled = editor != null;
+            _purposeHost.Visible = regions; _purposeHost.Enabled = editor != null;
+            _radiusHost.Visible = editor?.Tool is ERoiTool.Brush or ERoiTool.Eraser;
+            if (editor == null) return;
+            if (RoiToolChoice.Find(_tools, editor.Tool) is { } choice && !ReferenceEquals(_tool.SelectedItem, choice)) _tool.SelectedItem = choice;
+            var purpose = editor.Document.Rois.FirstOrDefault(r => r.Id == editor.SelectedId)?.Purpose ?? editor.PaintPurpose;
+            int purposeIndex = purpose == ERoiPurpose.Exclude ? 1 : 0;
+            if (_purpose.SelectedIndex != purposeIndex) _purpose.SelectedIndex = purposeIndex;
+            var radius = Math.Min(_radius.Maximum, Math.Max(_radius.Minimum, (decimal)editor.BrushRadius));
+            if (_radius.Value != radius) _radius.Value = radius;
+        }
+        finally { _syncing = false; }
     }
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { _timer.Stop(); _timer.Dispose(); }
+        if (disposing) { _timer.Stop(); _timer.Dispose(); _toolIcons.Dispose(); }
         base.Dispose(disposing);
     }
 }
