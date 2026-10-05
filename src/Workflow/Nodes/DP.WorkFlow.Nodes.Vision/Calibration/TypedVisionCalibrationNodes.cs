@@ -58,6 +58,7 @@ public sealed class MapVisionCoordinateNodeModel : WorkflowNodeModel, IWorkflowN
     /// <summary>输入Y。</summary>
     public WorkflowInput<double> Y { get; set; } = WorkflowInput<double>.FromLiteral(0);
     /// <summary>绕目标旋转中心的弧度；非零必须存在旋转中心。</summary>
+    [WorkflowProperty("旋转角度", "绕标定的目标旋转中心旋转；非零必须存在旋转中心。", Category = "坐标", DisplayRadiansAsDegrees = true)]
     public double RotationRadians { get; set; }
     /// <inheritdoc/>
     public IReadOnlyList<string> ValidateConfiguration() => Calibration is null || Calibration.Source != WorkflowValueSource.Binding

@@ -1,4 +1,7 @@
+using DP.Plugins;
 using System.Windows;
+using DP.Vision.Acquisition;
+using DP.Vision.Algorithms;
 using DP.WorkFlow;
 using DP.WorkFlow.UI;
 using DP.WorkFlow.Vision.UI;
@@ -13,7 +16,12 @@ public partial class MainWindow : Window
     private readonly WorkflowDocumentWorkspace _workspace;
     private readonly WorkflowRuntimeHost _runtimeHost;
     private readonly WorkflowStudioRuntimeBinding _runtimeBinding;
-    private readonly SampleVisionHost _vision;
+    private readonly WorkflowVisionFrameScope _frameScope;
+    private readonly VisionAlgorithmRuntime _algorithmRuntime;
+    private readonly WorkflowVisionAlgorithmBindings _algorithmBindings;
+    private readonly WorkflowVisionAlgorithmDiagnostics _algorithmDiagnostics;
+    private readonly VisionAcquisitionRuntime _visionAcquisition;
+    private readonly WorkflowVisionSourceCatalog _visionSources;
     private readonly WorkflowWpfOperatorService _operatorService;
     private bool _closing;
     private bool _disposed;
@@ -21,6 +29,13 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        var pluginDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "plugins");
+        var loadSession = new PluginLoadSession();
+        loadSession.RegisterSharedAssembly(typeof(IWorkflowVisionAlgorithmNode).Assembly);
+        var algorithmLoader = new VisionAlgorithmModuleLoader(loadSession);
+        var driverLoader = new VisionAcquisitionDriverModuleLoader(loadSession);
+        var workflowLoader = new WorkflowPluginLoader(loadSession);
+        loadSession.RegisterSharedContracts(pluginDirectory);
         _operatorService = new WorkflowWpfOperatorService(this);
         var recoveryDemo = Environment.GetCommandLineArgs().Contains("--recovery-demo", StringComparer.OrdinalIgnoreCase)
             ? new WorkflowRecoveryDemo() : null;
@@ -31,23 +46,57 @@ public partial class MainWindow : Window
             .Register(new WorkflowProcessRuntimePluginModule())
             .Register(new WorkflowImageRuntimePluginModule());
         if (recoveryDemo is not null) plugins.Register(recoveryDemo);
+        plugins.LoadPlugins(pluginDirectory, workflowLoader);
+        foreach (var failure in workflowLoader.DiscoveryFailures)
+            System.Diagnostics.Trace.TraceError(failure.AssemblyPath + ": " + failure.Reason);
         plugins.Freeze();
-        // 采集插件、机器配置与图像源目录见 SampleVisionHost。
-        _vision = new SampleVisionHost();
+        var algorithmCatalog = algorithmLoader.Load(pluginDirectory, new[] { new ManagedVisionAlgorithmModule() });
+        foreach (var failure in algorithmCatalog.Diagnostics)
+            System.Diagnostics.Trace.TraceError(failure.Source + ": " + failure.Reason);
+        _algorithmRuntime = new VisionAlgorithmRuntime(algorithmCatalog);
+        var fileReader = new WorkflowVisionImageFileReader(_algorithmRuntime, new VisionAlgorithmSelection { ImplementationId = "opencv.image-read" });
+        var acquisition = new WorkflowVisionAcquisitionSession(fileReader);
+        _frameScope = new WorkflowVisionFrameScope(acquisition);
         _workspace = new WorkflowDocumentWorkspace(catalog);
+        var algorithmEnvironment = WorkflowVisionAlgorithmEnvironment.Load(AppContext.BaseDirectory);
+        VisionAlgorithmResourceContext Resources() => algorithmEnvironment.Capture(_workspace.CurrentFilePath);
+        _algorithmBindings = new WorkflowVisionAlgorithmBindings(_algorithmRuntime, _frameScope, Resources);
+        _algorithmDiagnostics = new WorkflowVisionAlgorithmDiagnostics(algorithmCatalog, _algorithmRuntime, _algorithmBindings, Resources);
+        _workspace.DocumentChanged += (_, _) => _algorithmDiagnostics.Invalidate();
+        // 机器配置、采集插件组合与启动诊断见 SampleVisionHost。
+        (_visionAcquisition, _visionSources) = SampleVisionHost.StartAcquisition(driverLoader);
         _workspace.New(recoveryDemo is null ? "视觉文件分析" : "异常恢复演示（仅软件模拟）");
-        if (recoveryDemo is null) WorkflowImageDemo.PopulateProcessing(_workspace.Navigator!.RootSession);
+        if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--barcode-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateBarcode(_workspace.Navigator!.RootSession);
+        else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--coordinate-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateCoordinates(_workspace.Navigator!.RootSession);
+        else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--geometry-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateGeometry(_workspace.Navigator!.RootSession);
+        else if (recoveryDemo is null) WorkflowImageDemo.PopulateProcessing(_workspace.Navigator!.RootSession);
         else recoveryDemo.Populate(_workspace.Navigator!.RootSession);
         SampleVisionHost.RegisterPublicData(_workspace.Navigator.RootSession);
         Studio.Workspace = _workspace;
+        Studio.Diagnostics.Provider = _algorithmDiagnostics;
+        Studio.AddToolPage("插件与算法", new WorkflowVisionAlgorithmPanel(_algorithmDiagnostics,
+            () => _workspace.Navigator?.RootDocument, () => _workspace.Navigator?.CurrentSession));
         Studio.NodeEditorExtensions.Register(new VisionWpfStudioExtension
-        { FrameSource = _vision.FrameScope, FileReader = _vision.FileReader });
+        { FrameSource = _frameScope, FileReader = fileReader, Templates = new VisionTemplateEditingRuntime(algorithmCatalog, _algorithmRuntime, Resources) });
         // 采集节点的"逻辑图像源"从本机已发布的源里选；面阵节点与线扫节点各看各的采集类型。
-        Studio.Properties.ChoiceProvider = WorkflowVisionSourceChoices.CreateProvider(_vision.Sources);
+        Studio.Properties.ChoiceProvider = WorkflowVisionAlgorithmChoices.CreateProvider(algorithmCatalog, WorkflowVisionSourceChoices.CreateProvider(_visionSources));
+        Studio.Properties.AdditionalProperties = WorkflowVisionAlgorithmProperties.CreateProvider(algorithmCatalog);
         var actions = new WorkflowActionRegistry();
-        var services = _vision.AddServices(new WorkflowServiceProvider())
+        var services = new WorkflowServiceProvider()
             .Add<IWorkflowOperatorService>(_operatorService)
-            .Add<IWorkflowActionRegistry>(actions);
+            .Add<IWorkflowActionRegistry>(actions)
+            .Add<IWorkflowVisionFrameScope>(_frameScope)
+            .Add<IWorkflowVisionFolderSource>(acquisition)
+            .Add<IVisionAcquisition>(_visionAcquisition)
+            .Add<IWorkflowVisionSourceCatalog>(_visionSources)
+            // 准备服务只做校验；退役上一轮资源是运行所有者的职责，只有根运行宿主持有它（AR-01 阶段2）。
+            .Add<IWorkflowVisionAlgorithmBindings>(_algorithmBindings)
+            .Add<IWorkflowNodeCapabilityProvider>(_algorithmBindings)
+            .Add<IWorkflowRunPreparationService>(_algorithmBindings)
+            .Add<IWorkflowRunResourceOwner>(_frameScope)
+            // 本轮作用域取得：外部回调缓冲源要在采集节点之前布防。桥接是 Kernel 与采集侧之间唯一的连接点，
+            // 嵌套调用点不解析 IWorkflowRunScopeOwner，因此结构上无法重新布防或清空父运行队列。
+            .Add<IWorkflowRunScopeOwner>(new VisionAcquisitionRunScope(_visionAcquisition));
         recoveryDemo?.ConfigureServices(services, catalog, handlers, actions);
         _runtimeHost = new WorkflowRuntimeHost(catalog, handlers);
         _runtimeBinding = new WorkflowStudioRuntimeBinding(_runtimeHost, _workspace.Navigator)
@@ -65,6 +114,7 @@ public partial class MainWindow : Window
             };
         }
         Studio.RuntimeBinding = _runtimeBinding;
+        _runtimeBinding.RunConfiguring += _algorithmDiagnostics.SetRunBasePath;
         Studio.ConfirmDiscardChanges = () => MessageBox.Show(this,
             "当前流程尚未保存，是否放弃修改？", "确认", MessageBoxButton.YesNo,
             MessageBoxImage.Warning) == MessageBoxResult.Yes;
@@ -85,13 +135,13 @@ public partial class MainWindow : Window
         try { await _runtimeHost.StopAsync(); }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
         // 设备会话必须异步释放；放在这里等待，避免在同步释放路径上阻塞UI线程。
-        try { await _vision.Acquisition.DisposeAsync(); }
+        try { await _visionAcquisition.DisposeAsync(); }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
         _disposed = true;
         Studio.InteractionError -= OnInteractionError;
         Studio.RuntimeBinding = null;
         _operatorService.Dispose();
-        _runtimeBinding.Dispose(); _runtimeHost.Dispose(); _vision.FrameScope.Dispose(); _workspace.Dispose();
+        _runtimeBinding.Dispose(); _runtimeHost.Dispose(); _algorithmDiagnostics.Dispose(); _algorithmBindings.Dispose(); _algorithmRuntime.Dispose(); _frameScope.Dispose(); _workspace.Dispose();
         _ = Dispatcher.BeginInvoke(new Action(Close));
     }
 }

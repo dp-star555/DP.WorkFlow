@@ -24,6 +24,8 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     /// <param name="eventRecorder">将数据血缘等结构化事件写回父引擎的委托。</param>
     /// <param name="degradedReporter">报告记录元数据降级的委托；不得抛出异常或改变节点结果。</param>
     /// <param name="childRunner">在父引擎监管下启动子引擎的委托。</param>
+    /// <param name="planPath">当前编译子计划路径。</param>
+    /// <param name="bindingScopeId">已经准备的绑定作用域。</param>
     public WorkflowNodeExecutionContext(
         WorkflowContext context,
         IWorkflowNodeModel node,
@@ -33,10 +35,13 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
         Action<IWorkflowNodeModel, string, string?, IReadOnlyDictionary<string, object?>?, WorkflowEventWriteMode> traceWriter,
         Action<WorkflowRunEventDraft, WorkflowEventWriteMode> eventRecorder,
         Action<string> degradedReporter,
-        Func<WorkflowExecutionPlan, WorkflowContext, CancellationToken, Task<WorkflowRunResult>> childRunner)
+        Func<WorkflowExecutionPlan, WorkflowContext, CancellationToken, Task<WorkflowRunResult>> childRunner,
+        string planPath = "$", Guid bindingScopeId = default)
     {
         _context = context;
         Node = node;
+        PlanPath = planPath;
+        BindingScopeId = bindingScopeId;
         ExecutionIdentity = executionIdentity;
         _childDefinition = childDefinition;
         _traceWriter = traceWriter;
@@ -48,6 +53,10 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     }
 
     public IWorkflowNodeModel Node { get; }
+
+    public string PlanPath { get; }
+
+    public Guid BindingScopeId { get; }
 
     public WorkflowExecutionIdentity ExecutionIdentity { get; }
 

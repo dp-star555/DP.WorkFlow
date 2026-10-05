@@ -14,6 +14,8 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
     private WorkflowDesignerSession? _session;
     private WorkflowDiagnosticsModel? _model;
     private string? _startNodeId;
+    private IWorkflowDiagnosticProvider? _provider;
+    private WorkflowDesignerNavigator? _navigator;
     private readonly ILocalizationManager _defaultLocalizationManager = WorkflowUiLocalization.CreateManager(CultureInfo.GetCultureInfo("zh-CN"));
     private ILocalizationContext _localizationContext = null!;
     private readonly ModernCommand _navigateCommand;
@@ -22,6 +24,7 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
     public WorkflowDiagnosticsControl()
     {
         InitializeComponent();
+        diagnosticsListView.ShowItemToolTips = true;
         _localizationContext = _defaultLocalizationManager.Context;
         _navigateCommand = new ModernCommand(NavigateSelected) { Icon = ModernIconKind.Search, CanExecutePredicate = CanNavigate };
         diagnosticsCommandBar.Commands.Add(_navigateCommand);
@@ -60,6 +63,23 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
     }
 
     public bool CanRun => _model?.CanRun == true;
+    /// <summary>领域检查及后台准备报告。</summary>
+    public IWorkflowDiagnosticProvider? Provider
+    {
+        get => _provider;
+        set { if (_provider != null) _provider.Changed -= ProviderChanged; _provider = value; if (_provider != null) _provider.Changed += ProviderChanged; RecreateModel(); }
+    }
+    /// <summary>诊断定位所用导航器。</summary>
+    public WorkflowDesignerNavigator? Navigator { get => _navigator; set { _navigator = value; RecreateModel(); } }
+    /// <summary>运行前重新检查外部文件及选择。</summary>
+    public void RefreshDiagnostics() => _model?.Refresh();
+    /// <inheritdoc/>
+    protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); RefreshDiagnostics(); }
+    private void ProviderChanged(object? sender, EventArgs e)
+    {
+        if (IsDisposed || !IsHandleCreated) return;
+        if (InvokeRequired) BeginInvoke(RefreshDiagnostics); else RefreshDiagnostics();
+    }
 
     /// <summary>获取当前语言下的诊断摘要文本。</summary>
     public string SummaryText => diagnosticsAlert.Text;
@@ -70,7 +90,7 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
         DisposeModel();
         if (_session is not null && !string.IsNullOrWhiteSpace(_startNodeId))
         {
-            _model = new WorkflowDiagnosticsModel(_session, _startNodeId);
+            _model = new WorkflowDiagnosticsModel(_session, _startNodeId, _provider, _navigator);
             _model.Changed += OnModelChanged;
         }
         RefreshItems();
@@ -133,6 +153,7 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
                 ? WorkflowUiTextKeys.DiagnosticsError : WorkflowUiTextKeys.DiagnosticsWarning))
             {
                 Tag = diagnostic,
+                ToolTipText = diagnostic.Detail ?? diagnostic.Message,
                 ForeColor = diagnostic.Severity == WorkflowValidationSeverity.Error
                     ? Color.FromArgb(248, 113, 113)
                     : Color.FromArgb(251, 191, 36)
@@ -156,6 +177,7 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
 
     private void DisposeLocalization()
     {
+        if (_provider != null) _provider.Changed -= ProviderChanged;
         if (_localizationContext is not null) _localizationContext.Changed -= LocalizationChanged;
         if (_defaultLocalizationManager is IDisposable disposable) disposable.Dispose();
     }

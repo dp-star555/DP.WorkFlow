@@ -296,6 +296,7 @@ public sealed partial class ModernPropertyGrid : UserControl
     {
         public string Category { get; } = category;
         public int ExpandedHeight { get; set; } = expandedHeight;
+        public Func<int>? MeasureExpandedHeight { get; init; }
         public int LastWidth { get; set; } = -1;
         public IDisposable? Animation { get; set; }
 

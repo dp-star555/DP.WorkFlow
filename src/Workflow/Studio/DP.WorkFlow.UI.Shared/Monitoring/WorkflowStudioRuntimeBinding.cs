@@ -51,6 +51,8 @@ public sealed class WorkflowStudioRuntimeBinding : IDisposable
 
     /// <summary>在运行状态或运行时监视数据变化时发生。</summary>
     public event EventHandler? StateChanged;
+    /// <summary>新运行配置前的目标文档路径；领域诊断据此将当前子画布运行映射回根文档。</summary>
+    public event Action<string>? RunConfiguring;
 
     /// <summary>切换文档后更新接收运行快照的设计导航器。</summary>
     /// <param name="navigator">要绑定的设计器导航器。</param>
@@ -75,6 +77,9 @@ public sealed class WorkflowStudioRuntimeBinding : IDisposable
         ThrowIfDisposed();
         if (_host.State is not (E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused))
         {
+            var diagnosticPath = RunTarget == WorkflowStudioRunTarget.CurrentCanvas
+                ? "$" + string.Concat(_navigator.Breadcrumbs.Skip(1).Select(b => "/" + Uri.EscapeDataString(b.ParentNodeId!))) : "$";
+            RunConfiguring?.Invoke(diagnosticPath);
             if (AutoConfigureBeforeRun)
             {
                 var session = RunTarget == WorkflowStudioRunTarget.CurrentCanvas

@@ -9,7 +9,19 @@ public sealed record WorkflowDiagnosticItem(
     string Code,
     WorkflowValidationSeverity Severity,
     string Message,
-    string? NodeId);
+    string? NodeId)
+{
+    /// <summary>从根或当前文档出发的 URI 编码子流程路径。</summary>
+    public string PlanPath { get; init; } = "$";
+    /// <summary>是否从导航器根文档定位。</summary>
+    public bool FromRoot { get; init; }
+    /// <summary>历史运行失败不锁住重试按钮。</summary>
+    public bool BlocksRun { get; init; } = true;
+    /// <summary>完整技术原因。</summary>
+    public string? Detail { get; init; }
+    /// <summary>发现、检查或准备阶段。</summary>
+    public string? Phase { get; init; }
+}
 
 /// <summary>汇总结构、并行和绑定编译诊断，并支持导航到问题节点。</summary>
 public sealed class WorkflowDiagnosticsModel : IDisposable
@@ -17,12 +29,19 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
     private readonly WorkflowDesignerSession _session;
     private IReadOnlyList<WorkflowDiagnosticItem> _items = Array.Empty<WorkflowDiagnosticItem>();
     private bool _refreshing;
+    private readonly IWorkflowDiagnosticProvider? _provider;
+    private readonly WorkflowDesignerNavigator? _navigator;
+    private readonly int _navigationDepth;
 
     /// <summary>初始化诊断模型并订阅设计会话的文档变更。</summary>
     /// <param name="session">设计器会话。</param>
     /// <param name="startNodeId">工作流开始节点标识。</param>
-    public WorkflowDiagnosticsModel(WorkflowDesignerSession session, string startNodeId)
+    public WorkflowDiagnosticsModel(WorkflowDesignerSession session, string startNodeId) : this(session, startNodeId, null, null) { }
+
+    /// <summary>组合领域检查并支持子流程定位；保持原构造入口兼容。</summary>
+    public WorkflowDiagnosticsModel(WorkflowDesignerSession session, string startNodeId, IWorkflowDiagnosticProvider? provider, WorkflowDesignerNavigator? navigator)
     {
+        _provider = provider; _navigator = navigator; _navigationDepth = navigator?.Depth ?? 0;
         _session = session ?? throw new ArgumentNullException(nameof(session));
         EntryNodeId = startNodeId ?? throw new ArgumentNullException(nameof(startNodeId));
         _session.Changed += OnSessionChanged;
@@ -35,7 +54,7 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
     public IReadOnlyList<WorkflowDiagnosticItem> Items => _items;
 
     /// <summary>获取当前诊断是否不包含阻止运行的错误。</summary>
-    public bool CanRun => _items.All(item => item.Severity != WorkflowValidationSeverity.Error);
+    public bool CanRun => _items.All(item => item.Severity != WorkflowValidationSeverity.Error || !item.BlocksRun);
 
     /// <summary>在模型内容发生变化、界面需要刷新时发生。</summary>
     public event EventHandler? Changed;
@@ -70,8 +89,12 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
                     new WorkflowValidationError("UI001", exception.Message)
                 };
             }
+            var external = Array.Empty<WorkflowDiagnosticItem>();
+            try { external = _provider?.Analyze(_session.Document).ToArray() ?? external; }
+            catch (Exception error) { external = new[] { new WorkflowDiagnosticItem("UI_DIAGNOSTICS_FAILED", WorkflowValidationSeverity.Error, error.Message, null) { Detail = error.ToString() } }; }
             _items = diagnostics
                 .Select(item => new WorkflowDiagnosticItem(item.Code, item.Severity, item.Message, item.NodeId))
+                .Concat(external)
                 .OrderByDescending(item => item.Severity)
                 .ThenBy(item => item.Code, StringComparer.Ordinal)
                 .ThenBy(item => item.NodeId, StringComparer.Ordinal)
@@ -89,6 +112,22 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
     public bool NavigateTo(WorkflowDiagnosticItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
+        if (_navigator != null && (item.FromRoot || item.PlanPath != "$"))
+        {
+            var depth = item.FromRoot ? 0 : _navigationDepth;
+            var document = item.FromRoot ? _navigator.RootDocument : _session.Document;
+            var parents = item.PlanPath.Split('/').Skip(1).Select(Uri.UnescapeDataString).ToArray();
+            foreach (var parent in parents)
+            {
+                var child = document.Graph.Nodes.FirstOrDefault(n => n.Id == parent) as IWorkflowSubDocumentNode;
+                if (child == null) return false;
+                document = child.SubDocument;
+            }
+            if (!document.Graph.Nodes.Any(n => n.Id == item.NodeId)) return false;
+            if (_navigator.Depth != depth) _navigator.NavigateToDepth(depth);
+            foreach (var parent in parents) if (!_navigator.EnterSubCanvas(parent)) return false;
+            _navigator.CurrentSession.SelectedNodeId = item.NodeId; return true;
+        }
         if (string.IsNullOrWhiteSpace(item.NodeId)
             || !_session.Canvas.Nodes.Any(node => node.Node.Id == item.NodeId))
         {
@@ -105,6 +144,11 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
     private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
     {
         if (e.Kind == WorkflowDesignerChangeKind.Document)
+        {
+            _refreshing = true;
+            try { _provider?.Invalidate(); }
+            finally { _refreshing = false; }
             Refresh();
+        }
     }
 }

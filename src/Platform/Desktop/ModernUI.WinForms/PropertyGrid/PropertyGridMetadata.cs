@@ -2,6 +2,14 @@ using System.ComponentModel;
 
 namespace ModernPropertyGrid.WinForms;
 
+/// <summary>把属性放入分类下可展开的子组；各段是显示名称，不参与属性身份或读写。</summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class PropertyGroupAttribute(params string[] path) : Attribute
+{
+    /// <summary>获取从外到内的子组路径。</summary>
+    public IReadOnlyList<string> Path { get; } = path.ToArray();
+}
+
 /// <summary>指定属性在分类中的显示顺序。</summary>
 [AttributeUsage(AttributeTargets.Property)]
 public sealed class PropertyOrderAttribute(int order) : Attribute

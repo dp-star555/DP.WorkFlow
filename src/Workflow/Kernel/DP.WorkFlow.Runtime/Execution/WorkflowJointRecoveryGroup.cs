@@ -141,21 +141,28 @@ public sealed class WorkflowJointRecoveryGroup : IDisposable
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stop.Token);
         using var registration = linked.Token.Register(() => Fail("联合运行已取消。"));
+        var preparedRuns = new List<IWorkflowPreparedRun>();
         try
         {
             foreach (var participant in _participants.Values)
                 WorkflowRuntimeCapabilityValidator.Validate(participant.Plan, participant.Context.Services);
             foreach (var participant in _participants.Values)
-                if (participant.Context.Services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowRunPreparationService preparation)
+            {
+                participant.Engine.BindingScopeId = Guid.NewGuid();
+                var preparationContext = new WorkflowRunPreparationContext(
+                    participant.Plan.Plan.Nodes.Values.ToArray(), WorkflowRunScopeKind.Nested, Services: participant.Context.Services,
+                    PositionedNodes: WorkflowRunPreparationPlanner.Enumerate(participant.Plan.Plan), BindingScopeId: participant.Engine.BindingScopeId);
+                if (participant.Context.Services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowTransactionalRunPreparationService transactional)
+                    preparedRuns.Add(await transactional.PrepareRunAsync(preparationContext, linked.Token).ConfigureAwait(false));
+                else if (participant.Context.Services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowRunPreparationService preparation)
                     // 暂按嵌套作用域：联合恢复的"一轮"语义尚未定义清楚，先取安全方向（不清空任何既有资源）。
                     // 若确认需要干净起点，应由联合组在"协作开始"这一个点上显式触发一次，而不是每个参与者各触发一次。
                     await preparation.PrepareAsync(
-                        new WorkflowRunPreparationContext(
-                            participant.Plan.Plan.Nodes.Values.ToArray(),
-                            WorkflowRunScopeKind.Nested,
-                            Services: participant.Context.Services),
+                        preparationContext,
                         linked.Token).ConfigureAwait(false);
+            }
             linked.Token.ThrowIfCancellationRequested();
+            foreach (var prepared in preparedRuns) prepared.Commit();
             var tasks = _participants.Values.Select(p => Task.Run(async () =>
             {
                 var result = await p.Engine.RunAsync(linked.Token).ConfigureAwait(false);
@@ -170,11 +177,26 @@ public sealed class WorkflowJointRecoveryGroup : IDisposable
         catch (Exception failure) { Fail(failure.Message); throw; }
         finally
         {
-            lock (_sync)
+            try
             {
-                _finished = true;
-                if (!_failed) Record("Completed", null, "全部协作运行已完成。");
-                if (_disposed) _stop.Dispose();
+                var cleanupErrors = new List<Exception>();
+                foreach (var prepared in preparedRuns.AsEnumerable().Reverse())
+                    try { await prepared.DisposeAsync().ConfigureAwait(false); }
+                    catch (Exception error) { cleanupErrors.Add(error); }
+                if (cleanupErrors.Count != 0)
+                {
+                    Fail("联合准备计划退役失败。");
+                    throw new AggregateException("联合准备计划退役失败。", cleanupErrors);
+                }
+            }
+            finally
+            {
+                lock (_sync)
+                {
+                    _finished = true;
+                    if (!_failed) Record("Completed", null, "全部协作运行已完成。");
+                    if (_disposed) _stop.Dispose();
+                }
             }
         }
     }

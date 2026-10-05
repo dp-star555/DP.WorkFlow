@@ -26,4 +26,7 @@ public sealed class WorkflowPropertyAttribute : Attribute
 
     /// <summary>可选的单位文本，例如 ms、mm 或 ℃。</summary>
     public string? Unit { get; set; }
+
+    /// <summary>属性存储为弧度，面板以度编辑；支持double、double集合及WorkflowInput&lt;double&gt;固定值，绑定保持原单位。</summary>
+    public bool DisplayRadiansAsDegrees { get; set; }
 }

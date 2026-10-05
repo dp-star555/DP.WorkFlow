@@ -26,9 +26,19 @@ public sealed class WorkflowPropertyPanel : UserControl
     private readonly TextBox _search;
     private readonly DispatcherTimer _searchTimer;
     private readonly HashSet<string> _collapsedCategories = new(StringComparer.Ordinal);
+    private readonly Dictionary<FrameworkElement, string[]> _groupAncestors = new();
     private WorkflowPropertyInspectorModel? _model;
     private WorkflowPropertyChoiceProvider? _choiceProvider;
+    private Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? _additionalProperties;
+
+    /// <summary>领域描述生成的附加属性；与普通属性共用提交及撤销。</summary>
+    public Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? AdditionalProperties
+    {
+        get => _additionalProperties;
+        set { _additionalProperties = value; RecreateModel(); }
+    }
     private bool _building;
+    private int _inputEditorGeneration;
     private bool _hideScriptProperty;
 
     /// <summary>初始化节点属性编辑面板。</summary>
@@ -126,7 +136,7 @@ public sealed class WorkflowPropertyPanel : UserControl
         DisposeModel();
         if (Session is not null && !string.IsNullOrWhiteSpace(EntryNodeId))
         {
-            _model = new WorkflowPropertyInspectorModel(Session, EntryNodeId, _choiceProvider);
+            _model = new WorkflowPropertyInspectorModel(Session, EntryNodeId, _choiceProvider, _additionalProperties);
             _model.Changed += OnModelChanged;
         }
         Rebuild();
@@ -156,10 +166,12 @@ public sealed class WorkflowPropertyPanel : UserControl
         if (_building)
             return;
         _building = true;
+        _inputEditorGeneration++;
         try
         {
             _content.Children.Clear();
             _propertyTree.Items.Clear();
+            _groupAncestors.Clear();
             if (_model?.SelectedNode is null)
             {
                 _content.Children.Add(new TextBlock
@@ -190,16 +202,10 @@ public sealed class WorkflowPropertyPanel : UserControl
                 _content.Children.Add(mappingButton);
             }
             AddOutputPortVisibilityEditors();
-            string? category = null;
-            foreach (var entry in visibleEntries)
+            foreach (var category in visibleEntries.GroupBy(entry => entry.Category, StringComparer.Ordinal))
             {
-                if (category != entry.Category)
-                {
-                    category = entry.Category;
-                    _content.Children.Add(CreateCategory(category));
-                }
-                if (!_collapsedCategories.Contains(entry.Category))
-                    _content.Children.Add(CreateRow(entry));
+                _content.Children.Add(CreateCategory(category.Key));
+                AddGroupedRows(category.Key, category.ToArray());
             }
         }
         finally
@@ -230,9 +236,55 @@ public sealed class WorkflowPropertyPanel : UserControl
             button.Content = $"{(collapsed ? "▶" : "▼")}  {category}";
             foreach (var child in _content.Children.OfType<FrameworkElement>())
                 if (child.Tag is string rowCategory && rowCategory == category)
-                    child.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+                    child.Visibility = collapsed || (_search.Text.Trim().Length == 0 && _groupAncestors.TryGetValue(child, out var ancestors)
+                        && ancestors.Any(_collapsedCategories.Contains)) ? Visibility.Collapsed : Visibility.Visible;
         };
         return button;
+    }
+
+    private void AddGroupedRows(string category, IReadOnlyList<WorkflowPropertyEntry> entries)
+    {
+        AddLevel(entries, [], 0);
+        void AddLevel(IReadOnlyList<WorkflowPropertyEntry> current, string[] ancestors, int depth)
+        {
+            foreach (var entry in current.Where(entry => entry.GroupPath.Count <= depth))
+            {
+                var row = CreateRow(entry);
+                _content.Children.Add(row);
+                _groupAncestors[row] = ancestors;
+                UpdateVisibility(row);
+            }
+            foreach (var group in current.Where(entry => entry.GroupPath.Count > depth)
+                         .GroupBy(entry => entry.GroupPath[depth], StringComparer.Ordinal))
+            {
+                var key = (ancestors.LastOrDefault() ?? "group:" + category.Length + ":" + category) + ":" + group.Key.Length + ":" + group.Key;
+                var button = new Button
+                {
+                    Content = Header(key, group.Key),
+                    HorizontalContentAlignment = HorizontalAlignment.Left,
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Foreground = Foreground,
+                    Padding = new Thickness((depth + 1) * 12, 4, 4, 4),
+                    Tag = category
+                };
+                System.Windows.Automation.AutomationProperties.SetName(button, group.Key);
+                button.Click += (_, _) =>
+                {
+                    if (_search.Text.Trim().Length != 0) return;
+                    if (!_collapsedCategories.Add(key)) _collapsedCategories.Remove(key);
+                    button.Content = Header(key, group.Key);
+                    foreach (var row in _groupAncestors.Keys.Where(row => Equals(row.Tag, category))) UpdateVisibility(row);
+                };
+                _content.Children.Add(button);
+                _groupAncestors[button] = ancestors;
+                UpdateVisibility(button);
+                AddLevel(group.ToArray(), [.. ancestors, key], depth + 1);
+            }
+        }
+        string Header(string key, string text) => $"{(_collapsedCategories.Contains(key) && _search.Text.Trim().Length == 0 ? "▶" : "▼")}  {text}";
+        void UpdateVisibility(FrameworkElement row) => row.Visibility = _collapsedCategories.Contains(category)
+            || (_search.Text.Trim().Length == 0 && _groupAncestors[row].Any(_collapsedCategories.Contains)) ? Visibility.Collapsed : Visibility.Visible;
     }
 
     /// <summary>执行 Matches Search 相关处理。</summary>
@@ -243,6 +295,7 @@ public sealed class WorkflowPropertyPanel : UserControl
             || entry.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase)
             || entry.Name.Contains(search, StringComparison.OrdinalIgnoreCase)
             || entry.Category.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || entry.GroupPath.Any(group => group.Contains(search, StringComparison.OrdinalIgnoreCase))
             || entry.Description.Contains(search, StringComparison.OrdinalIgnoreCase)
             || (Convert.ToString(entry.Value)?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false);
     }
@@ -316,6 +369,7 @@ public sealed class WorkflowPropertyPanel : UserControl
             Text = entry.DisplayName,
             Foreground = Brush(148, 163, 184),
             Margin = new Thickness(6, 3, 6, 3),
+            Padding = new Thickness(entry.GroupPath.Count * 12, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center
         };
         grid.Children.Add(label);
@@ -336,6 +390,27 @@ public sealed class WorkflowPropertyPanel : UserControl
     /// <summary>创建Editor。</summary>
     private FrameworkElement CreateEditor(WorkflowPropertyEntry entry)
     {
+        if (entry.EditorKind == WorkflowPropertyEditorKind.Action)
+        {
+            var nodeId = _model?.SelectedNode?.Id;
+            var generation = _inputEditorGeneration;
+            var button = new Button { Content = Convert.ToString(entry.Value) ?? "打开编辑器…", Margin = new Thickness(4), IsEnabled = entry.ActionBlockReason.Length == 0 };
+            button.Click += async (_, _) =>
+            {
+                if (generation != _inputEditorGeneration || nodeId != _model?.SelectedNode?.Id) return;
+                if (entry.HasActionHandler)
+                {
+                    button.IsEnabled = false;
+                    try { await entry.ExecuteActionAsync(); }
+                    catch (Exception ex) { EditError?.Invoke(this, ex.Message); }
+                    finally { if (generation == _inputEditorGeneration) button.IsEnabled = entry.ActionBlockReason.Length == 0; }
+                    return;
+                }
+                if (PropertyActionRequested == null) { EditError?.Invoke(this, "宿主未注册此属性的编辑窗口。"); return; }
+                PropertyActionRequested.Invoke(this, new WorkflowPropertyActionRequest(nodeId!, entry.EditorKey!));
+            };
+            return button;
+        }
         if (entry.EditorKind == WorkflowPropertyEditorKind.ReadOnly)
             return Text(Convert.ToString(entry.Value) ?? string.Empty, false);
         if (entry.EditorKind == WorkflowPropertyEditorKind.Boolean)
@@ -353,7 +428,7 @@ public sealed class WorkflowPropertyPanel : UserControl
         if (entry.EditorKind == WorkflowPropertyEditorKind.Enum)
         {
             var type = Nullable.GetUnderlyingType(entry.ValueType) ?? entry.ValueType;
-            var combo = Combo(Enum.GetValues(type).Cast<object>());
+            var combo = Combo(Enum.GetValues(type).Cast<object>().Distinct());
             combo.SelectedItem = entry.Value;
             combo.SelectionChanged += (_, _) =>
             {
@@ -394,6 +469,9 @@ public sealed class WorkflowPropertyPanel : UserControl
         text.LostFocus += (_, _) => TryEdit(() => _model!.SetValue(entry, text.Text));
         return text;
     }
+
+    /// <summary>请求打开由插件页面提供的独立属性编辑窗口。</summary>
+    public event EventHandler<WorkflowPropertyActionRequest>? PropertyActionRequested;
 
     /// <summary>创建Path Editor。</summary>
     private FrameworkElement CreatePathEditor(WorkflowPropertyEntry entry)
@@ -580,12 +658,18 @@ public sealed class WorkflowPropertyPanel : UserControl
     /// <summary>创建Input Editor。</summary>
     private FrameworkElement CreateInputEditor(WorkflowPropertyEntry entry)
     {
+        var generation = _inputEditorGeneration;
+        var model = _model!;
+        var node = model.SelectedNode;
         var panel = new Grid { Margin = new Thickness(3) };
         panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.42, GridUnitType.Star) });
         panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.58, GridUnitType.Star) });
         var source = Combo(Enum.GetValues<WorkflowValueSource>().Cast<object>());
         source.SelectedItem = entry.GetInputSource();
         panel.Children.Add(source);
+
+        bool IsCurrentEditor() => generation == _inputEditorGeneration
+            && ReferenceEquals(model, _model) && ReferenceEquals(node, model.SelectedNode);
 
         FrameworkElement valueEditor;
         if (entry.GetInputSource() == WorkflowValueSource.Binding)
@@ -604,26 +688,37 @@ public sealed class WorkflowPropertyPanel : UserControl
             };
             button.Click += (_, _) =>
             {
+                if (!IsCurrentEditor()) return;
                 var window = new WorkflowBindingSelectorWindow(candidates, entry.GetInputBinding())
                 {
                     Owner = Window.GetWindow(this)
                 };
-                if (window.ShowDialog() == true && window.SelectedCandidate is { } candidate)
+                if (window.ShowDialog() == true && window.SelectedCandidate is { } candidate && IsCurrentEditor())
                     TryEdit(() => _model.SetWorkflowInput(entry, WorkflowValueSource.Binding, null, candidate.ToBindingKey()));
             };
             valueEditor = button;
         }
         else
         {
-            var text = Text(Convert.ToString(entry.GetInputLiteral(), CultureInfo.InvariantCulture) ?? string.Empty, true);
-            text.LostFocus += (_, _) => TryEdit(() => _model!.SetWorkflowInput(
-                entry, WorkflowValueSource.Literal, text.Text, null));
+            var editable = entry.CanEditInputLiteralAsText;
+            var text = Text(editable
+                ? Convert.ToString(entry.GetInputLiteral(), CultureInfo.InvariantCulture) ?? string.Empty
+                : $"{entry.WorkflowInputType!.Name}：请使用绑定或专用编辑器", editable);
+            if (editable)
+                text.LostFocus += (_, _) =>
+                {
+                    if (!IsCurrentEditor() || entry.GetInputSource() != WorkflowValueSource.Literal
+                        || source.SelectedItem is not WorkflowValueSource.Literal) return;
+                    if (text.Text == Convert.ToString(entry.GetInputLiteral(), CultureInfo.InvariantCulture)) return;
+                    TryEdit(() => _model!.SetWorkflowInput(entry, WorkflowValueSource.Literal, text.Text, null));
+                };
             valueEditor = text;
         }
         Grid.SetColumn(valueEditor, 1);
         panel.Children.Add(valueEditor);
         source.SelectionChanged += (_, _) =>
         {
+            if (!IsCurrentEditor()) return;
             if (source.SelectedItem is not WorkflowValueSource selected || selected == entry.GetInputSource())
                 return;
             if (selected == WorkflowValueSource.Literal)
@@ -641,7 +736,7 @@ public sealed class WorkflowPropertyPanel : UserControl
                 {
                     Owner = Window.GetWindow(this)
                 };
-                if (window.ShowDialog() == true && window.SelectedCandidate is { } candidate)
+                if (window.ShowDialog() == true && window.SelectedCandidate is { } candidate && IsCurrentEditor())
                     TryEdit(() => _model.SetWorkflowInput(entry, selected, null, candidate.ToBindingKey()));
                 else
                     Rebuild();
@@ -659,7 +754,7 @@ public sealed class WorkflowPropertyPanel : UserControl
             action();
         }
         catch (Exception exception) when (exception is FormatException or InvalidOperationException
-                                          or ArgumentException or OverflowException or System.Text.Json.JsonException)
+                                          or ArgumentException or OverflowException or InvalidCastException or System.Text.Json.JsonException)
         {
             EditError?.Invoke(this, exception.Message);
             Rebuild();

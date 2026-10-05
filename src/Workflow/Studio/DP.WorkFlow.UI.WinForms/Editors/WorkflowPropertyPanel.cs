@@ -20,10 +20,19 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     private readonly HashSet<string> _collapsedCategories = new(StringComparer.Ordinal);
     private WorkflowDesignerSession? _session;
     private WorkflowPropertyChoiceProvider? _choiceProvider;
+    private Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? _additionalProperties;
+
+    /// <summary>领域描述生成的附加属性；与普通属性共用提交及撤销。</summary>
+    public Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? AdditionalProperties
+    {
+        get => _additionalProperties;
+        set { _additionalProperties = value; RecreateModel(); }
+    }
     private WorkflowPropertyInspectorModel? _model;
     private string? _startNodeId;
     private bool _building;
     private bool _editing;
+    private int _inputEditorGeneration;
     private bool _hideScriptProperty;
     private Control? _selectedRow;
     private readonly ModernPropertyGrid.WinForms.ModernPropertyGrid _modernGrid;
@@ -73,6 +82,9 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         _modernGrid.RegisterEditor(new WorkflowEditorProvider(
             entry => entry.EditorKind == WorkflowPropertyEditorKind.Script,
             CreateScriptLauncher));
+        _modernGrid.RegisterEditor(new WorkflowEditorProvider(
+            entry => entry.EditorKind == WorkflowPropertyEditorKind.Action,
+            CreateEditor));
         _modernGrid.RegisterEditor(new WorkflowEditorProvider(
             entry => entry.EditorKind == WorkflowPropertyEditorKind.Structured,
             CreateStructuredLauncher));
@@ -212,7 +224,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         _modernSchemaKey = null;
         if (_session is not null && !string.IsNullOrWhiteSpace(_startNodeId))
         {
-            _model = new WorkflowPropertyInspectorModel(_session, _startNodeId, _choiceProvider);
+            _model = new WorkflowPropertyInspectorModel(_session, _startNodeId, _choiceProvider, _additionalProperties);
             _model.Changed += OnModelChanged;
         }
         Rebuild();
@@ -252,6 +264,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         if (_building)
             return;
         _building = true;
+        _inputEditorGeneration++;
         try
         {
             _content.SuspendLayout();
@@ -327,6 +340,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             {
                 _modernAdapter = null;
                 _modernSchemaKey = null;
+                _inputEditorGeneration++;
                 _modernGrid.SelectedObject = null;
                 _modernActions.Visible = false;
                 return;
@@ -343,6 +357,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             var schemaKey = CreateModernSchemaKey();
             if (_modernAdapter is null)
             {
+                _inputEditorGeneration++;
                 _modernAdapter = new WorkflowPropertyObjectAdapter(
                     _model,
                     IsModernPropertyVisible,
@@ -352,6 +367,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             }
             else if (!string.Equals(_modernSchemaKey, schemaKey, StringComparison.Ordinal))
             {
+                _inputEditorGeneration++;
                 _modernSchemaKey = schemaKey;
                 _modernGrid.RefreshProperties();
             }
@@ -381,17 +397,28 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             entry.EditorKind,
             entry.DisplayName,
             entry.Category,
+            string.Join("\u001a", entry.GroupPath),
             entry.Description,
             entry.EditorKey,
             entry.EditorFilter,
             entry.EditorDialogTitle,
             entry.EditorCheckExists,
-            entry.IsReadOnly)));
+            entry.NumberMinimum,
+            entry.NumberMaximum,
+            entry.IsReadOnly,
+            entry.EditorKind == WorkflowPropertyEditorKind.Action ? entry.Value : null,
+            entry.EditorKind == WorkflowPropertyEditorKind.Action ? entry.ActionBlockReason : null,
+            entry.EditorKind == WorkflowPropertyEditorKind.WorkflowInput ? entry.GetInputSource() : null,
+            entry.EditorKind == WorkflowPropertyEditorKind.WorkflowInput ? entry.GetInputBinding() : null,
+            entry.EditorKind == WorkflowPropertyEditorKind.WorkflowInput
+                ? entry.CanEditInputLiteralAsText ? entry.GetInputLiteral() : entry.GetInputLiteral() is not null
+                : null,
+            string.Join("\u001c", entry.Choices.Select(choice => choice.Label + "\u001b" + choice.Value)))));
 
     private void CommitModernValue(WorkflowPropertyEntry entry, object? value)
     {
         if (_model is null) return;
-        var previousKeys = _model.Entries.Where(IsModernPropertyVisible).Select(item => item.Name).ToArray();
+        var previousSchema = CreateModernSchemaKey();
         try
         {
             _editing = true;
@@ -401,11 +428,16 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         {
             _editing = false;
         }
-        var currentKeys = _model.Entries.Where(IsModernPropertyVisible).Select(item => item.Name).ToArray();
-        if (previousKeys.SequenceEqual(currentKeys, StringComparer.Ordinal))
-            _modernGrid.RefreshProperty(entry.Name);
+        if (string.Equals(previousSchema, CreateModernSchemaKey(), StringComparison.Ordinal))
+        {
+            // 一次领域操作可能同时改变参数和依赖值，例如清空配置；同步所有值，保留焦点。
+            foreach (var current in _model.Entries.Where(IsModernPropertyVisible))
+                _modernGrid.RefreshProperty(current.Name);
+        }
         else if (IsHandleCreated)
             BeginInvoke(Rebuild);
+        else
+            Rebuild();
     }
 
     private void AddModernOutputPortEditors()
@@ -524,6 +556,27 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     /// </summary>
     private Control CreateEditor(WorkflowPropertyEntry entry)
     {
+        if (entry.EditorKind == WorkflowPropertyEditorKind.Action)
+        {
+            var nodeId = _model?.SelectedNode?.Id;
+            var generation = _inputEditorGeneration;
+            var button = new Button { Text = Convert.ToString(entry.Value) ?? "打开编辑器…", AutoSize = true, Dock = DockStyle.Fill, Enabled = entry.ActionBlockReason.Length == 0 };
+            button.Click += async (_, _) =>
+            {
+                if (button.IsDisposed || generation != _inputEditorGeneration || nodeId != _model?.SelectedNode?.Id) return;
+                if (entry.HasActionHandler)
+                {
+                    button.Enabled = false;
+                    try { await entry.ExecuteActionAsync(); }
+                    catch (Exception ex) { EditError?.Invoke(this, ex.Message); }
+                    finally { if (!button.IsDisposed) button.Enabled = entry.ActionBlockReason.Length == 0; }
+                    return;
+                }
+                if (PropertyActionRequested == null) { EditError?.Invoke(this, "宿主未注册此属性的编辑窗口。"); return; }
+                PropertyActionRequested.Invoke(this, new WorkflowPropertyActionRequest(nodeId!, entry.EditorKey!));
+            };
+            return button;
+        }
         if (entry.EditorKind == WorkflowPropertyEditorKind.ReadOnly)
             return EditorLabel(Convert.ToString(entry.Value) ?? string.Empty);
         if (entry.EditorKind == WorkflowPropertyEditorKind.Boolean)
@@ -546,7 +599,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         {
             var coreType = Nullable.GetUnderlyingType(entry.ValueType) ?? entry.ValueType;
             var combo = EditorCombo();
-            combo.Items.AddRange(Enum.GetValues(coreType).Cast<object>().ToArray());
+            combo.Items.AddRange(Enum.GetValues(coreType).Cast<object>().Distinct().ToArray());
             combo.SelectedItem = entry.Value;
             combo.SelectedValueChanged += (_, _) =>
             {
@@ -576,7 +629,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         }
 
         var text = EditorText(Convert.ToString(entry.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
-        text.Validated += (_, _) => TryEdit(() => _model!.SetValue(entry, text.Text));
+        text.InnerTextBox.Validated += (_, _) => TryEdit(() => _model!.SetValue(entry, text.Text));
         return text;
     }
 
@@ -594,6 +647,9 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         return combo;
     }
 
+    /// <summary>请求打开由插件页面提供的独立属性编辑窗口。</summary>
+    public event EventHandler<WorkflowPropertyActionRequest>? PropertyActionRequested;
+
     /// <summary>创建Path Editor。</summary>
     private Control CreatePathEditor(WorkflowPropertyEntry entry)
     {
@@ -607,7 +663,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             Margin = new Padding(2, 0, 0, 0),
             AccessibleName = $"浏览{entry.DisplayName}"
         };
-        text.Validated += (_, _) => TryEdit(() => _model!.SetValue(entry, text.Text));
+        text.InnerTextBox.Validated += (_, _) => TryEdit(() => _model!.SetValue(entry, text.Text));
         browse.Click += (_, _) =>
         {
             if (string.Equals(entry.EditorKey, WorkflowPropertyEditorKeys.FilePath, StringComparison.Ordinal))
@@ -638,6 +694,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             TryEdit(() => _model!.SetValue(entry, text.Text));
         };
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 36));
         layout.Controls.Add(text, 0, 0);
@@ -792,6 +849,9 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     /// </summary>
     private Control CreateWorkflowInputEditor(WorkflowPropertyEntry entry)
     {
+        var generation = _inputEditorGeneration;
+        var model = _model!;
+        var node = model.SelectedNode;
         var panel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -808,6 +868,9 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         source.SelectedItem = entry.GetInputSource();
         source.Margin = new Padding(0, 0, 3, 0);
         panel.Controls.Add(source, 0, 0);
+
+        bool IsCurrentEditor() => !panel.IsDisposed && generation == _inputEditorGeneration
+            && ReferenceEquals(model, _model) && ReferenceEquals(node, model.SelectedNode);
 
         Control valueEditor;
         if (entry.GetInputSource() == WorkflowValueSource.Binding)
@@ -827,8 +890,9 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             };
             button.Click += (_, _) =>
             {
+                if (!IsCurrentEditor()) return;
                 using var dialog = new WorkflowBindingSelectorDialog(candidates, entry.GetInputBinding());
-                if (dialog.ShowDialog(this) == DialogResult.OK && dialog.SelectedCandidate is { } candidate)
+                if (dialog.ShowDialog(this) == DialogResult.OK && dialog.SelectedCandidate is { } candidate && IsCurrentEditor())
                     TryEdit(() => _model.SetWorkflowInput(
                         entry, WorkflowValueSource.Binding, null, candidate.ToBindingKey()), rebuild: true);
             };
@@ -836,17 +900,26 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         }
         else
         {
-            var text = EditorText(Convert.ToString(
-                entry.GetInputLiteral(),
-                System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
-            text.Validated += (_, _) => TryEdit(() => _model!.SetWorkflowInput(
-                entry, WorkflowValueSource.Literal, text.Text, null));
+            var editable = entry.CanEditInputLiteralAsText;
+            var text = EditorText(editable
+                ? Convert.ToString(entry.GetInputLiteral(), System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty
+                : $"{entry.WorkflowInputType!.Name}：请使用绑定或专用编辑器");
+            text.ReadOnly = !editable;
+            if (editable)
+                text.InnerTextBox.Validated += (_, _) =>
+                {
+                    if (!IsCurrentEditor() || text.IsDisposed || entry.GetInputSource() != WorkflowValueSource.Literal
+                        || source.SelectedItem is not WorkflowValueSource.Literal) return;
+                    if (text.Text == Convert.ToString(entry.GetInputLiteral(), System.Globalization.CultureInfo.InvariantCulture)) return;
+                    TryEdit(() => _model!.SetWorkflowInput(entry, WorkflowValueSource.Literal, text.Text, null));
+                };
             valueEditor = text;
         }
         valueEditor.Margin = Padding.Empty;
         panel.Controls.Add(valueEditor, 1, 0);
         source.SelectedValueChanged += (_, _) =>
         {
+            if (!IsCurrentEditor()) return;
             if (source.SelectedItem is not WorkflowValueSource selected || selected == entry.GetInputSource())
                 return;
             if (selected == WorkflowValueSource.Literal)
@@ -861,7 +934,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
                     return;
                 }
                 using var dialog = new WorkflowBindingSelectorDialog(candidates, entry.GetInputBinding());
-                if (dialog.ShowDialog(this) == DialogResult.OK && dialog.SelectedCandidate is { } candidate)
+                if (dialog.ShowDialog(this) == DialogResult.OK && dialog.SelectedCandidate is { } candidate && IsCurrentEditor())
                     TryEdit(() => _model.SetWorkflowInput(entry, selected, null, candidate.ToBindingKey()), rebuild: true);
                 else
                     Rebuild();
@@ -884,7 +957,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
                 Rebuild();
         }
         catch (Exception exception) when (exception is FormatException or InvalidOperationException
-                                          or ArgumentException or OverflowException or System.Text.Json.JsonException)
+                                          or ArgumentException or OverflowException or InvalidCastException or System.Text.Json.JsonException)
         {
             _editing = false;
             EditError?.Invoke(this, exception.Message);
@@ -998,13 +1071,14 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         ForeColor = Color.FromArgb(100, 116, 139)
     };
 
-    private TextBox EditorText(string text) => new()
+    private ModernInput EditorText(string text) => new()
     {
         Text = text,
         Dock = DockStyle.Fill,
-        BorderStyle = BorderStyle.FixedSingle,
-        BackColor = Color.FromArgb(15, 23, 42),
-        ForeColor = ForeColor
+        MinimumSize = new Size(0, 24),
+        Theme = ModernTheme.Dark,
+        LocalizationContext = LocalizationContext,
+        Margin = Padding.Empty
     };
 
     /// <summary>执行 Editor Combo 相关处理。</summary>
@@ -1097,6 +1171,11 @@ public sealed partial class WorkflowPropertyPanel : UserControl
                 new DescriptionAttribute(entry.Description)
             };
             if (entry.IsReadOnly) attributes.Add(ReadOnlyAttribute.Yes);
+            if (entry.NumberMinimum.HasValue || entry.NumberMaximum.HasValue)
+                attributes.Add(new PropertyRangeAttribute(entry.NumberMinimum ?? -1_000_000_000d, entry.NumberMaximum ?? 1_000_000_000d,
+                    entry.ValueType == typeof(int) || entry.ValueType == typeof(long) ? 1 : 0.1,
+                    entry.ValueType == typeof(int) || entry.ValueType == typeof(long) ? 0 : 3));
+            if (entry.GroupPath.Count != 0) attributes.Add(new PropertyGroupAttribute(entry.GroupPath.ToArray()));
             if (!string.IsNullOrWhiteSpace(entry.EditorKey))
                 attributes.Add(new PropertyEditorKeyAttribute(entry.EditorKey));
             return attributes.ToArray();

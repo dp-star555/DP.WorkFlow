@@ -1,0 +1,37 @@
+<Project>
+  <PropertyGroup>
+    <VisionEngineSourceRoot>$(MSBuildThisFileDirectory)..\..\..\DP.Vision\src\</VisionEngineSourceRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)barcode.pgm" Link="VisionData\barcode.pgm" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(MSBuildThisFileDirectory)geometry-scene.pgm;$(MSBuildThisFileDirectory)geometry-template.pgm" Link="VisionData\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Barcode\DP.WorkFlow.Nodes.Vision.Barcode.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Ocr\DP.WorkFlow.Nodes.Vision.Ocr.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Geometry\DP.WorkFlow.Nodes.Vision.Geometry.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="$(VisionEngineSourceRoot)DP.Vision.Zxing\DP.Vision.Zxing.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="$(VisionEngineSourceRoot)DP.Vision.PPOcr.Onnx\DP.Vision.PPOcr.Onnx.csproj" ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+  <!-- 引擎仅参与构建及插件包投放，示例宿主不引用具体算法实现。 -->
+  <Target Name="StageVisionAlgorithmPlugins" AfterTargets="Build">
+    <ItemGroup>
+      <BarcodeNodePayload Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Barcode\bin\$(Configuration)\net8.0\DP.WorkFlow.Nodes.Vision.Barcode.dll;$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Barcode\bin\$(Configuration)\net8.0\DP.WorkFlow.Nodes.Vision.Barcode.deps.json" />
+      <OcrNodePayload Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Ocr\bin\$(Configuration)\net8.0\DP.WorkFlow.Nodes.Vision.Ocr.dll;$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Ocr\bin\$(Configuration)\net8.0\DP.WorkFlow.Nodes.Vision.Ocr.deps.json" />
+      <GeometryNodePayload Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Geometry\bin\$(Configuration)\net8.0\DP.WorkFlow.Nodes.Vision.Geometry.dll;$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Geometry\bin\$(Configuration)\net8.0\DP.WorkFlow.Nodes.Vision.Geometry.deps.json" />
+      <OpenCvAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.OpenCv\bin\$(Configuration)\net8.0-windows\**\*"
+        Exclude="$(VisionEngineSourceRoot)DP.Vision.OpenCv\bin\$(Configuration)\net8.0-windows\DP.Vision*.dll;$(VisionEngineSourceRoot)DP.Vision.OpenCv\bin\$(Configuration)\net8.0-windows\*.pdb" />
+      <OpenCvAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.OpenCv\bin\$(Configuration)\net8.0-windows\DP.Vision.OpenCv.dll" />
+      <ZxingAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.Zxing\bin\$(Configuration)\netstandard2.0\**\*"
+        Exclude="$(VisionEngineSourceRoot)DP.Vision.Zxing\bin\$(Configuration)\netstandard2.0\DP.Vision*.dll;$(VisionEngineSourceRoot)DP.Vision.Zxing\bin\$(Configuration)\netstandard2.0\*.pdb" />
+      <ZxingAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.Zxing\bin\$(Configuration)\netstandard2.0\DP.Vision.Zxing.dll" />
+      <OnnxAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.PPOcr.Onnx\bin\$(Configuration)\net8.0-windows\**\*"
+        Exclude="$(VisionEngineSourceRoot)DP.Vision.PPOcr.Onnx\bin\$(Configuration)\net8.0-windows\DP.Vision*.dll;$(VisionEngineSourceRoot)DP.Vision.PPOcr.Onnx\bin\$(Configuration)\net8.0-windows\*.pdb" />
+      <OnnxAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.PPOcr.Onnx\bin\$(Configuration)\net8.0-windows\DP.Vision.PPOcr.Onnx.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(BarcodeNodePayload)" DestinationFolder="$(TargetDir)plugins\workflow.vision.barcode" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(OcrNodePayload)" DestinationFolder="$(TargetDir)plugins\workflow.vision.ocr-line" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(GeometryNodePayload)" DestinationFolder="$(TargetDir)plugins\workflow.vision.geometry" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(OpenCvAlgorithmPayload)" DestinationFiles="@(OpenCvAlgorithmPayload->'$(TargetDir)plugins\dp.vision.opencv\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(ZxingAlgorithmPayload)" DestinationFiles="@(ZxingAlgorithmPayload->'$(TargetDir)plugins\dp.vision.zxing\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(OnnxAlgorithmPayload)" DestinationFiles="@(OnnxAlgorithmPayload->'$(TargetDir)plugins\dp.vision.ppocr\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

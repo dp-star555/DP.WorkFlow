@@ -24,6 +24,7 @@ public enum WorkflowNodeEditorPageKind
 /// <param name="IconKey">可选的页面图标资源键。</param>
 /// <param name="RendererKey">平台渲染器稳定键；为空时由内置页面类型决定。</param>
 /// <param name="Priority">同一页面槽位的替换优先级；它与显示顺序相互独立。</param>
+/// <param name="PropertyEditorKey">独立属性编辑器稳定键；该页面不平铺在普通节点窗口中。</param>
 public sealed record WorkflowNodeEditorPageDescriptor(
     string PageId,
     string Title,
@@ -32,7 +33,8 @@ public sealed record WorkflowNodeEditorPageDescriptor(
     object Model,
     string? IconKey = null,
     string? RendererKey = null,
-    int Priority = 0);
+    int Priority = 0,
+    string? PropertyEditorKey = null);
 
 /// <summary>节点页面提供器使用的上下文。</summary>
 /// <param name="Session">关联的设计器会话。</param>
@@ -41,7 +43,16 @@ public sealed record WorkflowNodeEditorPageDescriptor(
 public sealed record WorkflowNodeEditorContext(
     WorkflowDesignerSession Session,
     string EntryNodeId,
-    IWorkflowNodeModel Node);
+    IWorkflowNodeModel Node)
+{
+    /// <summary>宿主为隔离编辑副本提供的候选值。</summary>
+    public WorkflowPropertyChoiceProvider? ChoiceProvider { get; init; }
+    /// <summary>宿主提供的领域属性；回调接收编辑副本。</summary>
+    public Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? AdditionalProperties { get; init; }
+
+    /// <summary>当前请求的独立属性编辑器；普通节点窗口为空。</summary>
+    public string? RequestedPropertyEditor { get; init; }
+}
 
 /// <summary>扩展节点工作台页面；实现不得返回 WinForms/WPF 控件。</summary>
 public interface IWorkflowNodeEditorPageProvider
@@ -61,10 +72,32 @@ public interface IWorkflowNodeEditorPageProvider
     IEnumerable<WorkflowNodeEditorPageDescriptor> CreatePages(WorkflowNodeEditorContext context);
 }
 
+/// <summary>节点页面的应用准备；只操作隔离编辑副本，失败阻止正式提交。</summary>
+public interface IWorkflowNodeEditorCommitParticipant
+{
+    /// <summary>发布页面资源并更新隔离副本，不能修改正式节点。</summary>
+    void PrepareCommit();
+}
+
+/// <summary>专用编辑页面的确认条件；统一窗口据此更新应用和确定按钮。</summary>
+public interface IWorkflowNodeEditorCommitReadiness
+{
+    /// <summary>是否可以确认当前草稿。</summary>
+    bool CanCommit { get; }
+    /// <summary>不能确认的原因。</summary>
+    string CommitBlockReason { get; }
+}
+
 /// <summary>参数页面上下文。</summary>
 /// <param name="Session">关联的设计器会话。</param>
 /// <param name="EntryNodeId">工作流开始节点标识。</param>
-public sealed record WorkflowPropertyEditorPageModel(WorkflowDesignerSession Session, string EntryNodeId);
+public sealed record WorkflowPropertyEditorPageModel(WorkflowDesignerSession Session, string EntryNodeId)
+{
+    /// <summary>属性页候选值来源。</summary>
+    public WorkflowPropertyChoiceProvider? ChoiceProvider { get; init; }
+    /// <summary>属性页领域扩展。</summary>
+    public Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? AdditionalProperties { get; init; }
+}
 
 /// <summary>嵌入式子流程页面上下文。</summary>
 public sealed class WorkflowSubWorkflowEditorPageModel : IDisposable
@@ -227,27 +260,42 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
 {
     private readonly List<IAsyncDisposable> _resources = new();
     private readonly List<IDisposable> _disposables = new();
+    private readonly IWorkflowNodeEditorPageProvider[] _providers;
+    private readonly WorkflowPropertyChoiceProvider? _choiceProvider;
+    private readonly Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? _additionalProperties;
+    private bool _disposed;
 
     /// <summary>为指定节点创建隔离编辑副本并聚合可用编辑页面。</summary>
     /// <param name="session">设计器会话。</param>
     /// <param name="startNodeId">工作流开始节点标识。</param>
     /// <param name="nodeId">节点标识。</param>
     /// <param name="providers">自定义编辑页提供者集合。</param>
+    /// <param name="propertyEditorKey">独立属性编辑器稳定键；普通节点窗口为空。</param>
     public WorkflowNodeEditorModel(
         WorkflowDesignerSession session,
         string startNodeId,
         string nodeId,
-        IEnumerable<IWorkflowNodeEditorPageProvider>? providers = null)
+        IEnumerable<IWorkflowNodeEditorPageProvider>? providers = null, string? propertyEditorKey = null)
+        : this(session, startNodeId, nodeId, providers, null, null, propertyEditorKey) { }
+
+    /// <summary>创建带宿主属性扩展的隔离节点编辑器，沿用应用、取消及撤销语义。</summary>
+    public WorkflowNodeEditorModel(WorkflowDesignerSession session, string startNodeId, string nodeId,
+        IEnumerable<IWorkflowNodeEditorPageProvider>? providers, WorkflowPropertyChoiceProvider? choiceProvider,
+        Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? additionalProperties, string? propertyEditorKey = null)
     {
+        _providers = providers?.ToArray() ?? [];
+        _choiceProvider = choiceProvider; _additionalProperties = additionalProperties;
+        PropertyEditorKey = propertyEditorKey;
         Session = session ?? throw new ArgumentNullException(nameof(session));
         EntryNodeId = startNodeId ?? throw new ArgumentNullException(nameof(startNodeId));
         Node = session.Canvas.Nodes.FirstOrDefault(item => item.Node.Id == nodeId)?.Node
             ?? throw new InvalidOperationException($"节点 {nodeId} 不存在。");
         session.SelectedNodeId = nodeId;
         (EditingSession, EditingNode) = CreateEditingSession(session, nodeId);
-        var context = new WorkflowNodeEditorContext(EditingSession, startNodeId, EditingNode);
+        var context = new WorkflowNodeEditorContext(EditingSession, startNodeId, EditingNode)
+        { ChoiceProvider = choiceProvider, AdditionalProperties = additionalProperties, RequestedPropertyEditor = propertyEditorKey };
         var pageCatalog = WorkflowNodeEditorPageCatalog.CreateDefault();
-        foreach (var provider in providers ?? Array.Empty<IWorkflowNodeEditorPageProvider>())
+        foreach (var provider in _providers)
             pageCatalog.Register(provider);
         Pages = pageCatalog.CreatePages(context);
         foreach (var resource in Pages.Select(page => page.Model).OfType<IAsyncDisposable>().Distinct())
@@ -270,6 +318,15 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
     /// <summary>获取已经按显示顺序排列的节点编辑页面。</summary>
     public IReadOnlyList<WorkflowNodeEditorPageDescriptor> Pages { get; }
 
+    /// <summary>独立属性编辑窗口的稳定键；空值表示普通节点窗口。</summary>
+    public string? PropertyEditorKey { get; }
+    /// <summary>扩展页面提供的确认条件。</summary>
+    public bool CanApplyChanges => !_disposed && Pages.Select(p => p.Model).OfType<IWorkflowNodeEditorCommitReadiness>().All(p => p.CanCommit);
+
+    /// <summary>从当前编辑副本打开另一层隔离草稿，确认只修改父草稿。</summary>
+    public WorkflowNodeEditorModel CreatePropertyEditor(string key) => new(EditingSession, EntryNodeId, EditingNode.Id,
+        _providers, _choiceProvider, _additionalProperties, key);
+
     /// <summary>将编辑副本中的参数作为一个整体提交到正式节点。</summary>
     public void ApplyChanges()
     {
@@ -277,6 +334,9 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
             .Distinct().FirstOrDefault(page => !page.IsCurrentScriptCompiled);
         if (uncompiledScript is not null)
             throw new InvalidOperationException("保存前必须点击“编译”，并确保当前 C# 代码编译通过。");
+
+        foreach (var participant in Pages.Select(page => page.Model).OfType<IWorkflowNodeEditorCommitParticipant>().Distinct())
+            participant.PrepareCommit();
 
         var editedSnapshot = WorkflowNodeConfigurationSnapshotter.Capture(EditingNode);
         var sourceCanvasNode = EditingSession.Canvas.Nodes.First(item => item.Node.Id == EditingNode.Id);
@@ -323,6 +383,8 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
     /// <summary>异步停止外部资源并解除事件订阅。</summary>
     public async ValueTask DisposeAsync()
     {
+        if (_disposed) return;
+        _disposed = true;
         foreach (var disposable in _disposables.AsEnumerable().Reverse()) disposable.Dispose();
         foreach (var resource in _resources.AsEnumerable().Reverse())
             await resource.DisposeAsync().ConfigureAwait(false);

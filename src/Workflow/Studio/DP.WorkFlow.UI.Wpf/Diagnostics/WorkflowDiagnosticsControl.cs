@@ -35,10 +35,13 @@ public sealed class WorkflowDiagnosticsControl : UserControl
         gridView.Columns.Add(new GridViewColumn { Header = "节点", Width = 120, DisplayMemberBinding = new System.Windows.Data.Binding(nameof(WorkflowDiagnosticItem.NodeId)) });
         gridView.Columns.Add(new GridViewColumn { Header = "消息", Width = 600, DisplayMemberBinding = new System.Windows.Data.Binding(nameof(WorkflowDiagnosticItem.Message)) });
         _list.View = gridView;
+        var itemStyle = new Style(typeof(ListViewItem));
+        itemStyle.Setters.Add(new Setter(ToolTipProperty, new System.Windows.Data.Binding(nameof(WorkflowDiagnosticItem.Detail))));
+        _list.ItemContainerStyle = itemStyle;
         _list.MouseDoubleClick += OnDoubleClick;
         Content = _list;
-        Loaded += (_, _) => RecreateModel();
-        Unloaded += (_, _) => DisposeModel();
+        Loaded += (_, _) => { if (_provider != null) { _provider.Changed -= ProviderChanged; _provider.Changed += ProviderChanged; } RecreateModel(); };
+        Unloaded += (_, _) => { if (_provider != null) _provider.Changed -= ProviderChanged; DisposeModel(); };
     }
 
     public WorkflowDesignerSession? Session
@@ -54,6 +57,20 @@ public sealed class WorkflowDiagnosticsControl : UserControl
     }
 
     public bool CanRun => _model?.CanRun == true;
+    private IWorkflowDiagnosticProvider? _provider;
+    private WorkflowDesignerNavigator? _navigator;
+    /// <summary>领域检查及后台准备报告。</summary>
+    public IWorkflowDiagnosticProvider? Provider
+    {
+        get => _provider;
+        set { if (_provider != null) _provider.Changed -= ProviderChanged; _provider = value; if (_provider != null && IsLoaded) _provider.Changed += ProviderChanged; RecreateModel(); }
+    }
+    /// <summary>诊断定位所用导航器。</summary>
+    public WorkflowDesignerNavigator? Navigator { get => _navigator; set { _navigator = value; RecreateModel(); } }
+    /// <summary>运行前重新检查外部文件及选择。</summary>
+    public void RefreshDiagnostics() => _model?.Refresh();
+    private void ProviderChanged(object? sender, EventArgs e)
+    { if (Dispatcher.CheckAccess()) RefreshDiagnostics(); else _ = Dispatcher.BeginInvoke(RefreshDiagnostics); }
 
     private static void OnConfigurationChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs e) =>
         ((WorkflowDiagnosticsControl)dependencyObject).RecreateModel();
@@ -64,7 +81,7 @@ public sealed class WorkflowDiagnosticsControl : UserControl
         DisposeModel();
         if (Session is not null && !string.IsNullOrWhiteSpace(EntryNodeId))
         {
-            _model = new WorkflowDiagnosticsModel(Session, EntryNodeId);
+            _model = new WorkflowDiagnosticsModel(Session, EntryNodeId, _provider, _navigator);
             _model.Changed += OnModelChanged;
         }
         RefreshItems();

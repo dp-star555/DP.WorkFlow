@@ -30,6 +30,7 @@ public sealed class WorkflowStudioControl : UserControl
     private WorkflowStudioRuntimeBinding? _runtimeBinding;
     private WorkflowDocumentWorkspace? _workspace;
     private WorkflowDesignerNavigator? _navigator;
+    private TabControl? _toolTabs;
 
     /// <summary>初始化集设计器、工具箱、诊断和运行控制于一体的工作室控件。</summary>
     public WorkflowStudioControl()
@@ -105,6 +106,7 @@ public sealed class WorkflowStudioControl : UserControl
         AddToGrid(root, new Border { Background = Brush(30, 41, 59) }, 1, 2);
         AddToGrid(root, Designer, 2);
         var bottomTabs = new TabControl();
+        _toolTabs = bottomTabs;
         bottomTabs.Items.Add(new TabItem { Header = "诊断", Content = Diagnostics });
         bottomTabs.Items.Add(new TabItem { Header = "运行监视", Content = RuntimeMonitor });
         AddToGrid(root, bottomTabs, 2, row: 2);
@@ -129,6 +131,7 @@ public sealed class WorkflowStudioControl : UserControl
         Designer.NodeEditRequested += OnDesignerNodeEditRequested;
         Properties.EditError += (_, message) => InteractionError?.Invoke(this, message);
         Properties.BlockMappingEditRequested += OnBlockMappingEditRequested;
+        Properties.PropertyActionRequested += OnPropertyActionRequested;
         Unloaded += (_, _) =>
         {
             SubscribeSession(null);
@@ -176,6 +179,8 @@ public sealed class WorkflowStudioControl : UserControl
 
     /// <summary>获取或设置 Diagnostics 成员。</summary>
     public WorkflowDiagnosticsControl Diagnostics { get; }
+    /// <summary>为领域工具添加独立工作台页面。</summary>
+    public void AddToolPage(string title, UIElement page) => _toolTabs!.Items.Add(new TabItem { Header = title, Content = page });
 
     /// <summary>获取或设置 Runtime Monitor 成员。</summary>
     public WorkflowRuntimeMonitorControl RuntimeMonitor { get; }
@@ -245,6 +250,7 @@ public sealed class WorkflowStudioControl : UserControl
             if (_navigator is not null)
                 _navigator.CurrentChanged -= OnNavigatorChanged;
             _navigator = value;
+            Diagnostics.Navigator = value;
             if (_navigator is not null)
             {
                 _navigator.CurrentChanged += OnNavigatorChanged;
@@ -400,6 +406,21 @@ public sealed class WorkflowStudioControl : UserControl
         _ = window.ShowDialog();
     }
 
+    private async void OnPropertyActionRequested(object? sender, WorkflowPropertyActionRequest request)
+    {
+        if (Session == null || string.IsNullOrWhiteSpace(EntryNodeId)) return;
+        WorkflowNodeEditorModel? model = null;
+        try
+        {
+            model = new WorkflowNodeEditorModel(Session, EntryNodeId, request.NodeId, NodeEditorExtensions.GetPageProviders(),
+                Properties.ChoiceProvider, Properties.AdditionalProperties, request.EditorKey);
+            var dialog = new WorkflowNodeEditorWindow(model, NodeEditorExtensions.GetRenderers()) { Owner = Window.GetWindow(this) };
+            dialog.ShowDialog();
+        }
+        catch (Exception ex) { InteractionError?.Invoke(this, $"无法打开属性编辑窗口：{ex.Message}"); }
+        finally { if (model != null) await model.DisposeAsync(); }
+    }
+
     /// <summary>处理“Designer Node Edit Requested”事件。</summary>
     /// <param name="sender">事件发送者。</param>
     /// <param name="node">目标画布节点。</param>
@@ -409,7 +430,8 @@ public sealed class WorkflowStudioControl : UserControl
         try
         {
             var model = new WorkflowNodeEditorModel(
-                Session, EntryNodeId, node.Id, NodeEditorExtensions.GetPageProviders());
+                Session, EntryNodeId, node.Id, NodeEditorExtensions.GetPageProviders(),
+                Properties.ChoiceProvider, Properties.AdditionalProperties);
             var dialog = new WorkflowNodeEditorWindow(
                 model, NodeEditorExtensions.GetRenderers(),
                 block => OnBlockMappingEditRequested(this, block))
@@ -448,11 +470,12 @@ public sealed class WorkflowStudioControl : UserControl
     /// <summary>执行 Run DP.WorkFlow 相关处理。</summary>
     private async Task RunWorkflowAsync()
     {
+        Diagnostics.RefreshDiagnostics();
         if (RuntimeBinding is null)
             return;
         if (!Diagnostics.CanRun)
         {
-            InteractionError?.Invoke(this, "当前流程存在编译错误，不能运行。");
+            InteractionError?.Invoke(this, "当前流程存在配置或编译错误，不能运行。");
             return;
         }
         try

@@ -24,15 +24,17 @@ public sealed class BufferedExternalRunScopeEndToEndTests
     /// 采集节点随后只会超时，因此本用例同时锁住"布防早于首节点"。
     /// </para>
     /// </summary>
-    [Fact]
-    public async Task 回调早于采集节点到达时采集节点直接领取()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task 回调早于采集节点到达时采集节点直接领取(bool unified)
     {
         FakeStreamingDevice? device = null;
         var trigger = new TriggerHandler(() => Device(device), ("f11", 11));
         var sink = new SinkHandler();
 
         await using var runtime = new FakeStreamingRuntime(created => device = created);
-        using var rig = new HostRig(runtime, Linear(trigger.Id, "capture", sink.Id), trigger, sink);
+        using var rig = new HostRig(runtime, Linear(trigger.Id, "capture", sink.Id, unified), trigger, sink);
 
         var result = await rig.Host.RunAsync();
 
@@ -79,15 +81,17 @@ public sealed class BufferedExternalRunScopeEndToEndTests
     /// 第二根必须拿到新代次的帧，而不是第一根遗留的那一帧。
     /// </para>
     /// </summary>
-    [Fact]
-    public async Task 上一根运行未领取的帧不会进入下一根运行()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task 上一根运行未领取的帧不会进入下一根运行(bool unified)
     {
         FakeStreamingDevice? device = null;
         await using var runtime = new FakeStreamingRuntime(created => device = created);
 
         var firstTrigger = new TriggerHandler(() => Device(device), ("r1-f1", 1), ("r1-f2", 2));
         var firstSink = new SinkHandler();
-        using (var first = new HostRig(runtime, Linear(firstTrigger.Id, "capture", firstSink.Id), firstTrigger, firstSink))
+        using (var first = new HostRig(runtime, Linear(firstTrigger.Id, "capture", firstSink.Id, unified), firstTrigger, firstSink))
         {
             var firstResult = await first.Host.RunAsync();
 
@@ -101,7 +105,7 @@ public sealed class BufferedExternalRunScopeEndToEndTests
 
         var secondTrigger = new TriggerHandler(() => Device(device), ("r2-f1", 3));
         var secondSink = new SinkHandler();
-        using (var second = new HostRig(runtime, Linear(secondTrigger.Id, "capture", secondSink.Id), secondTrigger, secondSink))
+        using (var second = new HostRig(runtime, Linear(secondTrigger.Id, "capture", secondSink.Id, unified), secondTrigger, secondSink))
         {
             var secondResult = await second.Host.RunAsync();
 
@@ -257,11 +261,13 @@ public sealed class BufferedExternalRunScopeEndToEndTests
     private static FakeStreamingDevice Device(FakeStreamingDevice? device) =>
         device ?? throw new InvalidOperationException("设备尚未打开：宿主没有在首节点之前布防。");
 
-    private static WorkflowDocument Linear(string triggerId, string captureId, string sinkId)
+    private static WorkflowDocument Linear(string triggerId, string captureId, string sinkId, bool unified = false)
     {
         var document = new WorkflowDocument { Name = "缓冲采集流程" };
         var trigger = new TriggerNode { Id = triggerId };
-        var capture = new CaptureAreaFrameNodeModel { Id = captureId, Source = new VisionSourceReference(SourceId) };
+        IWorkflowNodeModel capture = unified
+            ? new AcquireVisionImageNodeModel { Id = captureId, SourceMode = EWorkflowVisionImageSource.AreaCamera, Source = new(SourceId) }
+            : new CaptureAreaFrameNodeModel { Id = captureId, Source = new(SourceId) };
         var sink = new SinkNode { Id = sinkId };
         document.EntryNodeId = trigger.Id;
         foreach (var node in new IWorkflowNodeModel[] { trigger, capture, sink })

@@ -4,7 +4,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>新版分析节点的强类型帧输入与显式矩形范围配置；不持有活动ROI编辑器。</summary>
-public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
+public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator, IWorkflowNodeDocumentConfigurationValidator
 {
     /// <summary>上游帧绑定；禁止把运行图像作为Literal序列化到配置。</summary>
     [WorkflowProperty("输入图像", "绑定新版文件读取节点的ImageFrame标准输出。", Category = "输入")]
@@ -33,11 +33,16 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
     public List<WorkflowVisionRoi> Regions { get; set; } = new();
 
     /// <summary>可选的上游精确Region事实绑定；与配置ROI取交集，必须同帧。</summary>
-    [WorkflowProperty("区域掩码", "可选RegionAnalysisResult绑定；不接受运行事实Literal。", Category = "范围")]
+    [WorkflowProperty("上游区域掩膜", "可选绑定创建区域、阈值分割或形态学结果；与本节点包含/排除ROI取交集，必须与输入图像同帧。手绘掩膜直接在图像页编辑ROI。", Category = "范围")]
+    [WorkflowPropertyVisibleWhen(nameof(SupportsRegionMask), "True")]
     public WorkflowInput<RegionAnalysisResult> Mask { get; set; } = WorkflowInput<RegionAnalysisResult>.FromLiteral(null);
 
-    /// <summary>可空定位绑定；启用后Regions/卡尺端点使用模板局部像素坐标，运行中不改配置。</summary>
-    [WorkflowProperty("定位坐标系", "绑定成功定位的CoordinateSystem，并保存制作时定义ID与模板签名。", Category = "定位坐标系")]
+    /// <summary>面积节点可使用精确区域掩膜；其他节点不展示此属性。</summary>
+    [System.ComponentModel.Browsable(false), System.Text.Json.Serialization.JsonIgnore]
+    public bool SupportsRegionMask => RangeCapability == EWorkflowVisionRange.Region;
+
+    /// <summary>可空业务坐标绑定；启用后Regions/卡尺端点使用局部单位，运行中不改配置。</summary>
+    [WorkflowProperty("坐标系", "绑定本帧CoordinateSystem，保存制作时定义ID、版本和语义签名。", Category = "坐标系")]
     public WorkflowVisionCoordinateBinding? Coordinates { get; set; }
 
     /// <summary>此节点是否支持显式定位；不支持的算子不能用外接框假装随动。</summary>
@@ -47,7 +52,7 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
 
     /// <summary>为外部领域Handler解析并验证定位；不读取活动编辑器或缓存上一帧。</summary>
     /// <param name="frame">本次输入帧。</param><param name="context">节点执行上下文。</param><returns>未绑定时为空。</returns>
-    public LocatedCoordinateSystem? ResolveCoordinates(ImageFrame frame, IWorkflowNodeExecutionContext context)
+    public VisionCoordinateSystem? ResolveCoordinates(ImageFrame frame, IWorkflowNodeExecutionContext context)
     {
         ArgumentNullException.ThrowIfNull(frame); ArgumentNullException.ThrowIfNull(context);
         if (Coordinates is null) return null;
@@ -66,7 +71,7 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
         return new WorkflowVisionResolvedRange(Bounds(frame), Region(frame, token, context, coordinates), coordinates);
     }
 
-    private RegionGeometry? Region(ImageFrame frame, CancellationToken token, IWorkflowNodeExecutionContext context, LocatedCoordinateSystem? coordinates = null)
+    private RegionGeometry? Region(ImageFrame frame, CancellationToken token, IWorkflowNodeExecutionContext context, VisionCoordinateSystem? coordinates = null)
     {
         var configured = coordinates is null
             ? (Regions.Count == 0 ? null : WorkflowVisionRoi.Compose(Regions, frame.Image, token))
@@ -76,6 +81,22 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
         var mask = context.ResolveInput(Mask) ?? throw new InvalidOperationException("绑定区域为空。");
         mask.ValidateFrame(frame);
         return configured is null ? mask.Region : RegionAnalysisResult.Intersect(configured, mask.Region, token);
+    }
+
+    /// <summary>制作试匹配的同帧范围，保持运行时ROI和掩码规则。</summary>
+    public WorkflowVisionResolvedRange ResolvePreviewRange(ImageFrame frame, VisionCoordinateSystem? coordinates, RegionAnalysisResult? mask, CancellationToken token = default)
+    {
+        coordinates?.ValidateFrame(frame);
+        if (Coordinates != null && coordinates == null) throw new InvalidOperationException("试匹配缺少本帧搜索坐标系。");
+        if (coordinates != null && !FullImage) throw new InvalidOperationException("局部ROI不能叠加原图整数矩形。");
+        var region = coordinates == null ? (Regions.Count == 0 ? null : WorkflowVisionRoi.Compose(Regions, frame.Image, token))
+            : coordinates.ResolveRegion(frame, Regions.Where(r => r.Enabled && !r.Exclude).Select(r => r.ToGeometry()), Regions.Where(r => r.Enabled && r.Exclude).Select(r => r.ToGeometry()), token);
+        if (!(Mask.Source == WorkflowValueSource.Literal && Mask.LiteralValue == null))
+        {
+            if (mask == null) throw new InvalidOperationException("试匹配缺少本帧绑定区域预览。");
+            mask.ValidateFrame(frame); region = region == null ? mask.Region : RegionAnalysisResult.Intersect(region, mask.Region, token);
+        }
+        return new WorkflowVisionResolvedRange(Bounds(frame), region, coordinates);
     }
 
     /// <inheritdoc/>
@@ -98,6 +119,8 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
             errors.Add("区域掩码只能使用绑定或空Literal表示未启用。");
         if (hasMask && RangeCapability != EWorkflowVisionRange.Region)
             errors.Add("此算子不支持区域掩码。");
+        if (Mask?.Binding is { IsPublicData: false } maskInput && maskInput.NodeId == Id)
+            errors.Add("区域掩膜不能绑定自身结果。");
         if (!FullImage && (X < 0 || Y < 0 || Width < 1 || Height < 1 || (long)X + Width > int.MaxValue || (long)Y + Height > int.MaxValue))
             errors.Add("矩形范围必须非负且宽高为正，不能溢出。");
         if (Regions is null || Regions.Count > 512 || Regions.Any(r => r is null || string.IsNullOrWhiteSpace(r.Id))
@@ -113,8 +136,34 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
         }
         if (Coordinates?.System.Binding is { IsPublicData: false } coordinateInput && coordinateInput.NodeId == Id)
             errors.Add("定位坐标系不能绑定自身结果。");
-        if (!FullImage && RangeCapability != EWorkflowVisionRange.Region) errors.Add("此算子不接受矩形范围。");
+        if (!FullImage && RangeCapability is not (EWorkflowVisionRange.Region or EWorkflowVisionRange.Rectangle)) errors.Add("此算子不接受矩形范围。");
         return errors;
+    }
+
+    /// <summary>对可静态解析的通用坐标定义提前检查制作身份。</summary>
+    /// <param name="nodes">当前文档节点。</param><returns>校验信息。</returns>
+    public virtual IReadOnlyList<string> ValidateDocumentConfiguration(IReadOnlyList<IWorkflowNodeModel> nodes)
+    {
+        if (Coordinates is not { DefinitionSignature.Length: > 0, System.Binding: { IsPublicData: false } source }) return [];
+        var sourceNode = nodes.FirstOrDefault(n => n.Id == source.NodeId);
+        if (sourceNode is IWorkflowVisionTemplateNode { TemplateSource: EWorkflowVisionTemplateSource.Resource, TemplateReferenceDefinition: { } reference } template)
+        {
+            try
+            {
+                var definition = reference.CoordinateDefinition(template.CoordinateSystemId);
+                return definition.Id != Coordinates.CoordinateSystemId || definition.Version != Coordinates.DefinitionVersion || definition.Signature != Coordinates.DefinitionSignature
+                    ? ["模板参考定义与ROI制作身份不一致，请重新确认原点、方向、样图及版本。"] : [];
+            }
+            catch (ArgumentException error) { return [error.Message]; }
+        }
+        if (sourceNode is not IWorkflowVisionCoordinateProducerNode producer) return [];
+        try
+        {
+            var definition = WorkflowVisionCoordinateCatalog.ResolveDefinition(nodes, producer.Definition);
+            return definition.Id != Coordinates.CoordinateSystemId || definition.Version != Coordinates.DefinitionVersion || definition.Signature != Coordinates.DefinitionSignature
+                ? ["坐标定义与ROI制作身份不一致，请重新确认原点、轴、单位及版本。"] : [];
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return [ex.Message]; }
     }
 
     internal PixelBounds Bounds(ImageFrame frame) => FullImage
@@ -124,8 +173,15 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
 
 /// <summary>新版Blob节点，输出中立BlobAnalysisResult。</summary>
 [WorkflowNode("Vision.AnalyzeBlobs", DisplayName = "分析连通域", Category = "5.Vision/ImageBuffer")]
-public sealed class AnalyzeVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel
+public sealed class AnalyzeVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
+    /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
+    [System.ComponentModel.Browsable(false)]
+    public VisionAlgorithmSelection Algorithm { get; set; } = new() { ImplementationId = "opencv.blob" };
+
+    /// <inheritdoc/>
+    public IReadOnlyList<WorkflowVisionAlgorithmSlot> GetAlgorithmSlots() => new[] { new WorkflowVisionAlgorithmSlot("algorithm", typeof(IBlobAnalyzer), Algorithm) };
+
     /// <inheritdoc/>
     public override string NodeType => "Vision.AnalyzeBlobs";
     /// <inheritdoc/>
@@ -161,8 +217,9 @@ public sealed class AnalyzeVisionBlobsNodeHandler : WorkflowNodeHandler<AnalyzeV
     {
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
         var range = node.ResolveRange(frame, context, cancellationToken); var coordinates = range.Coordinates;
-        var result = context.GetRequiredCapability<IBlobAnalyzer>().Analyze(frame, range.Bounds,
-            new BlobOptions(node.MinimumGray, node.MaximumGray, node.MinimumArea, node.EightConnected), cancellationToken, range.Region);
+        var result = WorkflowVisionAlgorithmInvocation.Invoke(context, node.Algorithm, "opencv.blob",
+            (IBlobAnalyzer algorithm) => algorithm.Analyze(frame, range.Bounds,
+                new BlobOptions(node.MinimumGray, node.MaximumGray, node.MinimumArea, node.EightConnected), cancellationToken, range.Region), cancellationToken);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
@@ -171,8 +228,15 @@ public sealed class AnalyzeVisionBlobsNodeHandler : WorkflowNodeHandler<AnalyzeV
 
 /// <summary>新版颜色统计节点，输出中立ColorAnalysisResult，不输出产品OK/NG。</summary>
 [WorkflowNode("Vision.AnalyzeColor", DisplayName = "统计RGB颜色", Category = "5.Vision/ImageBuffer")]
-public sealed class AnalyzeVisionColorNodeModel : AnalyzeVisionFrameNodeModel
+public sealed class AnalyzeVisionColorNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
+    /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
+    [System.ComponentModel.Browsable(false)]
+    public VisionAlgorithmSelection Algorithm { get; set; } = new() { ImplementationId = "managed.color" };
+
+    /// <inheritdoc/>
+    public IReadOnlyList<WorkflowVisionAlgorithmSlot> GetAlgorithmSlots() => new[] { new WorkflowVisionAlgorithmSlot("algorithm", typeof(IColorAnalyzer), Algorithm) };
+
     /// <inheritdoc/>
     public override string NodeType => "Vision.AnalyzeColor";
     /// <inheritdoc/>
@@ -188,7 +252,8 @@ public sealed class AnalyzeVisionColorNodeHandler : WorkflowNodeHandler<AnalyzeV
     {
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
         var range = node.ResolveRange(frame, context, cancellationToken); var coordinates = range.Coordinates;
-        var result = context.GetRequiredCapability<IColorAnalyzer>().Analyze(frame, range.Bounds, cancellationToken, range.Region);
+        var result = WorkflowVisionAlgorithmInvocation.Invoke(context, node.Algorithm, "managed.color",
+            (IColorAnalyzer algorithm) => algorithm.Analyze(frame, range.Bounds, cancellationToken, range.Region), cancellationToken);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));

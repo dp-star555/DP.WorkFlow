@@ -1,19 +1,26 @@
-# 已落地的新增视觉算子
+# 已落地的视觉算子
 
-本轮增加8个节点，`WorkflowImageRuntimePluginModule` 现在注册18个节点。算法仍属于独立DP.Vision；相机现场工作按用户安排延期，不阻塞这些算子。
+2026-10-05增加“创建区域／掩膜”：内置模块现有21种节点，手绘ROI可输出同帧区域并供下游复用。普通图像页和模板制作／试匹配页支持有效掩膜预览，使用PropertyGrid现有绑定功能选择上游区域，详见下方“掩膜创建、绑定与显示”。
+
+2026-10-02独立几何及坐标包提供10节点：业务定义、本帧坐标构建、点生成/选择、点和直线转换、生成直线、点点/点线/线线距离。模板仅是坐标来源之一，卡尺/Blob/拟合可接入同一几何链路。图像获取已融合为AcquireFrame：内置20＋独立12，共32种注册类型，工具箱隐藏四种兼容取图类型后展示28种；见[取图说明](new-vision-file-pipeline.md#acquisition-入口与图像来源)、[几何测量](vision-geometry-measurement.md)和[业务坐标](vision-coordinate-systems.md)。下文早期数量和验证数字保留为历史记录。
+
+算子扩展时增加了8个节点，`WorkflowImageRuntimePluginModule` 目前共注册19个节点。算法属于独立DP.Vision；其中13个算法节点已按节点配置选择引擎，运行前统一准备。两个示例从插件包发现实现，编译期不引用具体引擎。相机现场工作按用户安排延期，不阻塞这些算子。默认选择、配置归属及部署方式见[算法插件文档](../../../DP.Vision/ALGORITHM_PLUGINS.md)。
 
 | NodeType | 标准输出 | 已实现语义 |
 |---|---|---|
+| Vision.CreateRegion | RegionAnalysisResult | 由包含／排除ROI、矩形及上游掩膜创建精确同帧区域，无需厂商引擎，可供多个下游复用 |
 | Vision.PreprocessImage | ImageFrame | 灰度、反相、Gaussian、中值、固定增益/偏置、显式Gray16→Gray8 |
 | Vision.ThresholdRegion | RegionAnalysisResult | 0..255灰度闭区间分割，原图矩形及精确ROI/绑定掩码交集 |
 | Vision.MorphRegion | RegionAnalysisResult | 膨胀、腐蚀、开闭、填孔；方形/离散椭圆/十字核 |
 | Vision.SelectBlobs | BlobAnalysisResult | 面积、栅格圆度、面积矩长短轴比筛选；保留原顺序和精确Region |
 | Vision.MeasureCaliper | CaliperResult | 双线性带采样、灰度剖面、极性、梯度峰抛物线插值、间距抑制 |
 | Vision.FitRobustLine | RobustLineResult | 聚合同帧卡尺边缘，确定性RANSAC＋正交TLS，输出内点索引与RMS |
-| Vision.LocateTemplatePose | TemplatePoseResult | 显式离散旋转/尺度候选、有效模板掩码SqDiff、单个最佳姿态 |
+| Vision.LocateTemplatePose | TemplatePoseResult | 显式角度／尺度区间；OpenCV按步长采样，HALCON资源模型原生范围搜索；单个最佳姿态 |
 | Vision.MapPoseCoordinate | Coordinate2D | 模板→图像或图像→模板的姿态坐标映射；未检出明确失败 |
 
 ## 定位随动扩展
+
+后续增加两个独立节点包，内置模块仍为19个节点：`Vision.ReadBarcode`（默认 zxing.code，精确掩码、同帧读码事实）与 `Vision.RecognizeTextLine`（默认 ppocr.recognize，显式预处理依赖、水平单行矩形）。宿主从目录发现，不编译引用节点包。机器资源配置、取消检查、准备错误定位及人工复核详见 [复核说明](../plugins/vision-plugin-review.md)。
 
 已有模板定位现在输出共享`CoordinateSystem`；Blob/颜色/阈值Region、卡尺及鲁棒直线可显式绑定。局部ROI编辑、正反矩阵、双坐标结果及不支持的范围详见[定位坐标系机制](vision-coordinate-systems.md)。下方653项为算子扩展时的历史验证基线。
 
@@ -68,7 +75,7 @@ var fit = new FitVisionRobustLineNodeModel {
 ```
 
 - 卡尺仅接受Gray8。起终点是原图像素边界坐标；像素中心为`.5`。整个采样带必须处于可采样像素中心范围，不裁剪越界带。
-- 沿带约1px均匀采样，垂直方向按1px平均；不暗中滤波。端部各约两个采样步长不输出梯度峰，那里没有足够插值邻域。
+- 沿带约1px均匀采样，垂直方向使用BandSampleStep（默认1px）平均；绑定定位后间隔乘尺度，不暗中滤波。端部各约两个采样步长不输出梯度峰，那里没有足够插值邻域。
 - `Profile`保存灰度剖面；`Edges`按扫描距离排序，含Position、Distance、带符号Gradient。Rising/Falling均相对于起点→终点，反向扫描会反转极性。
 - 可用两条已选边缘坐标绑定现有距离节点计算宽度；当前不自动选择业务意义上的边缘对。
 - RANSAC最多8192点、1024次采样，总距离评估不超过400万；正交重拟合内点集合不稳定、方向不可辨识、重合或证据不足均失败。不是鲁棒圆/圆弧拟合。
@@ -76,28 +83,32 @@ var fit = new FitVisionRobustLineNodeModel {
 
 ## 旋转/尺度定位与坐标变换
 
-`AnglesRadians`是顺时针弧度列表，`Scales`是0.1..10尺度列表。搜索是**离散候选**，不声称连续角度优化、学习式形状模型或多实例检测。
+`MinimumAngleRadians`／`MaximumAngleRadians`定义顺时针角度区间，界面使用度；`MinimumScale`／`MaximumScale`定义0.1..10尺度区间。OpenCV按`AngleStepRadians`／`ScaleStep`采样并包含端点；HALCON资源模型直接使用原生区间。旧候选列表已删除，配置不迁移。制作与搜索范围的关系见[模板制作说明](vision-template-authoring.md)。
 
 旋转使用原图像素边界坐标；仅在调用OpenCV的像素索引矩阵时处理中心偏移。有效模板掩码排除旋转后的空白角；分数为`1 - maskedSqDiff/(65025*validPixelCount)`，不是概率。
 
 `TemplatePoseResult.Transform`提供模板中心、角度、尺度以及正反映射。节点`Vision.MapPoseCoordinate`可直接绑定定位根输出，输出Coordinate2D；Found=false时不会返回虚假的(0,0)。旋转模板的四角按真正变换绘制，不用轴对齐外接框冒充姿态。
 
-候选组合最多512，默认保守工作量预算2亿（位置数×模板面积）。**搜索前**检查完整预算，超限失败；缩小搜索ROI或显式调整预算，不截断候选后宣称全局最佳。
+OpenCV搜索采样最多4096组，默认保守工作量预算2亿（位置数×模板面积）；资源模板缓存最多512项、64MiB。**搜索前**检查完整预算，超限失败；缩小ROI或搜索范围、增大步长、显式调整预算，不截断搜索后宣称全局最佳。
 
-## 宿主新增服务
+## 掩膜创建、绑定与显示
 
-```csharp
-services.Add<IImagePreprocessor>(new OpenCvImagePreprocessor())
-    .Add<IRegionProcessor>(new OpenCvRegionProcessor())
-    .Add<IBlobSelector>(new BlobSelector())
-    .Add<ICaliperMeasurer>(new CaliperMeasurer())
-    .Add<IRobustLineFitter>(new RobustLineFitter())
-    .Add<ITemplatePoseLocator>(new OpenCvTemplatePoseLocator());
-```
+掩膜复用ROI编辑器，矩形、旋转矩形、椭圆及闭合多边形均可作为包含／排除区域。有效区域是包含集合并集减排除集合，再与矩形计算范围和可选上游掩膜取交集；空交集保持为空，禁用全部ROI明确报错。普通检测节点无需再建立一份重复的手绘掩膜配置。
 
-预处理还要求`IWorkflowVisionFrameScope`接管输出租约；其余新能力通过统一运行前预检。Module目录冻结后，宿主不能在运行中替换服务。页面继续使用共享FrameEditor及双原生Renderer，支持新Region、特征、卡尺和位姿证据拾取；不适用的ROI编辑禁用。
+1. 只用于一个节点时，在“图像与测量范围”直接绘制ROI，选中需要屏蔽的区域后点击“设为排除”。勾选“显示有效掩膜”检查半透明绿色区域及状态栏像素面积。
+2. 多个节点需要共用时，增加“创建区域／掩膜”（`Vision.CreateRegion`），绑定取图节点的同一帧，在其图像页绘制包含／排除ROI。它输出`RegionAnalysisResult`，不需要HALCON/OpenCV算法选择。没有ROI时显式使用全图，也可只绘制排除区域。
+3. 下游在PropertyGrid的“上游区域掩膜”选择绑定，将其绑定到创建区域、阈值分割或形态学节点的标准输出。掩膜绑定仅在支持面积范围的节点展示，不能绑定自身。不同输入帧或尺寸的区域在执行时拒绝，预览提示原因并清除旧掩膜叠加。
+4. 创建节点可以绑定业务坐标，运行时将局部ROI变换到当前图像再栅格化，输出保留同帧坐标来源。下一帧重新执行创建节点，不能将上一帧的区域直接套用到新图。
+
+模板制作页同样显示真实有效掩膜，“制作掩膜”属性显示有效像素面积或错误。制作预览、模型生成和保存使用相同的包含／排除组合规则，保留孔洞。模板试匹配显示实际搜索掩膜，与模型制作掩膜分别处理；读取新测试图或重设测试条件会清理旧叠加。显示开关只影响画布，不改计算配置、不触发模型重建。当前提供形状ROI绘制及区域输出绑定，不提供灰度掩膜图片导入或笔刷涂抹。
+
+## 宿主算法装配
+
+当前示例从插件包发现引擎，注册ManagedVisionAlgorithmModule与WorkflowVisionAlgorithmBindings，按节点槽位统一运行前准备；不再在宿主中逐个new具体引擎。装配代码见[算法插件说明](../../../DP.Vision/ALGORITHM_PLUGINS.md)。预处理仍由IWorkflowVisionFrameScope接管输出租约。目录冻结后不能在运行中替换服务；几何证据通过共享契约进入FrameEditor及两平台Renderer。
 
 ## 验证
+
+掩膜更新回归：视觉／属性Windows179项、视觉节点95项、UI.Shared88项通过，共362项。新增7项覆盖同图ROI变更后的叠加、不同帧拒绝、创建区域节点无厂商引擎执行及JSON保存／PropertyGrid绑定、双平台显示开关、模板孔洞预览与保存一致性，以及全部ROI禁用后的制作拒绝。WinForms/WPF示例复用已构建项目引用，在独立目录构建均0警告／0错误；没有重跑完整Windows套件或生产图像验收。
 
 - 新增算法合成真值/边界数据用例11项（含非整数卡尺、离群点、45°/90°与尺度变化），net48/net8均通过；算法项目合计各57项。
 - 新增Workflow集成9项，覆盖JSON、重跑、真实共享示例、能力预检、跨帧失败不提交、卡尺聚合与姿态正反映射；完整Workflow回归653项通过，Windows UI329项。

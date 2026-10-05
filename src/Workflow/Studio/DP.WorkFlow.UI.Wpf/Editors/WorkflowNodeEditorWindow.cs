@@ -42,7 +42,8 @@ public sealed class WorkflowNodeEditorWindow : Window
         _renderers = CreateRendererIndex(renderers);
         ValidatePageRenderers(model.Pages, _renderers);
         _editMappings = editMappings;
-        Title = $"节点信息 - {model.Node.Title}";
+        Title = model.PropertyEditorKey == null ? $"节点信息 - {model.Node.Title}"
+            : $"{model.Pages.Single(p => p.PropertyEditorKey == model.PropertyEditorKey).Title} - {model.Node.Title}";
         var hasSpecialContent = model.Pages.Any(page => page.Kind is not (WorkflowNodeEditorPageKind.Properties or WorkflowNodeEditorPageKind.Diagnostics));
         // 脚本窗口要适配常见的 1366×768 工作区，不能默认超出屏幕高度。
         Width = hasSpecialContent ? 1060 : 740;
@@ -54,10 +55,10 @@ public sealed class WorkflowNodeEditorWindow : Window
         WorkflowWpfStyle.Apply(this);
 
         var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(112) });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(model.PropertyEditorKey == null ? 112 : 0) });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(48) });
-        root.Children.Add(CreateHeader());
+        if (model.PropertyEditorKey == null) root.Children.Add(CreateHeader());
         _navigation = new ListBox { Visibility = Visibility.Collapsed };
         _host = new ContentControl { Content = CreateWorkspace() };
         Grid.SetRow(_host, 1);
@@ -74,6 +75,12 @@ public sealed class WorkflowNodeEditorWindow : Window
         buttons.Children.Add(apply);
         buttons.Children.Add(ok);
         buttons.Children.Add(cancel);
+        if (model.Pages.Any(p => p.Model is IWorkflowNodeEditorCommitReadiness))
+        {
+            var readiness = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+            void UpdateReadiness() { apply.IsEnabled = ok.IsEnabled = model.CanApplyChanges; }
+            readiness.Tick += (_, _) => UpdateReadiness(); UpdateReadiness(); readiness.Start(); Closed += (_, _) => readiness.Stop();
+        }
         Grid.SetRow(buttons, 2);
         root.Children.Add(buttons);
         Content = root;
@@ -130,10 +137,12 @@ public sealed class WorkflowNodeEditorWindow : Window
     /// <summary>创建Workspace。</summary>
     private FrameworkElement CreateWorkspace()
     {
+        if (_model.PropertyEditorKey is { } key)
+            return CreatePageElement(_model.Pages.Single(p => p.PropertyEditorKey == key));
         var propertiesPage = _model.Pages.Single(page => page.Kind == WorkflowNodeEditorPageKind.Properties);
         var properties = CreatePageElement(propertiesPage);
         var specialPages = _model.Pages
-            .Where(page => page.Kind is not (WorkflowNodeEditorPageKind.Properties or WorkflowNodeEditorPageKind.Diagnostics))
+            .Where(page => page.PropertyEditorKey == null && page.Kind is not (WorkflowNodeEditorPageKind.Properties or WorkflowNodeEditorPageKind.Diagnostics))
             .ToArray();
         if (specialPages.Length == 0) return properties;
 
@@ -200,10 +209,24 @@ public sealed class WorkflowNodeEditorWindow : Window
     {
         var panel = new WorkflowPropertyPanel
         {
+            ChoiceProvider = page.ChoiceProvider,
+            AdditionalProperties = page.AdditionalProperties,
             Session = page.Session,
             EntryNodeId = page.EntryNodeId,
             HideScriptProperty = _model.EditingNode is IWorkflowScriptNode,
             HideSpecialActions = _model.Pages.Any(item => item.Kind != WorkflowNodeEditorPageKind.Properties)
+        };
+        panel.PropertyActionRequested += async (_, request) =>
+        {
+            WorkflowNodeEditorModel? child = null;
+            try
+            {
+                child = _model.CreatePropertyEditor(request.EditorKey);
+                var dialog = new WorkflowNodeEditorWindow(child, _renderers.Values, _editMappings) { Owner = this };
+                dialog.ShowDialog();
+            }
+            catch (Exception ex) { MessageBox.Show(this, ex.Message, "属性编辑失败", MessageBoxButton.OK, MessageBoxImage.Warning); }
+            finally { if (child != null) await child.DisposeAsync(); }
         };
         panel.EditError += (_, message) => MessageBox.Show(this, message, "参数错误", MessageBoxButton.OK, MessageBoxImage.Warning);
         if (_editMappings is not null) panel.BlockMappingEditRequested += (_, block) => _editMappings(block);

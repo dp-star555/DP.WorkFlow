@@ -5,9 +5,9 @@
 - WinForms：`dotnet run --project samples/DP.WorkFlow.WinForms.Sample/WinFormsApp_test.csproj`
 - WPF：`dotnet run --project samples/Legacy/WpfApptest/WpfApptest.csproj`
 
-在DP.WorkFlow目录执行。默认流程为Start→文件→预处理→Region→形态学→Blob→筛选→掩码颜色；随输出复制的 `VisionData/demo.pgm` 有两个亮连通域。运行后双击节点打开“图像与测量范围”页面；选择输入/结果/模板。示例不依赖模型或相机，未安装HALCON不妨碍文件/算法路径。
+在DP.WorkFlow目录执行。默认流程为Start→图像获取（文件）→预处理→Region→形态学→Blob→筛选→掩码颜色；随输出复制的 `VisionData/demo.pgm` 有两个亮连通域。运行后双击节点打开“图像与测量范围”页面；选择输入/结果/模板。示例不依赖模型或相机，未安装HALCON不妨碍文件/算法路径。
 
-新增8个算子的参数、精度/预算边界及配方见[算子使用说明](vision-operators.md)。下表保留基础十节点的契约；完整Module共18节点。
+新增8个算子的参数、精度/预算边界及配方见[算子使用说明](vision-operators.md)。内置Module当前注册20种节点；下表列出统一获取和基础分析节点，完整部署计数见[节点盘点](vision-geometry-measurement.md)。
 
 ## 类型与节点
 
@@ -15,9 +15,7 @@
 
 | NodeType | 输入 | 标准输出 |
 |---|---|---|
-| Vision.LoadFile | FilePath | ImageFrame |
-| Vision.LoadFolder | FolderPath、Extensions、Loop | ImageFrame |
-| Vision.CaptureFrame | CameraId、曝光/增益/触发 | ImageFrame |
+| Vision.AcquireFrame | SourceMode；当前来源的文件/目录参数或逻辑Source与采集参数 | ImageFrame |
 | Vision.AnalyzeBlobs | Frame绑定、范围、阈值、面积/连接性 | BlobAnalysisResult |
 | Vision.AnalyzeColor | Frame绑定、范围 | ColorAnalysisResult |
 | Vision.MeasureEdges | Frame绑定、矩形、Canny阈值、线/圆模型 | EdgeMeasurementResult |
@@ -78,6 +76,21 @@ var result = await host.RunAsync();
 
 真实相机不由 Workflow 侧注册实现类，而是由 `DP.Vision.Acquisition.Runtime` 扫描插件目录发现采集 Driver Module：`DP.Vision.Halcon` 与 `DP.Vision.Basler` 各自实现 `IVisionAcquisitionDriverModule`（按公开类型发现，不读 Manifest，也不随包投放 `plugin.json`），工作流文档只保存逻辑 `SourceId`，机器配置负责把 `SourceId` 绑到 `ProviderId` + `ProviderBindingId` + `ResourceKey`。采集节点只声明中立入口 `IVisionAcquisition`，不感知厂商。缺 SDK/运行时的机器在首节点之前就失败（HALCON 是编译期 `HalconStreamCameras.IsSdkEnabled`，Basler 是原生运行时健康探测，两者都经可选接口 `IVisionAcquisitionDriverModuleHealth` 在类型目录冻结时上报，使源被标记为不可用），离线设备、驱动或许可证错误在实际打开时失败。设备跨布防复用同一句柄，主动单次采集与外部回调缓冲源共用它，只在释放时关闭；曝光/触发、取消及SDK部署边界见[HALCON说明](../../../DP.Vision/src/DP.Vision.Halcon/README.md)。旧 `ICameraCapture`/`HalconCameraCapture` 路径已删除。
 
+## Acquisition 入口与图像来源
+
+工具箱在 5.Vision/Acquisition 下只展示“图像获取”（Vision.AcquireFrame）。节点的“图像来源”可选择文件、文件夹、面阵相机和线扫相机；属性面板只展示当前来源的参数。切换来源保留其他来源的配置，但只校验和准备当前来源使用的能力：文件/目录需要所选 IImageFileReader，相机需要 IVisionAcquisition，相机模式不会因为未安装离线解码器而失败。所有模式输出相同 ImageFrame，下游图像绑定无需调整。
+
+- 文件：选择图像文件和解码实现，每次执行读取此文件并产生新的帧身份。
+- 文件夹：选择目录和分号分隔的扩展名，根运行准备时冻结按文件名排序的清单，不递归子目录。每执行一次节点读取下一张，解码失败或取消不推进。默认在同一宿主、同一节点的多次运行之间继续读取；目录、扩展名筛选、循环选项或文件清单变化时从头开始。宿主重新创建后也从头开始，游标不写入配方。
+- 文件夹“每次运行从头读取”：开启后每次根运行重置，根运行内部的循环和子流程不会额外重置。关闭时持续读取到末尾；默认末尾报错，“循环读取”开启后回到第一张。这两个选项都不会自动重复执行下游工作流，批量处理需要工作流自身的循环。
+- 相机：选择机器配置发布的逻辑 Source，面阵/线扫候选按形态筛选；形态不匹配、源丢失或不支持的覆盖参数会在取图前明确失败。线扫取得驱动已拼接的整图，触发时序由机器配置决定。
+
+四种已发布取图类型 Vision.LoadFile、Vision.LoadFolder、Vision.CaptureAreaFrame、Vision.CaptureLineScanFrame 保留注册与执行，只从工具箱隐藏。旧配方无需转换；旧 LoadFolder 仍在每次根运行重置，避免改变现有流程。新示例已使用 AcquireFrame；更早已删除的未知视觉类型仍不会自动映射。
+
+相机主动取图选择 OnDemand；长期布防、由 SDK 回调送帧的源选择 BufferedExternal，并配置有界收件队列及宿主的 VisionAcquisitionRunScope。节点从当前根运行的队列领取帧，回调不直接执行节点；超时、取消、旧帧与资源释放仍由 Acquisition 管理。BufferedExternal 不能在节点临时改写曝光/增益/触发模式，应在机器配置中设置。
+
+本次融合发生在节点入口、参数编辑及执行调度。文件与目录沿用离线解码和序列管理，相机沿用 Acquisition Runtime；文件路径没有注册为机器 Source Provider。需要模拟时直接在同一节点切换来源即可，回调缓冲仍保留根运行隔离，不直接驱动节点执行。
+
 平台Studio扩展：
 
 ```csharp
@@ -85,11 +98,11 @@ new VisionWinFormsStudioExtension { FrameSource = frames, FileReader = reader };
 new VisionWpfStudioExtension { FrameSource = frames, FileReader = reader };
 ```
 
-通过各自宿主的NodeEditorExtensions.Register注册。节点程序集现在只有一个Runtime Module；Manifest扫描不会发现旧Module。旧节点/注册扩展/旧页面均已删除。未知旧NodeType仅作为通用未知节点保留原始文档信息，运行绑定阶段拒绝执行，不自动映射新版语义。
+通过各自宿主的NodeEditorExtensions.Register注册。节点程序集现在只有一个Runtime Module，四种兼容取图类型与统一入口由同一Module注册。更早删除的旧Module、旧注册扩展和旧页面未恢复；未注册NodeType仅作为通用未知节点保留原始文档信息，运行绑定阶段拒绝执行。
 
 ## 运行准备与生命周期
 
-- RuntimeHost检查根/子计划能力后调用准备服务。文件夹在此冻结按Ordinal排序的清单，每次运行重置游标；失败读取不推进；默认末尾失败，Loop显式循环。
+- RuntimeHost检查根/子计划能力后调用准备服务。文件夹冻结按Ordinal排序的清单，统一节点按RestartFolderEachRun决定跨根运行继续或重置；旧LoadFolder每次根运行重置。失败读取不推进；默认末尾失败，Loop显式循环。
 - 文件、参数和范围检查在编译/准备或实际图像可用时执行。损坏文件/设备离线仍可能在获取阶段失败，不能保证外部资源在预检后不变。
 - 文件读取器/相机返回的IImageSource由调用者释放；节点把独立ImageFrame租约交给必需的帧仓。
 - `frame.Image`是借用句柄，禁止消费者直接Dispose；跨窗口或重跑持有使用 `frame.Retain()`。

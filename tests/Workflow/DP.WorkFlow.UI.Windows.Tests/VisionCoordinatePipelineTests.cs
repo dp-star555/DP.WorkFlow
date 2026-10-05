@@ -11,6 +11,29 @@ namespace DP.WorkFlow.Tests;
 
 public sealed class VisionCoordinatePipelineTests
 {
+    [Theory]
+    [InlineData(160d, 180d, 10d, 2)]
+    [InlineData(330d, 350d, 100d, 1)]
+    [InlineData(-180d, 180d, 10d, 1)]
+    public void PoseSearchRange_FollowsParentWithoutLosingCrossBoundaryExtent(double minimum, double maximum, double rotation, int intervals)
+    {
+        double angle = rotation * Math.PI / 180;
+        var parent = new VisionCoordinateSystem(new VisionCoordinateDefinition("parent", "父坐标"), "frame", 100, 100,
+            CoordinateMatrix2D.FromAffine(2 * Math.Cos(angle), -2 * Math.Sin(angle), 10, 2 * Math.Sin(angle), 2 * Math.Cos(angle), 20));
+        var node = new LocateVisionTemplatePoseNodeModel
+        {
+            MinimumAngleRadians = minimum * Math.PI / 180, MaximumAngleRadians = maximum * Math.PI / 180,
+            MinimumScale = .9, MaximumScale = 1.1, AngleStepRadians = Math.PI / 180, ScaleStep = .01
+        };
+        var options = node.OptionsForPreview(parent);
+        Assert.Equal((minimum + rotation) * Math.PI / 180, options.MinimumAngleRadians, 10);
+        Assert.Equal((maximum + rotation) * Math.PI / 180, options.MaximumAngleRadians, 10);
+        Assert.Equal(1.8, options.MinimumScale, 10); Assert.Equal(2.2, options.MaximumScale, 10);
+        Assert.Equal(Math.PI / 180, options.AngleStepRadians, 10); Assert.Equal(.02, options.ScaleStep, 10);
+        var ranges = options.AngleIntervals(); Assert.Equal(intervals, ranges.Count);
+        Assert.Equal((maximum - minimum) * Math.PI / 180, ranges.Sum(r => r.Maximum - r.Minimum), 10);
+    }
+
     [Fact]
     public async Task ActualMatching_RoiAndResultsFollowNewImage_WithoutChangingDocument()
     {
@@ -37,7 +60,7 @@ public sealed class VisionCoordinatePipelineTests
         Assert.Equal(38.5, bc.ImagePosition.X, 6); Assert.Equal(29.5, bc.ImagePosition.Y, 6);
         Assert.Equal(ac.LocalPosition.X, bc.LocalPosition.X, 6); Assert.Equal(ac.LocalPosition.Y, bc.LocalPosition.Y, 6);
         Assert.Equal(8, Assert.Single(b.Blobs).Area); Assert.Equal(255, Output<ColorAnalysisResult>(host, "color").Red);
-        Assert.Equal(Math.PI / 2, b.CoordinateSystem.Pose.AngleRadians, 8);
+        Assert.Equal(Math.PI / 2, b.CoordinateSystem.RotationRadians, 8);
         Assert.InRange(Output<RobustLineResult>(host, "fit").LocatedA!.LocalPosition.X, 7.8, 8.2);
         Assert.All(Output<CaliperResult>(host, "c0").LocatedEdges!, p => Assert.Equal(b.FrameId, p.FrameId));
         Assert.Equal(configuration, store.Serialize(document));
@@ -63,7 +86,7 @@ public sealed class VisionCoordinatePipelineTests
             Regions = new() { new() { Id = "line", CenterX = 19.5, CenterY = 7.5, Width = 3, Height = 10 } } };
         var consumer = new AnalyzeVisionBlobsNodeModel { Id = "child-blob", Frame = Input<ImageFrame>("scene"), MinimumGray = 255, MaximumGray = 255,
             Regions = original.Regions, Coordinates = new WorkflowVisionCoordinateBinding { CoordinateSystemId = "child-definition", TemplateSignature = parent.TemplateSignature,
-                System = WorkflowInput<LocatedCoordinateSystem>.FromBinding(new("child", "CoordinateSystem")) } };
+                System = WorkflowInput<VisionCoordinateSystem>.FromBinding(new("child", "CoordinateSystem")) } };
         string previous = "fit";
         foreach (var node in new IWorkflowNodeModel[] { edges, translation, child, consumer })
         {
@@ -93,7 +116,7 @@ public sealed class VisionCoordinatePipelineTests
             Assert.InRange(Output<EdgeMeasurementResult>(host, "edges").LocatedA!.LocalPosition.X, 19, 21);
         }
         child.Coordinates = new WorkflowVisionCoordinateBinding { CoordinateSystemId = "child-definition", TemplateSignature = parent.TemplateSignature,
-            System = WorkflowInput<LocatedCoordinateSystem>.FromBinding(new("child", "CoordinateSystem")) };
+            System = WorkflowInput<VisionCoordinateSystem>.FromBinding(new("child", "CoordinateSystem")) };
         Assert.Contains(child.ValidateConfiguration(), e => e.Contains("自身", StringComparison.Ordinal));
     }
 
@@ -195,7 +218,7 @@ public sealed class VisionCoordinatePipelineTests
     public void AreaCapabilityEnablesCoordinates_WholeImageOperatorsStillRejectThem()
     {
         var node = new MeasureVisionEdgesNodeModel { Frame = Input<ImageFrame>("scene"), Coordinates = new WorkflowVisionCoordinateBinding
-        { System = WorkflowInput<LocatedCoordinateSystem>.FromBinding(new("pose", "CoordinateSystem")), CoordinateSystemId = "id", TemplateSignature = "sig" } };
+        { System = WorkflowInput<VisionCoordinateSystem>.FromBinding(new("pose", "CoordinateSystem")), CoordinateSystemId = "id", TemplateSignature = "sig" } };
         node.Regions.Add(new WorkflowVisionRoi { Width = 5, Height = 5, CenterX = 10, CenterY = 10 });
         Assert.Empty(node.ValidateConfiguration());
         using var page = new VisionFrameEditorPageModel(node);
@@ -331,7 +354,7 @@ public sealed class VisionCoordinatePipelineTests
         private WorkflowVisionCoordinateBinding Binding()
         {
             using var image = VisionImage.CopyFrom(new ImageInfo(5, 3, EPixelLayout.Gray8), _template);
-            return new WorkflowVisionCoordinateBinding { System = WorkflowInput<LocatedCoordinateSystem>.FromBinding(new("pose", "CoordinateSystem")),
+            return new WorkflowVisionCoordinateBinding { System = WorkflowInput<VisionCoordinateSystem>.FromBinding(new("pose", "CoordinateSystem")),
                 CoordinateSystemId = "part-definition", TemplateSignature = LocatedCoordinateSystem.ComputeTemplateSignature(image) };
         }
         private static List<WorkflowVisionRoi> Regions() => new()
@@ -345,7 +368,7 @@ public sealed class VisionCoordinatePipelineTests
             {
                 new LoadVisionFileNodeModel { Id = "scene", FilePath = Scene }, new LoadVisionFileNodeModel { Id = "template", FilePath = Template },
                 new LocateVisionTemplatePoseNodeModel { Id = "pose", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"),
-                    CoordinateSystemId = "part-definition", AnglesRadians = new() { 0, Math.PI / 2 }, MinimumScore = .9999 },
+                    CoordinateSystemId = "part-definition", MinimumAngleRadians = 0, MaximumAngleRadians = Math.PI / 2, AngleStepRadians = Math.PI / 2, MinimumScore = .9999 },
                 new AnalyzeVisionBlobsNodeModel { Id = "blob", Frame = Input<ImageFrame>("scene"), MinimumGray = 255, MaximumGray = 255, Coordinates = Binding(), Regions = Regions() },
                 new AnalyzeVisionColorNodeModel { Id = "color", Frame = Input<ImageFrame>("scene"), Coordinates = Binding(), Regions = Regions() },
                 new ThresholdVisionRegionNodeModel { Id = "threshold", Frame = Input<ImageFrame>("scene"), MinimumGray = 255, MaximumGray = 255, Coordinates = Binding(), Regions = Regions() },

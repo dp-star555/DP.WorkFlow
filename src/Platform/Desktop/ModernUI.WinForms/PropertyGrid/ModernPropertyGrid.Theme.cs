@@ -58,6 +58,11 @@ public sealed partial class ModernPropertyGrid
                 state.CancelAnimation();
                 foreach (Control child in control.Controls)
                 {
+                    if (child is ModernButton groupHeader)
+                    {
+                        groupHeader.Height = ScaleLogical(32);
+                        groupHeader.Margin = new Padding(0, ScaleLogical(2), 0, ScaleLogical(2));
+                    }
                     if (child is not PropertyRowPanel row) continue;
                     var rowHeight = ScaleLogical(_theme.PropertyRowHeight);
                     row.MinimumSize = new Size(0, rowHeight);
@@ -65,9 +70,9 @@ public sealed partial class ModernPropertyGrid
                     row.Margin = new Padding(0, 0, 0, ScaleLogical(2));
                     row.Padding = new Padding(ScaleLogical(8), ScaleLogical(5), ScaleLogical(6), ScaleLogical(5));
                 }
-                state.ExpandedHeight = control.Controls.Cast<Control>()
+                state.ExpandedHeight = state.MeasureExpandedHeight?.Invoke() ?? control.Controls.Cast<Control>()
                     .Sum(child => child.Height + child.Margin.Vertical);
-                control.Height = control.Visible ? state.ExpandedHeight : 0;
+                control.Height = _collapsedCategories.Contains(state.Category) ? 0 : state.ExpandedHeight;
             }
             else if (control is ModernButton categoryHeader)
             {

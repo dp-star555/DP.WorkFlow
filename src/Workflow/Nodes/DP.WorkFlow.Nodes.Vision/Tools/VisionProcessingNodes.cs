@@ -5,8 +5,15 @@ namespace DP.WorkFlow;
 
 /// <summary>保持尺寸/坐标系的整图显式预处理。</summary>
 [WorkflowNode("Vision.PreprocessImage", DisplayName = "图像预处理", Category = "5.Vision/Processing")]
-public sealed class PreprocessVisionImageNodeModel : AnalyzeVisionFrameNodeModel
+public sealed class PreprocessVisionImageNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
+    /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
+    [System.ComponentModel.Browsable(false)]
+    public VisionAlgorithmSelection Algorithm { get; set; } = new() { ImplementationId = "opencv.preprocess" };
+
+    /// <inheritdoc/>
+    public IReadOnlyList<WorkflowVisionAlgorithmSlot> GetAlgorithmSlots() => new[] { new WorkflowVisionAlgorithmSlot("algorithm", typeof(IImagePreprocessor), Algorithm) };
+
     /// <inheritdoc/>
     public override string NodeType => "Vision.PreprocessImage";
     /// <summary>显式操作，非灰度转换操作拒绝彩色输入。</summary>
@@ -42,7 +49,8 @@ public sealed class PreprocessVisionImageNodeHandler : WorkflowNodeHandler<Prepr
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(PreprocessVisionImageNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
         var input = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
-        using var pixels = context.GetRequiredCapability<IImagePreprocessor>().Process(input.Image, node.Options(), cancellationToken)
+        using var pixels = WorkflowVisionAlgorithmInvocation.Invoke(context, node.Algorithm, "opencv.preprocess",
+            (IImagePreprocessor algorithm) => algorithm.Process(input.Image, node.Options(), cancellationToken), cancellationToken)
             ?? throw new InvalidOperationException("预处理返回空图像。");
         if (pixels.Info.Width != input.Image.Info.Width || pixels.Info.Height != input.Image.Info.Height || pixels.Info.Layout != EPixelLayout.Gray8)
             throw new InvalidOperationException("预处理返回了错误尺寸或格式。");
@@ -56,8 +64,15 @@ public sealed class PreprocessVisionImageNodeHandler : WorkflowNodeHandler<Prepr
 
 /// <summary>灰度闭区间产生可绑定精确Region。</summary>
 [WorkflowNode("Vision.ThresholdRegion", DisplayName = "阈值分割区域", Category = "5.Vision/Region")]
-public sealed class ThresholdVisionRegionNodeModel : AnalyzeVisionFrameNodeModel
+public sealed class ThresholdVisionRegionNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
+    /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
+    [System.ComponentModel.Browsable(false)]
+    public VisionAlgorithmSelection Algorithm { get; set; } = new() { ImplementationId = "opencv.region" };
+
+    /// <inheritdoc/>
+    public IReadOnlyList<WorkflowVisionAlgorithmSlot> GetAlgorithmSlots() => new[] { new WorkflowVisionAlgorithmSlot("algorithm", typeof(IRegionProcessor), Algorithm) };
+
     /// <inheritdoc/>
     public override string NodeType => "Vision.ThresholdRegion";
     /// <inheritdoc/>
@@ -85,8 +100,9 @@ public sealed class ThresholdVisionRegionNodeHandler : WorkflowNodeHandler<Thres
     {
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
         var range = node.ResolveRange(frame, context, cancellationToken); var coordinates = range.Coordinates;
-        var result = context.GetRequiredCapability<IRegionProcessor>().Threshold(frame, range.Bounds, node.MinimumGray, node.MaximumGray,
-            range.Region, cancellationToken) ?? throw new InvalidOperationException("分割返回空结果。");
+        var result = WorkflowVisionAlgorithmInvocation.Invoke(context, node.Algorithm, "opencv.region",
+            (IRegionProcessor algorithm) => algorithm.Threshold(frame, range.Bounds, node.MinimumGray, node.MaximumGray,
+                range.Region, cancellationToken), cancellationToken) ?? throw new InvalidOperationException("分割返回空结果。");
         result.ValidateFrame(frame);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
@@ -96,8 +112,15 @@ public sealed class ThresholdVisionRegionNodeHandler : WorkflowNodeHandler<Thres
 
 /// <summary>已分割Region的形态学；输入帧仅用于身份校验和预览。</summary>
 [WorkflowNode("Vision.MorphRegion", DisplayName = "区域形态学", Category = "5.Vision/Region")]
-public sealed class MorphVisionRegionNodeModel : AnalyzeVisionFrameNodeModel
+public sealed class MorphVisionRegionNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
+    /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
+    [System.ComponentModel.Browsable(false)]
+    public VisionAlgorithmSelection Algorithm { get; set; } = new() { ImplementationId = "opencv.region" };
+
+    /// <inheritdoc/>
+    public IReadOnlyList<WorkflowVisionAlgorithmSlot> GetAlgorithmSlots() => new[] { new WorkflowVisionAlgorithmSlot("algorithm", typeof(IRegionProcessor), Algorithm) };
+
     /// <inheritdoc/>
     public override string NodeType => "Vision.MorphRegion";
     /// <summary>上游Region绑定。</summary>
@@ -131,7 +154,8 @@ public sealed class MorphVisionRegionNodeHandler : WorkflowNodeHandler<MorphVisi
     {
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
         var input = context.ResolveInput(node.InputRegion) ?? throw new InvalidOperationException("输入区域为空。"); input.ValidateFrame(frame);
-        var result = context.GetRequiredCapability<IRegionProcessor>().Morphology(input, node.Operation, node.Radius, node.Kernel, cancellationToken)
+        var result = WorkflowVisionAlgorithmInvocation.Invoke(context, node.Algorithm, "opencv.region",
+            (IRegionProcessor algorithm) => algorithm.Morphology(input, node.Operation, node.Radius, node.Kernel, cancellationToken), cancellationToken)
             ?? throw new InvalidOperationException("形态学返回空结果。");
         result.ValidateFrame(frame);
         if (input.CoordinateSystem is not null) result = result.InCoordinates(input.CoordinateSystem);
@@ -142,8 +166,15 @@ public sealed class MorphVisionRegionNodeHandler : WorkflowNodeHandler<MorphVisi
 
 /// <summary>按明确特征范围筛选连通域，空结果成功。</summary>
 [WorkflowNode("Vision.SelectBlobs", DisplayName = "筛选连通域", Category = "5.Vision/Processing")]
-public sealed class SelectVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel
+public sealed class SelectVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
+    /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
+    [System.ComponentModel.Browsable(false)]
+    public VisionAlgorithmSelection Algorithm { get; set; } = new() { ImplementationId = "managed.blob-select" };
+
+    /// <inheritdoc/>
+    public IReadOnlyList<WorkflowVisionAlgorithmSlot> GetAlgorithmSlots() => new[] { new WorkflowVisionAlgorithmSlot("algorithm", typeof(IBlobSelector), Algorithm) };
+
     /// <inheritdoc/>
     public override string NodeType => "Vision.SelectBlobs";
     /// <summary>上游Blob事实绑定。</summary>
@@ -182,7 +213,8 @@ public sealed class SelectVisionBlobsNodeHandler : WorkflowNodeHandler<SelectVis
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
         var input = context.ResolveInput(node.Blobs) ?? throw new InvalidOperationException("输入事实为空。");
         if (input.FrameId != frame.FrameId) throw new InvalidOperationException("Blob与预览帧不一致。");
-        var result = context.GetRequiredCapability<IBlobSelector>().Select(input, node.Options(), cancellationToken);
+        var result = WorkflowVisionAlgorithmInvocation.Invoke(context, node.Algorithm, "managed.blob-select",
+            (IBlobSelector algorithm) => algorithm.Select(input, node.Options(), cancellationToken), cancellationToken);
         if (input.CoordinateSystem is not null) result = result.InCoordinates(input.CoordinateSystem);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));

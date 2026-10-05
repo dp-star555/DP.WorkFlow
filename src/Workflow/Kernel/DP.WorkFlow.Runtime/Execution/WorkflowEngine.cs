@@ -27,6 +27,8 @@ public sealed partial class WorkflowEngine
     private volatile IWorkflowRunRecorder? _recorder;
     private Stopwatch? _runStopwatch;
     private Guid _runId;
+    internal string PlanPath { get; set; } = "$";
+    internal Guid BindingScopeId { get; set; }
     private Guid? _parentRunId;
     private WorkflowExecutionIdentity? _parentExecution;
     private string? _currentNodeId;

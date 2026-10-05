@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <ProjectReference Include="../../../../../DP.Vision/src/DP.Vision.Algorithms.Runtime/DP.Vision.Algorithms.Runtime.csproj" />
     <ProjectReference Include="..\..\..\..\..\DP.Vision\src\DP.Vision.Algorithms\DP.Vision.Algorithms.csproj" />
     <ProjectReference Include="..\..\..\..\..\DP.Vision\src\DP.Vision.Acquisition.Abstractions\DP.Vision.Acquisition.Abstractions.csproj" />
     <ProjectReference Include="..\..\Kernel\DP.WorkFlow.Abstractions\DP.WorkFlow.Abstractions.csproj" />

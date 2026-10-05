@@ -6,6 +6,92 @@ namespace DP.WorkFlow.Tests;
 public sealed class WorkflowPropertyInspectorTests
 {
     [Fact]
+    public void VisionAngleRange_IsEditedInDegrees_AndPersistedInRadians_WithUndo()
+    {
+        var node = new LocateVisionTemplatePoseNodeModel { Id = "pose", MinimumAngleRadians = -Math.PI / 4, MaximumAngleRadians = Math.PI / 2 };
+        var document = new WorkflowDocument { EntryNodeId = node.Id };
+        document.CanvasProjection.Nodes.Add(new() { Node = node });
+        var catalog = new WorkflowNodeCatalog().RegisterImageNodes();
+        var session = new WorkflowDesignerSession(document, catalog) { SelectedNodeId = node.Id };
+        using var inspector = new WorkflowPropertyInspectorModel(session, node.Id);
+        var entry = inspector.Entries.Single(e => e.Name == nameof(node.MinimumAngleRadians));
+        Assert.Equal("匹配最小角度（°）", entry.DisplayName);
+        Assert.Equal(-45d, Assert.IsType<double>(entry.Value), 10);
+        inspector.SetValue(entry, -30d);
+        Assert.Equal(-Math.PI / 6, node.MinimumAngleRadians, 12);
+        Assert.True(session.Undo());
+        Assert.Equal(-Math.PI / 4, node.MinimumAngleRadians, 12);
+        Assert.True(session.Redo());
+        entry = inspector.Entries.Single(e => e.Name == nameof(node.MaximumAngleRadians));
+        inspector.SetValue(entry, 15d);
+        Assert.Equal(Math.PI / 12, node.MaximumAngleRadians, 12);
+        var store = new WorkflowDocumentJsonStore(catalog);
+        var loaded = Assert.IsType<LocateVisionTemplatePoseNodeModel>(Assert.Single(store.Deserialize(store.Serialize(document)).Document.CanvasProjection.Nodes).Node);
+        Assert.Equal(-Math.PI / 6, loaded.MinimumAngleRadians, 12);
+        Assert.Equal(Math.PI / 12, loaded.MaximumAngleRadians, 12);
+        Assert.Equal(15d, Assert.IsType<double>(entry.Value), 10);
+    }
+
+    [Fact]
+    public void AngleProjection_ConvertsScalarAndLiteral_AndPreservesBindingUnits()
+    {
+        var node = new AngleInputNode { Id = "angles", Rotation = Math.PI / 2, Angle = WorkflowInput<double>.FromLiteral(Math.PI / 4) };
+        var catalog = new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<AngleInputNode>());
+        var document = new WorkflowDocument { EntryNodeId = node.Id };
+        document.CanvasProjection.Nodes.Add(new() { Node = node });
+        var session = new WorkflowDesignerSession(document, catalog) { SelectedNodeId = node.Id };
+        using var inspector = new WorkflowPropertyInspectorModel(session, node.Id);
+        var scalar = inspector.Entries.Single(e => e.Name == nameof(node.Rotation));
+        var input = inspector.Entries.Single(e => e.Name == nameof(node.Angle));
+        Assert.Equal(90d, scalar.Value);
+        inspector.SetValue(scalar, "-30"); Assert.Equal(-Math.PI / 6, node.Rotation, 12);
+        Assert.Equal(45d, input.GetInputLiteral());
+        inspector.SetWorkflowInput(input, WorkflowValueSource.Literal, "60", null);
+        Assert.Equal(Math.PI / 3, node.Angle.LiteralValue, 12);
+        var binding = new WorkflowBindingKey("upstream", "AngleRadians");
+        input.SetWorkflowInput(WorkflowValueSource.Binding, null, binding);
+        Assert.Equal(Math.PI / 3, node.Angle.LiteralValue, 12);
+        Assert.Equal(binding, input.GetInputBinding());
+        input.SetWorkflowInput(WorkflowValueSource.Literal, input.GetInputLiteral(), null);
+        Assert.Equal(Math.PI / 3, node.Angle.LiteralValue, 12);
+        Assert.Throws<ArgumentOutOfRangeException>(() => scalar.SetValue(double.NaN));
+    }
+
+    [Fact]
+    public void AngleProjection_ConvertsNumericBounds_WithoutChangingOtherParameters()
+    {
+        double radians = 0;
+        var angle = WorkflowPropertyEntry.Create("angle", "角度", "测试", "角度", WorkflowPropertyEditorKind.Number, typeof(double), () => radians,
+            v => radians = (double)v!).WithNumberRange(-Math.PI, Math.PI).WithRadiansAsDegrees();
+        Assert.Equal(-180, angle.NumberMinimum); Assert.Equal(180, angle.NumberMaximum);
+        angle.SetValue(180); Assert.Equal(Math.PI, radians, 12);
+        angle.WithRadiansAsDegrees(); Assert.Equal(180d, angle.Value); Assert.Equal(180, angle.NumberMaximum);
+        Assert.Contains("180", Assert.Throws<ArgumentOutOfRangeException>(() => angle.SetValue(200d)).Message);
+        angle.WithNumberRange(-Math.PI / 2, Math.PI / 2); Assert.Equal(-90, angle.NumberMinimum); Assert.Equal(90, angle.NumberMaximum);
+        var ordinary = WorkflowPropertyEntry.Create("ordinary", "普通数值", "测试", "未声明转换", WorkflowPropertyEditorKind.Number, typeof(double), () => radians, v => radians = (double)v!);
+        Assert.Equal(Math.PI, ordinary.Value);
+    }
+
+    [Fact]
+    public async Task PropertyAction_ExecutesAsyncWithoutWritingAValue_AndHonorsReadiness()
+    {
+        string blocked = "请先选择图像";
+        int calls = 0;
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entry = WorkflowPropertyEntry.CreateAction("Build", "制作", "模板", "创建模型", () => "生成模型",
+            () => { calls++; return completion.Task; }, () => blocked);
+        Assert.True(entry.IsReadOnly);
+        Assert.Throws<InvalidOperationException>(() => entry.SetValue("new value"));
+        await Assert.ThrowsAsync<InvalidOperationException>(entry.ExecuteActionAsync);
+        Assert.Equal(0, calls);
+        blocked = "";
+        var operation = entry.ExecuteActionAsync();
+        Assert.Equal(1, calls); Assert.False(operation.IsCompleted);
+        completion.SetResult(); await operation;
+        Assert.Equal("生成模型", entry.Value);
+    }
+
+    [Fact]
     public void Inspector_EditsScalarAndWorkflowInputUsingTypedCandidates()
     {
         var canvasDocument = new WorkflowDocument { Name = "Properties" };
@@ -186,6 +272,16 @@ public sealed class WorkflowPropertyInspectorTests
     }
 
     private enum ConditionalMode { Literal, Binding }
+
+    [WorkflowNode("AngleInputTest")]
+    private sealed class AngleInputNode : WorkflowNodeModel
+    {
+        public override string NodeType => "AngleInputTest";
+        [WorkflowProperty("旋转", "角度投影。", DisplayRadiansAsDegrees = true)]
+        public double Rotation { get; set; }
+        [WorkflowProperty("方向", "固定值按度编辑，绑定保持弧度。", DisplayRadiansAsDegrees = true)]
+        public WorkflowInput<double> Angle { get; set; } = WorkflowInput<double>.FromLiteral(0);
+    }
 
     [WorkflowNode("ConditionalPropertyTest")]
     private sealed class ConditionalNode : WorkflowNodeModel

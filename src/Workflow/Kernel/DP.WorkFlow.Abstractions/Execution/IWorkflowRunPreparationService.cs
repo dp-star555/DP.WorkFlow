@@ -24,11 +24,49 @@ public enum WorkflowRunScopeKind
 /// 本次运行的宿主服务容器；准备实现可据此读取自己需要的装配能力
 /// （例如已发布的逻辑源目录）。为空表示调用者未提供，实现必须按能力缺失处理而不是假定存在。
 /// </param>
+/// <param name="PositionedNodes">包含稳定子计划路径的节点快照；旧调用方可为空。</param>
+/// <param name="BindingScopeId">本次准备的绑定作用域身份。</param>
 public sealed record WorkflowRunPreparationContext(
     IReadOnlyList<IWorkflowNodeModel> Nodes,
     WorkflowRunScopeKind ScopeKind,
     string? ParentNodeId = null,
-    IServiceProvider? Services = null);
+    IServiceProvider? Services = null,
+    IReadOnlyList<WorkflowPreparationNode>? PositionedNodes = null,
+    Guid BindingScopeId = default)
+{
+    /// <summary>保留原有四参数构造入口，未提供位置的旧准备服务仍可运行。</summary>
+    public WorkflowRunPreparationContext(IReadOnlyList<IWorkflowNodeModel> nodes, WorkflowRunScopeKind scopeKind,
+        string? parentNodeId, IServiceProvider? services) : this(nodes, scopeKind, parentNodeId, services, null, default) { }
+
+    /// <summary>保留原有四字段解构入口。</summary>
+    public void Deconstruct(out IReadOnlyList<IWorkflowNodeModel> nodes, out WorkflowRunScopeKind scopeKind,
+        out string? parentNodeId, out IServiceProvider? services)
+    { nodes = Nodes; scopeKind = ScopeKind; parentNodeId = ParentNodeId; services = Services; }
+}
+
+/// <summary>准备阶段的稳定计划位置，不以节点ID跨子文档唯一为前提。</summary>
+public sealed record WorkflowPreparationNode(string PlanPath, IWorkflowNodeModel Node);
+
+/// <summary>提供节点作用域能力的宿主入口；准备阶段仍必须验证与建立实际绑定。</summary>
+public interface IWorkflowNodeCapabilityProvider
+{
+    /// <summary>此节点的能力是否由该作用域提供者在准备阶段绑定。</summary>
+    bool Provides(IWorkflowNodeModel node, Type capabilityType);
+}
+
+/// <summary>支持候选准备、提交与回滚的运行准备服务。</summary>
+public interface IWorkflowTransactionalRunPreparationService : IWorkflowRunPreparationService
+{
+    /// <summary>准备候选；失败清理自身资源，成功由调用方提交并在运行结束归还。</summary>
+    ValueTask<IWorkflowPreparedRun> PrepareRunAsync(WorkflowRunPreparationContext context, CancellationToken cancellationToken);
+}
+
+/// <summary>候选运行租约；未提交时Dispose回滚，提交后Dispose退役该运行。</summary>
+public interface IWorkflowPreparedRun : IAsyncDisposable
+{
+    /// <summary>发布完整候选绑定；不进行可能失败的资源创建。</summary>
+    void Commit();
+}
 
 /// <summary>
 /// 由运行宿主在根运行开始时、以及任何嵌套运行开始时调用，用于校验运行前提并准备计划节点绑定。

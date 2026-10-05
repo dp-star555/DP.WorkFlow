@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Intensity.Contracts/Intensity.Contracts.csproj" />
+    <ProjectReference Include="../../../src/Workflow/Nodes/DP.WorkFlow.Nodes.Vision/DP.WorkFlow.Nodes.Vision.csproj" />
+  </ItemGroup>
+</Project>

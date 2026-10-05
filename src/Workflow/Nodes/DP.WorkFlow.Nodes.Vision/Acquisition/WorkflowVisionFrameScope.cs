@@ -86,21 +86,22 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
     /// <param name="frame">本次执行的帧，必须与事实同帧。</param>
     /// <param name="facts">可选的同帧算法事实。</param>
     /// <returns>提交后发布的投影；宿主没有注册帧作用域时为空。</returns>
-    internal static IWorkflowNodeOutputProjection? Stage(IWorkflowNodeExecutionContext context, ImageFrame frame, object? facts = null)
+    public static IWorkflowNodeOutputProjection? Stage(IWorkflowNodeExecutionContext context, ImageFrame frame, object? facts = null)
     {
         if (facts is null && context.Node is AnalyzeVisionFrameNodeModel and not PreprocessVisionImageNodeModel)
             throw new InvalidOperationException("视觉分析能力返回了空结果。");
         var identity = facts switch
         {
+            IWorkflowVisionFrameFact result => result.FrameId,
+            DP.Vision.Algorithms.IVisionGeometryFact result => result.FrameId,
+            DP.Vision.Algorithms.IVisionCoordinateResult result => result.FrameId,
             ImageFrame result => result.FrameId,
             DP.Vision.Algorithms.RegionAnalysisResult result => result.FrameId,
             DP.Vision.Algorithms.CaliperResult result => result.FrameId,
             DP.Vision.Algorithms.RobustLineResult result => result.FrameId,
-            DP.Vision.Algorithms.TemplatePoseResult result => result.FrameId,
             DP.Vision.Algorithms.BlobAnalysisResult result => result.FrameId,
             DP.Vision.Algorithms.ColorAnalysisResult result => result.FrameId,
             DP.Vision.Algorithms.EdgeMeasurementResult result => result.FrameId,
-            DP.Vision.Algorithms.TemplateLocationResult result => result.FrameId,
             _ => null
         };
         if (identity is not null && !string.Equals(identity, frame.FrameId, StringComparison.Ordinal))
@@ -153,7 +154,7 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
         var duplicate = context.Nodes.Where(n => n is AnalyzeVisionFrameNodeModel or LoadVisionFileNodeModel
-                or LoadVisionFolderNodeModel or CaptureAreaFrameNodeModel or CaptureLineScanFrameNodeModel)
+                or LoadVisionFolderNodeModel or CaptureAreaFrameNodeModel or CaptureLineScanFrameNodeModel or AcquireVisionImageNodeModel)
             .GroupBy(n => n.Id, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1);
         if (duplicate is not null)
             throw new InvalidOperationException($"新版视觉预览节点ID跨子文档重复：{duplicate.Key}；不能把不同节点的图像合并到同一预览槽。");
@@ -264,6 +265,9 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
         {
             switch (node)
             {
+                case AcquireVisionImageNodeModel { IsCamera: true } input:
+                    yield return new CaptureCandidate(input.Id, input.Source, input.GetCameraKind(), input.CreateRequest);
+                    break;
                 case CaptureAreaFrameNodeModel area:
                     yield return new CaptureCandidate(area.Id, area.Source, EVisionAcquisitionKind.AreaScan, area.CreateRequest);
                     break;

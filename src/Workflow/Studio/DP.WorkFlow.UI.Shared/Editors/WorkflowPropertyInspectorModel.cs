@@ -24,6 +24,8 @@ public enum WorkflowPropertyEditorKind
     Structured,
     /// <summary>从宿主提供的候选集中选择，不允许自由文本。</summary>
     Choice,
+    /// <summary>请求宿主打开由稳定编辑器键标识的事务式编辑窗口。</summary>
+    Action,
     /// <summary>仅用于显示、不允许修改的属性。</summary>
     ReadOnly
 }
@@ -46,11 +48,19 @@ public sealed record WorkflowPropertyChoice(string Label, object? Value)
 /// <returns>候选值；返回空集合表示没有可选项，编辑器退回文本输入。</returns>
 public delegate IReadOnlyList<WorkflowPropertyChoice> WorkflowPropertyChoiceProvider(string editorKey, string propertyName);
 
+/// <summary>专用属性操作请求；宿主按键寻找页面，不要求共享属性表认识领域模型。</summary>
+public sealed record WorkflowPropertyActionRequest(string NodeId, string EditorKey);
+
 /// <summary>表示一个可由 WinForms/WPF 属性面板共同消费的节点属性。</summary>
 public sealed class WorkflowPropertyEntry
 {
     private readonly object _owner;
     private readonly PropertyInfo _property;
+    private Func<object?>? _read;
+    private Action<object?>? _write;
+    private Func<Task>? _action;
+    private Func<string>? _actionBlockReason;
+    private bool _displayRadiansAsDegrees;
 
     /// <summary>初始化属性的反射访问、显示元数据和编辑器配置。</summary>
     /// <param name="owner">属性所属对象。</param>
@@ -92,13 +102,91 @@ public sealed class WorkflowPropertyEntry
     }
 
     /// <summary>获取 CLR 属性名称。</summary>
-    public string Name { get; }
+    public string Name { get; private set; }
+
+    /// <summary>创建由领域描述驱动的属性，仍复用标量转换及宿主的撤销/重做。</summary>
+    /// <param name="name">稳定属性身份。</param>
+    /// <param name="displayName">显示名。</param>
+    /// <param name="category">分组。</param>
+    /// <param name="description">说明。</param>
+    /// <param name="kind">编辑器类型。</param>
+    /// <param name="valueType">标量类型。</param>
+    /// <param name="read">读取当前配置。</param>
+    /// <param name="write">写入已经转换过类型的值。</param>
+    /// <param name="editor">可选文件等专用编辑器。</param>
+    /// <returns>可提交的动态属性。</returns>
+    public static WorkflowPropertyEntry Create(string name, string displayName, string category, string description,
+        WorkflowPropertyEditorKind kind, Type valueType, Func<object?> read, Action<object?> write, WorkflowPropertyEditorAttribute? editor = null)
+    {
+        var access = new DynamicValue(read, write);
+        return new WorkflowPropertyEntry(access, typeof(DynamicValue).GetProperty(nameof(DynamicValue.Value))!,
+            displayName, category, description, kind, valueType, propertyEditor: editor) { Name = name, _read = read, _write = write };
+    }
+
+    private sealed class DynamicValue(Func<object?> read, Action<object?> write)
+    {
+        public object? Value { get => read(); set => write(value); }
+    }
+
+    /// <summary>创建显示在属性行中的操作按钮；操作不作为参数值提交或序列化。</summary>
+    /// <param name="name">稳定属性身份。</param>
+    /// <param name="displayName">属性名。</param>
+    /// <param name="category">所在分组。</param>
+    /// <param name="description">操作说明。</param>
+    /// <param name="caption">按钮当前文字。</param>
+    /// <param name="execute">异步操作，异常由属性面板显示。</param>
+    /// <param name="blockReason">不可执行的原因；返回空文本表示可执行。</param>
+    /// <returns>只读操作属性。</returns>
+    public static WorkflowPropertyEntry CreateAction(string name, string displayName, string category, string description,
+        Func<string> caption, Func<Task> execute, Func<string>? blockReason = null)
+    {
+        ArgumentNullException.ThrowIfNull(caption);
+        ArgumentNullException.ThrowIfNull(execute);
+        var entry = Create(name, displayName, category, description, WorkflowPropertyEditorKind.Action, typeof(string), () => caption(), _ => { });
+        entry._action = execute; entry._actionBlockReason = blockReason;
+        return entry;
+    }
+
+    /// <summary>此操作是否由领域描述直接处理；否则通过编辑器键请求宿主页面。</summary>
+    public bool HasActionHandler => _action != null;
+    /// <summary>操作不可执行的原因；空文本表示可执行。</summary>
+    public string ActionBlockReason => _actionBlockReason?.Invoke() ?? "";
+    /// <summary>执行属性按钮的领域操作，不写入普通属性值。</summary>
+    /// <returns>操作完成任务。</returns>
+    public Task ExecuteActionAsync()
+    {
+        if (_action == null) throw new InvalidOperationException("此属性操作需要宿主编辑窗口。");
+        var reason = ActionBlockReason;
+        if (reason.Length != 0) throw new InvalidOperationException(reason);
+        return _action();
+    }
+
+    /// <summary>创建领域提供的动态候选属性，复用类型转换与撤销/重做。</summary>
+    public static WorkflowPropertyEntry CreateChoice(string name, string displayName, string category, string description,
+        Func<object?> read, Action<object?> write, IReadOnlyList<WorkflowPropertyChoice> choices, WorkflowPropertyEditorAttribute editor)
+    {
+        var access = new DynamicValue(read, write);
+        return new WorkflowPropertyEntry(access, typeof(DynamicValue).GetProperty(nameof(DynamicValue.Value))!,
+            displayName, category, description, WorkflowPropertyEditorKind.Choice, typeof(string), propertyEditor: editor, choices: choices)
+            { Name = name, _read = read, _write = write };
+    }
 
     /// <summary>获取适合属性面板显示的名称。</summary>
-    public string DisplayName { get; }
+    public string DisplayName { get; private set; }
 
     /// <summary>获取属性面板分组名称。</summary>
-    public string Category { get; }
+    public string Category { get; private set; }
+
+    /// <summary>分类下的可展开子组；保持叶属性身份不变，提交仍经过统一撤销/重做。</summary>
+    public IReadOnlyList<string> GroupPath { get; private set; } = Array.Empty<string>();
+
+    /// <summary>设置领域属性的分类和子组；仅影响展示，不改变叶属性身份和访问方式。</summary>
+    public WorkflowPropertyEntry InGroup(string category, params string[] path)
+    {
+        Category = category;
+        GroupPath = path.ToArray();
+        return this;
+    }
 
     /// <summary>用于属性树底部帮助区的参数说明。</summary>
     public string Description { get; }
@@ -109,8 +197,78 @@ public sealed class WorkflowPropertyEntry
     /// <summary>获取编辑器直接读写的值类型。</summary>
     public Type ValueType { get; }
 
+    /// <summary>数值编辑器在显示单位下的可选下限；未指定时由平台使用默认范围。</summary>
+    public double? NumberMinimum { get; private set; }
+
+    /// <summary>领域数值编辑器的可选上限。</summary>
+    public double? NumberMaximum { get; private set; }
+
+    /// <summary>向平台传递数值范围，使步进按钮遵循领域约束；写入端仍负责最终校验。</summary>
+    /// <param name="minimum">存储单位的下限；为空表示不限制。</param>
+    /// <param name="maximum">存储单位的上限；为空表示不限制。</param>
+    /// <returns>当前属性条目。</returns>
+    public WorkflowPropertyEntry WithNumberRange(double? minimum, double? maximum)
+    {
+        if (EditorKind != WorkflowPropertyEditorKind.Number) throw new InvalidOperationException("只有数值属性可以指定范围。");
+        if (minimum > maximum || minimum is { } min && !double.IsFinite(min) || maximum is { } max && !double.IsFinite(max))
+            throw new ArgumentException("数值范围无效。");
+        var factor = _displayRadiansAsDegrees ? 180 / Math.PI : 1;
+        NumberMinimum = minimum * factor; NumberMaximum = maximum * factor;
+        return this;
+    }
+
+    /// <summary>把弧度属性投影为度；模型字段、集合元素和输入绑定仍保持原有弧度契约。</summary>
+    /// <returns>供两个平台共用的属性条目。</returns>
+    public WorkflowPropertyEntry WithRadiansAsDegrees()
+    {
+        var type = WorkflowInputType ?? ValueType;
+        if (type != typeof(double) && type != typeof(double?) && type != typeof(List<double>) && type != typeof(double[]))
+            throw new InvalidOperationException("角度显示转换只支持double及其集合或工作流输入。");
+        if (_displayRadiansAsDegrees) return this;
+        _displayRadiansAsDegrees = true;
+        if (!DisplayName.Contains('°')) DisplayName += "（°）";
+        NumberMinimum *= 180 / Math.PI;
+        NumberMaximum *= 180 / Math.PI;
+        return this;
+    }
+
+    private object? ReadStoredValue() => _read is not null ? _read() : _property.GetValue(_owner);
+
+    private object? AngleValue(object? value, bool toStorage)
+    {
+        if (!_displayRadiansAsDegrees || value == null) return value;
+        double Scale(double angle)
+        {
+            if (toStorage && (!double.IsFinite(angle) || angle < NumberMinimum || angle > NumberMaximum))
+                throw new ArgumentOutOfRangeException(Name, angle, $"{DisplayName}允许范围：{NumberMinimum?.ToString(CultureInfo.InvariantCulture) ?? "无下限"}～{NumberMaximum?.ToString(CultureInfo.InvariantCulture) ?? "无上限"}，角度须为有限数值。");
+            var scaled = toStorage ? angle * (Math.PI / 180) : angle * (180 / Math.PI);
+            if (toStorage && !double.IsFinite(scaled)) throw new ArgumentOutOfRangeException(nameof(value), "角度必须是有限数值。");
+            return scaled;
+        }
+        return value switch
+        {
+            double angle => Scale(angle),
+            List<double> angles => angles.Select(Scale).ToList(),
+            double[] angles => angles.Select(Scale).ToArray(),
+            _ => value
+        };
+    }
+
     /// <summary>获取工作流输入包装的值类型；非工作流输入时为空。</summary>
     public Type? WorkflowInputType { get; }
+
+    /// <summary>工作流输入的固定值是否能由通用文本编辑器转换；复杂对象须由绑定或专用编辑器提供。</summary>
+    public bool CanEditInputLiteralAsText => WorkflowInputType is { } type && CanConvertFromText(type);
+
+    private static bool CanConvertFromText(Type type)
+    {
+        var core = Nullable.GetUnderlyingType(type) ?? type;
+        return core.IsEnum || core == typeof(Guid) || core == typeof(TimeSpan)
+            || Type.GetTypeCode(core) is TypeCode.String or TypeCode.Boolean or TypeCode.Char or TypeCode.DateTime
+                or TypeCode.Byte or TypeCode.SByte or TypeCode.Int16 or TypeCode.UInt16 or TypeCode.Int32
+                or TypeCode.UInt32 or TypeCode.Int64 or TypeCode.UInt64 or TypeCode.Single or TypeCode.Double or TypeCode.Decimal
+            || !core.IsValueType && core.GetConstructor([typeof(string)]) is not null;
+    }
 
     /// <summary>获取宿主自定义编辑器键。</summary>
     public string? EditorKey { get; }
@@ -127,10 +285,10 @@ public sealed class WorkflowPropertyEntry
     /// <summary>获取候选编辑器可选项；非候选编辑器为空集合。</summary>
     public IReadOnlyList<WorkflowPropertyChoice> Choices { get; }
 
-    public bool IsReadOnly => EditorKind == WorkflowPropertyEditorKind.ReadOnly;
+    public bool IsReadOnly => EditorKind is WorkflowPropertyEditorKind.ReadOnly or WorkflowPropertyEditorKind.Action;
 
-    /// <summary>获取属性所属对象中的当前值。</summary>
-    public object? Value => _property.GetValue(_owner);
+    /// <summary>获取面板显示单位下的当前值；WorkflowInput通过GetInputLiteral投影固定值。</summary>
+    public object? Value => EditorKind == WorkflowPropertyEditorKind.WorkflowInput ? ReadStoredValue() : AngleValue(ReadStoredValue(), false);
 
     /// <summary>设置普通标量属性。</summary>
     /// <param name="value">要校验、转换或写入的值。</param>
@@ -140,9 +298,10 @@ public sealed class WorkflowPropertyEntry
             throw new InvalidOperationException($"属性 {Name} 为只读。");
         if (EditorKind == WorkflowPropertyEditorKind.WorkflowInput)
             throw new InvalidOperationException($"属性 {Name} 必须使用 SetWorkflowInput。");
-        var converted = ConvertValue(value, ValueType);
+        var converted = AngleValue(ConvertValue(value, ValueType), true);
         ValidateSpecialEditorValue(converted);
-        _property.SetValue(_owner, converted);
+        if (_write is not null) _write(converted);
+        else _property.SetValue(_owner, converted);
     }
 
     /// <summary>将集合或复杂对象导出为缩进 JSON。</summary>
@@ -156,7 +315,7 @@ public sealed class WorkflowPropertyEntry
             throw new InvalidOperationException($"属性 {Name} 不是结构化属性。");
         var value = JsonSerializer.Deserialize(json, ValueType, StructuredJsonOptions)
             ?? throw new InvalidOperationException($"{DisplayName} 不能设置为空。");
-        _property.SetValue(_owner, value);
+        SetValue(value);
     }
 
     /// <summary>读取 WorkflowInput 的来源。</summary>
@@ -165,7 +324,7 @@ public sealed class WorkflowPropertyEntry
 
     /// <summary>读取 WorkflowInput 的固定值。</summary>
     public object? GetInputLiteral() =>
-        GetRequiredInputProperty(nameof(WorkflowInput<object>.LiteralValue)).GetValue(Value);
+        AngleValue(GetRequiredInputProperty(nameof(WorkflowInput<object>.LiteralValue)).GetValue(Value), false);
 
     /// <summary>读取 WorkflowInput 的绑定。</summary>
     public WorkflowBindingKey? GetInputBinding() =>
@@ -182,6 +341,8 @@ public sealed class WorkflowPropertyEntry
     {
         if (EditorKind != WorkflowPropertyEditorKind.WorkflowInput || WorkflowInputType is null)
             throw new InvalidOperationException($"属性 {Name} 不是 WorkflowInput。");
+        if (!Enum.IsDefined(source))
+            throw new InvalidOperationException("输入来源类型未定义。");
         if (source == WorkflowValueSource.Binding && !binding.HasValue)
             throw new InvalidOperationException("绑定模式必须选择绑定键。");
 
@@ -191,8 +352,8 @@ public sealed class WorkflowPropertyEntry
         GetRequiredInputProperty(nameof(WorkflowInput<object>.LiteralValue)).SetValue(
             input,
             source == WorkflowValueSource.Binding && literalValue is null
-                ? (WorkflowInputType.IsValueType ? Activator.CreateInstance(WorkflowInputType) : null)
-                : ConvertValue(literalValue, WorkflowInputType));
+                ? GetRequiredInputProperty(nameof(WorkflowInput<object>.LiteralValue)).GetValue(Value)
+                : AngleValue(ConvertValue(literalValue, WorkflowInputType), true));
         GetRequiredInputProperty(nameof(WorkflowInput<object>.Binding)).SetValue(input, binding);
         _property.SetValue(_owner, input);
     }
@@ -249,7 +410,9 @@ public sealed class WorkflowPropertyEntry
         // 只接受单个字符串的取值对象（例如逻辑源身份）：编辑器给出的是文本，由类型自己校验并 Trim。
         if (!coreType.IsValueType && coreType.GetConstructor(new[] { typeof(string) }) is { } textConstructor)
             return textConstructor.Invoke(new object[] { text });
-        return Convert.ChangeType(value, coreType, CultureInfo.InvariantCulture);
+        if (value is IConvertible && typeof(IConvertible).IsAssignableFrom(coreType))
+            return Convert.ChangeType(value, coreType, CultureInfo.InvariantCulture);
+        throw new InvalidOperationException($"{coreType.Name} 不能由普通文本设置，请使用绑定或专用编辑器。");
     }
 }
 
@@ -258,7 +421,12 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
 {
     private readonly WorkflowDesignerSession _session;
     private readonly WorkflowPropertyChoiceProvider? _choiceProvider;
+    private readonly Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? _additionalProperties;
     private IReadOnlyList<WorkflowPropertyEntry> _entries = Array.Empty<WorkflowPropertyEntry>();
+
+    /// <summary>保留已有三参数构造入口，领域动态属性可使用四参数重载。</summary>
+    public WorkflowPropertyInspectorModel(WorkflowDesignerSession session, string startNodeId, WorkflowPropertyChoiceProvider? choiceProvider = null)
+        : this(session, startNodeId, choiceProvider, null) { }
 
     /// <summary>初始化属性检查器并订阅会话和公共数据声明变化。</summary>
     /// <param name="session">设计器会话。</param>
@@ -267,14 +435,17 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     /// 可选候选提供者；宿主用它把机器配置注入属性面板。
     /// 未提供时所有候选编辑器退回文本输入，不会因为缺少宿主装配而无法编辑。
     /// </param>
+    /// <param name="additionalProperties">由领域描述提供的附加属性条目。</param>
     public WorkflowPropertyInspectorModel(
         WorkflowDesignerSession session,
         string startNodeId,
-        WorkflowPropertyChoiceProvider? choiceProvider = null)
+        WorkflowPropertyChoiceProvider? choiceProvider,
+        Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? additionalProperties)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         EntryNodeId = startNodeId ?? throw new ArgumentNullException(nameof(startNodeId));
         _choiceProvider = choiceProvider;
+        _additionalProperties = additionalProperties;
         _session.Changed += OnSessionChanged;
         _session.PublicDataCatalog.Changed += OnPublicDataChanged;
         Refresh();
@@ -391,7 +562,8 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
         SelectedNode = _session.SelectedNodeId is { } selectedId
             ? _session.Canvas.Nodes.FirstOrDefault(item => item.Node.Id == selectedId)?.Node
             : null;
-        _entries = SelectedNode is null ? Array.Empty<WorkflowPropertyEntry>() : BuildEntries(SelectedNode, _choiceProvider);
+        _entries = SelectedNode is null ? Array.Empty<WorkflowPropertyEntry>() : BuildEntries(SelectedNode, _choiceProvider)
+            .Concat(_additionalProperties?.Invoke(SelectedNode) ?? Array.Empty<WorkflowPropertyEntry>()).ToArray();
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
@@ -413,13 +585,17 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
             var candidates = ResolveChoices(propertyEditor, property.Name, choiceProvider);
             Type? inputType = null;
             WorkflowPropertyEditorKind kind;
-            if (propertyType.IsGenericType && propertyType.GetGenericTypeDefinition() == typeof(WorkflowInput<>))
+            if (propertyEditor?.IsAction == true)
+                kind = WorkflowPropertyEditorKind.Action;
+            else if (propertyType.IsGenericType && propertyType.GetGenericTypeDefinition() == typeof(WorkflowInput<>))
             {
                 inputType = propertyType.GetGenericArguments()[0];
                 kind = WorkflowPropertyEditorKind.WorkflowInput;
             }
             else if (!property.CanWrite || property.Name == nameof(IWorkflowNodeModel.Id))
                 kind = WorkflowPropertyEditorKind.ReadOnly;
+            else if (IsChoiceEditor(propertyEditor) && candidates.Count > 0)
+                kind = WorkflowPropertyEditorKind.Choice;
             else if (propertyType == typeof(bool))
                 kind = WorkflowPropertyEditorKind.Boolean;
             else if ((Nullable.GetUnderlyingType(propertyType) ?? propertyType).IsEnum)
@@ -454,7 +630,7 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
                 description += $" 单位：{workflowMetadata.Unit}。";
             var enumType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
             if (enumType.IsEnum) description = AppendEnumOptions(description, enumType);
-            entries.Add(new WorkflowPropertyEntry(
+            var entry = new WorkflowPropertyEntry(
                 node,
                 property,
                 displayName,
@@ -464,7 +640,9 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
                 propertyType,
                 inputType,
                 propertyEditor,
-                candidates));
+                candidates);
+            if (workflowMetadata?.DisplayRadiansAsDegrees == true) entry.WithRadiansAsDegrees();
+            entries.Add(entry);
         }
         return entries.OrderBy(entry => entry.Category, StringComparer.Ordinal)
             .ThenBy(entry => entry.DisplayName, StringComparer.Ordinal)
@@ -474,7 +652,9 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     /// <summary>判断属性是否声明了候选编辑器；该键允许作用在非字符串的取值对象上。</summary>
     private static bool IsChoiceEditor(WorkflowPropertyEditorAttribute? propertyEditor) =>
         propertyEditor?.EditorKey is WorkflowPropertyEditorKeys.VisionAreaSource
-            or WorkflowPropertyEditorKeys.VisionLineScanSource;
+            or WorkflowPropertyEditorKeys.VisionLineScanSource
+            or WorkflowPropertyEditorKeys.VisionImageSourceMode
+        || propertyEditor?.EditorKey.StartsWith(WorkflowPropertyEditorKeys.VisionAlgorithmPrefix, StringComparison.Ordinal) == true;
 
     /// <summary>
     /// 解析候选值。宿主提供者抛错时退回文本编辑而不是让整个属性面板不可用；
