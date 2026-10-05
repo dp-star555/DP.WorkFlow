@@ -106,7 +106,8 @@ public sealed class WorkflowLayout
             item.Width,
             item.Height,
             new Dictionary<string, WorkflowPortSide>(item.PortSides, StringComparer.Ordinal),
-            item.HiddenOutputPorts.OrderBy(key => key, StringComparer.Ordinal).ToArray())).ToArray());
+            item.HiddenOutputPorts.OrderBy(key => key, StringComparer.Ordinal).ToArray(),
+            item.ExposedOutputMembers.OrderBy(key => key, StringComparer.Ordinal).ToArray())).ToArray());
 
     /// <summary>Gets connection routing geometry in the same order as semantic control connections.</summary>
     public IReadOnlyList<WorkflowConnectionLayout> Connections =>
@@ -126,6 +127,7 @@ public sealed class WorkflowLayout
 /// <param name="Height">Displayed height.</param>
 /// <param name="PortSides">Per-instance port-side overrides.</param>
 /// <param name="HiddenOutputPorts">Output ports hidden by the designer.</param>
+/// <param name="ExposedOutputMembers">Standard-output members shown as data ports.</param>
 public sealed record WorkflowNodeLayout(
     string NodeId,
     double X,
@@ -133,7 +135,8 @@ public sealed record WorkflowNodeLayout(
     double Width,
     double Height,
     IReadOnlyDictionary<string, WorkflowPortSide> PortSides,
-    IReadOnlyList<string> HiddenOutputPorts);
+    IReadOnlyList<string> HiddenOutputPorts,
+    IReadOnlyList<string>? ExposedOutputMembers = null);
 
 /// <summary>Describes designer routing geometry for one control connection.</summary>
 /// <param name="ConnectionIndex">Connection order used to associate this layout with the semantic graph.</param>

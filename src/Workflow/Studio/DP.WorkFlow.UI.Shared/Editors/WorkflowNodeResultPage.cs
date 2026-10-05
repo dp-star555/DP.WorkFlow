@@ -11,10 +11,12 @@ namespace DP.WorkFlow.UI;
 /// <param name="Value">格式化后的值。</param>
 public sealed record WorkflowNodeResultItem(string Category, string Name, string Value);
 
-/// <summary>结果页中的一个可选输出端口及其是否显示在节点上。</summary>
-/// <param name="Key">端口键。</param>
-/// <param name="Visible">是否在画布节点上显示并参与连线。</param>
-public sealed record WorkflowNodeOutputPortItem(string Key, bool Visible);
+/// <summary>结果页中的一个标准输出成员：未运行时值为空占位，开关决定是否在节点上显示为数据端口。</summary>
+/// <param name="Name">成员路径；标准输出为简单值时为 <c>$</c>。</param>
+/// <param name="DisplayName">中文显示名称。</param>
+/// <param name="Value">最近一次运行的格式化值；尚未运行时为 <see cref="WorkflowNodeResultPageModel.PendingValue"/>。</param>
+/// <param name="Exposed">是否在节点上显示为数据端口，可直接拖线绑定到下游参数。</param>
+public sealed record WorkflowNodeResultMember(string Name, string DisplayName, string Value, bool Exposed);
 
 /// <summary>为每个节点提供通用“运行结果”页：最近一次执行状态与标准输出。</summary>
 public sealed class WorkflowNodeResultPageProvider : IWorkflowNodeEditorPageProvider
@@ -46,8 +48,8 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
     public const string StateCategory = "运行状态";
     /// <summary>输出分组名称。</summary>
     public const string OutputCategory = "输出";
-    /// <summary>可选输出端口分组名称。</summary>
-    public const string PortCategory = "输出端口";
+    /// <summary>尚未运行时输出成员的占位值。</summary>
+    public const string PendingValue = "—";
 
     private const int MaximumOutputMembers = 64;
     private const int MaximumTextLength = 240;
@@ -58,7 +60,7 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
     /// <summary>为指定节点创建结果页模型。</summary>
     /// <param name="session">接收运行快照的设计会话；为空时只显示“尚未运行”。</param>
     /// <param name="nodeId">节点标识。</param>
-    /// <param name="portSession">编辑端口显示状态的会话（节点窗口的隔离编辑副本，确定后才提交）；为空时不提供端口开关。</param>
+    /// <param name="portSession">编辑数据端口开关的会话（节点窗口的隔离编辑副本，确定后才提交）；为空时开关只读。</param>
     public WorkflowNodeResultPageModel(WorkflowDesignerSession? session, string nodeId, WorkflowDesignerSession? portSession = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
@@ -92,6 +94,8 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
         items.Add(new(StateCategory, "耗时", WorkflowDesignerInteraction.FormatElapsed(info.Elapsed)));
         if (!string.IsNullOrWhiteSpace(info.Message)) items.Add(new(StateCategory, "消息", info.Message!));
 
+        // 已声明输出类型的节点由 GetMembers 列出全部成员；这里只展开未声明类型的实际输出。
+        if ((_portSession ?? _session)!.GetOutputMembers(NodeId).Count > 0) return items;
         var output = _session!.GetLatestNodeOutput(NodeId);
         if (output is null)
         {
@@ -103,28 +107,48 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
     }
 
     /// <summary>
-    /// 返回多输出节点的可选输出端口。勾选的端口显示在节点上，可直接连线；
-    /// 取消勾选的端口从节点上隐藏，其结果仍可通过数据绑定引用。单输出节点返回空集合。
+    /// 按输出类型声明顺序列出节点标准输出的全部成员。尚未运行时也全部列出，值显示为占位符；
+    /// 开关为打开的成员在节点上显示为数据端口。输出类型未声明时返回空集合，结果改由 <see cref="GetItems"/> 展开实际输出。
     /// </summary>
-    public IReadOnlyList<WorkflowNodeOutputPortItem> GetOutputPorts()
+    public IReadOnlyList<WorkflowNodeResultMember> GetMembers()
     {
-        if (_portSession?.Canvas.Nodes.FirstOrDefault(node => node.Node.Id == NodeId) is not { } canvasNode)
-            return Array.Empty<WorkflowNodeOutputPortItem>();
-        var outputs = _portSession.GetDeclaredPorts(NodeId, WorkflowPortDirection.Output);
-        return outputs.Count <= 1
-            ? Array.Empty<WorkflowNodeOutputPortItem>()
-            : outputs.Select(port => new WorkflowNodeOutputPortItem(port.Key, !canvasNode.HiddenOutputPorts.Contains(port.Key))).ToArray();
+        var session = _portSession ?? _session;
+        if (session?.Canvas.Nodes.FirstOrDefault(node => node.Node.Id == NodeId) is not { } canvasNode)
+            return Array.Empty<WorkflowNodeResultMember>();
+        var members = session.GetOutputMembers(NodeId);
+        if (members.Count == 0) return Array.Empty<WorkflowNodeResultMember>();
+        var hasOutput = _session?.GetLatestNodeOutput(NodeId) is not null;
+        var output = _session?.GetLatestNodeOutput(NodeId)?.Value;
+        return members.Select(member => new WorkflowNodeResultMember(
+            member.Name,
+            member.DisplayName,
+            hasOutput ? ReadMember(output, member.Name) : PendingValue,
+            canvasNode.ExposedOutputMembers.Contains(member.Name))).ToArray();
     }
 
-    /// <summary>显示或隐藏指定输出端口；变化记录在编辑副本中，随节点窗口“应用/确定”提交。</summary>
-    /// <param name="key">端口键。</param>
-    /// <param name="visible">是否显示。</param>
+    /// <summary>打开或关闭某个输出成员的数据端口；变化记录在编辑副本中，随节点窗口“应用/确定”提交。</summary>
+    /// <param name="name">成员名。</param>
+    /// <param name="exposed">是否在节点上显示为数据端口。</param>
     /// <returns>状态发生变化时返回 <see langword="true"/>。</returns>
-    public bool SetOutputPortVisible(string key, bool visible)
+    public bool SetMemberExposed(string name, bool exposed)
     {
-        if (_portSession is null || !_portSession.SetOutputPortVisible(NodeId, key, visible)) return false;
+        if (_portSession is null || !_portSession.SetOutputMemberExposed(NodeId, name, exposed)) return false;
         Changed?.Invoke(this, EventArgs.Empty);
         return true;
+    }
+
+    private static string ReadMember(object? output, string name)
+    {
+        if (name == "$" || output is null) return FormatValue(output);
+        try
+        {
+            var property = output.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public);
+            return property is null ? PendingValue : FormatValue(property.GetValue(output));
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return "读取失败：" + (exception.InnerException ?? exception).Message;
+        }
     }
 
     /// <summary>解除对设计会话的订阅。</summary>

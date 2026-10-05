@@ -129,6 +129,8 @@ public static class WorkflowNodeConfigurationSnapshotter
                 clonedNode.PortSides[pair.Key] = pair.Value;
             foreach (var portKey in item.HiddenOutputPorts)
                 clonedNode.HiddenOutputPorts.Add(portKey);
+            foreach (var member in item.ExposedOutputMembers)
+                clonedNode.ExposedOutputMembers.Add(member);
             clone.Nodes.Add(clonedNode);
         }
         foreach (var connection in source.Connections)

@@ -30,6 +30,7 @@ public sealed partial class WorkflowDesignerControl : Control
     private WorkflowPortHit? _connectionStart;
     private WorkflowPortSide? _portDropSide;
     private Point _pointer;
+    private (WorkflowCanvasNode Node, WorkflowOutputMember Member, WorkflowPoint Point)? _dataLinkStart;
     private InteractionMode _mode;
     private WorkflowDesignerRect? _overviewAnchorViewport;
     private double _overviewAnchorZoom;
@@ -101,9 +102,11 @@ public sealed partial class WorkflowDesignerControl : Control
         if (_session is null)
             return;
         DrawConnections(e.Graphics);
+        DrawDataLinks(e.Graphics);
         foreach (var node in _session.Canvas.Nodes)
             DrawNode(e.Graphics, node);
         DrawPendingConnection(e.Graphics);
+        DrawPendingDataLink(e.Graphics);
         DrawMarquee(e.Graphics);
         DrawOverviewMap(e.Graphics);
     }
@@ -207,6 +210,16 @@ public sealed partial class WorkflowDesignerControl : Control
             _dragLabelOrigin = labelConnection.LabelPosition;
             _mode = InteractionMode.MoveConnectionLabel;
             Capture = true;
+            return;
+        }
+        if (WorkflowDesignerInteraction.HitDataPort(_session, e.X, e.Y) is { } dataPort)
+        {
+            _session.SelectNode(dataPort.Node.Node.Id);
+            _dataLinkStart = dataPort;
+            _mode = InteractionMode.DataLink;
+            Capture = true;
+            Cursor = Cursors.Cross;
+            Invalidate();
             return;
         }
         var portHit = WorkflowDesignerInteraction.HitSingleOutputSideTarget(_session, e.X, e.Y)
@@ -319,7 +332,7 @@ public sealed partial class WorkflowDesignerControl : Control
             Cursor = _mode == InteractionMode.MovePort ? Cursors.SizeAll : Cursors.Cross;
             Invalidate();
         }
-        else if (_mode == InteractionMode.Connect)
+        else if (_mode is InteractionMode.Connect or InteractionMode.DataLink)
         {
             Invalidate();
         }
@@ -395,6 +408,11 @@ public sealed partial class WorkflowDesignerControl : Control
                 }
             }
         }
+        else if (_mode == InteractionMode.DataLink && _dataLinkStart is { } dataLink)
+        {
+            CompleteDataLink(dataLink.Node, dataLink.Member, e.Location);
+        }
+        _dataLinkStart = null;
         _nodeDrag = null;
         _dragConnection = null;
         _dragLabelConnection = null;
@@ -565,11 +583,119 @@ public sealed partial class WorkflowDesignerControl : Control
             titleFormat);
         DrawPorts(graphics, item, WorkflowPortDirection.Input);
         DrawPorts(graphics, item, WorkflowPortDirection.Output);
+        DrawDataPorts(graphics, item, bounds);
         DrawRuntimeInfo(graphics, headerLayout, runtimeText, runtimeFont);
         DrawConnectionOverrideEndpoints(graphics, item);
         DrawConnectionInputTargets(graphics, item);
         if (selected)
             DrawPortSideTargets(graphics, item, bounds);
+    }
+
+    private static readonly Color DataPortColor = Color.FromArgb(251, 191, 36);
+
+    /// <summary>在节点底部数据端口区绘制分隔线、成员名称和右边缘的菱形数据端口。</summary>
+    private void DrawDataPorts(Graphics graphics, WorkflowCanvasNode node, RectangleF bounds)
+    {
+        if (_session is null || node.ExposedOutputMembers.Count == 0) return;
+        var ports = WorkflowDesignerGeometry.GetDataPortPoints(_session, node);
+        if (ports.Count == 0) return;
+        var zoom = (float)_session.Zoom;
+        var bandTop = bounds.Bottom - (float)WorkflowDesignerGeometry.GetDataBandHeight(ports.Count, _session.Zoom);
+        using var separator = new Pen(WorkflowWinFormsStyle.Get().Border, 1);
+        graphics.DrawLine(separator, bounds.Left + 8 * zoom, bandTop, bounds.Right - 8 * zoom, bandTop);
+        using var font = CanvasFont(WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
+        using var text = new SolidBrush(Color.FromArgb(253, 230, 138));
+        using var fill = new SolidBrush(DataPortColor);
+        using var border = new Pen(Color.FromArgb(15, 23, 42), 1.5f);
+        using var format = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
+        var size = Math.Max(3f, 5f * zoom);
+        var rowHeight = (float)(WorkflowDesignerGeometry.DataPortSpacing * _session.Zoom);
+        foreach (var (member, point) in ports)
+        {
+            var x = (float)point.X;
+            var y = (float)point.Y;
+            graphics.DrawString(member.DisplayName, font, text,
+                new RectangleF(bounds.Left + 10 * zoom, y - rowHeight / 2, x - bounds.Left - 10 * zoom - size - 6 * zoom, rowHeight), format);
+            var diamond = new[] { new PointF(x, y - size), new PointF(x + size, y), new PointF(x, y + size), new PointF(x - size, y) };
+            graphics.FillPolygon(fill, diamond);
+            graphics.DrawPolygon(border, diamond);
+        }
+    }
+
+    /// <summary>绘制数据端口到下游节点的虚线数据连线，表示该参数绑定到了这个输出成员。</summary>
+    private void DrawDataLinks(Graphics graphics)
+    {
+        if (_session is null) return;
+        var links = _session.GetDataLinks();
+        if (links.Count == 0) return;
+        var nodes = _session.Canvas.Nodes.ToDictionary(node => node.Node.Id, StringComparer.Ordinal);
+        using var pen = new Pen(Color.FromArgb(200, DataPortColor), 1.5f) { DashStyle = DashStyle.Dash };
+        using var end = new SolidBrush(DataPortColor);
+        foreach (var link in links.DistinctBy(link => (link.SourceNodeId, link.Member, link.ConsumerNodeId)))
+        {
+            if (!nodes.TryGetValue(link.SourceNodeId, out var source) || !nodes.TryGetValue(link.ConsumerNodeId, out var consumer)) continue;
+            var from = WorkflowDesignerGeometry.GetDataPortPoints(_session, source).FirstOrDefault(port => port.Member.Name == link.Member);
+            if (from.Member is null) continue;
+            var target = WorkflowDesignerGeometry.GetNodeScreenRect(_session, consumer);
+            var to = WorkflowDesignerInteraction.GetSideCenter(target, WorkflowPortSide.Left, _session.Zoom, consumer.ExposedOutputMembers.Count);
+            DrawDataCurve(graphics, pen, from.Point, to);
+            var radius = (float)Math.Max(2, 3 * _session.Zoom);
+            graphics.FillEllipse(end, (float)to.X - radius, (float)to.Y - radius, radius * 2, radius * 2);
+        }
+    }
+
+    /// <summary>拖动数据端口时绘制跟随鼠标的虚线预览。</summary>
+    private void DrawPendingDataLink(Graphics graphics)
+    {
+        if (_mode != InteractionMode.DataLink || _dataLinkStart is not { } start) return;
+        using var pen = new Pen(DataPortColor, 2) { DashStyle = DashStyle.Dash };
+        DrawDataCurve(graphics, pen, start.Point, new WorkflowPoint(_pointer.X, _pointer.Y));
+    }
+
+    private void DrawDataCurve(Graphics graphics, Pen pen, WorkflowPoint from, WorkflowPoint to)
+    {
+        var offset = (float)Math.Max(30, Math.Abs(to.X - from.X) / 2);
+        graphics.DrawBezier(pen,
+            (float)from.X, (float)from.Y,
+            (float)from.X + offset, (float)from.Y,
+            (float)to.X - offset, (float)to.Y,
+            (float)to.X, (float)to.Y);
+    }
+
+    /// <summary>
+    /// 松开数据端口拖线：落在可接收该数据的节点上时建立绑定；目标节点有多个兼容参数时弹出菜单选择。
+    /// </summary>
+    private void CompleteDataLink(WorkflowCanvasNode source, WorkflowOutputMember member, Point location)
+    {
+        if (_session is null) return;
+        var target = WorkflowDesignerInteraction.HitNode(_session, location.X, location.Y);
+        if (target is null || ReferenceEquals(target, source)) return;
+        var targets = _session.GetDataPortTargets(source.Node.Id, member.Name, target.Node.Id);
+        void Bind(WorkflowDataPortTarget item)
+        {
+            try { _session.BindDataPort(source.Node.Id, member.Name, item); }
+            catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+            {
+                InteractionError?.Invoke(this, exception.Message);
+            }
+        }
+        if (targets.Count == 0)
+        {
+            InteractionError?.Invoke(this,
+                $"“{target.Node.Title}”没有可绑定“{member.DisplayName}”的参数：类型不兼容，或该节点不在“{source.Node.Title}”之后执行。");
+            return;
+        }
+        if (targets.Count == 1)
+        {
+            Bind(targets[0]);
+            return;
+        }
+        var menu = new ModernUI.WinForms.ModernContextMenu { Theme = ModernUI.WinForms.ModernTheme.Dark };
+        menu.Items.Add(new ToolStripLabel($"将“{member.DisplayName}”绑定到：") { Enabled = false });
+        foreach (var item in targets)
+            menu.Items.Add(item.DisplayName, null, (_, _) => Bind(item));
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+        menu.Show(this, location);
     }
 
     /// <summary>在节点标题栏右侧绘制执行序号和耗时。</summary>
@@ -1241,6 +1367,8 @@ public sealed partial class WorkflowDesignerControl : Control
         Pan,
         /// <summary>正在从输出端口拖动并创建连接。</summary>
         Connect,
+        /// <summary>正在从数据端口拖线，松开时把下游参数绑定到该输出成员。</summary>
+        DataLink,
         /// <summary>正在调整端口默认所在边。</summary>
         MovePort,
         /// <summary>正在移动连接的手工拐点。</summary>

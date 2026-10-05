@@ -28,6 +28,7 @@ public sealed class WorkflowDocumentJsonStoreTests
         Assert.Equal(WorkflowPortSide.Right, loaded.Canvas.Connections[1].ToSide);
         Assert.Equal(0.7, loaded.Canvas.Connections[1].LabelPosition);
         Assert.Contains("LegacyHidden", loaded.Canvas.Nodes[1].HiddenOutputPorts);
+        Assert.Contains("Elapsed", loaded.Canvas.Nodes[1].ExposedOutputMembers);
     }
 
     [Fact]
@@ -249,6 +250,7 @@ public sealed class WorkflowDocumentJsonStoreTests
         };
         actionItem.SetPortSide(WorkflowPortDirection.Output, WorkflowPorts.Success, WorkflowPortSide.Bottom);
         actionItem.HiddenOutputPorts.Add("LegacyHidden");
+        actionItem.ExposedOutputMembers.Add("Elapsed");
         canvas.Nodes.Add(actionItem);
         canvas.Nodes.Add(new WorkflowCanvasNode
         {
