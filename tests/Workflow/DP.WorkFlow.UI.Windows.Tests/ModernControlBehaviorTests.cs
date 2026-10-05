@@ -31,6 +31,23 @@ public sealed class ModernControlBehaviorTests
         });
     }
 
+    [Fact]
+    public void ModernButton_MouseClickAppliesDialogResultToOwningForm()
+    {
+        RunInSta(() =>
+        {
+            using var form = new Form();
+            using var button = new ModernButton { Text = "取消", DialogResult = DialogResult.Cancel };
+            form.Controls.Add(button);
+
+            // 鼠标点击走 Control.OnClick 而不是 PerformClick；两条路径都必须把结果交给窗体。
+            typeof(Control).GetMethod("OnClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .Invoke(button, [EventArgs.Empty]);
+
+            Assert.Equal(DialogResult.Cancel, form.DialogResult);
+        });
+    }
+
     [Theory]
     [InlineData(typeof(ModernInput), nameof(ModernInput.Text))]
     [InlineData(typeof(ModernMaskedInput), nameof(ModernMaskedInput.Text))]
