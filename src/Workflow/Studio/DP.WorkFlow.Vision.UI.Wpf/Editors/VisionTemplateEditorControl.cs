@@ -13,14 +13,15 @@ internal sealed class VisionTemplateEditorControl : Expander
     private readonly StackPanel _fields = new();
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(4) };
     private readonly Action<int> _show;
-    private readonly Func<Task> _tryInput, _tryManual;
+    private readonly Func<Task> _tryInput;
+    private readonly Func<string, Task> _tryTestImage;
     private readonly Func<string> _reference;
     private int _generation;
     internal bool PickOrigin { get; private set; }
     internal bool PickDirection { get; private set; }
-    internal VisionTemplateEditorControl(VisionTemplateEditorModel model, Action<int> show, Func<Task> tryInput, Func<Task> tryManual, Func<string> reference, bool expanded = false)
+    internal VisionTemplateEditorControl(VisionTemplateEditorModel model, Action<int> show, Func<Task> tryInput, Func<string, Task> tryTestImage, Func<string> reference, bool expanded = false)
     {
-        _model = model; _show = show; _tryInput = tryInput; _tryManual = tryManual; _reference = reference;
+        _model = model; _show = show; _tryInput = tryInput; _tryTestImage = tryTestImage; _reference = reference;
         Header = "模板制作"; Margin = new Thickness(4);
         Content = new ScrollViewer { Content = _fields, MaxHeight = 300, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         Expanded += (_, _) => _show(4); Rebuild(); IsExpanded = expanded;
@@ -65,7 +66,9 @@ internal sealed class VisionTemplateEditorControl : Expander
         Button("在图上设方向", () => { PickDirection = true; PickOrigin = false; _show(4); return Task.CompletedTask; });
         Button("生成模型", _model.BuildAsync);
         Button("输入试匹配", async () => { await _tryInput(); _show(5); });
-        Button("手动预览试匹配", async () => { await _tryManual(); _show(5); });
+        Button("测试图像试匹配…", async () =>
+        { var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "图像|*.png;*.bmp;*.jpg;*.jpeg;*.tif;*.tiff;*.pgm|所有文件|*.*" };
+            if (dialog.ShowDialog(Window.GetWindow(this)) == true) { await _tryTestImage(dialog.FileName); _show(5); } });
         _fields.Children.Add(actions);
         Field("参考原点 X", _model.OriginX.ToString("R", CultureInfo.InvariantCulture), value => _model.OriginX = double.Parse(value, CultureInfo.InvariantCulture));
         Field("参考原点 Y", _model.OriginY.ToString("R", CultureInfo.InvariantCulture), value => _model.OriginY = double.Parse(value, CultureInfo.InvariantCulture));

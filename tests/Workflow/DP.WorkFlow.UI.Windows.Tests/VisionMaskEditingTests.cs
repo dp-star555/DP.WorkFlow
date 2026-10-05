@@ -28,14 +28,14 @@ public sealed class VisionMaskEditingTests
                 if (wpf)
                 {
                     var element = Assert.IsAssignableFrom<System.Windows.Controls.DockPanel>(new DP.WorkFlow.Vision.UI.Wpf.VisionFrameEditorRenderer().CreateElement(page));
-                    var toggle = Assert.Single(element.Children.OfType<System.Windows.Controls.WrapPanel>().SelectMany(p => p.Children.OfType<System.Windows.Controls.CheckBox>()));
-                    Assert.Equal("显示有效掩膜", toggle.Content); toggle.IsChecked = false; Assert.False(model.ShowMask);
+                    var toggle = Assert.Single(element.Children.OfType<System.Windows.Controls.ToolBarTray>().SelectMany(t => t.ToolBars).SelectMany(b => b.Items.OfType<System.Windows.Controls.Primitives.ToggleButton>()));
+                    Assert.Equal("显示有效掩膜", toggle.ToolTip); toggle.IsChecked = false; Assert.False(model.ShowMask);
                     toggle.IsChecked = true; Assert.True(model.ShowMask);
                 }
                 else
                 {
                     using var control = new DP.WorkFlow.Vision.UI.WinForms.VisionFrameEditorRenderer().CreateControl(page);
-                    var toggle = Assert.Single(control.Controls.OfType<System.Windows.Forms.FlowLayoutPanel>().SelectMany(p => p.Controls.OfType<ModernUI.WinForms.ModernCheckbox>()));
+                    var toggle = Assert.Single(control.Controls.OfType<ModernUI.WinForms.ModernToolStrip>().SelectMany(t => t.Items.OfType<System.Windows.Forms.ToolStripButton>()), b => b.CheckOnClick);
                     Assert.Equal("显示有效掩膜", toggle.Text); toggle.Checked = false; Assert.False(model.ShowMask);
                     toggle.Checked = true; Assert.True(model.ShowMask);
                 }

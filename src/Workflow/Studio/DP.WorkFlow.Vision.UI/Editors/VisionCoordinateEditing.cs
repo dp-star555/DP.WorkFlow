@@ -142,7 +142,7 @@ public sealed partial class VisionFrameEditorPageModel
         { CoordinateEditingReady = CanEdit || CanBindCoordinates; return; }
         bool wasReady = CoordinateEditingReady;
         CoordinateEditingReady = false;
-        if (view is 2 or 3) return; // 模板/手动预览只读，不把局部数值画到无关图像。
+        if (view is 2 or 3) return; // 模板/测试图像只读，不把局部数值画到无关图像。
         var system = CaptureCoordinates(binding, frame);
         if (!wasReady || !ReferenceEquals(_displayCoordinates, system))
         {

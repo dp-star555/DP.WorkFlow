@@ -85,6 +85,7 @@
   Field:ModernUI.WinForms.ModernDurationUnit Milliseconds
   Field:ModernUI.WinForms.ModernDurationUnit Minutes
   Field:ModernUI.WinForms.ModernDurationUnit Seconds
+  Field:ModernUI.WinForms.ModernIconKind Brush
   Field:ModernUI.WinForms.ModernIconKind ChevronDown
   Field:ModernUI.WinForms.ModernIconKind ChevronLeft
   Field:ModernUI.WinForms.ModernIconKind ChevronRight
@@ -92,8 +93,11 @@
   Field:ModernUI.WinForms.ModernIconKind Close
   Field:ModernUI.WinForms.ModernIconKind DoubleChevronLeft
   Field:ModernUI.WinForms.ModernIconKind DoubleChevronRight
+  Field:ModernUI.WinForms.ModernIconKind Ellipse
+  Field:ModernUI.WinForms.ModernIconKind Eraser
   Field:ModernUI.WinForms.ModernIconKind Eye
   Field:ModernUI.WinForms.ModernIconKind EyeOff
+  Field:ModernUI.WinForms.ModernIconKind FitWindow
   Field:ModernUI.WinForms.ModernIconKind Info
   Field:ModernUI.WinForms.ModernIconKind Key
   Field:ModernUI.WinForms.ModernIconKind Loading
@@ -101,6 +105,10 @@
   Field:ModernUI.WinForms.ModernIconKind None
   Field:ModernUI.WinForms.ModernIconKind Play
   Field:ModernUI.WinForms.ModernIconKind Plus
+  Field:ModernUI.WinForms.ModernIconKind Pointer
+  Field:ModernUI.WinForms.ModernIconKind Polygon
+  Field:ModernUI.WinForms.ModernIconKind Rectangle
+  Field:ModernUI.WinForms.ModernIconKind RotatedRectangle
   Field:ModernUI.WinForms.ModernIconKind Search
   Field:ModernUI.WinForms.ModernIconKind Settings
   Field:ModernUI.WinForms.ModernIconPlacement Left
