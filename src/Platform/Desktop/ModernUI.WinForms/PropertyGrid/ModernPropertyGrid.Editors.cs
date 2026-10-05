@@ -138,7 +138,13 @@ public sealed partial class ModernPropertyGrid
             LocalizationContext = _localizationContext,
             AccessibleName = Presentation(property).DisplayName
         };
-        text.InnerTextBox.Validated += (_, _) => Commit(property, text.Text);
+        // 只提交用户实际改过的文字：校验所有子控件时，未编辑的旧显示值不能覆盖别处已更新的属性。
+        text.Tag = text.Text;
+        text.InnerTextBox.Validated += (_, _) =>
+        {
+            if (Equals(text.Tag, text.Text)) return;
+            if (Commit(property, text.Text)) text.Tag = text.Text;
+        };
         return text;
     }
 }

@@ -188,6 +188,15 @@ public static class WorkflowVisionAlgorithmProperties
                 if (current.ImplementationId != descriptor.ImplementationId) throw new InvalidOperationException("算法实现已变化，请刷新参数。");
                 return current;
             }
+            if (node is IWorkflowVisionTemplateNode && path.Length == 0 && parameter.Id == "templatePath")
+            {
+                // 模板资源必须和节点确认的参考定义一起更换，只能在“模板”窗口中选择；这里只读显示，避免只改路径造成运行时不一致。
+                entries.Add(WorkflowPropertyEntry.Create(name + "." + parameterName, parameter.DisplayName, category + "/初始化参数",
+                    "只读：请点击“模板”打开模板制作/选择窗口更换模板，应用后路径与参考定义同时更新。", WorkflowPropertyEditorKind.ReadOnly, typeof(string),
+                    () => Current().Settings.TryGetValue(parameter.Id, out var reference) ? reference : string.Empty,
+                    _ => throw new InvalidOperationException("请在“模板”窗口中更换模板。")));
+                return;
+            }
             var entry = WorkflowPropertyEntry.Create(name + "." + parameterName, parameter.DisplayName, category + "/初始化参数",
                 parameter.Description ?? string.Empty, kind, type, () =>
                 {

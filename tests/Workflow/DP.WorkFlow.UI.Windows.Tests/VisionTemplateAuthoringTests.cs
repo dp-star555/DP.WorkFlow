@@ -436,9 +436,11 @@ public sealed class VisionTemplateAuthoringTests
             Assert.True(maker.Draft.TrialResult!.Found, maker.Draft.TestSummary);
             child.ApplyChanges();
         }
-        Assert.Equal(oldReference, node.TemplateResourcePath);
+        // 模板窗口应用后直接提交到正式节点，不需要再应用节点窗口。
+        var applied = node.TemplateResourcePath;
+        Assert.NotEqual(oldReference, applied);
         parent.ApplyChanges();
-        Assert.NotEqual(oldReference, node.TemplateResourcePath);
+        Assert.Equal(applied, node.TemplateResourcePath);
         Exception? editingFailure = null;
         var editingThread = UiTestThread.Create(() =>
         {
@@ -1189,14 +1191,17 @@ public sealed class VisionTemplateAuthoringTests
             page.Draft.Editor.Load(new RoiDocument(new[] { new RoiDefinition("template", new RectangleGeometry(new PointD(2, 2), 2, 2)) }));
             await page.Draft.BuildAsync(); accepted.ApplyChanges();
         }
-        Assert.Equal(EWorkflowVisionTemplateSource.ImageBinding, ((IWorkflowVisionTemplateNode)node).TemplateSource);
+        // 模板窗口应用即提交到正式节点；节点窗口副本同步更新。
+        Assert.Equal(EWorkflowVisionTemplateSource.Resource, ((IWorkflowVisionTemplateNode)node).TemplateSource);
         Assert.Equal(EWorkflowVisionTemplateSource.Resource, ((IWorkflowVisionTemplateNode)parent.EditingNode).TemplateSource);
         parent.ApplyChanges();
         Assert.Equal(EWorkflowVisionTemplateSource.Resource, ((IWorkflowVisionTemplateNode)node).TemplateSource);
         Assert.Equal(original, ((IWorkflowVisionTemplateNode)node).TemplateResourceId);
         Assert.False(node.FullImage); Assert.Equal(1, node.X); Assert.Equal(2, node.Width);
-        Assert.True(session.Undo()); Assert.Equal(EWorkflowVisionTemplateSource.ImageBinding, ((IWorkflowVisionTemplateNode)node).TemplateSource);
-        Assert.True(session.Redo());
+        // 两次提交（模板窗口、节点窗口）各一步撤销。
+        Assert.True(session.Undo()); Assert.True(session.Undo());
+        Assert.Equal(EWorkflowVisionTemplateSource.ImageBinding, ((IWorkflowVisionTemplateNode)node).TemplateSource);
+        Assert.True(session.Redo()); Assert.True(session.Redo());
     }
 
     [Fact]

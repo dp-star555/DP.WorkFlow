@@ -330,9 +330,13 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
     /// <summary>扩展页面提供的确认条件。</summary>
     public bool CanApplyChanges => !_disposed && Pages.Select(p => p.Model).OfType<IWorkflowNodeEditorCommitReadiness>().All(p => p.CanCommit);
 
-    /// <summary>从当前编辑副本打开另一层隔离草稿，确认只修改父草稿。</summary>
+    /// <summary>从当前编辑副本打开另一层隔离草稿；应用时写回父草稿并直接提交到正式节点。</summary>
     public WorkflowNodeEditorModel CreatePropertyEditor(string key) => new(EditingSession, EntryNodeId, EditingNode.Id,
-        _providers, _choiceProvider, _additionalProperties, key);
+        _providers, _choiceProvider, _additionalProperties, key) { _parent = this };
+
+    // 从节点窗口打开的独立属性窗口（如模板制作/选择）：应用时先写回节点窗口的编辑副本，再直接提交到正式节点，
+    // 不需要再点节点窗口的“应用”；节点窗口的属性面板随编辑会话变化自动刷新。
+    private WorkflowNodeEditorModel? _parent;
 
     /// <summary>将编辑副本中的参数作为一个整体提交到正式节点。</summary>
     public void ApplyChanges()
@@ -352,6 +356,7 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
             Node.Id,
             target => WorkflowNodeConfigurationSnapshotter.Restore(target, editedSnapshot),
             newHiddenPorts);
+        _parent?.ApplyChanges();
     }
 
     /// <summary>创建包含目标节点浅复制的隔离编辑会话，避免确认前修改原始节点。</summary>
