@@ -33,6 +33,7 @@ public sealed class WorkflowStudioRuntimeBinding : IDisposable
         _navigator = navigator ?? throw new ArgumentNullException(nameof(navigator));
         _dispatchContext = SynchronizationContext.Current;
         _host.SnapshotChanged += OnSnapshotChanged;
+        BindOutputs();
         _navigator.SetRuntimeSnapshot(_host.GetSnapshot());
     }
 
@@ -60,6 +61,7 @@ public sealed class WorkflowStudioRuntimeBinding : IDisposable
     {
         ThrowIfDisposed();
         _navigator = navigator ?? throw new ArgumentNullException(nameof(navigator));
+        BindOutputs();
         _navigator.SetRuntimeSnapshot(_host.GetSnapshot());
     }
 
@@ -120,6 +122,25 @@ public sealed class WorkflowStudioRuntimeBinding : IDisposable
     {
         ThrowIfDisposed();
         _host.Cancel();
+    }
+
+    /// <summary>
+    /// 让根画布和当前画布可以查询引擎最近输出；会话按自身快照的 RunId 过滤，
+    /// 因此子画布或旧运行不会显示其他运行的输出。
+    /// </summary>
+    private void BindOutputs()
+    {
+        _navigator.RootSession.NodeOutputProvider = FindLatestOutput;
+        _navigator.CurrentSession.NodeOutputProvider = FindLatestOutput;
+    }
+
+    private WorkflowNodeOutput? FindLatestOutput(string nodeId)
+    {
+        if (_disposed || _host.Engine?.RunState is not { } runState) return null;
+        var invalidated = runState.InvalidatedOutputSequences;
+        return runState.NodeOutputs.LastOrDefault(output =>
+            string.Equals(output.NodeId, nodeId, StringComparison.Ordinal)
+            && !invalidated.Contains(output.ExecutionSequence));
     }
 
     /// <summary>解除事件订阅并释放当前模型持有的资源。</summary>
@@ -194,6 +215,7 @@ public sealed class WorkflowStudioRuntimeBinding : IDisposable
             _lastAppliedRunId = snapshot.RunId;
             _lastAppliedSequence = snapshot.Sequence;
         }
+        BindOutputs();
         if (RunTarget == WorkflowStudioRunTarget.CurrentCanvas && _navigator.Depth > 0)
             _navigator.CurrentSession.SetRuntimeSnapshot(snapshot);
         else

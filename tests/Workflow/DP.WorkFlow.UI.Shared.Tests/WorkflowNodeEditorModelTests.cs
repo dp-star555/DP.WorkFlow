@@ -13,7 +13,7 @@ public sealed class WorkflowNodeEditorModelTests
 
         await using var model = new WorkflowNodeEditorModel(session, node.Id, node.Id);
 
-        Assert.Equal(new[] { "Properties", "Script", "ScriptDiagnostics" }, model.Pages.Select(page => page.PageId));
+        Assert.Equal(new[] { "Properties", "Script", "ScriptDiagnostics", "Results" }, model.Pages.Select(page => page.PageId));
         var script = Assert.IsType<WorkflowScriptEditorPageModel>(model.Pages.Single(page => page.PageId == "Script").Model);
         var sessionRefreshes = 0;
         model.EditingSession.Changed += (_, _) => sessionRefreshes++;

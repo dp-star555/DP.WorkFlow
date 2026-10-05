@@ -42,6 +42,47 @@ internal static class WorkflowWpfStyle
         window.Resources[typeof(DataGrid)] = CreateDataGridStyle();
         window.Resources[typeof(DataGridColumnHeader)] = CreateColumnHeaderStyle();
         window.Resources[typeof(GroupBox)] = CreateGroupStyle();
+        window.Resources[typeof(TabControl)] = CreateTabControlStyle();
+        window.Resources[typeof(TabItem)] = CreateTabItemStyle();
+    }
+
+    private static Style CreateTabControlStyle()
+    {
+        var style = new Style(typeof(TabControl));
+        style.Setters.Add(new Setter(Control.BackgroundProperty, WindowBrush));
+        style.Setters.Add(new Setter(Control.BorderBrushProperty, BorderBrush));
+        style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0, 1, 0, 0)));
+        style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0, 4, 0, 0)));
+        return style;
+    }
+
+    /// <summary>圆角标签头：未选中透明，悬停浅灰，选中使用强调色下划线与表面色背景。</summary>
+    private static Style CreateTabItemStyle()
+    {
+        var border = new FrameworkElementFactory(typeof(Border), "Chrome");
+        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6, 6, 0, 0));
+        border.SetValue(Border.BorderThicknessProperty, new Thickness(0, 0, 0, 2));
+        border.SetValue(Border.BorderBrushProperty, Brushes.Transparent);
+        border.SetValue(Border.BackgroundProperty, Brushes.Transparent);
+        border.SetValue(Border.PaddingProperty, new Thickness(16, 6, 16, 6));
+        border.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 0, 2, 0));
+        var content = new FrameworkElementFactory(typeof(ContentPresenter));
+        content.SetValue(ContentPresenter.ContentSourceProperty, "Header");
+        content.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+        border.AppendChild(content);
+        var template = new ControlTemplate(typeof(TabItem)) { VisualTree = border };
+        template.Triggers.Add(new Trigger { Property = UIElement.IsMouseOverProperty, Value = true,
+            Setters = { new Setter(Border.BackgroundProperty, HoverBrush, "Chrome") } });
+        template.Triggers.Add(new Trigger { Property = TabItem.IsSelectedProperty, Value = true,
+            Setters =
+            {
+                new Setter(Border.BackgroundProperty, SurfaceBrush, "Chrome"),
+                new Setter(Border.BorderBrushProperty, AccentBrush, "Chrome")
+            } });
+        var style = new Style(typeof(TabItem));
+        style.Setters.Add(new Setter(Control.ForegroundProperty, TextBrush));
+        style.Setters.Add(new Setter(Control.TemplateProperty, template));
+        return style;
     }
 
     private static Style CreateButtonStyle()

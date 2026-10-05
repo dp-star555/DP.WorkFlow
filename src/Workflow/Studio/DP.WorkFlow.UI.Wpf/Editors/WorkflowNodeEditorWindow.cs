@@ -44,7 +44,8 @@ public sealed class WorkflowNodeEditorWindow : Window
         _editMappings = editMappings;
         Title = model.PropertyEditorKey == null ? $"节点信息 - {model.Node.Title}"
             : $"{model.Pages.Single(p => p.PropertyEditorKey == model.PropertyEditorKey).Title} - {model.Node.Title}";
-        var hasSpecialContent = model.Pages.Any(page => page.Kind is not (WorkflowNodeEditorPageKind.Properties or WorkflowNodeEditorPageKind.Diagnostics));
+        var hasSpecialContent = model.Pages.Any(page => page.Kind is not (WorkflowNodeEditorPageKind.Properties
+            or WorkflowNodeEditorPageKind.Diagnostics or WorkflowNodeEditorPageKind.Results));
         // 脚本窗口要适配常见的 1366×768 工作区，不能默认超出屏幕高度。
         Width = hasSpecialContent ? 1060 : 740;
         Height = hasSpecialContent ? 720 : 680;
@@ -55,13 +56,17 @@ public sealed class WorkflowNodeEditorWindow : Window
         WorkflowWpfStyle.Apply(this);
 
         var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(model.PropertyEditorKey == null ? 112 : 0) });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(48) });
-        if (model.PropertyEditorKey == null) root.Children.Add(CreateHeader());
+        if (model.PropertyEditorKey == null)
+        {
+            // 标题在参数页“基本信息”中编辑；窗口标题跟随编辑副本同步。
+            model.EditingSession.Changed += OnEditingSessionChanged;
+            Closed += (_, _) => model.EditingSession.Changed -= OnEditingSessionChanged;
+        }
         _navigation = new ListBox { Visibility = Visibility.Collapsed };
         _host = new ContentControl { Content = CreateWorkspace() };
-        Grid.SetRow(_host, 1);
+        Grid.SetRow(_host, 0);
         root.Children.Add(_host);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         var apply = Button("应用");
@@ -81,7 +86,7 @@ public sealed class WorkflowNodeEditorWindow : Window
             void UpdateReadiness() { apply.IsEnabled = ok.IsEnabled = model.CanApplyChanges; }
             readiness.Tick += (_, _) => UpdateReadiness(); UpdateReadiness(); readiness.Start(); Closed += (_, _) => readiness.Stop();
         }
-        Grid.SetRow(buttons, 2);
+        Grid.SetRow(buttons, 1);
         root.Children.Add(buttons);
         Content = root;
         Loaded += (_, _) => FitToWorkingArea();
@@ -96,76 +101,32 @@ public sealed class WorkflowNodeEditorWindow : Window
         Height = Math.Min(Height, Math.Max(MinHeight, workingArea.Height - 24));
     }
 
-    /// <summary>创建Header。</summary>
-    private FrameworkElement CreateHeader()
+    private void OnEditingSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
     {
-        var grid = new Grid { Margin = new Thickness(12, 8, 12, 8) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(92) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        for (var index = 0; index < 3; index++) grid.RowDefinitions.Add(new RowDefinition());
-        AddHeaderRow(grid, 0, "节点名称", _model.EditingNode.Id, true);
-        AddHeaderRow(grid, 1, "节点类型", _model.EditingNode.NodeType, true);
-        AddHeaderRow(grid, 2, "标题", _model.EditingNode.Title, false);
-        return grid;
+        if (e.Kind != WorkflowDesignerChangeKind.Document) return;
+        if (Dispatcher.CheckAccess()) Title = $"节点信息 - {_model.EditingNode.Title}";
+        else _ = Dispatcher.BeginInvoke(() => Title = $"节点信息 - {_model.EditingNode.Title}");
     }
 
-    /// <summary>添加Header Row。</summary>
-    /// <param name="grid">“grid”参数。</param>
-    /// <param name="row">“row”参数。</param>
-    /// <param name="title">“title”参数。</param>
-    /// <param name="value">要转换或设置的值。</param>
-    /// <param name="readOnly">“readOnly”参数。</param>
-    private void AddHeaderRow(Grid grid, int row, string title, string value, bool readOnly)
-    {
-        var label = new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(4) };
-        Grid.SetRow(label, row);
-        grid.Children.Add(label);
-        var text = new TextBox { Text = value, IsReadOnly = readOnly, Margin = new Thickness(4), VerticalContentAlignment = VerticalAlignment.Center };
-        if (!readOnly) text.LostKeyboardFocus += (_, _) =>
-        {
-            if (_model.EditingNode.Title == text.Text) return;
-            _model.EditingSession.ExecuteNodeConfigurationChange(
-                _model.EditingNode.Id,
-                node => node.Title = text.Text);
-            Title = $"节点信息 - {_model.EditingNode.Title}";
-        };
-        Grid.SetRow(text, row);
-        Grid.SetColumn(text, 1);
-        grid.Children.Add(text);
-    }
-
-    /// <summary>创建Workspace。</summary>
+    /// <summary>
+    /// 构建窗口主体：参数、领域页面（如视觉图像与 ROI）、子流程/脚本以及通用运行结果按页面顺序分页显示。
+    /// 只有一个页面时直接显示该页；脚本与子流程是节点的主要编辑内容，打开窗口时默认选中。
+    /// </summary>
     private FrameworkElement CreateWorkspace()
     {
         if (_model.PropertyEditorKey is { } key)
             return CreatePageElement(_model.Pages.Single(p => p.PropertyEditorKey == key));
-        var propertiesPage = _model.Pages.Single(page => page.Kind == WorkflowNodeEditorPageKind.Properties);
-        var properties = CreatePageElement(propertiesPage);
-        var specialPages = _model.Pages
-            .Where(page => page.PropertyEditorKey == null && page.Kind is not (WorkflowNodeEditorPageKind.Properties or WorkflowNodeEditorPageKind.Diagnostics))
+        var pages = _model.Pages
+            .Where(page => page.PropertyEditorKey == null && page.Kind != WorkflowNodeEditorPageKind.Diagnostics)
             .ToArray();
-        if (specialPages.Length == 0) return properties;
+        if (pages.Length == 1) return CreatePageElement(pages[0]);
 
-        var specialHost = new Grid();
-        for (var index = 0; index < specialPages.Length; index++)
-        {
-            specialHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            var special = CreatePageElement(specialPages[index]);
-            var group = new GroupBox { Header = specialPages[index].Title, Content = special, Margin = new Thickness(3) };
-            Grid.SetRow(group, index);
-            specialHost.Children.Add(group);
-        }
-        var layout = new Grid();
-        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(340), MinWidth = 280 });
-        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
-        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 360 });
-        layout.Children.Add(properties);
-        var splitter = new GridSplitter { Width = 5, HorizontalAlignment = HorizontalAlignment.Stretch, Background = Brush(51, 51, 55) };
-        Grid.SetColumn(splitter, 1);
-        layout.Children.Add(splitter);
-        Grid.SetColumn(specialHost, 2);
-        layout.Children.Add(specialHost);
-        return layout;
+        var tabs = new TabControl { Margin = new Thickness(6, 6, 6, 0) };
+        foreach (var page in pages)
+            tabs.Items.Add(new TabItem { Header = page.Title, Name = page.PageId, Content = CreatePageElement(page) });
+        var primary = Array.FindIndex(pages, page => page.Kind is WorkflowNodeEditorPageKind.Script or WorkflowNodeEditorPageKind.SubWorkflow);
+        tabs.SelectedIndex = Math.Max(0, primary);
+        return tabs;
     }
 
     /// <summary>应用Changes。</summary>
@@ -200,8 +161,38 @@ public sealed class WorkflowNodeEditorWindow : Window
             WorkflowNodeEditorPageKind.SubWorkflow => CreateSubWorkflow((WorkflowSubWorkflowEditorPageModel)page.Model),
             WorkflowNodeEditorPageKind.Script => CreateScript((WorkflowScriptEditorPageModel)page.Model),
             WorkflowNodeEditorPageKind.Diagnostics => CreateDiagnostics((WorkflowScriptEditorPageModel)page.Model),
+            WorkflowNodeEditorPageKind.Results => CreateResults((WorkflowNodeResultPageModel)page.Model),
             _ => throw new InvalidOperationException($"WPF 不支持节点详情页类型 {page.Kind}：{page.PageId}。")
         };
+    }
+
+    /// <summary>创建只读运行结果表；运行快照变化时在 UI 线程刷新。</summary>
+    private static FrameworkElement CreateResults(WorkflowNodeResultPageModel model)
+    {
+        var grid = new DataGrid
+        {
+            AutoGenerateColumns = false,
+            IsReadOnly = true,
+            CanUserAddRows = false,
+            CanUserSortColumns = false,
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            SelectionMode = DataGridSelectionMode.Single,
+            Margin = new Thickness(4)
+        };
+        grid.Columns.Add(new DataGridTextColumn { Header = "分组", Binding = new System.Windows.Data.Binding(nameof(WorkflowNodeResultItem.Category)), Width = new DataGridLength(110) });
+        grid.Columns.Add(new DataGridTextColumn { Header = "名称", Binding = new System.Windows.Data.Binding(nameof(WorkflowNodeResultItem.Name)), Width = new DataGridLength(180) });
+        grid.Columns.Add(new DataGridTextColumn { Header = "值", Binding = new System.Windows.Data.Binding(nameof(WorkflowNodeResultItem.Value)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
+        void Refresh() => grid.ItemsSource = model.GetItems();
+        void OnChanged(object? sender, EventArgs e)
+        {
+            if (grid.Dispatcher.CheckAccess()) Refresh();
+            else _ = grid.Dispatcher.BeginInvoke(Refresh);
+        }
+        model.Changed += OnChanged;
+        grid.Unloaded += (_, _) => model.Changed -= OnChanged;
+        grid.Loaded += (_, _) => { model.Changed -= OnChanged; model.Changed += OnChanged; Refresh(); };
+        Refresh();
+        return grid;
     }
 
     /// <summary>创建Properties。</summary>
@@ -214,7 +205,7 @@ public sealed class WorkflowNodeEditorWindow : Window
             Session = page.Session,
             EntryNodeId = page.EntryNodeId,
             HideScriptProperty = _model.EditingNode is IWorkflowScriptNode,
-            HideSpecialActions = _model.Pages.Any(item => item.Kind != WorkflowNodeEditorPageKind.Properties)
+            HideSpecialActions = _model.Pages.Any(item => item.Kind is not (WorkflowNodeEditorPageKind.Properties or WorkflowNodeEditorPageKind.Results))
         };
         panel.PropertyActionRequested += async (_, request) =>
         {
@@ -314,8 +305,6 @@ public sealed class WorkflowNodeEditorWindow : Window
 
     /// <summary>执行 Thickness 相关处理。</summary>
     private static Button Button(string text) => new() { Content = text, Margin = new Thickness(5), Padding = new Thickness(9, 4, 9, 4) };
-    /// <summary>执行 From Rgb 相关处理。</summary>
-    private static SolidColorBrush Brush(byte r, byte g, byte b) => new(Color.FromRgb(r, g, b));
     /// <summary>定义 EditorPageItem 类型。</summary>
     private sealed record EditorPageItem(WorkflowNodeEditorPageDescriptor Page) { public string Title => Page.Title; }
 }

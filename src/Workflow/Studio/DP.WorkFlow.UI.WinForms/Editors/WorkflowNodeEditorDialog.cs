@@ -53,20 +53,18 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         Text = model.PropertyEditorKey == null ? $"节点信息 - {model.Node.Title}"
             : $"{model.Pages.Single(p => p.PropertyEditorKey == model.PropertyEditorKey).Title} - {model.Node.Title}";
 
-        var hasSpecialContent = model.Pages.Any(page => page.Kind is not (WorkflowNodeEditorPageKind.Properties or WorkflowNodeEditorPageKind.Diagnostics));
+        var hasSpecialContent = model.Pages.Any(page => page.Kind is not (WorkflowNodeEditorPageKind.Properties
+            or WorkflowNodeEditorPageKind.Diagnostics or WorkflowNodeEditorPageKind.Results));
         // 默认尺寸应能完整放入常见的 1366×768 工作区，并给宿主任务栏保留空间。
         ClientSize = hasSpecialContent ? new Size(1040, 680) : new Size(720, 640);
         MinimumSize = hasSpecialContent ? new Size(760, 520) : new Size(620, 480);
 
-        nodeIdTextBox.Text = model.EditingNode.Id;
-        nodeTypeTextBox.Text = model.EditingNode.NodeType;
-        titleTextBox.Text = model.EditingNode.Title;
-        if (model.PropertyEditorKey != null)
+        if (model.PropertyEditorKey == null)
         {
-            headerLayout.Visible = false;
-            rootLayout.RowStyles[0].Height = 0;
+            // 标题在参数页“基本信息”中编辑；窗口标题跟随编辑副本同步。
+            model.EditingSession.Changed += OnEditingSessionChanged;
+            FormClosed += (_, _) => model.EditingSession.Changed -= OnEditingSessionChanged;
         }
-        titleTextBox.InnerTextBox.Validated += (_, _) => CommitEditedTitle();
         applyButton.Click += (_, _) => ApplyChanges();
         okButton.Click += (_, _) =>
         {
@@ -113,20 +111,15 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         return null;
     }
 
-    /// <summary>把标题文本框内容写入编辑副本，而不是直接修改正式节点。</summary>
-    private void CommitEditedTitle()
+    private void OnEditingSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
     {
-        if (_model is null || _model.EditingNode.Title == titleTextBox.Text)
-            return;
-        _model.EditingSession.ExecuteNodeConfigurationChange(
-            _model.EditingNode.Id,
-            node => node.Title = titleTextBox.Text);
-        Text = $"节点信息 - {_model.EditingNode.Title}";
+        if (e.Kind == WorkflowDesignerChangeKind.Document && _model is not null && !IsDisposed)
+            Text = $"节点信息 - {_model.EditingNode.Title}";
     }
 
     /// <summary>
-    /// 构建节点窗口主体。普通节点只返回参数面板；存在特殊能力时返回左右分栏，
-    /// 左侧固定为参数，右侧按页面顺序纵向放置子流程、脚本、图像或自定义内容。
+    /// 构建节点窗口主体：参数、领域页面（如视觉图像与 ROI）、子流程/脚本以及通用运行结果按页面顺序分页显示。
+    /// 只有一个页面时直接显示该页；脚本与子流程是节点的主要编辑内容，打开窗口时默认选中。
     /// </summary>
     private Control CreateWorkspace()
     {
@@ -136,45 +129,28 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             editor.Dock = DockStyle.Fill;
             return editor;
         }
-        var propertiesPage = Model.Pages.Single(page => page.Kind == WorkflowNodeEditorPageKind.Properties);
-        var properties = CreatePageControl(propertiesPage);
-        properties.Dock = DockStyle.Fill;
-        var specialPages = Model.Pages
-            .Where(page => page.PropertyEditorKey == null && page.Kind is not (WorkflowNodeEditorPageKind.Properties or WorkflowNodeEditorPageKind.Diagnostics))
+        var pages = Model.Pages
+            .Where(page => page.PropertyEditorKey == null && page.Kind != WorkflowNodeEditorPageKind.Diagnostics)
             .ToArray();
-        if (specialPages.Length == 0) return properties;
-
-        var specialHost = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = specialPages.Length };
-        for (var index = 0; index < specialPages.Length; index++)
+        if (pages.Length == 1)
         {
-            specialHost.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / specialPages.Length));
-            var special = CreatePageControl(specialPages[index]);
-            special.Dock = DockStyle.Fill;
-            var group = new GroupBox { Text = specialPages[index].Title, Dock = DockStyle.Fill, Padding = new Padding(6) };
-            group.Controls.Add(special);
-            specialHost.Controls.Add(group, 0, index);
+            var single = CreatePageControl(pages[0]);
+            single.Dock = DockStyle.Fill;
+            return single;
         }
-        var split = new SplitContainer
+
+        var tabs = new ModernUI.WinForms.ModernTabControl { Dock = DockStyle.Fill, Theme = ModernUI.WinForms.ModernTheme.Dark };
+        foreach (var page in pages)
         {
-            Dock = DockStyle.Fill,
-            Orientation = Orientation.Vertical,
-            FixedPanel = FixedPanel.Panel1
-        };
-        var initialDistanceApplied = false;
-        split.SizeChanged += (_, _) =>
-        {
-            if (initialDistanceApplied || split.ClientSize.Width < 640) return;
-            var maximum = split.ClientSize.Width - split.SplitterWidth - 320;
-            if (maximum < 260) return;
-            var preferred = (int)Math.Round(split.ClientSize.Width * 0.32d);
-            split.SplitterDistance = Math.Clamp(preferred, 280, Math.Min(360, maximum));
-            split.Panel1MinSize = Math.Min(280, split.SplitterDistance);
-            split.Panel2MinSize = Math.Min(320, split.ClientSize.Width - split.SplitterDistance - split.SplitterWidth);
-            initialDistanceApplied = true;
-        };
-        split.Panel1.Controls.Add(properties);
-        split.Panel2.Controls.Add(specialHost);
-        return split;
+            var content = CreatePageControl(page);
+            content.Dock = DockStyle.Fill;
+            var tab = new TabPage(page.Title) { Name = page.PageId, Padding = new Padding(4) };
+            tab.Controls.Add(content);
+            tabs.TabPages.Add(tab);
+        }
+        var primary = Array.FindIndex(pages, page => page.Kind is WorkflowNodeEditorPageKind.Script or WorkflowNodeEditorPageKind.SubWorkflow);
+        tabs.SelectedIndex = Math.Max(0, primary);
+        return tabs;
     }
 
     /// <summary>校验当前子控件，并将编辑副本作为一次可撤销操作提交到正式节点。</summary>
@@ -213,6 +189,7 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             WorkflowNodeEditorPageKind.SubWorkflow => CreateSubWorkflow((WorkflowSubWorkflowEditorPageModel)page.Model),
             WorkflowNodeEditorPageKind.Script => CreateScript((WorkflowScriptEditorPageModel)page.Model),
             WorkflowNodeEditorPageKind.Diagnostics => CreateDiagnostics((WorkflowScriptEditorPageModel)page.Model),
+            WorkflowNodeEditorPageKind.Results => new WorkflowNodeResultsControl((WorkflowNodeResultPageModel)page.Model),
             _ => throw new InvalidOperationException($"WinForms 不支持节点详情页类型 {page.Kind}：{page.PageId}。")
         };
     }
@@ -228,7 +205,7 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             EntryNodeId = page.EntryNodeId,
             Dock = DockStyle.Fill,
             HideScriptProperty = Model.EditingNode is IWorkflowScriptNode,
-            HideSpecialActions = Model.Pages.Any(item => item.Kind != WorkflowNodeEditorPageKind.Properties)
+            HideSpecialActions = Model.Pages.Any(item => item.Kind is not (WorkflowNodeEditorPageKind.Properties or WorkflowNodeEditorPageKind.Results))
         };
         panel.EditError += (_, message) => MessageBox.Show(this, message, "参数错误", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         panel.PropertyActionRequested += (_, request) =>

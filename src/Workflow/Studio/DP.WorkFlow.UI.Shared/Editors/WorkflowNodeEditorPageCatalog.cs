@@ -15,7 +15,8 @@ public sealed class WorkflowNodeEditorPageCatalog
     public static WorkflowNodeEditorPageCatalog CreateDefault() => new WorkflowNodeEditorPageCatalog()
         .Register(new WorkflowPropertyEditorPageProvider())
         .Register(new WorkflowSubWorkflowEditorPageProvider())
-        .Register(new WorkflowScriptEditorPageProvider());
+        .Register(new WorkflowScriptEditorPageProvider())
+        .Register(new WorkflowNodeResultPageProvider());
 
     /// <summary>注册一个节点详情页提供器。</summary>
     /// <param name="provider">UI 无关页面提供器。</param>

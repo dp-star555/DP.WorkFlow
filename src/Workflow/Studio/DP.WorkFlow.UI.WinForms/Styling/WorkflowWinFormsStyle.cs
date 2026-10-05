@@ -45,6 +45,15 @@ internal static class WorkflowWinFormsStyle
             propertyGrid.Theme = ModernUI.WinForms.ModernTheme.Dark;
             return;
         }
+        // 标签页外壳自绘，只设置主题；各页内容仍按普通宿主控件继续着色。
+        if (control is ModernUI.WinForms.ModernTabControl tabs)
+        {
+            tabs.Theme = ModernUI.WinForms.ModernTheme.Dark;
+            foreach (TabPage page in tabs.TabPages)
+                foreach (Control child in page.Controls)
+                    ApplyControl(child, palette);
+            return;
+        }
         if (control is ModernUI.WinForms.ModernControl or ModernUI.WinForms.ModernMenuStrip or
             ModernUI.WinForms.ModernToolStrip or ModernUI.WinForms.ModernGroupBox or
             ModernUI.WinForms.ModernListBox or ModernUI.WinForms.ModernStatusBar)
