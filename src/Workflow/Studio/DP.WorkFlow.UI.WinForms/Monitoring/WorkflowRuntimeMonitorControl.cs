@@ -13,46 +13,33 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     private const int MaximumTraceRangeDays = 90;
     private readonly WorkflowRuntimeMonitorModel _model = new();
     private readonly ILocalizationManager _defaultLocalizationManager = WorkflowUiLocalization.CreateManager(CultureInfo.GetCultureInfo("zh-CN"));
-    private readonly ModernCommand _refreshCommand;
-    private readonly ModernCommand _pauseCommand;
     private readonly ModernCommand _exportCommand;
-    private readonly ModernCommand _resetFiltersCommand;
+    private readonly ModernContextMenu _listMenu = new() { Theme = ModernTheme.Dark };
+    private ListView? _menuList;
     private WorkflowStudioRuntimeBinding? _runtimeBinding;
     private ILocalizationContext _localizationContext = null!;
-    private bool _synchronizingPause;
 
     /// <summary>初始化运行时监视控件及其共享命令。</summary>
     public WorkflowRuntimeMonitorControl()
     {
         InitializeComponent();
-        _refreshCommand = new ModernCommand(RefreshRuntimeData)
+        // 每张表右键菜单导出当前表格；Ctrl+Shift+E 导出轨迹。
+        _exportCommand = new ModernCommand(() => ExportCsv(_menuList ?? traceListView))
         {
-            Icon = ModernIconKind.Search,
-            ShortcutKeys = Keys.Control | Keys.Shift | Keys.R,
-            CanExecutePredicate = () => RuntimeBinding is not null
-        };
-        _pauseCommand = new ModernCommand(ToggleTracePause)
-        {
-            Icon = ModernIconKind.Play,
-            CheckOnExecute = true
-        };
-        _exportCommand = new ModernCommand(ExportTraceCsv)
-        {
-            Icon = ModernIconKind.Info,
+            Icon = ModernIconKind.Save,
             ShortcutKeys = Keys.Control | Keys.Shift | Keys.E,
-            CanExecutePredicate = () => _model.TraceEntries.Count > 0
+            CanExecutePredicate = () => (_menuList ?? traceListView).Items.Count > 0
         };
-        _resetFiltersCommand = new ModernCommand(ResetFilters)
+        _listMenu.SetCommands(new[] { _exportCommand });
+        _listMenu.Opening += (_, e) =>
         {
-            Icon = ModernIconKind.Close,
-            CanExecutePredicate = HasActiveFilters
+            _menuList = _listMenu.SourceControl as ListView;
+            _exportCommand.RaiseCanExecuteChanged();
+            if (_menuList is null) e.Cancel = true;
         };
-        runtimeCommandBar.Commands.Add(_refreshCommand);
-        runtimeCommandBar.Commands.Add(_pauseCommand);
-        runtimeCommandBar.Commands.Add(new ModernCommand { Kind = ModernCommandKind.Separator });
-        runtimeCommandBar.Commands.Add(_exportCommand);
-        runtimeCommandBar.Commands.Add(_resetFiltersCommand);
-        commandManager.Commands.Add(_refreshCommand);
+        _listMenu.Closed += (_, _) => _menuList = null;
+        foreach (var list in new ListView[] { tokensListView, scopesListView, childrenListView, traceListView, outputListView, timingListView })
+            list.ContextMenuStrip = _listMenu;
         commandManager.Commands.Add(_exportCommand);
 
         traceFilterTextBox.TextChanged += TraceFilterChanged;
@@ -97,7 +84,6 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
             if (_runtimeBinding is not null) _runtimeBinding.StateChanged -= OnRuntimeChanged;
             _runtimeBinding = value;
             if (_runtimeBinding is not null) _runtimeBinding.StateChanged += OnRuntimeChanged;
-            _refreshCommand.RaiseCanExecuteChanged();
             RefreshRuntimeData();
         }
     }
@@ -116,7 +102,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
 
     /// <summary>获取当前语言下的运行摘要。</summary>
     [Browsable(false)]
-    public string SummaryText => runtimeAlert.Text;
+    public string SummaryText { get; private set; } = string.Empty;
 
     /// <summary>获取日期范围是否通过页面验证。</summary>
     [Browsable(false)]
@@ -163,7 +149,6 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     private void TraceFilterChanged(object? sender, EventArgs e)
     {
         _model.SetTraceFilter(traceFilterTextBox.Text);
-        _resetFiltersCommand.RaiseCanExecuteChanged();
     }
 
     private void TraceDateRangeChanged(object? sender, EventArgs e)
@@ -176,50 +161,14 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
                 validationProvider.SetValidation(traceDateRange, ModernValidationState.Error,
                     LocalizationContext.Text(WorkflowUiTextKeys.RuntimeRangeTooLong,
                         new Dictionary<string, object?> { ["days"] = MaximumTraceRangeDays }));
-                _resetFiltersCommand.RaiseCanExecuteChanged();
                 return;
             }
         }
         validationProvider.SetValidation(traceDateRange, ModernValidationState.None);
         _model.SetTraceDateRange(traceDateRange.StartDate, traceDateRange.EndDate);
-        _resetFiltersCommand.RaiseCanExecuteChanged();
     }
 
-    private void PauseTraceChanged(object? sender, EventArgs e)
-    {
-        if (_synchronizingPause) return;
-        _synchronizingPause = true;
-        try
-        {
-            _pauseCommand.IsChecked = pauseTraceCheckBox.Checked;
-            _model.SetTracePaused(pauseTraceCheckBox.Checked);
-        }
-        finally { _synchronizingPause = false; }
-    }
-
-    private void ToggleTracePause()
-    {
-        _synchronizingPause = true;
-        try
-        {
-            pauseTraceCheckBox.Checked = _pauseCommand.IsChecked;
-            _model.SetTracePaused(_pauseCommand.IsChecked);
-        }
-        finally { _synchronizingPause = false; }
-    }
-
-    private void ResetFilters()
-    {
-        traceFilterTextBox.Text = string.Empty;
-        traceDateRange.StartDate = null;
-        traceDateRange.EndDate = null;
-        validationProvider.SetValidation(traceDateRange, ModernValidationState.None);
-        _model.SetTraceDateRange(null, null);
-        _resetFiltersCommand.RaiseCanExecuteChanged();
-    }
-
-    private bool HasActiveFilters() => traceFilterTextBox.Text.Length > 0
-        || traceDateRange.StartDate is not null || traceDateRange.EndDate is not null;
+    private void PauseTraceChanged(object? sender, EventArgs e) => _model.SetTracePaused(pauseTraceCheckBox.Checked);
 
     private void RefreshLists(bool autoScrollTrace = true)
     {
@@ -258,14 +207,12 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
             traceListView.Items[traceListView.Items.Count - 1].EnsureVisible();
         UpdateSummary();
         _exportCommand.RaiseCanExecuteChanged();
-        _resetFiltersCommand.RaiseCanExecuteChanged();
     }
 
     private void UpdateSummary()
     {
         var count = _model.Tokens.Count + _model.ParallelScopes.Count + _model.TraceEntries.Count;
-        runtimeAlert.Status = count == 0 ? ModernVisualStatus.Primary : ModernVisualStatus.Success;
-        runtimeAlert.Text = count == 0
+        SummaryText = count == 0
             ? LocalizationContext.Text(WorkflowUiTextKeys.RuntimeSummaryEmpty)
             : LocalizationContext.Text(WorkflowUiTextKeys.RuntimeSummary, new Dictionary<string, object?>
             {
@@ -273,7 +220,6 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
                 ["scopes"] = _model.ParallelScopes.Count,
                 ["trace"] = _model.TraceEntries.Count
             });
-        runtimeAlert.Description = string.Empty;
     }
 
     private void RefreshRuntimeData()
@@ -282,34 +228,49 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         _model.SetTraceBatch(_runtimeBinding?.Host.Engine?.GetTraceBatch());
     }
 
-    private void ExportTraceCsv()
+    /// <summary>导出右键所在表格；轨迹表按完整轨迹字段导出，其余表格按当前列导出。</summary>
+    private void ExportCsv(ListView list)
     {
+        var name = ReferenceEquals(list, traceListView) ? "trace" : list.Name.Replace("ListView", string.Empty, StringComparison.Ordinal);
         using var dialog = new SaveFileDialog
         {
             Filter = LocalizationContext.Text(WorkflowUiTextKeys.RuntimeCsvFilter),
-            FileName = $"workflow-trace-{DateTime.Now:yyyyMMdd-HHmmss}.csv"
+            FileName = $"workflow-{name}-{DateTime.Now:yyyyMMdd-HHmmss}.csv"
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         try
         {
             using var writer = new StreamWriter(dialog.FileName, false, new System.Text.UTF8Encoding(true));
-            _model.ExportTraceCsv(writer, new WorkflowTraceCsvHeaders(
-                LocalizationContext.Text(WorkflowUiTextKeys.RuntimeSequence),
-                LocalizationContext.Text(WorkflowUiTextKeys.RuntimeTime),
-                LocalizationContext.Text(WorkflowUiTextKeys.RuntimeNode),
-                LocalizationContext.Text(WorkflowUiTextKeys.RuntimeToken),
-                LocalizationContext.Text(WorkflowUiTextKeys.RuntimeScope),
-                LocalizationContext.Text(WorkflowUiTextKeys.RuntimeStep),
-                LocalizationContext.Text(WorkflowUiTextKeys.RuntimeMessage)));
+            if (ReferenceEquals(list, traceListView))
+                _model.ExportTraceCsv(writer, new WorkflowTraceCsvHeaders(
+                    LocalizationContext.Text(WorkflowUiTextKeys.RuntimeSequence),
+                    LocalizationContext.Text(WorkflowUiTextKeys.RuntimeTime),
+                    LocalizationContext.Text(WorkflowUiTextKeys.RuntimeNode),
+                    LocalizationContext.Text(WorkflowUiTextKeys.RuntimeToken),
+                    LocalizationContext.Text(WorkflowUiTextKeys.RuntimeScope),
+                    LocalizationContext.Text(WorkflowUiTextKeys.RuntimeStep),
+                    LocalizationContext.Text(WorkflowUiTextKeys.RuntimeMessage)));
+            else
+                WriteListCsv(writer, list);
             if (FindForm() is { } owner)
                 ModernMessage.Success(owner, LocalizationContext.Text(WorkflowUiTextKeys.RuntimeExported,
-                    new Dictionary<string, object?> { ["count"] = _model.TraceEntries.Count }));
+                    new Dictionary<string, object?> { ["count"] = ReferenceEquals(list, traceListView) ? _model.TraceEntries.Count : list.Items.Count }));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
         {
             ShowApplicationError(new ApplicationError(WorkflowErrorCodes.RuntimeExportFailed,
                 new Dictionary<string, object?> { ["message"] = exception.Message }, Guid.NewGuid().ToString("N")));
         }
+    }
+
+    private static void WriteListCsv(TextWriter writer, ListView list)
+    {
+        static string Csv(string? value) => value is null || value.IndexOfAny(new[] { ',', '"', '\r', '\n' }) < 0
+            ? value ?? string.Empty
+            : "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+        writer.WriteLine(string.Join(",", list.Columns.Cast<ColumnHeader>().Select(column => Csv(column.Text))));
+        foreach (ListViewItem item in list.Items)
+            writer.WriteLine(string.Join(",", item.SubItems.Cast<ListViewItem.ListViewSubItem>().Select(cell => Csv(cell.Text))));
     }
 
     private void ShowApplicationError(ApplicationError error)
@@ -361,11 +322,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
             traceFilterTextBox.AccessibleName = traceFilterTextBox.PlaceholderText;
             pauseTraceCheckBox.Text = LocalizationContext.Text(WorkflowUiTextKeys.RuntimePauseTrace);
             traceDateRange.AccessibleName = LocalizationContext.Text(WorkflowUiTextKeys.RuntimeDateRangeAccessible);
-            _refreshCommand.Text = LocalizationContext.Text(WorkflowUiTextKeys.RuntimeRefresh);
-            _pauseCommand.Text = pauseTraceCheckBox.Text;
             _exportCommand.Text = LocalizationContext.Text(WorkflowUiTextKeys.RuntimeExport);
-            _resetFiltersCommand.Text = LocalizationContext.Text(WorkflowUiTextKeys.RuntimeResetFilters);
-            runtimeCommandBar.Commands.ResetBindings();
             if (!TraceRangeIsValid) TraceDateRangeChanged(this, EventArgs.Empty);
             RefreshLists(autoScrollTrace: false);
         }
@@ -405,6 +362,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         _model.Changed -= ModelChanged;
         if (_localizationContext is not null) _localizationContext.Changed -= LocalizationChanged;
         commandManager.Owner = null;
+        _listMenu.Dispose();
         if (_defaultLocalizationManager is IDisposable disposable) disposable.Dispose();
     }
 }

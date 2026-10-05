@@ -121,12 +121,7 @@ public static class WorkflowDesignerGeometry
         if (index < 0)
             index = sameSide.ToList().FindIndex(item => item.Key == port.Key && item.Direction == port.Direction);
         var ratio = (Math.Max(0, index) + 1d) / (Math.Max(1, sameSide.Length) + 1d);
-        var verticalTop = sameSide.Length > 1
-            ? rect.Y + Math.Min(rect.Height * 0.45, HeaderHeight * session.Zoom)
-            : rect.Y;
-        var verticalHeight = sameSide.Length > 1
-            ? Math.Max(1, rect.Y + rect.Height - verticalTop)
-            : rect.Height;
+        var (verticalTop, verticalHeight) = GetSideTrack(rect, session.Zoom);
         var raw = actualSide switch
         {
             WorkflowPortSide.Left => new WorkflowPoint(rect.X, verticalTop + verticalHeight * ratio),
@@ -135,7 +130,7 @@ public static class WorkflowDesignerGeometry
             WorkflowPortSide.Bottom => new WorkflowPoint(rect.X + rect.Width * ratio, rect.Y + rect.Height),
             _ => throw new ArgumentOutOfRangeException(nameof(port), actualSide, "未知端口边。")
         };
-        // 单端口必须严格位于边中点；多端口才沿边分布并吸附栅格。
+        // 单端口严格位于排列区间中点；多端口才沿边分布并吸附栅格。
         if (!session.SnapToGrid || sameSide.Length == 1) return raw;
         var canvasPoint = ScreenToCanvas(session, raw.X, raw.Y);
         var snapped = session.SnapPoint(canvasPoint);
@@ -143,6 +138,18 @@ public static class WorkflowDesignerGeometry
         return actualSide is WorkflowPortSide.Left or WorkflowPortSide.Right
             ? new WorkflowPoint(raw.X, screenSnapped.Y)
             : new WorkflowPoint(screenSnapped.X, raw.Y);
+    }
+
+    /// <summary>
+    /// 左右两边端口的排列区间：标题栏下方的正文区。无论该边有一个还是多个端口都在此区间等分排列，
+    /// 端口不会落到标题栏上。
+    /// </summary>
+    /// <param name="rect">节点屏幕矩形。</param>
+    /// <param name="zoom">当前缩放。</param>
+    public static (double Top, double Height) GetSideTrack(WorkflowDesignerRect rect, double zoom)
+    {
+        var header = Math.Min(rect.Height * 0.45, HeaderHeight * Math.Max(0.05, zoom));
+        return (rect.Y + header, Math.Max(1, rect.Height - header));
     }
 
     /// <summary>使用默认上输入、下输出的简化几何调用。</summary>

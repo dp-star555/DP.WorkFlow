@@ -77,22 +77,26 @@ public static class WorkflowDesignerInteraction
         var bounds = WorkflowDesignerGeometry.GetNodeScreenRect(session, node);
         foreach (var side in Enum.GetValues<WorkflowPortSide>())
         {
-            var point = GetSideCenter(bounds, side);
+            var point = GetSideCenter(bounds, side, session.Zoom);
             if (Math.Pow(point.X - x, 2) + Math.Pow(point.Y - y, 2) <= 36)
                 return new WorkflowPortHit(node, outputs[0], point, side);
         }
         return null;
     }
 
-    /// <summary>返回矩形指定边的中点。</summary>
-    public static WorkflowPoint GetSideCenter(WorkflowDesignerRect bounds, WorkflowPortSide side) => side switch
+    /// <summary>返回节点指定边的端口锚点：上下边取中点，左右边取标题栏下方正文区的中点。</summary>
+    public static WorkflowPoint GetSideCenter(WorkflowDesignerRect bounds, WorkflowPortSide side, double zoom)
     {
-        WorkflowPortSide.Left => new WorkflowPoint(bounds.X, bounds.Y + bounds.Height / 2),
-        WorkflowPortSide.Top => new WorkflowPoint(bounds.X + bounds.Width / 2, bounds.Y),
-        WorkflowPortSide.Right => new WorkflowPoint(bounds.X + bounds.Width, bounds.Y + bounds.Height / 2),
-        WorkflowPortSide.Bottom => new WorkflowPoint(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height),
-        _ => default
-    };
+        var (top, height) = WorkflowDesignerGeometry.GetSideTrack(bounds, zoom);
+        return side switch
+        {
+            WorkflowPortSide.Left => new WorkflowPoint(bounds.X, top + height / 2),
+            WorkflowPortSide.Top => new WorkflowPoint(bounds.X + bounds.Width / 2, bounds.Y),
+            WorkflowPortSide.Right => new WorkflowPoint(bounds.X + bounds.Width, top + height / 2),
+            WorkflowPortSide.Bottom => new WorkflowPoint(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height),
+            _ => default
+        };
+    }
 
     /// <summary>返回指定屏幕坐标附近的最上层连接。</summary>
     public static WorkflowConnectionModel? HitConnection(

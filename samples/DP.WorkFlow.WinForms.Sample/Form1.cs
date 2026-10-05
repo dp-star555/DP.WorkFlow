@@ -87,7 +87,7 @@ public partial class Form1 : Form
         // 4. 连接到设计器控件
         workflowStudioControl1.Workspace = _workspace;
         workflowStudioControl1.Diagnostics.Provider = _algorithmDiagnostics;
-        workflowStudioControl1.AddToolPage("插件与算法", new WorkflowVisionAlgorithmPanel(_algorithmDiagnostics,
+        workflowStudioControl1.AddToolWindow("插件与算法", new WorkflowVisionAlgorithmPanel(_algorithmDiagnostics,
             () => _workspace.Navigator?.RootDocument, () => _workspace.Navigator?.CurrentSession));
         workflowStudioControl1.NodeEditorExtensions.Register(
             new VisionWinFormsStudioExtension()

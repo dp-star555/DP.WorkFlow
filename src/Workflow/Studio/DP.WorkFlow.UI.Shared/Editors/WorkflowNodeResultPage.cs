@@ -11,6 +11,11 @@ namespace DP.WorkFlow.UI;
 /// <param name="Value">格式化后的值。</param>
 public sealed record WorkflowNodeResultItem(string Category, string Name, string Value);
 
+/// <summary>结果页中的一个可选输出端口及其是否显示在节点上。</summary>
+/// <param name="Key">端口键。</param>
+/// <param name="Visible">是否在画布节点上显示并参与连线。</param>
+public sealed record WorkflowNodeOutputPortItem(string Key, bool Visible);
+
 /// <summary>为每个节点提供通用“运行结果”页：最近一次执行状态与标准输出。</summary>
 public sealed class WorkflowNodeResultPageProvider : IWorkflowNodeEditorPageProvider
 {
@@ -28,7 +33,7 @@ public sealed class WorkflowNodeResultPageProvider : IWorkflowNodeEditorPageProv
     {
         yield return new WorkflowNodeEditorPageDescriptor(
             PageId, "运行结果", WorkflowNodeEditorPageKind.Results, 900,
-            new WorkflowNodeResultPageModel(context.RuntimeSession, context.Node.Id), "Results");
+            new WorkflowNodeResultPageModel(context.RuntimeSession, context.Node.Id, context.Session), "Results");
     }
 }
 
@@ -41,19 +46,24 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
     public const string StateCategory = "运行状态";
     /// <summary>输出分组名称。</summary>
     public const string OutputCategory = "输出";
+    /// <summary>可选输出端口分组名称。</summary>
+    public const string PortCategory = "输出端口";
 
     private const int MaximumOutputMembers = 64;
     private const int MaximumTextLength = 240;
     private readonly WorkflowDesignerSession? _session;
+    private readonly WorkflowDesignerSession? _portSession;
     private bool _disposed;
 
     /// <summary>为指定节点创建结果页模型。</summary>
     /// <param name="session">接收运行快照的设计会话；为空时只显示“尚未运行”。</param>
     /// <param name="nodeId">节点标识。</param>
-    public WorkflowNodeResultPageModel(WorkflowDesignerSession? session, string nodeId)
+    /// <param name="portSession">编辑端口显示状态的会话（节点窗口的隔离编辑副本，确定后才提交）；为空时不提供端口开关。</param>
+    public WorkflowNodeResultPageModel(WorkflowDesignerSession? session, string nodeId, WorkflowDesignerSession? portSession = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
         _session = session;
+        _portSession = portSession;
         NodeId = nodeId;
         if (_session is not null) _session.Changed += OnSessionChanged;
     }
@@ -90,6 +100,31 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
         }
         AddOutput(items, output.Value);
         return items;
+    }
+
+    /// <summary>
+    /// 返回多输出节点的可选输出端口。勾选的端口显示在节点上，可直接连线；
+    /// 取消勾选的端口从节点上隐藏，其结果仍可通过数据绑定引用。单输出节点返回空集合。
+    /// </summary>
+    public IReadOnlyList<WorkflowNodeOutputPortItem> GetOutputPorts()
+    {
+        if (_portSession?.Canvas.Nodes.FirstOrDefault(node => node.Node.Id == NodeId) is not { } canvasNode)
+            return Array.Empty<WorkflowNodeOutputPortItem>();
+        var outputs = _portSession.GetDeclaredPorts(NodeId, WorkflowPortDirection.Output);
+        return outputs.Count <= 1
+            ? Array.Empty<WorkflowNodeOutputPortItem>()
+            : outputs.Select(port => new WorkflowNodeOutputPortItem(port.Key, !canvasNode.HiddenOutputPorts.Contains(port.Key))).ToArray();
+    }
+
+    /// <summary>显示或隐藏指定输出端口；变化记录在编辑副本中，随节点窗口“应用/确定”提交。</summary>
+    /// <param name="key">端口键。</param>
+    /// <param name="visible">是否显示。</param>
+    /// <returns>状态发生变化时返回 <see langword="true"/>。</returns>
+    public bool SetOutputPortVisible(string key, bool visible)
+    {
+        if (_portSession is null || !_portSession.SetOutputPortVisible(NodeId, key, visible)) return false;
+        Changed?.Invoke(this, EventArgs.Empty);
+        return true;
     }
 
     /// <summary>解除对设计会话的订阅。</summary>

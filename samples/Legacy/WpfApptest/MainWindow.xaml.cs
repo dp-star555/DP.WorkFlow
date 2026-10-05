@@ -74,7 +74,7 @@ public partial class MainWindow : Window
         SampleVisionHost.RegisterPublicData(_workspace.Navigator.RootSession);
         Studio.Workspace = _workspace;
         Studio.Diagnostics.Provider = _algorithmDiagnostics;
-        Studio.AddToolPage("插件与算法", new WorkflowVisionAlgorithmPanel(_algorithmDiagnostics,
+        Studio.AddToolWindow("插件与算法", new WorkflowVisionAlgorithmPanel(_algorithmDiagnostics,
             () => _workspace.Navigator?.RootDocument, () => _workspace.Navigator?.CurrentSession));
         Studio.NodeEditorExtensions.Register(new VisionWpfStudioExtension
         { FrameSource = _frameScope, FileReader = fileReader, Templates = new VisionTemplateEditingRuntime(algorithmCatalog, _algorithmRuntime, Resources) });

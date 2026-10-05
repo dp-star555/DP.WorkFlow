@@ -259,11 +259,13 @@ WorkflowRuntimeMonitorControl
    ├─ Trace
    │  ├─ 筛选框
    │  ├─ 暂停滚动
-   │  ├─ 导出 CSV
    │  └─ Trace ListView
    ├─ 输出
    └─ Timing
 ```
+
+每张表格右键菜单提供“导出 CSV”（轨迹表按完整轨迹字段导出，Ctrl+Shift+E 同样导出轨迹）。
+领域工具（如“插件与算法”）通过 `AddToolWindow` 挂到“文件”菜单，点击后在弹出窗口中打开。
 
 Designer 文件负责：
 

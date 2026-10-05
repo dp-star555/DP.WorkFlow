@@ -20,9 +20,6 @@ partial class WorkflowRuntimeMonitorControl
     private void InitializeComponent()
     {
         components = new System.ComponentModel.Container();
-        rootLayout = new TableLayoutPanel();
-        runtimeCommandBar = new ModernUI.WinForms.ModernCommandBar();
-        runtimeAlert = new ModernUI.WinForms.ModernAlert();
         monitorTabs = new ModernUI.WinForms.ModernTabControl();
         tokensPage = new TabPage();
         tokensListView = new ModernUI.WinForms.ModernListView();
@@ -43,30 +40,10 @@ partial class WorkflowRuntimeMonitorControl
         localizationProvider = new ModernUI.WinForms.ModernLocalizationProvider(components);
         validationProvider = new ModernUI.WinForms.ModernValidationProvider(components);
         commandManager = new ModernUI.WinForms.ModernCommandManager(components);
-        rootLayout.SuspendLayout();
         monitorTabs.SuspendLayout();
         tracePage.SuspendLayout();
         traceToolbar.SuspendLayout();
         SuspendLayout();
-
-        rootLayout.ColumnCount = 1;
-        rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        rootLayout.Dock = DockStyle.Fill;
-        rootLayout.RowCount = 3;
-        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
-        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58F));
-        rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-        rootLayout.Controls.Add(runtimeCommandBar, 0, 0);
-        rootLayout.Controls.Add(runtimeAlert, 0, 1);
-        rootLayout.Controls.Add(monitorTabs, 0, 2);
-
-        runtimeCommandBar.Dock = DockStyle.Fill;
-        runtimeCommandBar.Margin = new Padding(0, 0, 0, 4);
-        runtimeCommandBar.Name = "runtimeCommandBar";
-        runtimeAlert.Dock = DockStyle.Fill;
-        runtimeAlert.Margin = new Padding(0, 0, 0, 6);
-        runtimeAlert.Name = "runtimeAlert";
-        runtimeAlert.Status = ModernUI.WinForms.ModernVisualStatus.Primary;
 
         monitorTabs.TabPages.Add(tokensPage);
         monitorTabs.TabPages.Add(scopesPage);
@@ -114,10 +91,9 @@ partial class WorkflowRuntimeMonitorControl
 
         AutoScaleDimensions = new SizeF(7F, 17F);
         AutoScaleMode = AutoScaleMode.Font;
-        Controls.Add(rootLayout);
+        Controls.Add(monitorTabs);
         Name = "WorkflowRuntimeMonitorControl";
         Size = new Size(980, 360);
-        rootLayout.ResumeLayout(false);
         monitorTabs.ResumeLayout(false);
         tracePage.ResumeLayout(false);
         traceToolbar.ResumeLayout(false);
@@ -146,9 +122,6 @@ partial class WorkflowRuntimeMonitorControl
 
     #endregion
 
-    private TableLayoutPanel rootLayout = null!;
-    private ModernUI.WinForms.ModernCommandBar runtimeCommandBar = null!;
-    private ModernUI.WinForms.ModernAlert runtimeAlert = null!;
     private ModernUI.WinForms.ModernTabControl monitorTabs = null!;
     private TabPage tokensPage = null!;
     private ModernUI.WinForms.ModernListView tokensListView = null!;

@@ -97,7 +97,8 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
             ToolTip = "筛选节点、Token、Scope、步骤或消息"
         };
         var pause = new CheckBox { Content = "暂停滚动", Margin = new Thickness(8, 7, 4, 4), Foreground = Foreground };
-        var export = new Button { Content = "导出 CSV", Margin = new Thickness(4), Padding = new Thickness(10, 3, 10, 3) };
+        // 导出改为轨迹表格右键菜单。
+        var export = new MenuItem { Header = "导出 CSV" };
         filter.TextChanged += (_, _) => _model.SetTraceFilter(filter.Text);
         pause.Checked += (_, _) => _model.SetTracePaused(true);
         pause.Unchecked += (_, _) => _model.SetTracePaused(false);
@@ -112,10 +113,10 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
             using var writer = new StreamWriter(dialog.FileName, false, new System.Text.UTF8Encoding(true));
             _model.ExportTraceCsv(writer);
         };
+        _trace.ContextMenu = new ContextMenu { Items = { export } };
         var toolbar = new StackPanel { Orientation = Orientation.Horizontal };
         toolbar.Children.Add(filter);
         toolbar.Children.Add(pause);
-        toolbar.Children.Add(export);
         var panel = new DockPanel();
         DockPanel.SetDock(toolbar, Dock.Top);
         panel.Children.Add(toolbar);

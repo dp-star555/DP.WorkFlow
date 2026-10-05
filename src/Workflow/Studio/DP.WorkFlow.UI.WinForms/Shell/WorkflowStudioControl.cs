@@ -93,15 +93,53 @@ public sealed partial class WorkflowStudioControl : UserControl
 
     /// <summary>获取编译诊断面板。</summary>
     public WorkflowDiagnosticsControl Diagnostics => diagnosticsControl;
-    /// <summary>为领域工具添加独立工作台页面。</summary>
-    public void AddToolPage(string title, Control page)
+    /// <summary>
+    /// 为领域工具添加弹出窗口入口：在“文件”菜单末尾出现同名菜单项，点击打开窗口。
+    /// 关闭窗口只隐藏，面板状态与正在进行的检查都会保留。
+    /// </summary>
+    /// <param name="title">菜单项与窗口标题。</param>
+    /// <param name="content">窗口内容。</param>
+    /// <param name="icon">菜单项图标。</param>
+    public void AddToolWindow(string title, Control content, ModernIconKind icon = ModernIconKind.Settings)
     {
-        var tab = new TabPage(title) { Padding = new Padding(6) };
-        page.Dock = DockStyle.Fill;
-        tab.Controls.Add(page);
-        WorkflowWinFormsStyle.Apply(page);
-        bottomTabs.TabPages.Add(tab);
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        ArgumentNullException.ThrowIfNull(content);
+        Form? window = null;
+        if (!_hasToolWindows)
+        {
+            fileMenu.DropDownItems.Add(new ToolStripSeparator());
+            _hasToolWindows = true;
+        }
+        AddMenuItem(fileMenu, title + "…", icon, () =>
+        {
+            if (window is null || window.IsDisposed)
+            {
+                window = new Form
+                {
+                    Text = title,
+                    StartPosition = FormStartPosition.CenterParent,
+                    Size = new Size(1100, 640),
+                    MinimumSize = new Size(640, 360),
+                    ShowInTaskbar = false,
+                    ShowIcon = false
+                };
+                content.Dock = DockStyle.Fill;
+                window.Controls.Add(content);
+                WorkflowWinFormsStyle.Apply(window);
+                window.FormClosing += (_, e) =>
+                {
+                    if (e.CloseReason != CloseReason.UserClosing) return;
+                    e.Cancel = true;
+                    window.Hide();
+                };
+                Disposed += (_, _) => window.Dispose();
+            }
+            if (window.Visible) window.Activate();
+            else window.Show(FindForm());
+        });
     }
+
+    private bool _hasToolWindows;
 
     /// <summary>获取运行监视器。</summary>
     public WorkflowRuntimeMonitorControl RuntimeMonitor => runtimeMonitorControl;
