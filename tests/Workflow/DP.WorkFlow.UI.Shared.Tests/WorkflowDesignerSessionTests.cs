@@ -173,15 +173,18 @@ public sealed class WorkflowDesignerSessionTests
     }
 
     [Fact]
-    public void SingleSidePort_IsCenteredOnTheWholeNodeEdge()
+    public void SidePorts_AreSpacedEvenlyBelowTheHeader()
     {
         var session = CreateSession();
         var node = session.AddNode("End", 100, 100);
         var ports = session.GetPorts(node.Node.Id, WorkflowPortDirection.Input);
         var point = WorkflowDesignerGeometry.GetPortScreenPoint(session, node, ports[0], ports, WorkflowPortSide.Left);
         var bounds = WorkflowDesignerGeometry.GetNodeScreenRect(session, node);
+        var (top, height) = WorkflowDesignerGeometry.GetSideTrack(bounds, session.Zoom);
 
-        Assert.Equal(bounds.Y + bounds.Height / 2, point.Y, 6);
+        // 单个侧边端口位于标题栏下方正文区的中点，而不是整条边的中点（会压在标题栏边上）。
+        Assert.Equal(top + height / 2, point.Y, 6);
+        Assert.True(point.Y > bounds.Y + Math.Min(bounds.Height * 0.45, WorkflowDesignerGeometry.HeaderHeight * session.Zoom));
     }
 
     [Fact]

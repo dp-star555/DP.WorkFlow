@@ -343,8 +343,10 @@ public sealed class LocalizationClosureTests
                 Assert.False(monitor.TraceRangeIsValid);
                 Assert.Equal("No runtime data", monitor.SummaryText);
                 Assert.Equal("Filter node, token, scope, step, or message", filter.PlaceholderText);
-                Assert.Contains(Descendants(monitor).OfType<ModernCommandBar>().Single().Commands,
-                    command => command.Text == "Export CSV");
+                Assert.DoesNotContain(Descendants(monitor), control => control is ModernCommandBar or ModernAlert);
+                Assert.All(Descendants(monitor).OfType<ModernListView>(), list =>
+                    Assert.Contains(Assert.IsType<ModernContextMenu>(list.ContextMenuStrip).Items.Cast<ToolStripItem>(),
+                        item => item.Text == "Export CSV"));
             }
             catch (Exception exception) { failure = exception; }
         });

@@ -237,7 +237,29 @@ public sealed class WorkflowNodeEditorWindow : Window
         grid.Columns.Add(new DataGridTextColumn { Header = "分组", Binding = new System.Windows.Data.Binding(nameof(WorkflowNodeResultItem.Category)), Width = new DataGridLength(110) });
         grid.Columns.Add(new DataGridTextColumn { Header = "名称", Binding = new System.Windows.Data.Binding(nameof(WorkflowNodeResultItem.Name)), Width = new DataGridLength(180) });
         grid.Columns.Add(new DataGridTextColumn { Header = "值", Binding = new System.Windows.Data.Binding(nameof(WorkflowNodeResultItem.Value)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
-        void Refresh() => grid.ItemsSource = model.GetItems();
+        // 可选输出端口：勾选在节点上显示并可连线，取消勾选则隐藏端口、改用数据绑定引用结果。
+        var ports = new WrapPanel { Margin = new Thickness(4, 4, 4, 0) };
+        var portBoxes = new Dictionary<string, CheckBox>(StringComparer.Ordinal);
+        foreach (var port in model.GetOutputPorts())
+        {
+            var box = new CheckBox
+            {
+                Content = port.Key,
+                IsChecked = port.Visible,
+                Margin = new Thickness(6, 4, 12, 4),
+                ToolTip = $"勾选后在节点上显示“{port.Key}”输出并可连线；取消勾选则隐藏该端口，结果仍可通过数据绑定引用。"
+            };
+            box.Checked += (_, _) => model.SetOutputPortVisible(port.Key, true);
+            box.Unchecked += (_, _) => model.SetOutputPortVisible(port.Key, false);
+            portBoxes[port.Key] = box;
+            ports.Children.Add(box);
+        }
+        void Refresh()
+        {
+            grid.ItemsSource = model.GetItems();
+            foreach (var port in model.GetOutputPorts())
+                if (portBoxes.TryGetValue(port.Key, out var box) && box.IsChecked != port.Visible) box.IsChecked = port.Visible;
+        }
         void OnChanged(object? sender, EventArgs e)
         {
             if (grid.Dispatcher.CheckAccess()) Refresh();
@@ -247,7 +269,13 @@ public sealed class WorkflowNodeEditorWindow : Window
         grid.Unloaded += (_, _) => model.Changed -= OnChanged;
         grid.Loaded += (_, _) => { model.Changed -= OnChanged; model.Changed += OnChanged; Refresh(); };
         Refresh();
-        return grid;
+        if (portBoxes.Count == 0) return grid;
+        var layout = new DockPanel();
+        var header = new GroupBox { Header = WorkflowNodeResultPageModel.PortCategory, Content = ports, Margin = new Thickness(4) };
+        DockPanel.SetDock(header, Dock.Top);
+        layout.Children.Add(header);
+        layout.Children.Add(grid);
+        return layout;
     }
 
     /// <summary>创建Properties。</summary>

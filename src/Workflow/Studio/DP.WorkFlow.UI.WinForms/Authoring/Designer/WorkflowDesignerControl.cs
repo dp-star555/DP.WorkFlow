@@ -640,14 +640,9 @@ public sealed partial class WorkflowDesignerControl : Control
         {
             if (_session is not null && WorkflowDesignerInteraction.HasConnectedEndpointAtSide(_session, node, side))
                 continue;
-            var center = side switch
-            {
-                WorkflowPortSide.Left => new PointF(bounds.Left, bounds.Top + bounds.Height / 2),
-                WorkflowPortSide.Top => new PointF(bounds.Left + bounds.Width / 2, bounds.Top),
-                WorkflowPortSide.Right => new PointF(bounds.Right, bounds.Top + bounds.Height / 2),
-                WorkflowPortSide.Bottom => new PointF(bounds.Left + bounds.Width / 2, bounds.Bottom),
-                _ => PointF.Empty
-            };
+            var anchor = WorkflowDesignerInteraction.GetSideCenter(
+                new WorkflowDesignerRect(bounds.X, bounds.Y, bounds.Width, bounds.Height), side, _session?.Zoom ?? 1);
+            var center = new PointF((float)anchor.X, (float)anchor.Y);
             var highlighted = active == side;
             var activeColor = _connectionStart?.Port.Direction == WorkflowPortDirection.Input
                 ? Color.FromArgb(167, 139, 250)

@@ -226,7 +226,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
                 mappingButton.Click += (_, _) => BlockMappingEditRequested?.Invoke(this, block);
                 _modernActions.Controls.Add(mappingButton);
             }
-            AddModernOutputPortEditors();
             _modernActions.Visible = _modernActions.Controls.Count > 0;
             var schemaKey = CreateModernSchemaKey();
             if (_modernAdapter is null)
@@ -312,31 +311,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             BeginInvoke(Rebuild);
         else
             Rebuild();
-    }
-
-    private void AddModernOutputPortEditors()
-    {
-        if (_session is null || _model?.SelectedNode is null) return;
-        var outputs = _session.GetDeclaredPorts(_model.SelectedNode.Id, WorkflowPortDirection.Output);
-        if (outputs.Count <= 1) return;
-        var canvasNode = _session.Canvas.Nodes.First(item => item.Node.Id == _model.SelectedNode.Id);
-        foreach (var port in outputs)
-        {
-            var text = $"启用输出 {port.Key}";
-            var check = new ModernCheckbox
-            {
-                Text = text,
-                Checked = !canvasNode.HiddenOutputPorts.Contains(port.Key),
-                Theme = _modernGrid.Theme,
-                Size = new Size(TextRenderer.MeasureText(text, Font).Width + 32, 28),
-                Margin = new Padding(8, 2, 4, 2)
-            };
-            check.CheckedChanged += (_, _) =>
-            {
-                if (!_building) _session.SetOutputPortVisible(canvasNode.Node.Id, port.Key, check.Checked);
-            };
-            _modernActions.Controls.Add(check);
-        }
     }
 
     private Control CreateScriptLauncher(WorkflowPropertyEntry entry)

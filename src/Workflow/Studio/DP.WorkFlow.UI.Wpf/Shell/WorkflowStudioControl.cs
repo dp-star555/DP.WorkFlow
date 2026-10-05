@@ -29,7 +29,8 @@ public sealed class WorkflowStudioControl : UserControl
     private WorkflowStudioRuntimeBinding? _runtimeBinding;
     private WorkflowDocumentWorkspace? _workspace;
     private WorkflowDesignerNavigator? _navigator;
-    private TabControl? _toolTabs;
+    private StackPanel? _toolbar;
+    private int _toolWindowCount;
 
     /// <summary>初始化集设计器、工具箱、诊断和运行控制于一体的工作室控件。</summary>
     public WorkflowStudioControl()
@@ -54,6 +55,7 @@ public sealed class WorkflowStudioControl : UserControl
             Orientation = Orientation.Horizontal,
             Background = Brush(37, 37, 38)
         };
+        _toolbar = toolbar;
         var newButton = CommandButton("新建");
         var openButton = CommandButton("打开");
         var saveButton = CommandButton("保存");
@@ -103,7 +105,6 @@ public sealed class WorkflowStudioControl : UserControl
         AddToGrid(root, new Border { Background = Brush(30, 41, 59) }, 1, 2);
         AddToGrid(root, Designer, 2);
         var bottomTabs = new TabControl();
-        _toolTabs = bottomTabs;
         bottomTabs.Items.Add(new TabItem { Header = "诊断", Content = Diagnostics });
         bottomTabs.Items.Add(new TabItem { Header = "运行监视", Content = RuntimeMonitor });
         AddToGrid(root, bottomTabs, 2, row: 2);
@@ -175,8 +176,38 @@ public sealed class WorkflowStudioControl : UserControl
 
     /// <summary>获取或设置 Diagnostics 成员。</summary>
     public WorkflowDiagnosticsControl Diagnostics { get; }
-    /// <summary>为领域工具添加独立工作台页面。</summary>
-    public void AddToolPage(string title, UIElement page) => _toolTabs!.Items.Add(new TabItem { Header = title, Content = page });
+    /// <summary>为领域工具添加弹出窗口入口：工具栏“保存”之后出现同名按钮，点击打开；关闭窗口不会丢失面板状态。</summary>
+    /// <param name="title">按钮与窗口标题。</param>
+    /// <param name="content">窗口内容。</param>
+    public void AddToolWindow(string title, UIElement content)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        ArgumentNullException.ThrowIfNull(content);
+        Window? window = null;
+        var button = CommandButton(title + "…");
+        button.Click += (_, _) =>
+        {
+            if (window is null)
+            {
+                window = new Window
+                {
+                    Title = title,
+                    Content = content,
+                    Owner = Window.GetWindow(this),
+                    Width = 1100,
+                    Height = 640,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    ShowInTaskbar = false,
+                    Background = Brush(30, 30, 30)
+                };
+                // 关闭时释放内容，下次打开重新承载同一实例，面板状态得以保留。
+                window.Closed += (_, _) => { window.Content = null; window = null; };
+            }
+            window.Show();
+            window.Activate();
+        };
+        _toolbar!.Children.Insert(3 + _toolWindowCount++, button);
+    }
 
     /// <summary>获取或设置 Runtime Monitor 成员。</summary>
     public WorkflowRuntimeMonitorControl RuntimeMonitor { get; }

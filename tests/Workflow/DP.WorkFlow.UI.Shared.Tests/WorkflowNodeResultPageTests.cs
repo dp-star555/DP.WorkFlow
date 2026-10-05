@@ -131,6 +131,34 @@ public sealed class WorkflowNodeResultPageTests
     }
 
     [Fact]
+    public async Task OutputPorts_AreTogglableOnEditingCopyAndCommittedWithNode()
+    {
+        var (session, start) = CreateSession();
+        var decision = session.AddNode("Decision", 200, 0);
+
+        await using var editor = new WorkflowNodeEditorModel(session, start.Id, decision.Node.Id);
+        var results = Assert.IsType<WorkflowNodeResultPageModel>(
+            Assert.Single(editor.Pages, page => page.PageId == WorkflowNodeResultPageProvider.PageId).Model);
+        var ports = results.GetOutputPorts();
+        Assert.True(ports.Count > 1);
+        Assert.All(ports, port => Assert.True(port.Visible));
+        var changes = 0;
+        results.Changed += (_, _) => changes++;
+
+        Assert.True(results.SetOutputPortVisible(ports[1].Key, false));
+        Assert.False(results.SetOutputPortVisible(ports[1].Key, false));
+        Assert.False(results.GetOutputPorts()[1].Visible);
+        Assert.Equal(1, changes);
+        // 编辑副本上的改动在“应用/确定”前不影响正式文档。
+        Assert.DoesNotContain(ports[1].Key, decision.HiddenOutputPorts);
+
+        editor.ApplyChanges();
+        Assert.Contains(ports[1].Key, decision.HiddenOutputPorts);
+
+        Assert.Empty(new WorkflowNodeResultPageModel(session, start.Id, session).GetOutputPorts());
+    }
+
+    [Fact]
     public void RuntimeSnapshotChanges_RaiseChangedUntilDisposed()
     {
         var (session, start) = CreateSession();

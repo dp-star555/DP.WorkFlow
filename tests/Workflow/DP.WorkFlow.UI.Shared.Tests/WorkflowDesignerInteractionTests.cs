@@ -63,7 +63,9 @@ public sealed class WorkflowDesignerInteractionTests
         Assert.Equal(WorkflowPortSide.Bottom, WorkflowDesignerInteraction.NearestSide(rect, 50, 49));
         Assert.True(WorkflowDesignerInteraction.IsNearRect(rect, 140, 25, 42));
         Assert.False(WorkflowDesignerInteraction.IsNearRect(rect, 143, 25, 42));
-        Assert.Equal(new WorkflowPoint(100, 25), WorkflowDesignerInteraction.GetSideCenter(rect, WorkflowPortSide.Right));
+        // 左右边锚点位于标题栏下方正文区的中点：标题栏高 min(50×0.45, 32) = 22.5。
+        Assert.Equal(new WorkflowPoint(100, 22.5 + 27.5 / 2), WorkflowDesignerInteraction.GetSideCenter(rect, WorkflowPortSide.Right, 1));
+        Assert.Equal(new WorkflowPoint(50, 0), WorkflowDesignerInteraction.GetSideCenter(rect, WorkflowPortSide.Top, 1));
     }
 
     [Fact]
