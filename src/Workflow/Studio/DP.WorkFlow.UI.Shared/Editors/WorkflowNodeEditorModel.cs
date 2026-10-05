@@ -12,7 +12,9 @@ public enum WorkflowNodeEditorPageKind
     /// <summary>节点或子工作流诊断页。</summary>
     Diagnostics,
     /// <summary>由宿主页面提供器定义的扩展页。</summary>
-    Custom
+    Custom,
+    /// <summary>节点最近一次运行状态与输出的只读结果页。</summary>
+    Results
 }
 
 /// <summary>描述一个与具体桌面 UI 技术无关的节点编辑页面。</summary>
@@ -52,6 +54,8 @@ public sealed record WorkflowNodeEditorContext(
 
     /// <summary>当前请求的独立属性编辑器；普通节点窗口为空。</summary>
     public string? RequestedPropertyEditor { get; init; }
+    /// <summary>接收运行快照的原始设计会话；隔离编辑副本本身没有运行状态。</summary>
+    public WorkflowDesignerSession? RuntimeSession { get; init; }
 }
 
 /// <summary>扩展节点工作台页面；实现不得返回 WinForms/WPF 控件。</summary>
@@ -293,7 +297,10 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
         session.SelectedNodeId = nodeId;
         (EditingSession, EditingNode) = CreateEditingSession(session, nodeId);
         var context = new WorkflowNodeEditorContext(EditingSession, startNodeId, EditingNode)
-        { ChoiceProvider = choiceProvider, AdditionalProperties = additionalProperties, RequestedPropertyEditor = propertyEditorKey };
+        {
+            ChoiceProvider = choiceProvider, AdditionalProperties = additionalProperties,
+            RequestedPropertyEditor = propertyEditorKey, RuntimeSession = session
+        };
         var pageCatalog = WorkflowNodeEditorPageCatalog.CreateDefault();
         foreach (var provider in _providers)
             pageCatalog.Register(provider);

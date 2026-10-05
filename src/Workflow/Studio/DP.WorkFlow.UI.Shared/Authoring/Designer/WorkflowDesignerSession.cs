@@ -1017,6 +1017,18 @@ public sealed class WorkflowDesignerSession
         RaiseChanged(WorkflowDesignerChangeKind.Runtime);
     }
 
+    /// <summary>
+    /// 宿主提供的最近一次节点输出查询，由运行绑定在应用快照时设置；未接入运行时为空。
+    /// </summary>
+    public Func<string, WorkflowNodeOutput?>? NodeOutputProvider { get; set; }
+
+    /// <summary>获取节点在当前运行快照所属运行中的最近一次输出；不属于本画布当前运行的输出不会返回。</summary>
+    /// <param name="nodeId">节点标识。</param>
+    public WorkflowNodeOutput? GetLatestNodeOutput(string nodeId) =>
+        _runtimeSnapshot is { } snapshot && NodeOutputProvider?.Invoke(nodeId) is { } output && output.RunId == snapshot.RunId
+            ? output
+            : null;
+
     /// <summary>获取节点最近运行状态。</summary>
     /// <param name="nodeId">节点标识。</param>
     public E_NodeState GetNodeState(string nodeId) =>
