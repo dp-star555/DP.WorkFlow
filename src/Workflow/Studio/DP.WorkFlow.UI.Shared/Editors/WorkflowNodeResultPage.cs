@@ -99,7 +99,7 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
         if (_session is not null) _session.Changed -= OnSessionChanged;
     }
 
-    /// <summary>将输出值展开为一层公开属性；简单值直接显示。</summary>
+    /// <summary>将输出值展开为一层公开属性，名称取自属性特性或节点包登记的中文名称；简单值直接显示。</summary>
     public static void AddOutput(ICollection<WorkflowNodeResultItem> items, object? value)
     {
         if (value is null || IsScalar(value.GetType()) || value is IEnumerable and not IDictionary)
@@ -125,7 +125,7 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
             {
                 text = "读取失败：" + (exception.InnerException ?? exception).Message;
             }
-            items.Add(new(OutputCategory, property.Name, text));
+            items.Add(new(OutputCategory, WorkflowOutputDisplayNames.Resolve(property), text));
         }
     }
 

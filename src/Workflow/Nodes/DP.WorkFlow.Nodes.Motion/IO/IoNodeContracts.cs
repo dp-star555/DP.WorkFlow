@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace DP.WorkFlow;
 
 /// <summary>IO 条件通过模式。</summary>
@@ -40,4 +42,4 @@ public sealed class WorkflowIoExpectation
 }
 
 /// <summary>表示多 IO 判断结果。</summary>
-public sealed record IoMultiNodeResult(bool Matched, WorkflowIoMatchMode Mode, IReadOnlyList<WorkflowIoNodeResult> Items, long ElapsedMs = 0, string? Message = null);
+public sealed record IoMultiNodeResult([property: DisplayName("是否满足")] bool Matched, [property: DisplayName("匹配方式")] WorkflowIoMatchMode Mode, [property: DisplayName("明细")] IReadOnlyList<WorkflowIoNodeResult> Items, [property: DisplayName("耗时(ms)")] long ElapsedMs = 0, [property: DisplayName("消息")] string? Message = null);

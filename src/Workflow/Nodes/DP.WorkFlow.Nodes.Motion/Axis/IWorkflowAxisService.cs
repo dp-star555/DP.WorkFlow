@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace DP.WorkFlow;
 
 /// <summary>轴参数取值来源，沿用旧版语义。</summary>
@@ -30,16 +32,16 @@ public enum AxisWaitCondition
 public sealed record WorkflowAxisAddress(string DeviceId, int AxisId);
 
 /// <summary>轴步骤执行结果。</summary>
-public sealed record WorkflowAxisStepResult(bool Success, string? Message, TimeSpan Elapsed, IReadOnlyList<string> FailedAxes);
+public sealed record WorkflowAxisStepResult([property: DisplayName("是否成功")] bool Success, [property: DisplayName("消息")] string? Message, [property: DisplayName("耗时")] TimeSpan Elapsed, [property: DisplayName("失败轴")] IReadOnlyList<string> FailedAxes);
 
 /// <summary>轴伺服节点结果，字段与旧版保持一致。</summary>
-public sealed record AxisServoNodeResult(string DeviceId, int AxisId, bool RequestedEnabled, bool ActualEnabled, bool Success, bool WaitForCompleted);
+public sealed record AxisServoNodeResult([property: DisplayName("设备")] string DeviceId, [property: DisplayName("轴号")] int AxisId, [property: DisplayName("请求使能")] bool RequestedEnabled, [property: DisplayName("实际使能")] bool ActualEnabled, [property: DisplayName("是否成功")] bool Success, [property: DisplayName("等待完成")] bool WaitForCompleted);
 
 /// <summary>轴停止节点结果，字段与旧版保持一致。</summary>
-public sealed record AxisStopNodeResult(string DeviceId, int AxisId, bool WaitForCompleted, bool InPosition, double ActualSpeed, bool Success);
+public sealed record AxisStopNodeResult([property: DisplayName("设备")] string DeviceId, [property: DisplayName("轴号")] int AxisId, [property: DisplayName("等待完成")] bool WaitForCompleted, [property: DisplayName("已到位")] bool InPosition, [property: DisplayName("实际速度")] double ActualSpeed, [property: DisplayName("是否成功")] bool Success);
 
 /// <summary>轴等待节点结果。</summary>
-public sealed record AxisWaitNodeResult(string DeviceId, int AxisId, AxisWaitCondition Condition, double StartPosition, double? TargetPosition, double ActualPosition, double PositionTolerance, bool Success);
+public sealed record AxisWaitNodeResult([property: DisplayName("设备")] string DeviceId, [property: DisplayName("轴号")] int AxisId, [property: DisplayName("条件")] AxisWaitCondition Condition, [property: DisplayName("起始位置")] double StartPosition, [property: DisplayName("目标位置")] double? TargetPosition, [property: DisplayName("实际位置")] double ActualPosition, [property: DisplayName("位置容差")] double PositionTolerance, [property: DisplayName("是否成功")] bool Success);
 
 /// <summary>描述轴等待请求。</summary>
 public sealed record WorkflowAxisWaitRequest(WorkflowAxisAddress Axis, AxisWaitCondition Condition, double? TargetPosition, double PositionTolerance, int TimeoutMs, int PollIntervalMs);

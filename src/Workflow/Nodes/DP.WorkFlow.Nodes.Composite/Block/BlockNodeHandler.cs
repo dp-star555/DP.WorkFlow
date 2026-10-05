@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace DP.WorkFlow;
 
 /// <summary>运行 Block 子流程并应用显式输入、输出作用域映射。</summary>
@@ -139,6 +141,6 @@ public sealed class BlockNodeHandler : WorkflowNodeHandler<BlockNodeModel>
 
 /// <summary>Block 节点完成后提交的子运行摘要。</summary>
 public sealed record BlockNodeOutput(
-    Guid ChildRunId,
-    TimeSpan Elapsed,
-    IReadOnlyDictionary<string, object> MappedOutputs);
+    [property: DisplayName("子流程运行标识")] Guid ChildRunId,
+    [property: DisplayName("耗时")] TimeSpan Elapsed,
+    [property: DisplayName("映射输出")] IReadOnlyDictionary<string, object> MappedOutputs);

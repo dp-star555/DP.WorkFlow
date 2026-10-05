@@ -1,7 +1,9 @@
+using System.ComponentModel;
+
 namespace DP.WorkFlow;
 
 /// <summary>表示循环节点的标准输出。</summary>
-public sealed record LoopNodeResult(int CurrentIteration, int TotalIterations, bool Completed);
+public sealed record LoopNodeResult([property: DisplayName("当前次数")] int CurrentIteration, [property: DisplayName("总次数")] int TotalIterations, [property: DisplayName("是否完成")] bool Completed);
 
 /// <summary>
 /// 按固定次数选择 Loop 或 Completed 出口。

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using DP.Vision.Algorithms;
 
 namespace DP.WorkFlow;
@@ -83,7 +84,7 @@ public sealed class MapVisionCoordinateNodeHandler : WorkflowNodeHandler<MapVisi
 /// <summary>两点距离与方向事实，单位由输入坐标系决定。</summary>
 /// <param name="Distance">欧氏距离。</param>
 /// <param name="AngleRadians">从+X向+Y的方向弧度；重合点为null。</param>
-public sealed record VisionDistanceResult(double Distance, double? AngleRadians);
+public sealed record VisionDistanceResult([property: DisplayName("距离")] double Distance, [property: DisplayName("角度(弧度)")] double? AngleRadians);
 
 /// <summary>任意数值来源的两点几何测量。</summary>
 [WorkflowNode("Vision.MeasureDistance", DisplayName = "测量两点距离", Category = "5.Vision/ImageBuffer")]

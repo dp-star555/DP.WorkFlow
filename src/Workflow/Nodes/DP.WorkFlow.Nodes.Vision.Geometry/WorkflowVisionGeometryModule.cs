@@ -10,6 +10,7 @@ public sealed class WorkflowVisionGeometryModule : IWorkflowRuntimePluginModule
     /// <inheritdoc/>
     public void Register(WorkflowRuntimePluginCatalog extensions)
     {
+        WorkflowVisionOutputNames.EnsureRegistered();
         var ports = new[] { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success) };
         extensions.Nodes
             .Register(WorkflowNodeDescriptor.Create<DefineVisionCoordinateSystemNodeModel, VisionCoordinateDefinition>(ports: ports))

@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace DP.WorkFlow;
 
 /// <summary>产品流转状态。</summary>
@@ -8,15 +10,15 @@ public enum E_ProductMoveStartMode { Normal = 0, VirtualCreate = 1 }
 /// <summary>开始产品流转请求。</summary>
 public sealed record ProductMoveStartRequest(E_ProductMoveStartMode MoveMode, string? FromStationId, string? FromSlotId, string ToStationId, string? ToSlotId, string? Reason, string? ProductId, bool AutoGenerateProductId, string Recipe);
 /// <summary>开始产品流转结果。</summary>
-public sealed record ProductMoveStartNodeResult(string SessionId, string ProductId, string? FromStationId, string? FromSlotId, string ToStationId, string? ToSlotId, E_ProductFlowState State);
+public sealed record ProductMoveStartNodeResult([property: DisplayName("运输会话")] string SessionId, [property: DisplayName("产品")] string ProductId, [property: DisplayName("来源工站")] string? FromStationId, [property: DisplayName("来源槽位")] string? FromSlotId, [property: DisplayName("目标工站")] string ToStationId, [property: DisplayName("目标槽位")] string? ToSlotId, [property: DisplayName("流转状态")] E_ProductFlowState State);
 /// <summary>完成产品流转结果。</summary>
-public sealed record ProductMoveFinishNodeResult(string SessionId, string ProductId, string? FromStationId, string? FromSlotId, string ToStationId, string? ToSlotId, E_ProductFlowState State, bool Success, string? FailReason);
+public sealed record ProductMoveFinishNodeResult([property: DisplayName("运输会话")] string SessionId, [property: DisplayName("产品")] string ProductId, [property: DisplayName("来源工站")] string? FromStationId, [property: DisplayName("来源槽位")] string? FromSlotId, [property: DisplayName("目标工站")] string ToStationId, [property: DisplayName("目标槽位")] string? ToSlotId, [property: DisplayName("流转状态")] E_ProductFlowState State, [property: DisplayName("是否成功")] bool Success, [property: DisplayName("失败原因")] string? FailReason);
 /// <summary>工站布尔判断结果。</summary>
-public sealed record StationBooleanNodeResult(string StationId, string? SlotId, bool Value);
+public sealed record StationBooleanNodeResult([property: DisplayName("工站")] string StationId, [property: DisplayName("槽位")] string? SlotId, [property: DisplayName("结果")] bool Value);
 /// <summary>工站等待结果。</summary>
-public sealed record StationWaitNodeResult(string StationId, string? SlotId, bool Success);
+public sealed record StationWaitNodeResult([property: DisplayName("工站")] string StationId, [property: DisplayName("槽位")] string? SlotId, [property: DisplayName("是否成功")] bool Success);
 /// <summary>工站完成结果。</summary>
-public sealed record StationFinishedNodeResult(string StationId, string? SlotId, bool Success);
+public sealed record StationFinishedNodeResult([property: DisplayName("工站")] string StationId, [property: DisplayName("槽位")] string? SlotId, [property: DisplayName("是否成功")] bool Success);
 
 /// <summary>提供强类型产品流转和工站状态操作。</summary>
 public interface IWorkflowProductFlowService

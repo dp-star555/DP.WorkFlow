@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Collections.Concurrent;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -101,7 +102,7 @@ public sealed class WorkflowProgram : ICSharpProgram
 }
 
 /// <summary>Roslyn 脚本节点标准输出。</summary>
-public sealed record CSharpScriptNodeResult(bool Success, object? Value, string? Error, IReadOnlyList<string> Diagnostics);
+public sealed record CSharpScriptNodeResult([property: DisplayName("是否成功")] bool Success, [property: DisplayName("返回值")] object? Value, [property: DisplayName("错误")] string? Error, [property: DisplayName("诊断")] IReadOnlyList<string> Diagnostics);
 
 /// <summary>将脚本标准输出写入当前节点的运行 Trace，避免修改进程级 Console.Out。</summary>
 public sealed class WorkflowScriptConsole : IWorkflowScriptConsole

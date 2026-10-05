@@ -1,9 +1,10 @@
+using System.ComponentModel;
 using System.Diagnostics;
 
 namespace DP.WorkFlow;
 
 /// <summary>表示函数等待节点的标准输出。</summary>
-public sealed record WaitFunctionNodeResult(bool Matched, bool TimedOut, TimeSpan Elapsed);
+public sealed record WaitFunctionNodeResult([property: DisplayName("条件满足")] bool Matched, [property: DisplayName("是否超时")] bool TimedOut, [property: DisplayName("耗时")] TimeSpan Elapsed);
 
 /// <summary>
 /// 周期调用宿主条件，满足时走 Success，超时时走 Timeout。

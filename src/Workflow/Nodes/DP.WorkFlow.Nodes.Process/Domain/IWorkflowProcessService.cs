@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace DP.WorkFlow;
 
 /// <summary>产品流字段来源。</summary>
@@ -7,7 +9,7 @@ public enum E_ProductFlowValueSource { Literal = 0, Binding = 1 }
 public sealed record ProductCreateRequest(string? ProductId, bool AutoGenerateProductId, string Recipe, string? Reason, string StationId, string? SlotId);
 
 /// <summary>产品创建结果，字段与旧版保持一致。</summary>
-public sealed record ProductCreateNodeResult(string ProductId, string LotId, string Recipe, string StationId, string? SlotId, string State, int BatchIndex, int BatchTotalCount);
+public sealed record ProductCreateNodeResult([property: DisplayName("产品")] string ProductId, [property: DisplayName("批次")] string LotId, [property: DisplayName("配方")] string Recipe, [property: DisplayName("工站")] string StationId, [property: DisplayName("槽位")] string? SlotId, [property: DisplayName("产品状态")] string State, [property: DisplayName("批内序号")] int BatchIndex, [property: DisplayName("批次总数")] int BatchTotalCount);
 
 /// <summary>提供产品创建所需的宿主领域能力。</summary>
 public interface IWorkflowProcessService
