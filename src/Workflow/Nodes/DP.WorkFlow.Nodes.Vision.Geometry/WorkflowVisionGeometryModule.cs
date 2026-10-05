@@ -13,7 +13,6 @@ public sealed class WorkflowVisionGeometryModule : IWorkflowRuntimePluginModule
         WorkflowVisionOutputNames.EnsureRegistered();
         var ports = new[] { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success) };
         extensions.Nodes
-            .Register(WorkflowNodeDescriptor.Create<DefineVisionCoordinateSystemNodeModel, VisionCoordinateDefinition>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<BuildVisionCoordinateSystemNodeModel, VisionCoordinateSystemResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<CreateVisionPointNodeModel, VisionPoint>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<SelectVisionPointNodeModel, VisionPoint>(ports: ports))
@@ -27,7 +26,7 @@ public sealed class WorkflowVisionGeometryModule : IWorkflowRuntimePluginModule
         var bindings = WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionAlgorithmBindings>();
         var geometry = WorkflowRuntimeCapabilityRequirement.Require<IGeometryMeasurer>();
         extensions.Handlers.Register(new CreateVisionPointNodeHandler(), frames).Register(new SelectVisionPointNodeHandler(), frames)
-            .Register(new DefineVisionCoordinateSystemNodeHandler()).Register(new BuildVisionCoordinateSystemNodeHandler(), frames)
+            .Register(new BuildVisionCoordinateSystemNodeHandler(), frames)
             .Register(new TransformVisionPointNodeHandler(), frames).Register(new TransformVisionLineNodeHandler(), frames)
             .Register(new GenerateVisionLineNodeHandler(), frames, bindings, geometry)
             .Register(new MeasureVisionPointDistanceNodeHandler(), frames, bindings, geometry)

@@ -149,11 +149,11 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
         try
         {
             // 动态模板图像的参考签名只在运行时可知，此时先检查定义身份和版本，签名留给运行时校验。
-            var business = WorkflowVisionCoordinateCatalog.ResolveDefinition(nodes, producer.Definition);
+            var business = producer.GetCoordinateDefinition();
             var definition = producer.ResolveDefinition(nodes);
             return business.Id != Coordinates.CoordinateSystemId || business.Version != Coordinates.DefinitionVersion
                 || definition is not null && definition.Signature != Coordinates.DefinitionSignature
-                ? ["坐标定义与ROI制作身份不一致，请重新确认原点、轴、单位、模板参考及版本。"] : [];
+                ? ["坐标系与ROI制作身份不一致（坐标系、版本、单位或模板参考已变化），请重新确认绑定。"] : [];
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return [ex.Message]; }
     }

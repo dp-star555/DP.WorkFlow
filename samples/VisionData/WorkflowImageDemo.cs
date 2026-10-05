@@ -24,11 +24,9 @@ public static class WorkflowImageDemo
         template.FilePath = Path.Combine(AppContext.BaseDirectory, "VisionData", "geometry-template.pgm");
         var location = (LocateVisionTemplateNodeModel)session.AddNode("Vision.LocateTemplate", 680, 80).Node;
         location.Frame = Input<ImageFrame>(source.Id); location.Template = Input<ImageFrame>(template.Id); location.MinimumScore = .9999;
-        var definition = session.AddNode("Vision.DefineCoordinateSystem", 880, 80).Node;
-        Set(definition, "CoordinateId", "demo-workpiece"); Set(definition, "CoordinateName", "工件中心坐标");
-        Set(definition, "OriginDescription", "模板中心对应的工件基准点");
-        var build = (AnalyzeVisionFrameNodeModel)session.AddNode("Vision.BuildCoordinateSystem", 1080, 80).Node;
-        build.Frame = Input<ImageFrame>(source.Id); Set(build, "Definition", Input<VisionCoordinateDefinition>(definition.Id));
+        var build = (AnalyzeVisionFrameNodeModel)session.AddNode("Vision.BuildCoordinateSystem", 880, 80).Node;
+        build.Frame = Input<ImageFrame>(source.Id);
+        Set(build, "CoordinateId", "demo-workpiece"); Set(build, "CoordinateName", "工件中心坐标");
         var mode = build.GetType().GetProperty("Mode")!;
         mode.SetValue(build, Enum.Parse(mode.PropertyType, "Template"));
         Set(build, "Template", Input<TemplatePoseResult>(location.Id));
@@ -36,8 +34,8 @@ public static class WorkflowImageDemo
         using var patch = VisionImage.CopyFrom(new ImageInfo(4, 3, EPixelLayout.Gray8),
             new byte[] { 0, 64, 220, 40, 180, 30, 255, 80, 100, 230, 50, 140 });
         var coordinates = TemplateReference.FromImage(patch, new PixelBounds(0, 0, 4, 3))
-            .Bind(((IWorkflowVisionCoordinateDefinitionNode)definition).GetCoordinateDefinition());
-        var created = new List<IWorkflowNodeModel> { source, template, location, definition, build };
+            .Bind(((IWorkflowVisionCoordinateProducerNode)build).GetCoordinateDefinition());
+        var created = new List<IWorkflowNodeModel> { source, template, location, build };
         WorkflowVisionCoordinateBinding Follow() => new()
         {
             System = Input<VisionCoordinateSystem>(build.Id, "CoordinateSystem"), CoordinateSystemId = coordinates.Id,

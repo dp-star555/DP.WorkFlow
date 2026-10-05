@@ -89,8 +89,6 @@ public static class WorkflowVisionOutputNames
         ["Id"] = "标识",
         ["Name"] = "名称",
         ["Version"] = "版本",
-        ["OriginDescription"] = "原点约定",
-        ["AxisDescription"] = "轴方向约定",
         ["Signature"] = "语义签名"
     };
 

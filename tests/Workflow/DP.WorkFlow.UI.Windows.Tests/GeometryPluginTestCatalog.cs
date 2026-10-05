@@ -27,18 +27,15 @@ internal static class GeometryPluginTestCatalog
         return (nodes, handlers);
     }
 
-    /// <summary>用目录工厂创建“定义坐标系”节点。</summary>
-    internal static IWorkflowNodeModel Definition(WorkflowNodeCatalog nodes, string id, string coordinateId)
-    {
-        var node = nodes.GetOrThrow("Vision.DefineCoordinateSystem").Factory(); node.Id = id; Set(node, "CoordinateId", coordinateId); return node;
-    }
+    /// <summary>构建节点自带的坐标系定义。</summary>
+    internal static VisionCoordinateDefinition Definition(IWorkflowNodeModel build) => ((IWorkflowVisionCoordinateProducerNode)build).GetCoordinateDefinition();
 
     /// <summary>用目录工厂创建“构建本帧坐标系”节点，模板方式绑定模板匹配结果。</summary>
-    internal static AnalyzeVisionFrameNodeModel BuildFromTemplate(WorkflowNodeCatalog nodes, string id, string frameId, string definitionId, string templateNodeId)
+    internal static AnalyzeVisionFrameNodeModel BuildFromTemplate(WorkflowNodeCatalog nodes, string id, string frameId, string coordinateId, string templateNodeId)
     {
         var node = (AnalyzeVisionFrameNodeModel)nodes.GetOrThrow("Vision.BuildCoordinateSystem").Factory(); node.Id = id;
         node.Frame = WorkflowInput<ImageFrame>.FromBinding(new(frameId, "$"));
-        Set(node, "Definition", WorkflowInput<VisionCoordinateDefinition>.FromBinding(new(definitionId, "$")));
+        Set(node, "CoordinateId", coordinateId);
         var mode = node.GetType().GetProperty("Mode")!; mode.SetValue(node, Enum.Parse(mode.PropertyType, "Template"));
         Set(node, "Template", WorkflowInput<TemplatePoseResult>.FromBinding(new(templateNodeId, "$")));
         return node;
