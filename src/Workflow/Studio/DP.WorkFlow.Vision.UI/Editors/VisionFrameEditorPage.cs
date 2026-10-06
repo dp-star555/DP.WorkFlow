@@ -56,6 +56,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     private readonly Action? _configurationChanged;
     private double _imagePixelsPerScreenPixel = 1;
     private IReadOnlyList<Visual> _visuals = Array.Empty<Visual>();
+    private object? _pickFacts;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly List<Action> _releaseViews = new();
 
@@ -317,9 +318,10 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
                 layers.Add(new CanvasLayer("caliper", ELayerKind.Annotation, Caliper.Visuals(_imagePixelsPerScreenPixel), 10, name: "卡尺"));
             var overlay = new GeometryOverlay(frame.FrameId, layers);
             var canvas = new CanvasFrame(frame.FrameId, ++_sequence, frame.Image, overlay);
-            _visuals = visuals; _lastKey = key;
+            _visuals = visuals; _pickFacts = facts; _lastKey = key;
             Status = Describe(facts, frame) + maskStatus;
-            if (Caliper is not null) Status += " " + Caliper.Hint;
+            // 卡尺尺寸说明放在状态栏，图上不画文字标签。
+            if (Caliper is not null) Status += (Caliper.IsEditable ? " " + Caliper.Caption + "。" : "") + " " + Caliper.Hint;
             if (_node is AnalyzeVisionFrameNodeModel { Coordinates: { } binding })
                 Status += CoordinateEditingReady ? $" {(SupportsRegions ? "ROI" : "几何表达")}绑定坐标系 {binding.CoordinateSystemId}，按本帧坐标系显示。" : " 当前视图只读，不使用其他帧的定位。";
             return canvas;
@@ -333,9 +335,20 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     public string? Pick(PointD point, double tolerance)
     {
         var hit = _visuals.Reverse().FirstOrDefault(v => v.Geometry.Contains(point, tolerance));
+        if (hit is { Caption: null } && PickText(_pickFacts, hit.Id) is { } text) return text;
         // 同一几何事实只在第一个图形上标注；拾取其余图形（如参考轴）时沿用这条说明。
         return hit is { Caption: null } && hit.Id.StartsWith("geometry-", StringComparison.Ordinal)
             ? _visuals.FirstOrDefault(v => v.Id == "geometry-0")?.Caption : hit?.Caption;
+    }
+
+    // 不画标签的图形在点击时给出的说明。
+    private static string? PickText(object? facts, string id)
+    {
+        if (facts is not VisionCaliperMeasurement measurement) return null;
+        if (id == "profile") return measurement.Summary;
+        if (!id.StartsWith("edge-", StringComparison.Ordinal) || !int.TryParse(id.AsSpan(5), out var index) || index >= measurement.Count) return null;
+        var edge = measurement.Edges[index];
+        return $"边缘 ({edge.Position.X:F4},{edge.Position.Y:F4})；梯度 {edge.Gradient:F3}" + (edge.AngleDegrees is { } angle ? $"；角度 {angle:F2}°" : "");
     }
 
     private static string Describe(object? facts, ImageFrame frame) => facts switch
@@ -370,13 +383,12 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
                 yield return new Visual($"edge-{i}", new EllipseGeometry(caliper.Edges[i].Position, 1, 1), 0xFFFFCC00,
                     $"边缘 ({caliper.Edges[i].Position.X:F4},{caliper.Edges[i].Position.Y:F4})；梯度 {caliper.Edges[i].Gradient:F3}");
         }
+        // 卡尺结果不在图上画文字标签；点击边缘点时由 PickText 在状态栏给出坐标和梯度。
         if (facts is VisionCaliperMeasurement measurement)
         {
-            yield return new Visual("profile", new ContourGeometry(measurement.Path), 0xFF33BBFF,
-                measurement.Shape == EVisionCaliperShape.Arc ? "圆弧卡尺扫描方向" : "卡尺采样方向");
+            yield return new Visual("profile", new ContourGeometry(measurement.Path), 0xFF33BBFF);
             for (int i = 0; i < measurement.Count; i++)
-                yield return new Visual($"edge-{i}", new EllipseGeometry(measurement.Edges[i].Position, 1, 1), 0xFFFFCC00,
-                    $"边缘 ({measurement.Edges[i].Position.X:F4},{measurement.Edges[i].Position.Y:F4})；梯度 {measurement.Edges[i].Gradient:F3}");
+                yield return new Visual($"edge-{i}", new EllipseGeometry(measurement.Edges[i].Position, 1, 1), 0xFFFFCC00);
         }
         if (facts is RobustLineResult line)
             yield return new Visual("robust-line", new ContourGeometry(new[] { line.A, line.B }), 0xFFFFCC00, $"内点 {line.InlierCount}；RMS {line.RmsError:F4}");

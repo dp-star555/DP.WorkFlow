@@ -40,7 +40,7 @@ public sealed class VisionCaliperGizmo
     private const int MaximumHalfWidth = 63;
     private const double MinimumBandStep = .1;
     private const double MaximumBandStep = 10;
-    private const double ProjectionScreenSpacing = 10;
+    private const double ProjectionScreenSpacing = 8;
     private readonly MeasureVisionCaliperNodeModel _node;
     private EVisionCaliperHandle? _drag;
     private PointD _dragAnchor;
@@ -218,7 +218,7 @@ public sealed class VisionCaliperGizmo
         visuals.Add(new Visual("caliper-band", new ContourGeometry(new[]
         {
             At(Start, 0, -HalfBand), At(End, 0, -HalfBand), At(End, 0, HalfBand), At(Start, 0, HalfBand)
-        }, closed: true), BandColor, Caption));
+        }, closed: true), BandColor));
         // 投影线：垂直于扫描方向横跨采样带，表示每个扫描位置在哪条线上取点求平均；
         // 算法每 1px 一条，按屏幕间距抽稀显示，外框始终是真实带宽。
         if (HalfBand > 0)
@@ -252,7 +252,7 @@ public sealed class VisionCaliperGizmo
         IEnumerable<PointD> Arc(double radius) => Enumerable.Range(0, segments + 1).Select(i => ArcPoint(radius, (double)i / segments));
 
         // 采样带外框：外弧 + 内弧（反向）闭合成环形扇区。
-        visuals.Add(new Visual("caliper-band", new ContourGeometry(Arc(outer).Concat(Arc(inner).Reverse()), closed: true), BandColor, Caption));
+        visuals.Add(new Visual("caliper-band", new ContourGeometry(Arc(outer).Concat(Arc(inner).Reverse()), closed: true), BandColor));
         if (IsRadial)
         {
             // 径向搜索：圆弧均分为 N 段（分隔线），每段中间一个沿半径的搜索箭头（由内到外或由外到内）。
@@ -321,18 +321,17 @@ public sealed class VisionCaliperGizmo
         return visuals;
     }
 
-    // 采样标尺：扫描路径 1/4 处沿投影方向标出每个垂直采样点（过密时抽稀），菱形把手在第 K 个采样点上。
+    // 采样栅格的纵线：平行于扫描路径、间距为垂直采样间隔，与投影线的交点就是实际采样点；
+    // 屏幕上过密（<4px）时按整数倍抽稀，间距仍与间隔成比例。菱形把手在第 K 条纵线上，拖动调整间隔。
     private void AddStepRuler(List<Visual> visuals, double unit, double angle)
     {
         if (_node.HalfWidth < 1 || ImageStep <= 0) return;
-        visuals.Add(new Visual("caliper-step-ruler", new ContourGeometry(new[]
-        {
-            BandPoint(StepStation, -HalfBand), BandPoint(StepStation, HalfBand)
-        }), StepColor & 0x90FFFFFF));
         var stride = Math.Max(1, (int)Math.Ceiling(4 * unit / ImageStep));
-        var dot = 1.6 * unit;
-        for (var k = -_node.HalfWidth; k <= _node.HalfWidth; k += stride)
-            visuals.Add(new Visual($"caliper-step-dot{k}", new EllipseGeometry(BandPoint(StepStation, k * ImageStep), dot, dot), StepColor));
+        var segments = IsArc ? Math.Clamp((int)Math.Ceiling(Math.Abs(_node.SweepAngle) / 3), 8, 120) : 1;
+        for (var k = -_node.HalfWidth + 1; k < _node.HalfWidth; k++)
+            if (k != 0 && k % stride == 0)
+                visuals.Add(new Visual($"caliper-lane{k}", new ContourGeometry(
+                    Enumerable.Range(0, segments + 1).Select(i => BandPoint((double)i / segments, k * ImageStep))), SampleColor));
         var handle = HandleScreenRadius * unit;
         visuals.Add(new Visual("caliper-step", new RectangleGeometry(StepHandlePoint(unit), handle * 1.6, handle * 1.6, angle + Math.PI / 4), StepColor));
     }
@@ -373,10 +372,10 @@ public sealed class VisionCaliperGizmo
         for (var k = 1; k < count; k++) yield return (k, k * spacing);
     }
 
-    // 投影线位置：沿扫描路径按屏幕间距抽稀，不画两端（与外框重合）。
+    // 投影线位置（栅格横线）：算法沿扫描路径每 1px 一条；屏幕上过密时按整数倍抽稀，不画两端（与外框重合）。
     private IEnumerable<(int Index, double Along)> ProjectionStations(double unit)
     {
-        var spacing = Math.Max(1, ProjectionScreenSpacing * unit);
+        var spacing = Math.Max(1, Math.Ceiling(ProjectionScreenSpacing * unit));
         var count = (int)Math.Floor(Length / spacing);
         for (var k = 1; k < count; k++) yield return (k, k * spacing);
     }
