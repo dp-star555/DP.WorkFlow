@@ -56,7 +56,7 @@ internal sealed class VisionFrameEditorControl : UserControl
         _model = model; _pick = pick; _picking = picking;
         _views = model.Views;
         _source.Items.AddRange(_views.Cast<object>().ToArray());
-        SetViewCore(model.IsTemplateEditor ? 4 : 1);
+        SetViewCore(model.DefaultView);
         _toolbar.Items.Add(Fit(Host(_source, "显示的图像"), () => _views.Select(v => v.Text), 44));
         _toolbar.Items.Add(new ToolStripSeparator());
 
@@ -278,7 +278,7 @@ internal sealed class VisionFrameEditorControl : UserControl
         PointD ToImage(MouseEventArgs e) => _canvas.Viewport.ToImage(new PointD(e.X, e.Y));
         _canvas.MouseDown += (_, e) =>
         {
-            if (e.Button != MouseButtons.Left || View is 4 or 5) return;
+            if (e.Button != MouseButtons.Left || !VisionFrameEditorPageModel.ShowsEditableOverlays(View)) return;
             var point = ToImage(e);
             if (caliper.Hit(point, Unit()) is { } handle) { caliper.BeginDrag(handle, point, Unit()); _canvas.Capture = true; }
         };
@@ -290,7 +290,7 @@ internal sealed class VisionFrameEditorControl : UserControl
                 if (caliper.Drag(point)) { _model.InvalidatePreview(); RefreshPreview(); }
                 return;
             }
-            _canvas.Cursor = View is 4 or 5 ? Cursors.Default : caliper.Hit(point, Unit()) switch
+            _canvas.Cursor = !VisionFrameEditorPageModel.ShowsEditableOverlays(View) ? Cursors.Default : caliper.Hit(point, Unit()) switch
             {
                 EVisionCaliperHandle.Body or EVisionCaliperHandle.Center => Cursors.SizeAll,
                 EVisionCaliperHandle.Radius or EVisionCaliperHandle.Step => Cursors.Hand,
@@ -314,7 +314,7 @@ internal sealed class VisionFrameEditorControl : UserControl
             _model.ImagePixelsPerScreenPixel = 1 / Math.Max(1e-9, _canvas.Viewport.Scale);
             using var frame = _model.Capture(view);
             _canvas.Editor = view == 4 ? (_picking?.Invoke() == true || _template is { PickOrigin: true } or { PickDirection: true }) ? null : _model.Template?.Editor
-                : view == 5 ? null : !_model.IsTemplateEditor && _model.CanEdit && _model.CoordinateEditingReady ? _model.Editor : null;
+                : VisionFrameEditorPageModel.ShowsEditableOverlays(view) && !_model.IsTemplateEditor && _model.CanEdit && _model.CoordinateEditingReady ? _model.Editor : null;
             SyncToolbar();
             if (frame is not null) { _canvas.Present(frame); if (_model.IsTemplateEditor && _fittedFrame != frame.FrameId) { _fittedFrame = frame.FrameId; _canvas.FitToWindow(); } _status.Text = view is 4 or 5 ? _model.Template?.Status : _model.Status; }
             else
