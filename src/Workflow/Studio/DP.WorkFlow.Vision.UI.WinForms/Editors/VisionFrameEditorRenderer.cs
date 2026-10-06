@@ -98,17 +98,6 @@ internal sealed class VisionFrameEditorControl : UserControl
             };
         }
         IconButton("适应窗口", ModernUI.WinForms.ModernIconKind.FitWindow, _canvas.FitToWindow);
-        if (model.CanBindCoordinates)
-        {
-            _toolbar.Items.Add(new ToolStripSeparator());
-            var coordinates = ToolSelect(160);
-            coordinates.Items.AddRange(model.CoordinateSources.Cast<object>().ToArray());
-            if (coordinates.Items.Count > 0) coordinates.SelectedIndex = 0;
-            _toolbar.Items.Add(Fit(Host(coordinates, "定位节点"), () => model.CoordinateSources.Select(c => c.ToString() ?? "").Append("请选择"), 44));
-            TextButton("绑定/更换坐标系", () => model.BindCoordinates((coordinates.SelectedItem as VisionCoordinateSource)?.NodeId
-                ?? throw new InvalidOperationException("请选择定位节点。")));
-            TextButton("解除坐标系转原图", model.UnbindCoordinates);
-        }
 
         Controls.Add(_canvas); Controls.Add(_status);
         if (model.Template != null && templatePane)
@@ -148,12 +137,6 @@ internal sealed class VisionFrameEditorControl : UserControl
             button.Click += (_, _) => Guard(action);
             _toolbar.Items.Add(button);
             return button;
-        }
-        void TextButton(string text, Action action)
-        {
-            var button = new ModernUI.WinForms.ModernButton { Text = text, Theme = Theme, Size = new Size(120, ControlHeight) };
-            button.Click += (_, _) => { Guard(action); RefreshPreview(); _status.Text = model.Status; };
-            _toolbar.Items.Add(Fit(Host(button, text), () => new[] { text }, 28));
         }
     }
 
@@ -202,7 +185,7 @@ internal sealed class VisionFrameEditorControl : UserControl
             {
                 var control = host.Control;
                 int text = texts().DefaultIfEmpty("").Max(t => TextRenderer.MeasureText(t, control.Font).Width);
-                var size = new Size(Math.Min(text + Scale(extra), Scale(360)), Scale(ControlHeight)); // 定位节点名称可能很长，限制最大宽度。
+                var size = new Size(Math.Min(text + Scale(extra), Scale(360)), Scale(ControlHeight)); // 文字可能很长，限制最大宽度。
                 control.Size = size; host.Size = size;
                 host.Margin = new Padding(Scale(2), 0, Scale(2), 0);
             }

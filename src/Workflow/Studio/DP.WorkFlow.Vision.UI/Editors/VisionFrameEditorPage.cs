@@ -21,16 +21,6 @@ public sealed class VisionFrameEditorPageProvider(IWorkflowVisionPreviewSource? 
     public IEnumerable<WorkflowNodeEditorPageDescriptor> CreatePages(WorkflowNodeEditorContext context)
     {
         if (!CanProvide(context)) yield break;
-        var nodes = context.Session.Catalog.Snapshot();
-        var scope = context.Session.Canvas.Nodes.Select(n => n.Node).ToArray();
-        string SourceLabel(IWorkflowNodeModel node)
-        {
-            var label = string.IsNullOrWhiteSpace(node.Title) ? node.Id : $"{node.Title} [{node.Id}]";
-            if (node is IWorkflowVisionCoordinateProducerNode producer)
-                try { var definition = producer.GetCoordinateDefinition(); return $"{definition.Name}（v{definition.Version}，{definition.UnitName}）— {label}"; }
-                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { }
-            return label;
-        }
         yield return new WorkflowNodeEditorPageDescriptor("Image", "图像与测量范围",
             WorkflowNodeEditorPageKind.Custom, 450, new VisionFrameEditorPageModel(context.Node, frames, reader,
                 scope
@@ -38,6 +28,7 @@ public sealed class VisionFrameEditorPageProvider(IWorkflowVisionPreviewSource? 
                         && descriptor.OutputType is { } type && typeof(IVisionCoordinateResult).IsAssignableFrom(type))
                     .Select(n => new VisionCoordinateSource(n.Id, SourceLabel(n))).ToArray(), templates, enableTemplateEditing: false,
                 configurationChanged: context.Session.NotifyNodeConfigurationChanged),
+            WorkflowNodeEditorPageKind.Custom, 450, new VisionFrameEditorPageModel(context.Node, frames, reader, templates, enableTemplateEditing: false),
             IconKey: "Image", RendererKey: RendererKey, Priority: 100);
         if (context.Node is IWorkflowVisionTemplateNode && context.RequestedPropertyEditor == WorkflowPropertyEditorKeys.VisionTemplateEditor)
             yield return new WorkflowNodeEditorPageDescriptor("Template", "模板制作/选择", WorkflowNodeEditorPageKind.Custom, 460,
@@ -86,7 +77,6 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     /// <param name="node">隔离编辑副本。</param>
     /// <param name="frames">运行预览源。</param>
     /// <param name="reader">显式预览读图能力，可为空。</param>
-    /// <param name="coordinateSources">当前文档可显式选择的定位节点。</param>
     /// <param name="templates">宿主模板制作运行时，可为空。</param>
     /// <param name="enableTemplateEditing">是否创建模板制作草稿。</param>
     /// <param name="templateEditorOnly">是否只编辑模板，保留匹配节点搜索范围。</param>
@@ -94,12 +84,13 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     public VisionFrameEditorPageModel(IWorkflowNodeModel node, IWorkflowVisionPreviewSource? frames = null, IImageFileReader? reader = null,
         IReadOnlyList<VisionCoordinateSource>? coordinateSources = null, VisionTemplateEditingRuntime? templates = null,
         bool enableTemplateEditing = true, bool templateEditorOnly = false, Action? configurationChanged = null)
+        VisionTemplateEditingRuntime? templates = null,
+        bool enableTemplateEditing = true, bool templateEditorOnly = false)
     {
         IsTemplateEditor = templateEditorOnly;
         _configurationChanged = configurationChanged;
         if (!templateEditorOnly && node is MeasureVisionCaliperNodeModel caliper) Caliper = new VisionCaliperGizmo(caliper);
         _node = node ?? throw new ArgumentNullException(nameof(node)); _frames = frames; _reader = reader;
-        CoordinateSources = coordinateSources ?? Array.Empty<VisionCoordinateSource>();
         Editor = new RoiEditor();
         if (node is AnalyzeVisionFrameNodeModel { Coordinates: not null }) { /* 等待同帧定位后显示局部ROI，不在原图上误画局部数值。 */ }
         else if (node is AnalyzeVisionFrameNodeModel { Regions.Count: > 0 } regionNode)
@@ -246,31 +237,12 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
                 Status = "已编辑水平单行矩形；确认节点后提交。";
                 return;
             }
-            var mapped = e.After.Rois.Select(r => MapRegion(node.Coordinates is null ? r : new RoiDefinition(r.Id,
+            var mapped = e.After.Rois.Select(r => VisionCoordinateRebinding.MapRegion(node.Coordinates is null ? r : new RoiDefinition(r.Id,
                 _displayCoordinates!.ToLocalGeometry(r.Shape), r.Purpose, r.Enabled))).ToList();
             node.Regions = mapped; node.FullImage = true;
             Status = $"已编辑{mapped.Count}个ROI；包含并集减排除并集，确认节点后提交。";
         }
         catch (Exception ex) when (ex is ArgumentException or OverflowException) { Status = ex.Message; }
-    }
-
-    private static WorkflowVisionRoi MapRegion(RoiDefinition roi)
-    {
-        var value = new WorkflowVisionRoi { Id = roi.Id, Enabled = roi.Enabled, Exclude = roi.Purpose == ERoiPurpose.Exclude };
-        switch (roi.Shape)
-        {
-            case RectangleGeometry r:
-                value.Shape = EWorkflowVisionRoiShape.Rectangle; value.CenterX = r.Center.X; value.CenterY = r.Center.Y;
-                value.Width = r.Width; value.Height = r.Height; value.Angle = r.Angle; break;
-            case EllipseGeometry e:
-                value.Shape = EWorkflowVisionRoiShape.Ellipse; value.CenterX = e.Center.X; value.CenterY = e.Center.Y;
-                value.Width = e.RadiusX * 2; value.Height = e.RadiusY * 2; value.Angle = e.Angle; break;
-            case ContourGeometry { Closed: true, Filled: true } c:
-                value.Shape = EWorkflowVisionRoiShape.Polygon;
-                value.Points = c.Points.Select(p => new WorkflowVisionRoiPoint { X = p.X, Y = p.Y }).ToList(); break;
-            default: throw new ArgumentException("开放轮廓或点不能作为面积ROI，未修改节点参数。");
-        }
-        return value;
     }
 
     /// <summary>显式选择全图，不在打开页面时自动修复。</summary>
@@ -318,7 +290,6 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             var frame = view == 3 ? _manual : current?.Frame;
             if (frame is null) { CoordinateEditingReady = false; return null; }
             UpdateCoordinatePreview(frame, view);
-            _displayedFrameId = frame.FrameId;
             var analysis = _node as AnalyzeVisionFrameNodeModel;
             using var maskPreview = analysis?.Mask.Binding is { IsPublicData: false } maskBinding ? _frames?.Capture(maskBinding.NodeId) : null;
             string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}:{Caliper?.Key}:{_imagePixelsPerScreenPixel:0.###}";

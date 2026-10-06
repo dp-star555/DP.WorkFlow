@@ -95,7 +95,11 @@ public partial class Form1 : Form
         // 采集节点的"逻辑图像源"从本机已发布的源里选，避免手写出机器上不存在的标识；
         // 面阵节点与线扫节点各看各的采集类型，不能互相选到对方的源。
         workflowStudioControl1.Properties.ChoiceProvider = WorkflowVisionAlgorithmChoices.CreateProvider(algorithmCatalog, WorkflowVisionSourceChoices.CreateProvider(_visionSources));
-        workflowStudioControl1.Properties.AdditionalProperties = WorkflowVisionAlgorithmProperties.CreateProvider(algorithmCatalog);
+        // 算法实现与“坐标系”下拉；坐标系下拉按本轮运行结果换算ROI等范围。
+        var algorithmProperties = WorkflowVisionAlgorithmProperties.CreateProvider(algorithmCatalog);
+        var coordinateProperties = WorkflowVisionCoordinateProperties.CreateProvider(_frameScope,
+            () => _workspace.Navigator?.CurrentSession.Canvas.Nodes.Select(n => n.Node).ToArray() ?? []);
+        workflowStudioControl1.Properties.AdditionalProperties = node => [.. algorithmProperties(node), .. coordinateProperties(node)];
 
         // 5. 注册宿主运行能力；节点和 Handler 已由上面的 Runtime Module 成组注册。
         var actions = new WorkflowActionRegistry()

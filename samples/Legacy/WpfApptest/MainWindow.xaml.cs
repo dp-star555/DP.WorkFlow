@@ -80,7 +80,11 @@ public partial class MainWindow : Window
         { FrameSource = _frameScope, FileReader = fileReader, Templates = new VisionTemplateEditingRuntime(algorithmCatalog, _algorithmRuntime, Resources) });
         // 采集节点的"逻辑图像源"从本机已发布的源里选；面阵节点与线扫节点各看各的采集类型。
         Studio.Properties.ChoiceProvider = WorkflowVisionAlgorithmChoices.CreateProvider(algorithmCatalog, WorkflowVisionSourceChoices.CreateProvider(_visionSources));
-        Studio.Properties.AdditionalProperties = WorkflowVisionAlgorithmProperties.CreateProvider(algorithmCatalog);
+        // 算法实现与“坐标系”下拉；坐标系下拉按本轮运行结果换算ROI等范围。
+        var algorithmProperties = WorkflowVisionAlgorithmProperties.CreateProvider(algorithmCatalog);
+        var coordinateProperties = WorkflowVisionCoordinateProperties.CreateProvider(_frameScope,
+            () => _workspace.Navigator?.CurrentSession.Canvas.Nodes.Select(n => n.Node).ToArray() ?? []);
+        Studio.Properties.AdditionalProperties = node => [.. algorithmProperties(node), .. coordinateProperties(node)];
         var actions = new WorkflowActionRegistry();
         var services = new WorkflowServiceProvider()
             .Add<IWorkflowOperatorService>(_operatorService)

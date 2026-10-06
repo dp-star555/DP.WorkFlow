@@ -91,15 +91,6 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
         var fit = new Button { ToolTip = "适应窗口", Content = Icon(VisionToolIcons.FitWindow), Width = 32, Height = 30 };
         fit.Click += (_, _) => _canvas.FitToWindow();
         _toolbar.Items.Add(fit);
-        if (model.CanBindCoordinates)
-        {
-            _toolbar.Items.Add(new Separator());
-            var coordinates = new ComboBox { MinWidth = 180, Height = 30, Margin = new Thickness(2), VerticalContentAlignment = VerticalAlignment.Center, ItemsSource = model.CoordinateSources, SelectedIndex = 0, ToolTip = "定位节点" };
-            _toolbar.Items.Add(coordinates);
-            TextButton("绑定/更换坐标系", () => model.BindCoordinates((coordinates.SelectedItem as VisionCoordinateSource)?.NodeId
-                ?? throw new InvalidOperationException("请选择定位节点。")));
-            TextButton("解除坐标系转原图", model.UnbindCoordinates);
-        }
         var tray = new ToolBarTray { IsLocked = true };
         tray.ToolBars.Add(_toolbar);
         SetDock(tray, Dock.Top); Children.Add(tray);
@@ -132,12 +123,6 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
         {
             try { action(); _status.Text = _canvas.Editor?.ValidationError ?? _status.Text; }
             catch (Exception ex) { _status.Text = ex.Message; }
-        }
-        void TextButton(string text, Action action)
-        {
-            var button = new Button { Content = text, Height = 30, Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(2) };
-            button.Click += (_, _) => { Guard(action); RefreshPreview(); _status.Text = model.Status; };
-            _toolbar.Items.Add(button);
         }
     }
 

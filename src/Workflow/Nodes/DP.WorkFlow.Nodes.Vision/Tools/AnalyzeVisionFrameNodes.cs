@@ -41,8 +41,8 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
     [System.ComponentModel.Browsable(false), System.Text.Json.Serialization.JsonIgnore]
     public bool SupportsRegionMask => RangeCapability == EWorkflowVisionRange.Region;
 
-    /// <summary>可空业务坐标绑定；启用后Regions/卡尺端点使用局部单位，运行中不改配置。</summary>
-    [WorkflowProperty("坐标系", "绑定本帧CoordinateSystem，保存制作时定义ID、版本和语义签名。", Category = "坐标系")]
+    /// <summary>可空业务坐标绑定；启用后Regions/卡尺端点使用局部单位，运行中不改配置。属性面板以“坐标系”下拉编辑（绑定时换算范围），不直接编辑此对象。</summary>
+    [System.ComponentModel.Browsable(false)]
     public WorkflowVisionCoordinateBinding? Coordinates { get; set; }
 
     /// <summary>此节点是否支持显式定位；不支持的算子不能用外接框假装随动。</summary>
