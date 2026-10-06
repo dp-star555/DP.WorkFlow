@@ -284,6 +284,8 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             var frame = view == 3 ? _manual : current?.Frame;
             if (frame is null) { CoordinateEditingReady = false; return null; }
             UpdateCoordinatePreview(frame, view);
+            // 绑定坐标系的卡尺按本帧坐标系换算到原图显示和拖动；没有同帧定位时不显示。
+            if (Caliper is not null) Caliper.Coordinates = CoordinateEditingReady ? _displayCoordinates : null;
             var analysis = _node as AnalyzeVisionFrameNodeModel;
             using var maskPreview = analysis?.Mask.Binding is { IsPublicData: false } maskBinding ? _frames?.Capture(maskBinding.NodeId) : null;
             string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}:{Caliper?.Key}:{_imagePixelsPerScreenPixel:0.###}";

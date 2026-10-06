@@ -269,7 +269,6 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
             _purpose.Visibility = regions ? Visibility.Visible : Visibility.Collapsed; _purpose.IsEnabled = editor != null;
             if (_model.Caliper is { } caliper)
             {
-                _shape.IsEnabled = caliper.IsEditable;
                 if (_shape.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (i.Tag as VisionCaliperShapeChoice)?.Shape == caliper.Shape) is { } shapeItem
                     && !ReferenceEquals(_shape.SelectedItem, shapeItem)) _shape.SelectedItem = shapeItem;
             }

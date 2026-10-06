@@ -1,4 +1,5 @@
 using DP.Vision;
+using DP.Vision.Algorithms;
 using DP.WorkFlow.Vision.UI;
 
 namespace DP.WorkFlow.Tests;
@@ -175,6 +176,66 @@ public sealed class VisionCaliperGizmoTests
         Assert.True(gizmo.SetShape(EVisionCaliperShape.Line));
         Assert.Equal(EVisionCaliperShape.Line, node.Shape);
         Assert.Equal((10d, 50d, 60d, 0d), (node.StartX, node.StartY, node.EndX, node.EndY));
+    }
+
+    [Fact]
+    public void CoordinateBoundCaliper_IsDisplayedAndDraggedThroughFrameCoordinates()
+    {
+        // 局部→原图：尺度 2、旋转 90°、平移 (100, 50)：x' = -2y + 100，y' = 2x + 50。
+        var system = new VisionCoordinateSystem(new VisionCoordinateDefinition("work", "工件"), "frame", 400, 400,
+            CoordinateMatrix2D.FromAffine(0, -2, 100, 2, 0, 50));
+        var node = new MeasureVisionCaliperNodeModel
+        {
+            Shape = EVisionCaliperShape.Arc, CenterX = 10, CenterY = 10, Radius = 5, StartAngle = 0, SweepAngle = 90, HalfWidth = 2, BandSampleStep = 1,
+            Coordinates = new WorkflowVisionCoordinateBinding { CoordinateSystemId = "work" }
+        };
+        var gizmo = new VisionCaliperGizmo(node);
+        Assert.False(gizmo.IsEditable);
+        Assert.Contains("请先运行流程", gizmo.Hint);
+
+        gizmo.Coordinates = system;
+        Assert.True(gizmo.IsEditable);
+        Assert.NotEmpty(gizmo.Visuals(1));
+        Assert.Equal((80d, 70d), (gizmo.Center.X, gizmo.Center.Y));
+        Assert.Equal(80, gizmo.Start.X, 6); Assert.Equal(80, gizmo.Start.Y, 6);
+        Assert.Equal(4d, gizmo.HalfBand);
+
+        // 圆心在原图拖到 (90, 70) → 局部 (10, 5)。
+        gizmo.BeginDrag(EVisionCaliperHandle.Center, new PointD(80, 70));
+        gizmo.Drag(new PointD(90, 70));
+        gizmo.EndDrag();
+        Assert.Equal((10d, 5d), (node.CenterX, node.CenterY));
+
+        // 原图半径 16 → 局部 8。
+        var middle = new PointD(90 + 10 * Math.Cos(135 * Math.PI / 180), 70 + 10 * Math.Sin(135 * Math.PI / 180));
+        // 这段圆弧在原图只有约 16px，放大后（0.1 原图像素/屏幕像素）才能分开抓取中点与终点。
+        Assert.Equal(EVisionCaliperHandle.Radius, gizmo.Hit(middle, .1));
+        gizmo.BeginDrag(EVisionCaliperHandle.Radius, middle);
+        gizmo.Drag(new PointD(90 + 16 * Math.Cos(135 * Math.PI / 180), 70 + 16 * Math.Sin(135 * Math.PI / 180)));
+        gizmo.EndDrag();
+        Assert.Equal(8, node.Radius, 6);
+
+        // 起点拖到原图 120°：终止角（原图 180°）不动 → 局部起始角 30°、扫描 60°。
+        gizmo.BeginDrag(EVisionCaliperHandle.Start, gizmo.Start);
+        gizmo.Drag(new PointD(90 + 16 * Math.Cos(120 * Math.PI / 180), 70 + 16 * Math.Sin(120 * Math.PI / 180)));
+        gizmo.EndDrag();
+        Assert.Equal(30, node.StartAngle, 6); Assert.Equal(60, node.SweepAngle, 6);
+
+        // 原图带宽 6px、原图间隔 2px → 半宽 3，局部间隔仍为 1。
+        var widthPoint = new PointD(90 + 22 * Math.Cos(150 * Math.PI / 180), 70 + 22 * Math.Sin(150 * Math.PI / 180));
+        gizmo.BeginDrag(EVisionCaliperHandle.Width, widthPoint);
+        gizmo.Drag(widthPoint);
+        gizmo.EndDrag();
+        Assert.Equal((3, 1d), (node.HalfWidth, node.BandSampleStep));
+
+        // 直线：局部 (0,0)→(10,0) 在原图为 (100,50)→(100,70)；终点拖到原图 (120,50) → 局部 (0,-10)。
+        Assert.True(gizmo.SetShape(EVisionCaliperShape.Line));
+        node.StartX = 0; node.StartY = 0; node.EndX = 10; node.EndY = 0;
+        Assert.Equal((100d, 70d), (gizmo.End.X, gizmo.End.Y));
+        gizmo.BeginDrag(EVisionCaliperHandle.End, gizmo.End);
+        gizmo.Drag(new PointD(120, 50));
+        gizmo.EndDrag();
+        Assert.Equal((0d, -10d), (node.EndX, node.EndY));
     }
 
     private static double Distance(PointD a, PointD b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));

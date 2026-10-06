@@ -347,7 +347,6 @@ internal sealed class VisionFrameEditorControl : UserControl
             _purposeHost.Visible = regions; _purposeHost.Enabled = editor != null;
             if (_shapeHost is not null && _model.Caliper is { } caliper)
             {
-                _shapeHost.Enabled = caliper.IsEditable;
                 var shapeChoice = VisionCaliperShapeChoice.All.FirstOrDefault(c => c.Shape == caliper.Shape);
                 if (shapeChoice is not null && !Equals(_shape.SelectedItem, shapeChoice)) _shape.SelectedItem = shapeChoice;
             }
