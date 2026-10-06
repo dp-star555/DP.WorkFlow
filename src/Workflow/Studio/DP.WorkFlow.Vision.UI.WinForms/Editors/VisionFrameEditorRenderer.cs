@@ -71,7 +71,7 @@ internal sealed class VisionFrameEditorControl : UserControl
         };
         _toolbar.Items.Add(_toolHost = Fit(Host(_tool, "区域类型"), () => _tools.Select(t => t.Text), 66));
         // 卡尺节点的区域类型是卡尺形状：直线卡尺 / 圆弧卡尺，切换时保持在图上的位置。
-        if (model.Caliper is { } shapeCaliper)
+        if (model.Caliper is VisionCaliperGizmo shapeCaliper)
         {
             _toolIcons.Images.Add("caliper-" + EVisionCaliperShape.Line, CaliperIcon(arc: false));
             _toolIcons.Images.Add("caliper-" + EVisionCaliperShape.Arc, CaliperIcon(arc: true));
@@ -272,7 +272,7 @@ internal sealed class VisionFrameEditorControl : UserControl
     }
 
     /// <summary>卡尺图上编辑：拖动起点/终点/带宽方块/采样带内部（圆弧另有圆心与半径），松开后通知参数页刷新。</summary>
-    private void AttachCaliper(VisionCaliperGizmo caliper)
+    private void AttachCaliper(IVisionCanvasGizmo caliper)
     {
         double Unit() => 1 / Math.Max(1e-9, _canvas.Viewport.Scale);
         PointD ToImage(MouseEventArgs e) => _canvas.Viewport.ToImage(new PointD(e.X, e.Y));
@@ -294,7 +294,7 @@ internal sealed class VisionFrameEditorControl : UserControl
             {
                 EVisionCaliperHandle.Body or EVisionCaliperHandle.Center => Cursors.SizeAll,
                 EVisionCaliperHandle.Radius or EVisionCaliperHandle.Step => Cursors.Hand,
-                EVisionCaliperHandle.Width => Cursors.SizeNS,
+                EVisionCaliperHandle.Width or EVisionCaliperHandle.Length => Cursors.SizeNS,
                 EVisionCaliperHandle.Start or EVisionCaliperHandle.End => Cursors.Cross,
                 _ => Cursors.Default
             };
@@ -345,7 +345,7 @@ internal sealed class VisionFrameEditorControl : UserControl
             // 卡尺不是面积ROI：扫描线与采样带直接在图上拖动，不显示区域类型。
             _toolHost.Visible = _model.Caliper is null; _toolHost.Enabled = editor != null;
             _purposeHost.Visible = regions; _purposeHost.Enabled = editor != null;
-            if (_shapeHost is not null && _model.Caliper is { } caliper)
+            if (_shapeHost is not null && _model.Caliper is VisionCaliperGizmo caliper)
             {
                 var shapeChoice = VisionCaliperShapeChoice.All.FirstOrDefault(c => c.Shape == caliper.Shape);
                 if (shapeChoice is not null && !Equals(_shape.SelectedItem, shapeChoice)) _shape.SelectedItem = shapeChoice;

@@ -10,5 +10,5 @@ public sealed partial class VisionFrameEditorPageModel
         set { _showMask = value; if (Template is not null) Template.ShowMask = value; _lastKey = null; }
     }
     /// <summary>面积范围与模板制作页面展示掩膜预览开关。</summary>
-    public bool SupportsMaskPreview => IsTemplateEditor || _node is AnalyzeVisionFrameNodeModel { RangeCapability: EWorkflowVisionRange.Region };
+    public bool SupportsMaskPreview => IsTemplateEditor || _node is AnalyzeVisionFrameNodeModel { RangeCapability: EWorkflowVisionRange.Region } and not FindVisionShapeNodeModel;
 }

@@ -19,7 +19,9 @@ public enum EVisionCaliperHandle
     /// <summary>圆弧半径控制点（扫描圆弧中点）。</summary>
     Radius,
     /// <summary>采样间隔控制点（扫描路径 1/4 处的采样标尺）：保持带宽，调整垂直采样间隔与点数。</summary>
-    Step
+    Step,
+    /// <summary>找线/找圆的搜索长度控制点。</summary>
+    Length
 }
 
 /// <summary>
@@ -28,7 +30,7 @@ public enum EVisionCaliperHandle
 /// 算法在扫描路径上每个位置沿投影线取 2×半宽+1 个点求平均得到灰度剖面，再沿箭头方向找边缘。
 /// 绑定坐标系的节点参数是局部单位：页面提供本帧坐标系后按它换算到原图显示，拖动结果再换算回局部单位写回。
 /// </summary>
-public sealed class VisionCaliperGizmo
+public sealed class VisionCaliperGizmo : IVisionCanvasGizmo
 {
     private const uint BandColor = 0xFF22D3EE;
     private const uint SampleColor = 0x7022D3EE;

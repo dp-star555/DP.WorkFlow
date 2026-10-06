@@ -82,6 +82,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         IsTemplateEditor = templateEditorOnly;
         _configurationChanged = configurationChanged;
         if (!templateEditorOnly && node is MeasureVisionCaliperNodeModel caliper) Caliper = new VisionCaliperGizmo(caliper);
+        if (!templateEditorOnly && node is FindVisionShapeNodeModel find) Caliper = new VisionFindShapeGizmo(find);
         _node = node ?? throw new ArgumentNullException(nameof(node)); _frames = frames; _reader = reader;
         Editor = new RoiEditor();
         if (node is AnalyzeVisionFrameNodeModel { Coordinates: not null }) { /* 等待同帧定位后显示局部ROI，不在原图上误画局部数值。 */ }
@@ -108,7 +109,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     }
 
     /// <summary>卡尺节点的图上编辑器；其他节点为空。</summary>
-    public VisionCaliperGizmo? Caliper { get; }
+    public IVisionCanvasGizmo? Caliper { get; }
 
     /// <summary>当前缩放下 1 个屏幕像素对应的原图像素；由画布在缩放变化时设置，用于固定控制点的屏幕大小。</summary>
     public double ImagePixelsPerScreenPixel
@@ -191,8 +192,8 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     public RoiEditor Editor { get; }
     /// <summary>是否可以修改测量范围。</summary>
     public bool CanEdit => SupportsRegions || _node is AnalyzeVisionFrameNodeModel { RangeCapability: EWorkflowVisionRange.Rectangle };
-    /// <summary>根据节点范围能力启用完整面积形状及包含/排除，不维护节点类型白名单。</summary>
-    public bool SupportsRegions => IsTemplateEditor || _node is AnalyzeVisionFrameNodeModel { RangeCapability: EWorkflowVisionRange.Region };
+    /// <summary>根据节点范围能力启用完整面积形状及包含/排除，不维护节点类型白名单；找线/找圆由专用图上编辑器编辑搜索范围。</summary>
+    public bool SupportsRegions => IsTemplateEditor || _node is AnalyzeVisionFrameNodeModel { RangeCapability: EWorkflowVisionRange.Region } and not FindVisionShapeNodeModel;
     /// <summary>
     /// “区域类型”下拉框的工具。模板制作样图（画布编辑模板制作区域，结果存为ROI文档）可用全部面积形状及画笔/橡皮；
     /// 节点范围只能保存矩形、椭圆和多边形，有面积范围能力时为选择、矩形、旋转矩形、椭圆、多边形，只支持矩形时为选择和矩形。
@@ -307,7 +308,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             if (Caliper is not null) Caliper.Coordinates = CoordinateEditingReady ? _displayCoordinates : null;
             var analysis = _node as AnalyzeVisionFrameNodeModel;
             using var maskPreview = analysis?.Mask.Binding is { IsPublicData: false } maskBinding ? _frames?.Capture(maskBinding.NodeId) : null;
-            string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}:{Caliper?.Key}:{_imagePixelsPerScreenPixel:0.###}:{(_node is FindVisionShapeNodeModel findKey ? FindPreviewKey(findKey) : null)}";
+            string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}:{Caliper?.Key}:{_imagePixelsPerScreenPixel:0.###}";
             if (_lastKey == key) return null;
             var facts = view == 1 ? current?.Facts : null;
             _lastKey = key; // 失败的显示包不在定时器中反复分配；切换来源或新帧才重试。
@@ -316,7 +317,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             // 显示预算不是算法结果裁剪；大结果明确拒绝显示并保留完整运行事实。
             var layers = new List<CanvasLayer>();
             string maskStatus = "";
-            if (ShowMask && analysis?.RangeCapability == EWorkflowVisionRange.Region && view is 0 or 1 or 3)
+            if (ShowMask && analysis?.RangeCapability == EWorkflowVisionRange.Region && analysis is not FindVisionShapeNodeModel && view is 0 or 1 or 3)
             {
                 try
                 {
@@ -332,15 +333,6 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
                 { maskStatus = " 无法预览掩膜：" + error.Message; }
             }
             layers.Add(new CanvasLayer("facts", ELayerKind.Annotation, visuals));
-            if (_node is FindVisionShapeNodeModel find && view is 0 or 1 or 3 && (find.Coordinates is null || CoordinateEditingReady && _displayCoordinates is not null))
-            {
-                try
-                {
-                    layers.Add(new CanvasLayer("find-calipers", ELayerKind.Annotation,
-                        CaliperPreview(find.CaliperScans(find.Coordinates is null ? null : _displayCoordinates), _imagePixelsPerScreenPixel), 5, name: "卡尺"));
-                }
-                catch (Exception error) when (error is InvalidOperationException or ArgumentException or NotSupportedException) { /* 还没有有效搜索ROI时不预览。 */ }
-            }
             if (Caliper is { IsEditable: true } && view is 0 or 1 or 3)
                 layers.Add(new CanvasLayer("caliper", ELayerKind.Annotation, Caliper.Visuals(_imagePixelsPerScreenPixel), 10, name: "卡尺"));
             var overlay = new GeometryOverlay(frame.FrameId, layers);
@@ -375,34 +367,6 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         for (int i = 0; i < points.Count; i++)
             yield return new Visual($"find-point-{i}", new EllipseGeometry(points[i].ImagePosition, 2.5, 2.5), inliers[i] ? 0xFF22C55E : 0xFFEF4444);
     }
-
-    // 找线/找圆的卡尺预览：按当前搜索ROI与参数画出每把卡尺的采样带和扫描方向箭头，随参数修改即时更新。
-    private static IReadOnlyList<Visual> CaliperPreview(IReadOnlyList<VisionCaliperScan> scans, double unit)
-    {
-        var visuals = new List<Visual>();
-        for (int i = 0; i < scans.Count; i++)
-        {
-            var (start, end, half) = (scans[i].Start, scans[i].End, Math.Max(scans[i].HalfBand, unit));
-            double dx = end.X - start.X, dy = end.Y - start.Y, length = Math.Sqrt(dx * dx + dy * dy);
-            if (length < 1e-9) continue;
-            double ux = dx / length, uy = dy / length, nx = -uy * half, ny = ux * half, head = Math.Min(length / 3, 8 * unit);
-            visuals.Add(new Visual($"find-caliper-{i}", new ContourGeometry(new[]
-            {
-                new PointD(start.X + nx, start.Y + ny), new PointD(end.X + nx, end.Y + ny), new PointD(end.X - nx, end.Y - ny), new PointD(start.X - nx, start.Y - ny)
-            }, closed: true), 0xB022D3EE));
-            visuals.Add(new Visual($"find-caliper-axis-{i}", new ContourGeometry(new[] { start, end }), 0x7022D3EE));
-            visuals.Add(new Visual($"find-caliper-arrow-{i}", new ContourGeometry(new[]
-            {
-                new PointD(end.X - ux * head - uy * head * .6, end.Y - uy * head + ux * head * .6), end,
-                new PointD(end.X - ux * head + uy * head * .6, end.Y - uy * head - ux * head * .6)
-            }), 0xFFFACC15));
-        }
-        return visuals;
-    }
-
-    private static string FindPreviewKey(FindVisionShapeNodeModel node) => FormattableString.Invariant(
-        $"{node.CaliperCount}:{node.HalfWidth}:{node.BandSampleStep}:{(node as FindVisionLineNodeModel)?.ReverseScan}:{(node as FindVisionCircleNodeModel)?.SearchLength}:{(node as FindVisionCircleNodeModel)?.Direction}:{(node as FindVisionCircleNodeModel)?.StartAngle}:{(node as FindVisionCircleNodeModel)?.SweepAngle}:")
-        + string.Join(";", node.Regions.Select(r => FormattableString.Invariant($"{r.Id},{r.Enabled},{r.Exclude},{r.Shape},{r.CenterX},{r.CenterY},{r.Width},{r.Height},{r.Angle}")));
 
     // 不画标签的图形在点击时给出的说明。
     private static string? PickText(object? facts, string id)
