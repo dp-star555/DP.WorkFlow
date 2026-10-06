@@ -349,7 +349,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     private static string Describe(object? facts, ImageFrame frame) => facts switch
     {
         IWorkflowVisionFrameFact result => result.Summary,
-        IVisionGeometryFact result => result.Summary,
+        IVisionGeometryFact result => Caption(result),
         RegionAnalysisResult r => $"精确Region面积 {r.Area}；孔洞保留，空区域正常完成。",
         CaliperResult c => $"卡尺边缘 {c.Count}；剖面采样 {c.Profile.Count}；梯度峰抛物线插值。",
         RobustLineResult r => $"鲁棒直线内点 {r.InlierCount}；RMS {r.RmsError:F4}px。",
@@ -359,11 +359,16 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         _ => $"帧 {frame.FrameId}；{frame.Image.Info.Width}×{frame.Image.Info.Height}；{frame.Image.Info.Layout}"
     };
 
+    /// <summary>图上标注文字：坐标系只显示“名称/版本”，ID、单位与来源标识留在运行结果中查看。</summary>
+    private static string Caption(IVisionGeometryFact fact) => fact is VisionCoordinateSystemResult coordinates
+        ? $"坐标系：{coordinates.CoordinateSystem.Definition.Name}/v{coordinates.CoordinateSystem.Definition.Version}"
+        : fact.Summary;
+
     private static IEnumerable<Visual> Visuals(object? facts)
     {
         if (facts is IVisionGeometryFact geometry)
             for (var index = 0; index < geometry.DisplayGeometry.Count; index++)
-                yield return new Visual("geometry-" + index, geometry.DisplayGeometry[index], 0xFFFFCC00, index == 0 ? geometry.Summary : null);
+                yield return new Visual("geometry-" + index, geometry.DisplayGeometry[index], 0xFFFFCC00, index == 0 ? Caption(geometry) : null);
         if (facts is RegionAnalysisResult region)
             yield return new Visual("region", region.Region, 0xFF22DD88, $"精确区域面积 {region.Area}");
         if (facts is CaliperResult caliper)
