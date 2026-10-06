@@ -13,7 +13,8 @@ namespace DP.WorkFlow.Vision.UI;
 public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
 {
     private const uint BandColor = 0xFF22D3EE;
-    private const uint CaliperColor = 0xC022D3EE;
+    private const uint CaliperColor = 0xD022D3EE;
+    private const uint BoxColor = 0x90CBD5E1;
     private const uint AxisColor = 0xFFFACC15;
     private const uint HandleColor = 0xFFF8FAFC;
     private const double HandleScreenRadius = 5;
@@ -116,8 +117,8 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
         {
             var segments = Math.Clamp((int)Math.Ceiling(Math.Abs(CircleSweep) / 3), 8, 120);
             IEnumerable<PointD> Arc(double radius) => Enumerable.Range(0, segments + 1).Select(i => CirclePoint(radius, (double)i / segments));
-            visuals.Add(new Visual("find-outer", new ContourGeometry(Arc(Radius + SearchLength / 2)), BandColor));
-            visuals.Add(new Visual("find-inner", new ContourGeometry(Arc(Math.Max(0, Radius - SearchLength / 2))), BandColor));
+            visuals.Add(new Visual("find-outer", new ContourGeometry(Arc(Radius + SearchLength / 2)), BoxColor));
+            visuals.Add(new Visual("find-inner", new ContourGeometry(Arc(Math.Max(0, Radius - SearchLength / 2))), BoxColor));
             AddCalipers(visuals, unit);
             visuals.Add(new Visual("find-expected", new ContourGeometry(Arc(Radius)), AxisColor));
             visuals.Add(new Visual("find-center-x", new ContourGeometry(new[] { Offset(Center, (1, 0), -2 * handle), Offset(Center, (1, 0), 2 * handle) }), AxisColor));
@@ -133,7 +134,7 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
         {
             var (u, v) = (U, ScanDirection());
             PointD Corner(double a, double b) => Offset(Offset(Center, u, a * LineLength / 2), v, b * SearchLength / 2);
-            visuals.Add(new Visual("find-box", new ContourGeometry(new[] { Corner(-1, -1), Corner(1, -1), Corner(1, 1), Corner(-1, 1) }, closed: true), BandColor));
+            visuals.Add(new Visual("find-box", new ContourGeometry(new[] { Corner(-1, -1), Corner(1, -1), Corner(1, 1), Corner(-1, 1) }, closed: true), BoxColor));
             AddCalipers(visuals, unit);
             visuals.Add(new Visual("find-expected", new ContourGeometry(new[] { LineStart, LineEnd }), AxisColor));
             visuals.Add(new Visual("find-start", new EllipseGeometry(LineStart, handle, handle), HandleColor));
@@ -146,7 +147,7 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
         return visuals;
     }
 
-    // 每把卡尺：青色采样带（太窄时按屏幕最小宽度显示）＋扫描方向上的黄色箭头。
+    // 每把卡尺：半透明填充的青色采样带（太窄时按屏幕最小宽度显示），与淡灰色搜索边界区分；扫描方向上画黄色箭头。
     private void AddCalipers(List<Visual> visuals, double unit)
     {
         var scans = Scans();
@@ -157,11 +158,11 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
             if (length < 1e-9) continue;
             var direction = ((end.X - start.X) / length, (end.Y - start.Y) / length);
             var normal = (-direction.Item2, direction.Item1);
-            var half = Math.Max(scans[i].HalfBand, 1.5 * unit);
+            var half = Math.Max(scans[i].HalfBand, 2.5 * unit);
             visuals.Add(new Visual($"find-caliper{i}", new ContourGeometry(new[]
             {
                 Offset(start, normal, -half), Offset(end, normal, -half), Offset(end, normal, half), Offset(start, normal, half)
-            }, closed: true), CaliperColor));
+            }, closed: true, filled: true), CaliperColor));
             var head = Math.Min(length / 3, 9 * unit);
             visuals.Add(new Visual($"find-arrow{i}", new ContourGeometry(new[]
             {
