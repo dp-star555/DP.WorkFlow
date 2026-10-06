@@ -1139,10 +1139,19 @@ public sealed partial class WorkflowDesignerSession
     {
         var canvasNode = GetCanvasNodeOrThrow(nodeId);
         return GetDeclaredPorts(nodeId, direction)
-            .Where(port => direction != WorkflowPortDirection.Output
-                || !canvasNode.HiddenOutputPorts.Contains(port.Key))
+            .Where(port => direction != WorkflowPortDirection.Output || IsOutputPortShown(canvasNode, port))
             .ToArray();
     }
+
+    /// <summary>
+    /// 输出端口是否显示在节点上：未隐藏；或是默认不显示的端口（如失败出口）、用户没有显式隐藏且已有从它引出的连线。
+    /// 用户显式隐藏的端口即使有连线也不显示（连线保留，只是布局隐藏）。
+    /// </summary>
+    /// <param name="node">画布节点。</param><param name="port">输出端口。</param>
+    public bool IsOutputPortShown(WorkflowCanvasNode node, WorkflowPortDescriptor port) =>
+        !node.IsOutputPortHidden(port) || port.HiddenByDefault && !node.HiddenOutputPorts.Contains(port.Key) && Canvas.Connections.Any(connection =>
+            string.Equals(connection.FromNodeId, node.Node.Id, StringComparison.Ordinal)
+            && string.Equals(connection.FromPort, port.Key, StringComparison.Ordinal));
 
     /// <summary>获取节点声明的全部端口，包括在设计器中禁用的输出端口。</summary>
     /// <param name="nodeId">节点标识。</param>
@@ -1163,22 +1172,21 @@ public sealed partial class WorkflowDesignerSession
     {
         var node = GetCanvasNodeOrThrow(nodeId);
         var outputs = GetDeclaredPorts(nodeId, WorkflowPortDirection.Output);
-        if (outputs.Count <= 1 || outputs.All(port => port.Key != portKey)) return false;
-        var wasVisible = !node.HiddenOutputPorts.Contains(portKey);
-        if (wasVisible == visible) return false;
-        Execute(new DesignerOperation(
-            () =>
-            {
-                if (visible) node.HiddenOutputPorts.Remove(portKey);
-                else node.HiddenOutputPorts.Add(portKey);
-                EnsureNodeDisplaySize(node);
-            },
-            () =>
-            {
-                if (wasVisible) node.HiddenOutputPorts.Remove(portKey);
-                else node.HiddenOutputPorts.Add(portKey);
-                EnsureNodeDisplaySize(node);
-            }));
+        var port = outputs.FirstOrDefault(item => item.Key == portKey);
+        if (outputs.Count <= 1 || port is null) return false;
+        if (node.IsOutputPortHidden(port) != visible) return false;
+        var before = node.HiddenOutputPorts.ToArray();
+        node.SetOutputPortHidden(port, !visible);
+        var after = node.HiddenOutputPorts.ToArray();
+        node.HiddenOutputPorts.Clear();
+        foreach (var key in before) node.HiddenOutputPorts.Add(key);
+        void Apply(string[] keys)
+        {
+            node.HiddenOutputPorts.Clear();
+            foreach (var key in keys) node.HiddenOutputPorts.Add(key);
+            EnsureNodeDisplaySize(node);
+        }
+        Execute(new DesignerOperation(() => Apply(after), () => Apply(before)));
         return true;
     }
 
@@ -1365,7 +1373,7 @@ public sealed partial class WorkflowDesignerSession
     {
         static double TextWidth(string text) => Math.Max(12, text.Sum(character => character > 255 ? 14d : 8d));
         var ports = Catalog.GetOrThrow(node.Node.NodeType).GetPorts(node.Node)
-            .Where(port => port.Direction != WorkflowPortDirection.Output || !node.HiddenOutputPorts.Contains(port.Key))
+            .Where(port => port.Direction != WorkflowPortDirection.Output || IsOutputPortShown(node, port))
             .ToArray();
         var groups = ports.GroupBy(node.GetPortSide).ToDictionary(group => group.Key, group => group.ToArray());
         var titleWidth = TextWidth(node.Node.Title);

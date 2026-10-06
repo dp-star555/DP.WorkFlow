@@ -64,6 +64,9 @@ public sealed record WorkflowPortDescriptor
     /// <summary>获取端口所在节点边；未显式配置时输入在上、输出在下。</summary>
     public WorkflowPortSide Side { get; }
 
+    /// <summary>获取输出端口是否默认不显示（例如失败出口）；在节点属性中启用或已有连线时才显示。</summary>
+    public bool HiddenByDefault { get; init; }
+
     /// <summary>创建一个输入端口描述。</summary>
     /// <param name="key">输入端口稳定键，默认使用 <see cref="WorkflowPorts.Input"/>。</param>
     /// <param name="maxConnections">允许接入该端口的最大上游连接数。</param>
@@ -86,11 +89,14 @@ public sealed record WorkflowPortDescriptor
         WorkflowPortSide side = WorkflowPortSide.Bottom) =>
         new(key, WorkflowPortDirection.Output, maxConnections, side);
 
-    /// <summary>创建失败出口（<see cref="WorkflowPorts.Failed"/>）：连线后节点失败不中止运行，沿该出口继续。</summary>
+    /// <summary>
+    /// 创建失败出口（<see cref="WorkflowPorts.Failed"/>）：连线后节点失败不中止运行，沿该出口继续。
+    /// 默认不显示，在节点属性中启用“失败”输出后才出现在节点上。
+    /// </summary>
     /// <param name="maxConnections">允许从该端口引出的最大下游连接数。</param>
     /// <param name="side">端口在节点上的默认显示边。</param>
     public static WorkflowPortDescriptor Failure(int maxConnections = 1, WorkflowPortSide side = WorkflowPortSide.Bottom) =>
-        Output(WorkflowPorts.Failed, maxConnections, side);
+        Output(WorkflowPorts.Failed, maxConnections, side) with { HiddenByDefault = true };
 }
 
 /// <summary>

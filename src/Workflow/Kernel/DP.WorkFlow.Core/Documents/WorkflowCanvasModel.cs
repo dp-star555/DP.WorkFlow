@@ -47,8 +47,34 @@ public sealed class WorkflowCanvasNode
     /// <summary>获取按“Direction:PortKey”保存的端口边覆盖配置。</summary>
     public IDictionary<string, WorkflowPortSide> PortSides { get; } =  new Dictionary<string, WorkflowPortSide>(StringComparer.Ordinal);
 
-    /// <summary>获取在设计器中隐藏且禁止连线的输出端口键。</summary>
+    /// <summary>
+    /// 获取在设计器中隐藏且禁止连线的输出端口键。默认不显示的端口（<see cref="WorkflowPortDescriptor.HiddenByDefault"/>）
+    /// 被用户启用时，以 <see cref="ShownPortMarker"/> 加端口键的形式记在这里；请通过
+    /// <see cref="IsOutputPortHidden"/> / <see cref="SetOutputPortHidden"/> 读写，不要直接判断键。
+    /// </summary>
     public ISet<string> HiddenOutputPorts { get; } = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>默认不显示的端口被用户启用时的记录前缀。</summary>
+    public const string ShownPortMarker = "+";
+
+    /// <summary>输出端口在设计器中是否隐藏（不含“已有连线时仍显示”的规则）。</summary>
+    /// <param name="port">输出端口。</param>
+    public bool IsOutputPortHidden(WorkflowPortDescriptor port)
+    {
+        ArgumentNullException.ThrowIfNull(port);
+        return HiddenOutputPorts.Contains(port.Key) || port.HiddenByDefault && !HiddenOutputPorts.Contains(ShownPortMarker + port.Key);
+    }
+
+    /// <summary>显示或隐藏输出端口。</summary>
+    /// <param name="port">输出端口。</param><param name="hidden">是否隐藏。</param>
+    public void SetOutputPortHidden(WorkflowPortDescriptor port, bool hidden)
+    {
+        ArgumentNullException.ThrowIfNull(port);
+        HiddenOutputPorts.Remove(port.Key);
+        HiddenOutputPorts.Remove(ShownPortMarker + port.Key);
+        if (port.HiddenByDefault) { if (!hidden) HiddenOutputPorts.Add(ShownPortMarker + port.Key); }
+        else if (hidden) HiddenOutputPorts.Add(port.Key);
+    }
 
     /// <summary>获取在节点上显示为数据端口的标准输出成员名；从数据端口拖线可直接建立下游参数绑定。</summary>
     public ISet<string> ExposedOutputMembers { get; } = new HashSet<string>(StringComparer.Ordinal);

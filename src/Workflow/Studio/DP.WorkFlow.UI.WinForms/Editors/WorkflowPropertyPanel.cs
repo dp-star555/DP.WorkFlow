@@ -326,7 +326,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             var check = new ModernCheckbox
             {
                 Text = text,
-                Checked = !canvasNode.HiddenOutputPorts.Contains(port.Key),
+                Checked = !canvasNode.IsOutputPortHidden(port),
                 Theme = _modernGrid.Theme,
                 Size = new Size(TextRenderer.MeasureText(text, Font).Width + 32, 28),
                 Margin = new Padding(8, 2, 4, 2)
