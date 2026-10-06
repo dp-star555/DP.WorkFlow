@@ -13,11 +13,16 @@ public sealed class VisionCaliperGizmoTests
         var visuals = gizmo.Visuals(0.1);
 
         Assert.Equal(6, gizmo.HalfBand);
-        Assert.Contains(visuals, visual => visual.Id == "caliper-band" && visual.Caption!.Contains("±3×2=6px"));
+        Assert.Contains(visuals, visual => visual.Id == "caliper-band" && visual.Caption!.Contains("±6px（7 点 × 间隔 2px）"));
         Assert.Contains(visuals, visual => visual.Id == "caliper-arrow");
         Assert.Contains(visuals, visual => visual.Id == "caliper-axis");
-        // 中心线两侧各 3 条垂直采样线。
-        Assert.Equal(6, visuals.Count(visual => visual.Id.StartsWith("caliper-sample", StringComparison.Ordinal)));
+        // 投影线垂直于扫描方向横跨整条带宽：0.1 原图像素/屏幕像素时间距 1px，长度 100px 内部 99 条。
+        var samples = visuals.Where(visual => visual.Id.StartsWith("caliper-sample", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(99, samples.Length);
+        var first = Assert.IsType<ContourGeometry>(samples[0].Geometry).Points;
+        Assert.Equal((11d, 44d, 11d, 56d), (first[0].X, first[0].Y, first[1].X, first[1].Y));
+        // 只有带宽外框带标注，控制点不再各自挂说明文字。
+        Assert.Single(visuals, visual => visual.Caption is not null);
         Assert.Contains(visuals, visual => visual.Id == "caliper-start");
         Assert.Contains(visuals, visual => visual.Id == "caliper-end");
         Assert.Equal(2, visuals.Count(visual => visual.Id.StartsWith("caliper-width", StringComparison.Ordinal)));
@@ -56,6 +61,15 @@ public sealed class VisionCaliperGizmoTests
 
         gizmo.BeginDrag(EVisionCaliperHandle.Width, new PointD(0, 0));
         Assert.False(gizmo.EndDrag());
+
+        // 超过 63 步时放大垂直采样间隔，带宽可继续拖大；缩回时恢复原间隔。
+        gizmo.BeginDrag(EVisionCaliperHandle.Width, new PointD(27, 100));
+        gizmo.Drag(new PointD(20 + 200, 100));
+        Assert.Equal((63, 3.18), (node.HalfWidth, node.BandSampleStep));
+        Assert.InRange(gizmo.HalfBand, 199, 202);
+        gizmo.Drag(new PointD(20 + 10, 100));
+        Assert.True(gizmo.EndDrag());
+        Assert.Equal((10, 1d), (node.HalfWidth, node.BandSampleStep));
         Assert.Null(gizmo.Hit(new PointD(500, 500), 1));
     }
 

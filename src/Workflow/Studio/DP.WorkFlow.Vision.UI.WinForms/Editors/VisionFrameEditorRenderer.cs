@@ -293,7 +293,8 @@ internal sealed class VisionFrameEditorControl : UserControl
                 if (IsHandleCreated) FitToolbar();
             }
             bool regions = templateMaking || _model.SupportsRegions;
-            _toolHost.Enabled = editor != null;
+            // 卡尺不是面积ROI：扫描线与采样带直接在图上拖动，不显示区域类型。
+            _toolHost.Visible = _model.Caliper is null; _toolHost.Enabled = editor != null;
             _purposeHost.Visible = regions; _purposeHost.Enabled = editor != null;
             _radiusHost.Visible = editor?.Tool is ERoiTool.Brush or ERoiTool.Eraser;
             if (editor == null) return;

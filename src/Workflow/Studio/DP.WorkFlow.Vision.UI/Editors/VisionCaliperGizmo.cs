@@ -17,8 +17,9 @@ public enum EVisionCaliperHandle
 }
 
 /// <summary>
-/// 卡尺节点在图像上的可视化与拖动编辑：显示采样带外框、带箭头的扫描方向、每条垂直采样线，
-/// 以及起点/终点/宽度三类控制点。拖动直接写回节点的起终点与采样半宽；坐标均为原图像素。
+/// 卡尺节点在图像上的可视化与拖动编辑：显示采样带外框、带箭头的扫描方向、垂直于扫描方向的投影线，
+/// 以及起点/终点/宽度三类控制点。拖动直接写回节点的起终点、采样半宽与垂直采样间隔；坐标均为原图像素。
+/// 算法在扫描线上每个位置沿投影线取 2×半宽+1 个点求平均得到灰度剖面，再沿箭头方向找边缘。
 /// 绑定坐标系的节点参数是局部单位，只显示提示，不在原图上直接拖动。
 /// </summary>
 public sealed class VisionCaliperGizmo
@@ -28,10 +29,14 @@ public sealed class VisionCaliperGizmo
     private const uint AxisColor = 0xFFFACC15;
     private const uint HandleColor = 0xFFF8FAFC;
     private const double HandleScreenRadius = 5;
+    private const int MaximumHalfWidth = 63;
+    private const double MinimumBandStep = .1;
+    private const double MaximumBandStep = 10;
+    private const double ProjectionScreenSpacing = 10;
     private readonly MeasureVisionCaliperNodeModel _node;
     private EVisionCaliperHandle? _drag;
     private PointD _dragAnchor;
-    private (double StartX, double StartY, double EndX, double EndY, int HalfWidth) _dragOrigin;
+    private (double StartX, double StartY, double EndX, double EndY, int HalfWidth, double BandSampleStep) _dragOrigin;
 
     /// <summary>为卡尺节点创建可视化编辑器。</summary>
     /// <param name="node">节点窗口中的隔离编辑副本。</param>
@@ -56,7 +61,10 @@ public sealed class VisionCaliperGizmo
     /// <summary>采样带单侧宽度（原图像素）= 采样半宽 × 垂直采样间隔。</summary>
     public double HalfBand => _node.HalfWidth * _node.BandSampleStep;
 
-    /// <summary>图上标注：长度、带宽与极性。</summary>
+    /// <summary>可拖出的最大单侧带宽（原图像素）= 63 × 10。</summary>
+    public static double MaximumHalfBand => MaximumHalfWidth * MaximumBandStep;
+
+    /// <summary>图上标注：长度、带宽、采样数与极性。</summary>
     public string Caption
     {
         get
@@ -68,7 +76,7 @@ public sealed class VisionCaliperGizmo
                 _ => "任意"
             };
             return FormattableString.Invariant(
-                $"卡尺：长度 {Length:0.#}px · 带宽 ±{_node.HalfWidth}×{_node.BandSampleStep:0.##}={HalfBand:0.##}px · 极性 {polarity}（沿箭头方向）");
+                $"卡尺 长度 {Length:0.#}px · 带宽 ±{HalfBand:0.##}px（{_node.HalfWidth * 2 + 1} 点 × 间隔 {_node.BandSampleStep:0.##}px）· 极性 {polarity}");
         }
     }
 
@@ -92,16 +100,20 @@ public sealed class VisionCaliperGizmo
         {
             At(Start, 0, -HalfBand), At(End, 0, -HalfBand), At(End, 0, HalfBand), At(Start, 0, HalfBand)
         }, closed: true), BandColor, Caption));
-        // 每条垂直采样线（扫描线两侧按间隔平行排列）；过密时抽稀显示，但外框始终是真实带宽。
-        var stride = Math.Max(1, (int)Math.Ceiling(3 * unit / Math.Max(1e-6, _node.BandSampleStep)));
-        for (var k = -_node.HalfWidth; k <= _node.HalfWidth; k += stride)
-            if (k != 0)
+        // 投影线：垂直于扫描方向横跨采样带，表示每个扫描位置在哪条线上取点求平均；
+        // 算法每 1px 一条，按屏幕间距抽稀显示，外框始终是真实带宽。
+        if (HalfBand > 0)
+        {
+            var spacing = Math.Max(1, ProjectionScreenSpacing * unit);
+            var count = (int)Math.Floor(Length / spacing);
+            for (var k = 1; k < count; k++)
                 visuals.Add(new Visual($"caliper-sample{k}", new ContourGeometry(new[]
                 {
-                    At(Start, 0, k * _node.BandSampleStep), At(End, 0, k * _node.BandSampleStep)
+                    At(Start, k * spacing, -HalfBand), At(Start, k * spacing, HalfBand)
                 }), SampleColor));
+        }
         // 扫描方向：中心线 + 终点箭头。
-        visuals.Add(new Visual("caliper-axis", new ContourGeometry(new[] { Start, End }), AxisColor, "扫描方向：起点 → 终点"));
+        visuals.Add(new Visual("caliper-axis", new ContourGeometry(new[] { Start, End }), AxisColor));
         var head = Math.Min(Length / 3, 14 * unit);
         visuals.Add(new Visual("caliper-arrow", new ContourGeometry(new[]
         {
@@ -109,13 +121,13 @@ public sealed class VisionCaliperGizmo
         }), AxisColor));
         // 控制点：起点（圆）、终点（实心圆）、两侧宽度把手（方块）。
         var radius = HandleScreenRadius * unit;
-        visuals.Add(new Visual("caliper-start", new EllipseGeometry(Start, radius, radius), HandleColor, "起点（拖动调整）"));
-        visuals.Add(new Visual("caliper-end", new EllipseGeometry(End, radius * 1.2, radius * 1.2), AxisColor, "终点（拖动调整方向与长度）"));
+        visuals.Add(new Visual("caliper-start", new EllipseGeometry(Start, radius, radius), HandleColor));
+        visuals.Add(new Visual("caliper-end", new EllipseGeometry(End, radius * 1.2, radius * 1.2), AxisColor));
         var middle = At(Start, Length / 2, 0);
         var angle = Math.Atan2(direction.Y, direction.X);
         foreach (var side in new[] { -1, 1 })
             visuals.Add(new Visual($"caliper-width{side}", new RectangleGeometry(At(middle, 0, side * Math.Max(HalfBand, radius * 1.5)),
-                radius * 1.6, radius * 1.6, angle), HandleColor, "带宽（拖动调整采样半宽）"));
+                radius * 1.6, radius * 1.6, angle), HandleColor));
         return visuals;
     }
 
@@ -144,7 +156,7 @@ public sealed class VisionCaliperGizmo
     {
         _drag = handle;
         _dragAnchor = point;
-        _dragOrigin = (_node.StartX, _node.StartY, _node.EndX, _node.EndY, _node.HalfWidth);
+        _dragOrigin = (_node.StartX, _node.StartY, _node.EndX, _node.EndY, _node.HalfWidth, _node.BandSampleStep);
     }
 
     /// <summary>按指针位置更新正在拖动的控制点并写回节点参数。</summary>
@@ -163,7 +175,7 @@ public sealed class VisionCaliperGizmo
                 if (Distance(point, Start) >= 1) { _node.EndX = Round(point.X); _node.EndY = Round(point.Y); }
                 break;
             case EVisionCaliperHandle.Width:
-                _node.HalfWidth = Math.Clamp((int)Math.Round(Math.Abs(Project(point).Across) / Math.Max(1e-6, _node.BandSampleStep)), 0, 63);
+                SetHalfBand(Math.Abs(Project(point).Across));
                 break;
             case EVisionCaliperHandle.Body:
                 var dx = point.X - _dragAnchor.X;
@@ -181,7 +193,22 @@ public sealed class VisionCaliperGizmo
     {
         if (_drag is null) return false;
         _drag = null;
-        return (_node.StartX, _node.StartY, _node.EndX, _node.EndY, _node.HalfWidth) != _dragOrigin;
+        return (_node.StartX, _node.StartY, _node.EndX, _node.EndY, _node.HalfWidth, _node.BandSampleStep) != _dragOrigin;
+    }
+
+    /// <summary>
+    /// 按目标单侧带宽设置采样半宽；半宽最多 63 步，超出时放大垂直采样间隔（最大 10px），
+    /// 所以带宽可拖到 630px。缩回时恢复拖动开始时的间隔，不会自动改得比用户设定更细。
+    /// </summary>
+    private void SetHalfBand(double halfBand)
+    {
+        var baseStep = Math.Clamp(_dragOrigin.BandSampleStep, MinimumBandStep, MaximumBandStep);
+        var target = Math.Min(halfBand, MaximumHalfBand);
+        var step = target <= MaximumHalfWidth * baseStep
+            ? baseStep
+            : Math.Min(MaximumBandStep, Math.Ceiling(target / MaximumHalfWidth * 100) / 100);
+        _node.BandSampleStep = step;
+        _node.HalfWidth = Math.Clamp((int)Math.Round(target / step), 0, MaximumHalfWidth);
     }
 
     private ((double X, double Y) Direction, (double X, double Y) Normal) Axes()
