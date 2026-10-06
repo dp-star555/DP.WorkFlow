@@ -3,7 +3,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>生成直线而非拟合直线；两点必须具有可验证来源。</summary>
-[WorkflowNode("Vision.GenerateLine", DisplayName = "两点生成直线", Category = "5.Vision/Measurement")]
+[WorkflowNode("Vision.GenerateLine", DisplayName = "两点生成直线", Category = WorkflowVisionCategories.Geometry)]
 public sealed class GenerateVisionLineNodeModel : WorkflowVisionGeometryAlgorithmNodeModel
 {
     /// <inheritdoc/>

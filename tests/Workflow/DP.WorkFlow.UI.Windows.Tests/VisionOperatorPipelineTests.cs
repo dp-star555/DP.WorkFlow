@@ -32,7 +32,8 @@ public sealed class VisionOperatorPipelineTests
             Assert.Equal(26, Output<RegionAnalysisResult>(host, "morph").Area);
             Assert.Equal(2, Output<BlobAnalysisResult>(host, "blob").Count);
             var selected = Output<BlobAnalysisResult>(host, "select");
-            Assert.Equal(25, Assert.Single(selected.Blobs).Area); Assert.Equal(20, selected.Blobs[0].Features.GridPerimeter);
+            // 按面积降序：首个为环形连通域（填孔后25像素），孤立像素排在后面。
+            Assert.Equal(new long[] { 25, 1 }, selected.Blobs.Select(b => b.Area)); Assert.Equal(20, selected.First!.Features.GridPerimeter);
             Assert.Equal(processed.FrameId, selected.FrameId);
             Assert.Equal(26, Output<ColorAnalysisResult>(host, "color").PixelCount);
             using var ui = processed.Retain();
@@ -110,10 +111,10 @@ public sealed class VisionOperatorPipelineTests
             { Id = "caliper" + i, Frame = Input<ImageFrame>("file"), StartX = .5, EndX = 63.5, StartY = y, EndY = y, HalfWidth = 0, Polarity = ECaliperPolarity.Rising }).ToArray();
             var fit = new FitVisionRobustLineNodeModel { Id = "fit", Frame = Input<ImageFrame>("file"), DistanceThreshold = .2,
                 Samples = calipers.Select(c => Input<VisionCaliperMeasurement>(c.Id)).ToList() };
-            var sequence = new List<IWorkflowNodeModel> { new LoadVisionFileNodeModel { Id = "file", FilePath = path } };
+            var sequence = new List<IWorkflowNodeModel> { new AcquireVisionImageNodeModel { Id = "file", FilePath = path } };
             if (mixFrames)
             {
-                sequence.Add(new LoadVisionFileNodeModel { Id = "other", FilePath = path });
+                sequence.Add(new AcquireVisionImageNodeModel { Id = "other", FilePath = path });
                 calipers[1].Frame = Input<ImageFrame>("other");
             }
             sequence.AddRange(calipers); sequence.Add(fit);
@@ -140,24 +141,114 @@ public sealed class VisionOperatorPipelineTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FindLine_SpreadsCalipersAcrossSearchBox_AndFitsSlantedEdge(bool usePlugins)
+    {
+        // 边缘 X = 20.25 + 0.2·Y：搜索框宽度方向竖直（卡尺上下排布），高度方向水平（从左向右扫描，由暗到亮）。
+        string path = Image(64, 40, (x, y) => (byte)Math.Round(255 / (1 + Math.Exp(-(x + .5 - (20.25 + .2 * (y + .5))) / 1.2))));
+        try
+        {
+            var find = new FindVisionLineNodeModel { Id = "line", Frame = Input<ImageFrame>("file"), CaliperCount = 8, Polarity = ECaliperPolarity.Rising,
+                DistanceThreshold = .3, Regions = new() { new() { Id = "box", CenterX = 26, CenterY = 20, Width = 28, Height = 40, Angle = -Math.PI / 2 } } };
+            Assert.Empty(find.ValidateConfiguration().Where(e => !e.Contains("输入图像", StringComparison.Ordinal)));
+            var nodes = new WorkflowNodeCatalog().RegisterImageNodes(); var store = new WorkflowDocumentJsonStore(nodes);
+            var document = store.Deserialize(store.Serialize(Document(new AcquireVisionImageNodeModel { Id = "file", FilePath = path }, find))).Document;
+            using var scope = new WorkflowVisionFrameScope();
+            using var runtime = PluginRuntime();
+            using var bindings = new WorkflowVisionAlgorithmBindings(runtime, scope);
+            using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
+            host.Configure(document, new WorkflowContext(usePlugins ? PluginServices(scope, bindings) : Services(scope)));
+            var run = await host.RunAsync(); Assert.True(run.Success, run.Message);
+            var result = Output<VisionFindLineResult>(host, "line");
+            Assert.Equal(8, result.CaliperCount); Assert.Equal(8, result.FoundCount); Assert.Equal(8, result.InlierCount);
+            foreach (var point in result.EdgePoints) Assert.InRange(Math.Abs(point.ImagePosition.X - (20.25 + .2 * point.ImagePosition.Y)), 0, .15);
+            Assert.InRange(Math.Abs(result.AngleDegrees - Math.Atan2(1, .2) * 180 / Math.PI), 0, .3);
+            Assert.Equal(Output<ImageFrame>(host, "file").FrameId, result.MeasuredLine.A.FrameId);
+            Assert.Equal(1 + 8 + 8, result.DisplayGeometry.Count);
+            Assert.Contains("8/8", result.Summary);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FindCircle_RadialCalipersRecoverDiskEdge_AndSkipCalipersOutsideImage(bool usePlugins)
+    {
+        // 亮圆盘：圆心 (40.3, 39.7)、半径 20.5；期望圆偏开0.3像素，由内向外扫描为由亮到暗。
+        string path = Image(80, 80, (x, y) =>
+        {
+            double d = Math.Sqrt(Math.Pow(x + .5 - 40.3, 2) + Math.Pow(y + .5 - 39.7, 2));
+            return (byte)Math.Round(255 / (1 + Math.Exp((d - 20.5) / 1.0)));
+        });
+        try
+        {
+            var find = new FindVisionCircleNodeModel { Id = "circle", Frame = Input<ImageFrame>("file"), CaliperCount = 16, SearchLength = 12,
+                Polarity = ECaliperPolarity.Falling, DistanceThreshold = .3,
+                Regions = new() { new() { Id = "circle", Shape = EWorkflowVisionRoiShape.Ellipse, CenterX = 40, CenterY = 40, Width = 40, Height = 40 } } };
+            var nodes = new WorkflowNodeCatalog().RegisterImageNodes(); var store = new WorkflowDocumentJsonStore(nodes);
+            var document = store.Deserialize(store.Serialize(Document(new AcquireVisionImageNodeModel { Id = "file", FilePath = path }, find))).Document;
+            using var scope = new WorkflowVisionFrameScope();
+            using var runtime = PluginRuntime();
+            using var bindings = new WorkflowVisionAlgorithmBindings(runtime, scope);
+            using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
+            host.Configure(document, new WorkflowContext(usePlugins ? PluginServices(scope, bindings) : Services(scope)));
+            var run = await host.RunAsync(); Assert.True(run.Success, run.Message);
+            var result = Output<VisionFindCircleResult>(host, "circle");
+            Assert.Equal(16, result.FoundCount); Assert.Equal(16, result.InlierCount);
+            Assert.Equal(40.3, result.MeasuredCenter.ImagePosition.X, 1); Assert.Equal(39.7, result.MeasuredCenter.ImagePosition.Y, 1);
+            Assert.InRange(Math.Abs(result.Radius - 20.5), 0, .1); Assert.Equal(2 * result.Radius, result.Diameter, 12);
+            Assert.Null(result.LocalRadius);
+
+            // 加大期望圆和搜索长度：上下左右四把卡尺的扫描端超出图像被跳过并计数，其余卡尺仍拟合出同一个圆。
+            var shifted = (FindVisionCircleNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "circle").Node;
+            shifted.SearchLength = 30; shifted.Regions[0].Width = shifted.Regions[0].Height = 50; shifted.DistanceThreshold = .5;
+            using var second = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
+            second.Configure(document, new WorkflowContext(usePlugins ? PluginServices(scope, bindings) : Services(scope)));
+            run = await second.RunAsync(); Assert.True(run.Success, run.Message);
+            var partial = Output<VisionFindCircleResult>(second, "circle");
+            Assert.True(partial.FoundCount < 16); Assert.Contains("超出图像", partial.Summary);
+            Assert.InRange(Math.Abs(partial.Radius - 20.5), 0, .15);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void FindShapes_RequireOneSearchRoiOfTheRightShape()
+    {
+        var line = new FindVisionLineNodeModel { Frame = Input<ImageFrame>("file") };
+        Assert.Contains(line.ValidateConfiguration(), e => e.Contains("矩形搜索框", StringComparison.Ordinal));
+        line.Regions.Add(new WorkflowVisionRoi { Id = "e", Shape = EWorkflowVisionRoiShape.Ellipse, Width = 10, Height = 10 });
+        Assert.Contains(line.ValidateConfiguration(), e => e.Contains("矩形搜索框", StringComparison.Ordinal));
+        Assert.False(line.SupportsRegionMask);
+        var circle = new FindVisionCircleNodeModel { Frame = Input<ImageFrame>("file") };
+        circle.Regions.Add(new WorkflowVisionRoi { Id = "e", Shape = EWorkflowVisionRoiShape.Ellipse, CenterX = 20, CenterY = 20, Width = 20, Height = 12 });
+        Assert.Contains(circle.ValidateConfiguration(), e => e.Contains("宽高相等", StringComparison.Ordinal));
+        circle.Regions[0].Height = 20; circle.SearchLength = 30;
+        Assert.Contains(circle.ValidateConfiguration(), e => e.Contains("不能超过期望圆半径", StringComparison.Ordinal));
+        circle.SearchLength = 10; circle.MinimumInliers = 2;
+        Assert.Contains(circle.ValidateConfiguration(), e => e.Contains("最少内点", StringComparison.Ordinal));
+        circle.MinimumInliers = 3; Assert.Empty(circle.ValidateConfiguration());
+        Assert.Equal(new[] { "caliper", "fitter" }, ((IWorkflowVisionAlgorithmNode)circle).GetAlgorithmSlots().Select(s => s.Name));
+    }
+
+    [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
     [InlineData(false, true)]
     [InlineData(true, true)]
-    public async Task Pose_BindsTransformAndRejectsMappingWhenNotFound(bool absent, bool usePlugins)
+    public async Task Pose_ReportsTransform_OrNotFoundWithoutFakePose(bool absent, bool usePlugins)
     {
         var pixels = new byte[] { 30,200,70,100,180,90,255,10,130,50,160,40,230,80,210 };
         string template = Image(5, 3, (x, y) => pixels[y * 5 + x]);
         string scene = Image(32, 32, (x, y) => !absent && x >= 12 && x < 17 && y >= 10 && y < 13 ? pixels[(y - 10) * 5 + x - 12] : (byte)5);
         try
         {
-            var document = Document(new LoadVisionFileNodeModel { Id = "scene", FilePath = scene },
-                new LoadVisionFileNodeModel { Id = "template", FilePath = template },
+            var document = Document(new AcquireVisionImageNodeModel { Id = "scene", FilePath = scene },
+                new AcquireVisionImageNodeModel { Id = "template", FilePath = template },
                 new LocateVisionTemplatePoseNodeModel { Id = "pose", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"), MinimumScore = .999,
-                    MinimumAngleRadians = 0, MaximumAngleRadians = Math.PI / 2, AngleStepRadians = Math.PI / 2 },
-                new MapVisionPoseCoordinateNodeModel { Id = "map", Pose = Input<TemplatePoseResult>("pose") },
-                new MapVisionPoseCoordinateNodeModel { Id = "inverse", Pose = Input<TemplatePoseResult>("pose"), Inverse = true,
-                    X = WorkflowInput<double>.FromBinding(new WorkflowBindingKey("map", "X")), Y = WorkflowInput<double>.FromBinding(new WorkflowBindingKey("map", "Y")) });
+                    MinimumAngleRadians = 0, MaximumAngleRadians = Math.PI / 2, AngleStepRadians = Math.PI / 2 });
             var nodes = new WorkflowNodeCatalog().RegisterImageNodes(); var store = new WorkflowDocumentJsonStore(nodes);
             document = store.Deserialize(store.Serialize(document)).Document;
             using var scope = new WorkflowVisionFrameScope();
@@ -166,16 +257,16 @@ public sealed class VisionOperatorPipelineTests
             using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
             host.Configure(document, new WorkflowContext(usePlugins ? PluginServices(scope, bindings) : Services(scope)));
             var run = await host.RunAsync();
-            Assert.Equal(!absent, Output<TemplatePoseResult>(host, "pose").Found);
+            Assert.True(run.Success, run.Message);
+            var pose = Output<TemplatePoseResult>(host, "pose");
+            Assert.Equal(!absent, pose.Found);
             if (absent)
-            { Assert.False(run.Success); Assert.DoesNotContain(host.Engine!.RunState.NodeOutputs, o => o.NodeId is "map" or "inverse"); }
+            { Assert.True(double.IsNaN(pose.CenterX)); Assert.Null(pose.ReferenceToImage); }
             else
             {
-                Assert.True(run.Success, run.Message);
-                // 参考坐标原点在模板参考点；图像模板的参考点是模板中心。
-                var pose = Output<TemplatePoseResult>(host, "pose"); Assert.Equal(14.5, pose.CenterX, 8); Assert.Equal(0, pose.AngleDegrees, 8);
-                var mapped = Output<Coordinate2D>(host, "map"); Assert.Equal(14.5, mapped.X, 8); Assert.Equal(11.5, mapped.Y, 8);
-                var inverse = Output<Coordinate2D>(host, "inverse"); Assert.Equal(0, inverse.X, 8); Assert.Equal(0, inverse.Y, 8);
+                // 参考点即图像模板中心；参考映射把参考原点映射到参考点。
+                Assert.Equal(14.5, pose.CenterX, 8); Assert.Equal(0, pose.AngleDegrees, 8);
+                var origin = pose.ReferenceToImage!.Map(new Coordinate2D(0, 0)); Assert.Equal(14.5, origin.X, 8); Assert.Equal(11.5, origin.Y, 8);
                 // 匹配框和参考轴共用一条摘要标注，不在参考点处重复叠加；拾取参考轴仍得到同一说明。
                 using var page = new VisionFrameEditorPageModel(document.CanvasProjection.Nodes.Single(n => n.Node.Id == "pose").Node, scope);
                 using var canvas = page.Capture(1);
@@ -203,12 +294,13 @@ public sealed class VisionOperatorPipelineTests
     }
 
     private static WorkflowDocument RegionPipeline(string path) => Document(
-        new LoadVisionFileNodeModel { Id = "file", FilePath = path },
+        new AcquireVisionImageNodeModel { Id = "file", FilePath = path },
         new PreprocessVisionImageNodeModel { Id = "process", Frame = Input<ImageFrame>("file"), Operation = EImagePreprocessing.GainOffset },
         new ThresholdVisionRegionNodeModel { Id = "threshold", Frame = Input<ImageFrame>("process"), MinimumGray = 255, MaximumGray = 255 },
         new MorphVisionRegionNodeModel { Id = "morph", Frame = Input<ImageFrame>("process"), InputRegion = Input<RegionAnalysisResult>("threshold"), Operation = ERegionMorphology.FillHoles },
         new AnalyzeVisionBlobsNodeModel { Id = "blob", Frame = Input<ImageFrame>("process"), Mask = Input<RegionAnalysisResult>("morph"), MaximumGray = 255 },
-        new SelectVisionBlobsNodeModel { Id = "select", Frame = Input<ImageFrame>("process"), Blobs = Input<BlobAnalysisResult>("blob"), MinimumArea = 5 },
+        new SelectVisionBlobsNodeModel { Id = "select", Frame = Input<ImageFrame>("process"), Blobs = Input<BlobAnalysisResult>("blob"),
+            SortKey = EBlobSortKey.Area, Descending = true },
         new AnalyzeVisionColorNodeModel { Id = "color", Frame = Input<ImageFrame>("process"), Mask = Input<RegionAnalysisResult>("morph") });
 
     private static VisionAlgorithmRuntime PluginRuntime() => new(VisionAlgorithmCatalog.Compose(new IVisionAlgorithmModule[]
@@ -220,7 +312,7 @@ public sealed class VisionOperatorPipelineTests
         .Add<IImageFileReader>(new OpenCvImageFileReader()).Add<IImagePreprocessor>(new OpenCvImagePreprocessor())
         .Add<IRegionProcessor>(new OpenCvRegionProcessor()).Add<IBlobAnalyzer>(new OpenCvBlobAnalyzer()).Add<IBlobSelector>(new BlobSelector())
         .Add<IColorAnalyzer>(new RgbColorAnalyzer()).Add<ICaliperMeasurer>(new CaliperMeasurer()).Add<IRobustLineFitter>(new RobustLineFitter())
-        .Add<ITemplatePoseLocator>(new OpenCvTemplatePoseLocator())
+        .Add<IRobustCircleFitter>(new RobustCircleFitter()).Add<ITemplatePoseLocator>(new OpenCvTemplatePoseLocator())
         .Add<IWorkflowVisionFrameScope>(scope).Add<IWorkflowRunPreparationService>(scope)
         // AR-01 阶段2：退役上一轮租约是运行所有者的独立职责，与示例装配保持一致。
         .Add<IWorkflowRunResourceOwner>(scope);

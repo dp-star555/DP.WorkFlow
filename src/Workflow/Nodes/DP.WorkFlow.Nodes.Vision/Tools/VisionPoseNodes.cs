@@ -3,8 +3,8 @@ using DP.Vision.Algorithms;
 
 namespace DP.WorkFlow;
 
-/// <summary>按角度及尺度区间搜索模板，输出中心、角度、缩放和参考点；坐标系由“构建本帧坐标系”生成。</summary>
-[WorkflowNode("Vision.LocateTemplatePose", DisplayName = "旋转尺度模板定位", Category = "5.Vision/Location")]
+/// <summary>按角度及尺度区间搜索模板，输出中心、角度、缩放和参考点；角度和尺度区间都固定时即平移定位。坐标系由“构建本帧坐标系”生成。</summary>
+[WorkflowNode("Vision.LocateTemplatePose", DisplayName = "模板定位", Category = WorkflowVisionCategories.Location)]
 public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode, IWorkflowVisionTemplateNode
 {
     /// <summary>选择动态模板图像绑定或已发布模型资源。</summary>
@@ -36,7 +36,13 @@ public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeMo
     public string TemplateResourcePath { get => ModelAlgorithm.Settings.GetValueOrDefault("templatePath", ""); set => ModelAlgorithm.Settings["templatePath"] = value; }
     /// <inheritdoc/>
     [System.ComponentModel.Browsable(false), System.Text.Json.Serialization.JsonIgnore]
-    public bool RequiresPoseSearch => true;
+    public bool RequiresPoseSearch => RequiresRotation || RequiresScale;
+    /// <summary>角度区间不是单一角度时需要旋转搜索。</summary>
+    [System.ComponentModel.Browsable(false), System.Text.Json.Serialization.JsonIgnore]
+    public bool RequiresRotation => Math.Abs(MaximumAngleRadians - MinimumAngleRadians) > 1e-12;
+    /// <summary>尺度区间不是1至1时需要尺度搜索。</summary>
+    [System.ComponentModel.Browsable(false), System.Text.Json.Serialization.JsonIgnore]
+    public bool RequiresScale => Math.Abs(MinimumScale - 1) > 1e-9 || Math.Abs(MaximumScale - 1) > 1e-9;
     /// <summary>动态模板图像模式的节点专属实现选择。</summary>
     [System.ComponentModel.Browsable(false)]
     public VisionAlgorithmSelection Algorithm { get; set; } = new() { ImplementationId = "opencv.template-pose" };
@@ -57,7 +63,7 @@ public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeMo
     [WorkflowProperty("匹配最小角度", "相对制作样图的角度下限；绑定父坐标时相对父坐标。搜索区间须在模型制作范围内。", Category = "搜索", DisplayRadiansAsDegrees = true)]
     public double MinimumAngleRadians { get; set; }
     /// <summary>搜索顺时针弧度上限。</summary>
-    [WorkflowProperty("匹配最大角度", "例如最小85°、最大95°表示90°附近±5°。上下限相同表示固定角度，跨度最多360°。", Category = "搜索", DisplayRadiansAsDegrees = true)]
+    [WorkflowProperty("匹配最大角度", "例如最小85°、最大95°表示90°附近±5°。上下限相同表示固定角度（角度和尺度都固定即平移定位），跨度最多360°。", Category = "搜索", DisplayRadiansAsDegrees = true)]
     public double MaximumAngleRadians { get; set; }
     /// <summary>搜索尺度下限。</summary>
     [WorkflowProperty("匹配最小尺度", "0.1至10；绑定父坐标时乘以父坐标尺度。", Category = "搜索")]
@@ -121,47 +127,5 @@ public sealed class LocateVisionTemplatePoseNodeHandler : WorkflowNodeHandler<Lo
             throw new InvalidOperationException("定位变换的模板尺寸不一致。");
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
-    }
-}
-
-/// <summary>定位坐标变换节点，未检出不能产生伪造坐标。</summary>
-[WorkflowNode("Vision.MapPoseCoordinate", DisplayName = "定位坐标映射", Category = "5.Vision/Location")]
-public sealed class MapVisionPoseCoordinateNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
-{
-    /// <inheritdoc/>
-    public override string NodeType => "Vision.MapPoseCoordinate";
-    /// <summary>定位事实绑定。</summary>
-    [WorkflowProperty("定位结果", "模板匹配结果绑定，必须找到目标。", Category = "输入")]
-    public WorkflowInput<TemplatePoseResult> Pose { get; set; } = WorkflowInput<TemplatePoseResult>.FromLiteral(null);
-    /// <summary>X常量或绑定。</summary>
-    public WorkflowInput<double> X { get; set; } = WorkflowInput<double>.FromLiteral(0);
-    /// <summary>Y常量或绑定。</summary>
-    public WorkflowInput<double> Y { get; set; } = WorkflowInput<double>.FromLiteral(0);
-    /// <summary>启用时图像→参考，否则参考→图像。</summary>
-    [WorkflowProperty("反向映射", "启用：图像到参考；关闭：参考到图像。参考坐标原点在模板参考点、X轴沿参考方向，单位为模板像素。", Category = "映射")]
-    public bool Inverse { get; set; }
-    /// <inheritdoc/>
-    public IReadOnlyList<string> ValidateConfiguration()
-    {
-        var errors = new List<string>();
-        if (Pose is null || Pose.Source != WorkflowValueSource.Binding || Pose.Binding is null || Pose.LiteralValue is not null) errors.Add("定位输入必须为绑定。");
-        if (X is null || Y is null || X.Source == WorkflowValueSource.Literal && !double.IsFinite(X.LiteralValue)
-            || Y.Source == WorkflowValueSource.Literal && !double.IsFinite(Y.LiteralValue)) errors.Add("坐标必须为有限常量或绑定。");
-        return errors;
-    }
-}
-
-/// <summary>纯坐标变换，不伪装成标定拟合，不自动偏移半像素。</summary>
-public sealed class MapVisionPoseCoordinateNodeHandler : WorkflowNodeHandler<MapVisionPoseCoordinateNodeModel>
-{
-    /// <inheritdoc/>
-    protected override ValueTask<NodeExecutionResult> ExecuteAsync(MapVisionPoseCoordinateNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var result = context.ResolveInput(node.Pose) ?? throw new InvalidOperationException("没有定位结果，不能映射坐标。");
-        var matrix = result.ReferenceToImage ?? throw new InvalidOperationException("没有达标定位，不能映射坐标。");
-        var point = new Coordinate2D(context.ResolveInput(node.X), context.ResolveInput(node.Y));
-        var mapped = (node.Inverse ? matrix.Inverse() : matrix).Map(point);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: mapped));
     }
 }

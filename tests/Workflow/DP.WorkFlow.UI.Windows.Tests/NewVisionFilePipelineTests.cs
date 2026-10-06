@@ -76,15 +76,6 @@ public sealed class NewVisionFilePipelineTests
     }
 
     [Fact]
-    public void PixelFormat_OffersLabeledChoices()
-    {
-        var choices = new AcquireVisionImageNodeModel().GetPropertyChoices(nameof(AcquireVisionImageNodeModel.PixelFormat), []);
-        Assert.Equal(["保持原样", "8位灰度"], choices.Select(c => c.Key));
-        Assert.Equal([EWorkflowVisionPixelFormat.Original, EWorkflowVisionPixelFormat.Gray8], choices.Select(c => (EWorkflowVisionPixelFormat)c.Value!));
-        Assert.Equal(EWorkflowVisionPixelFormat.Original, new AcquireVisionImageNodeModel().PixelFormat);
-    }
-
-    [Fact]
     public async Task Host_MissingBlobCapability_FailsBeforeFileRead()
     {
         string path = CreateImage();
@@ -151,7 +142,7 @@ public sealed class NewVisionFilePipelineTests
         {
             Id = "Blobs", Frame = WorkflowInput<ImageFrame>.FromBinding(new WorkflowBindingKey("File", "$")), MaximumGray = 0
         } });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new LoadVisionFileNodeModel { Id = "Original", FilePath = path } });
+        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AcquireVisionImageNodeModel { Id = "Original", FilePath = path } });
         document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AnalyzeVisionColorNodeModel
         {
             Id = "Color", Frame = WorkflowInput<ImageFrame>.FromBinding(new WorkflowBindingKey("Original", "$"))

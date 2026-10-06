@@ -92,7 +92,7 @@ public sealed class VisionTemplateAuthoringTests
     public async Task MakingMask_RejectsAllDisabledRois_AndPublishedMaskMatchesPreviewHole()
     {
         using var fixture = new Fixture();
-        var node = new LocateVisionTemplateNodeModel();
+        var node = new LocateVisionTemplatePoseNodeModel();
         using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(node, reader: fixture.Reader,
             templates: fixture.Editing, templateEditorOnly: true));
         await page.Draft.ReadSourceAsync(fixture.SamplePath);
@@ -125,7 +125,7 @@ public sealed class VisionTemplateAuthoringTests
     public async Task ResourceChoices_GroupRevisionsByIdentity_KeepCurrentOldRevision_AndDistinguishSameNames()
     {
         using var fixture = new Fixture();
-        var node = new LocateVisionTemplateNodeModel();
+        var node = new LocateVisionTemplatePoseNodeModel();
         using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(node, reader: fixture.Reader, templates: fixture.Editing, templateEditorOnly: true));
         page.Draft.DisplayName = "标签定位";
         await page.ExecuteAsync(EVisionTemplateAuthoringCommand.ReadSample, fixture.SamplePath);
@@ -138,7 +138,7 @@ public sealed class VisionTemplateAuthoringTests
         var latestReference = node.TemplateResourcePath;
         Assert.Equal(latestReference, page.SelectedResource);
         Assert.Single(Choices()); // 应用后立即回填列表，不必先刷新才收起旧版本。
-        var other = new LocateVisionTemplateNodeModel();
+        var other = new LocateVisionTemplatePoseNodeModel();
         using (var maker = new VisionTemplateEditorModel(other, fixture.Editing, () => throw new InvalidOperationException(), fixture.Reader))
         {
             maker.DisplayName = "标签定位";
@@ -166,7 +166,7 @@ public sealed class VisionTemplateAuthoringTests
     public async Task NewTemplateApply_SelectsPublishedRevision_AndReopenKeepsSelection(bool wpf)
     {
         using var fixture = new Fixture();
-        var node = new LocateVisionTemplateNodeModel { Id = "locate" };
+        var node = new LocateVisionTemplatePoseNodeModel { Id = "locate" };
         var document = new WorkflowDocument { EntryNodeId = node.Id };
         document.CanvasProjection.Nodes.Add(new() { Node = node });
         var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterImageNodes());
@@ -271,7 +271,7 @@ public sealed class VisionTemplateAuthoringTests
     public async Task TemplateName_PublishesHumanNameWithoutRebuildingAndKeepsResourceIdentity()
     {
         using var fixture = new Fixture();
-        var node = new LocateVisionTemplateNodeModel { Id = "locate" };
+        var node = new LocateVisionTemplatePoseNodeModel { Id = "locate" };
         using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(node, reader: fixture.Reader, templates: fixture.Editing, templateEditorOnly: true));
         var name = page.Properties().Single(p => p.Name == "TemplateName");
         name.SetValue("标签定位");
@@ -571,10 +571,8 @@ public sealed class VisionTemplateAuthoringTests
     {
         using var fixture = new Fixture(includeHalcon: true);
         var node = new LocateVisionTemplatePoseNodeModel { ModelAlgorithm = new() { ImplementationId = implementation } };
-        // 平移模型使用对应平移节点；姿态模型使用旋转尺度节点。
         using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(
-            implementation == "opencv.template-model" ? new LocateVisionTemplateNodeModel { ModelAlgorithm = node.ModelAlgorithm } : node,
-            reader: fixture.Reader, templates: fixture.Editing, templateEditorOnly: true));
+            node, reader: fixture.Reader, templates: fixture.Editing, templateEditorOnly: true));
         var properties = page.Properties();
         var minimum = properties.Single(p => p.Name == "Build.minimumAngle");
         var maximum = properties.Single(p => p.Name == "Build.maximumAngle");
@@ -691,7 +689,7 @@ public sealed class VisionTemplateAuthoringTests
             try
             {
                 using var fixture = new Fixture();
-                using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplateNodeModel { TemplateSource = EWorkflowVisionTemplateSource.Resource }, reader: fixture.Reader, templates: fixture.Editing, templateEditorOnly: true));
+                using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplatePoseNodeModel { TemplateSource = EWorkflowVisionTemplateSource.Resource }, reader: fixture.Reader, templates: fixture.Editing, templateEditorOnly: true));
                 page.Draft.ReadSourceAsync(fixture.SamplePath).GetAwaiter().GetResult();
                 page.Draft.BuildAsync().GetAwaiter().GetResult();
                 var descriptor = new WorkflowNodeEditorPageDescriptor("Template", "模板制作", WorkflowNodeEditorPageKind.Custom, 0, page);
@@ -757,7 +755,7 @@ public sealed class VisionTemplateAuthoringTests
     public async Task ReadingAnotherTestImage_ClearsPreviousDetection_AndKeepsBuildVerification()
     {
         using var fixture = new Fixture();
-        using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplateNodeModel(), reader: fixture.Reader, templates: fixture.Editing, templateEditorOnly: true));
+        using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplatePoseNodeModel(), reader: fixture.Reader, templates: fixture.Editing, templateEditorOnly: true));
         await page.Draft.ReadSourceAsync(fixture.SamplePath);
         await page.ExecuteAsync(EVisionTemplateAuthoringCommand.Build);
         var buildCheck = page.Draft.BuildVerificationResult;
@@ -776,7 +774,7 @@ public sealed class VisionTemplateAuthoringTests
     public async Task Build_ImmediatelyVerifiesAndShowsDetectionOnMakingImage()
     {
         using var fixture = new Fixture();
-        using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplateNodeModel(), reader: fixture.Reader, templates: fixture.Editing, templateEditorOnly: true));
+        using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplatePoseNodeModel(), reader: fixture.Reader, templates: fixture.Editing, templateEditorOnly: true));
         await page.ExecuteAsync(EVisionTemplateAuthoringCommand.ReadSample, fixture.SamplePath);
         await page.ExecuteAsync(EVisionTemplateAuthoringCommand.Build);
         Assert.True(page.Draft.BuildVerificationResult!.Found);
@@ -837,7 +835,7 @@ public sealed class VisionTemplateAuthoringTests
         var catalog = VisionAlgorithmCatalog.Compose(new IVisionAlgorithmModule[] { module });
         using var runtime = new VisionAlgorithmRuntime(catalog);
         var editing = new VisionTemplateEditingRuntime(catalog, runtime, () => new VisionAlgorithmResourceContext(fixture.Root));
-        using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplateNodeModel
+        using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplatePoseNodeModel
             { ModelAlgorithm = new() { ImplementationId = "test.verification-model" } }, reader: fixture.Reader, templates: editing, templateEditorOnly: true));
         await page.Draft.ReadSourceAsync(fixture.SamplePath);
         await page.ExecuteAsync(EVisionTemplateAuthoringCommand.Build);
@@ -874,7 +872,7 @@ public sealed class VisionTemplateAuthoringTests
         var catalog = VisionAlgorithmCatalog.Compose(new IVisionAlgorithmModule[] { module });
         using var runtime = new VisionAlgorithmRuntime(catalog);
         var editing = new VisionTemplateEditingRuntime(catalog, runtime, () => null);
-        using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplateNodeModel
+        using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplatePoseNodeModel
             { ModelAlgorithm = new() { ImplementationId = "test.verification-model" } }, reader: fixture.Reader, templates: editing, templateEditorOnly: true));
         await page.Draft.ReadSourceAsync(fixture.SamplePath);
         var task = page.Draft.BuildAsync();
@@ -900,7 +898,7 @@ public sealed class VisionTemplateAuthoringTests
         var catalog = VisionAlgorithmCatalog.Compose(new IVisionAlgorithmModule[] { module });
         using var runtime = new VisionAlgorithmRuntime(catalog);
         var editing = new VisionTemplateEditingRuntime(catalog, runtime, () => null);
-        VisionTemplateAuthoringPageModel Open() => new(new VisionFrameEditorPageModel(new LocateVisionTemplateNodeModel
+        VisionTemplateAuthoringPageModel Open() => new(new VisionFrameEditorPageModel(new LocateVisionTemplatePoseNodeModel
             { ModelAlgorithm = new() { ImplementationId = "test.verification-model" } }, reader: fixture.Reader, templates: editing, templateEditorOnly: true));
         using var page = Open();
         await page.Draft.ReadSourceAsync(fixture.SamplePath);
@@ -1029,7 +1027,7 @@ public sealed class VisionTemplateAuthoringTests
             try
             {
                 using var fixture = new Fixture();
-                using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplateNodeModel(),
+                using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplatePoseNodeModel(),
                     reader: fixture.Reader, templates: fixture.Editing, templateEditorOnly: true));
                 page.Draft.ReadSourceAsync(fixture.SamplePath).GetAwaiter().GetResult();
                 page.Draft.BuildAsync().GetAwaiter().GetResult();
@@ -1094,7 +1092,7 @@ public sealed class VisionTemplateAuthoringTests
     public async Task TemplatePropertyActions_CreateBuildTestAndClearTheDraft()
     {
         using var fixture = new Fixture();
-        using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplateNodeModel(),
+        using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplatePoseNodeModel(),
             reader: fixture.Reader, templates: fixture.Editing, templateEditorOnly: true));
         var entries = page.Properties(command => page.ExecuteAsync(command,
             command == EVisionTemplateAuthoringCommand.ReadSample ? fixture.SamplePath : null));
@@ -1117,7 +1115,7 @@ public sealed class VisionTemplateAuthoringTests
     public async Task TemplateReadiness_TracksEmptyBuiltEditedAndFailedDraft_AndUnmatchedTest()
     {
         using var fixture = new Fixture();
-        using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplateNodeModel(),
+        using var page = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(new LocateVisionTemplatePoseNodeModel(),
             reader: fixture.Reader, templates: fixture.Editing, templateEditorOnly: true));
         Assert.False(page.Draft.CanBuild); Assert.False(page.Draft.CanTest); Assert.False(page.CanCommit);
         await page.Draft.ReadSourceAsync(fixture.SamplePath); Assert.True(page.Draft.CanBuild); Assert.False(page.Draft.CanTest);
@@ -1142,7 +1140,7 @@ public sealed class VisionTemplateAuthoringTests
     public async Task LoadedTemplate_CanBeTestedWithoutRebuilding()
     {
         using var fixture = new Fixture();
-        var node = new LocateVisionTemplateNodeModel();
+        var node = new LocateVisionTemplatePoseNodeModel();
         using (var maker = new VisionFrameEditorPageModel(node, reader: fixture.Reader, templates: fixture.Editing))
         { await maker.Template!.ReadSourceAsync(fixture.SamplePath); await maker.Template.BuildAsync(); maker.PrepareCommit(); }
         using var mounted = new VisionTemplateAuthoringPageModel(new VisionFrameEditorPageModel(node, reader: fixture.Reader,
@@ -1155,14 +1153,11 @@ public sealed class VisionTemplateAuthoringTests
         Assert.True(mounted.Draft.TrialResult!.Found);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task MountedTemplateEditor_IsIsolatedFromParent_AndPreservesSearchRegion(bool pose)
+    [Fact]
+    public async Task MountedTemplateEditor_IsIsolatedFromParent_AndPreservesSearchRegion()
     {
         using var fixture = new Fixture();
-        var node = pose ? (AnalyzeVisionFrameNodeModel)new LocateVisionTemplatePoseNodeModel { Id = "locate" }
-            : new LocateVisionTemplateNodeModel { Id = "locate" };
+        var node = new LocateVisionTemplatePoseNodeModel { Id = "locate" };
         node.FullImage = false; node.X = 1; node.Y = 1; node.Width = 2; node.Height = 2;
         var document = new WorkflowDocument { EntryNodeId = node.Id };
         document.CanvasProjection.Nodes.Add(new() { Node = node });
@@ -1208,7 +1203,7 @@ public sealed class VisionTemplateAuthoringTests
     public async Task MountedTemplateEditor_LoadsCurrentTemplate_ListsVersions_AndCanStartBlank()
     {
         using var fixture = new Fixture();
-        var node = new LocateVisionTemplateNodeModel { Id = "locate" };
+        var node = new LocateVisionTemplatePoseNodeModel { Id = "locate" };
         using (var first = new VisionFrameEditorPageModel(node, reader: fixture.Reader, templates: fixture.Editing))
         {
             await first.Template!.ReadSourceAsync(fixture.SamplePath); await first.Template.BuildAsync(); first.PrepareCommit();
@@ -1242,7 +1237,7 @@ public sealed class VisionTemplateAuthoringTests
             try
             {
                 using var fixture = new Fixture();
-                var node = new LocateVisionTemplateNodeModel { Id = "locate" };
+                var node = new LocateVisionTemplatePoseNodeModel { Id = "locate" };
                 var document = new WorkflowDocument { EntryNodeId = node.Id };
                 document.CanvasProjection.Nodes.Add(new() { Node = node });
                 var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterImageNodes()) { SelectedNodeId = node.Id };
@@ -1327,18 +1322,17 @@ public sealed class VisionTemplateAuthoringTests
     public async Task NodeEditor_AppliesResource_RoundTrips_RunsWithoutTemplateInput_AndUndoRestoresOldMode(bool pose)
     {
         using var fixture = new Fixture();
-        var node = pose ? (AnalyzeVisionFrameNodeModel)new LocateVisionTemplatePoseNodeModel { Id = "locate", Frame = Input<ImageFrame>("source") }
-            : new LocateVisionTemplateNodeModel { Id = "locate", Frame = Input<ImageFrame>("source") };
+        // pose：带角度区间的旋转搜索；否则角度和尺度固定，即平移定位。
+        var node = new LocateVisionTemplatePoseNodeModel
+        {
+            Id = "locate", Frame = Input<ImageFrame>("source"),
+            MinimumAngleRadians = pose ? -Math.PI / 18 : 0, MaximumAngleRadians = pose ? Math.PI / 18 : 0
+        };
         var source = new AcquireVisionImageNodeModel { Id = "source", FilePath = fixture.SamplePath };
         var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
         var document = new WorkflowDocument { EntryNodeId = "source" };
         foreach (var n in new IWorkflowNodeModel[] { source, node }) document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = n });
         document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = "source", FromPort = WorkflowPorts.Success, ToNodeId = "locate", ToPort = WorkflowPorts.Input });
-        if (pose)
-        {
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new MapVisionPoseCoordinateNodeModel { Id = "map", Pose = Input<TemplatePoseResult>("locate") } });
-            document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = "locate", FromPort = WorkflowPorts.Success, ToNodeId = "map", ToPort = WorkflowPorts.Input });
-        }
         var session = new WorkflowDesignerSession(document, nodes);
         var editor = new WorkflowNodeEditorModel(session, "source", node.Id, new[] { new VisionFrameEditorPageProvider(reader: fixture.Reader, templates: fixture.Editing) }, propertyEditorKey: WorkflowPropertyEditorKeys.VisionTemplateEditor);
         try
@@ -1364,11 +1358,6 @@ public sealed class VisionTemplateAuthoringTests
             var run = await host.RunAsync(); Assert.True(run.Success, run.Message);
             var result = Assert.IsType<TemplatePoseResult>(host.Engine!.RunState.NodeOutputs.Single(o => o.NodeId == "locate").Value);
             Assert.True(result.Found); Assert.Equal(pose ? 2d : 1d, result.ReferenceX, 5); Assert.Equal(1d, result.ReferenceY, 5);
-            if (pose)
-            {
-                var point = Assert.IsType<Coordinate2D>(host.Engine.RunState.NodeOutputs.Single(o => o.NodeId == "map").Value);
-                Assert.Equal(2d, point.X, 5); Assert.Equal(1d, point.Y, 5);
-            }
         }
         finally { await editor.DisposeAsync(); }
     }
@@ -1377,7 +1366,7 @@ public sealed class VisionTemplateAuthoringTests
     public async Task CancelOrStaleDraft_DoesNotPublish_AndDoesNotMutateFormalNode()
     {
         using var fixture = new Fixture();
-        var node = new LocateVisionTemplateNodeModel { Id = "locate", Frame = Input<ImageFrame>("source") };
+        var node = new LocateVisionTemplatePoseNodeModel { Id = "locate", Frame = Input<ImageFrame>("source") };
         var nodes = new WorkflowNodeCatalog().RegisterImageNodes(); var document = new WorkflowDocument { EntryNodeId = node.Id };
         document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node }); var session = new WorkflowDesignerSession(document, nodes);
         var editor = new WorkflowNodeEditorModel(session, node.Id, node.Id, new[] { new VisionFrameEditorPageProvider(reader: fixture.Reader, templates: fixture.Editing) }, propertyEditorKey: WorkflowPropertyEditorKeys.VisionTemplateEditor);
@@ -1391,7 +1380,7 @@ public sealed class VisionTemplateAuthoringTests
     [Fact]
     public async Task Rebuild_KeepsReferenceDefinition_ChangingOriginInvalidatesDownstreamBinding()
     {
-        using var fixture = new Fixture(); var node = new LocateVisionTemplateNodeModel();
+        using var fixture = new Fixture(); var node = new LocateVisionTemplatePoseNodeModel();
         using var editor = new VisionTemplateEditorModel(node, fixture.Editing, () => throw new InvalidOperationException(), fixture.Reader);
         await editor.ReadSourceAsync(fixture.SamplePath); await editor.BuildAsync(); editor.PrepareCommit();
         var first = VisionTemplateStore.Capture(Path.Combine(fixture.Root, node.ModelAlgorithm.Settings["templatePath"]));
@@ -1422,7 +1411,7 @@ public sealed class VisionTemplateAuthoringTests
     [Fact]
     public async Task ResourceImport_RestoresRoiHoles_AndUnchangedApplyDoesNotCreateRevision()
     {
-        using var fixture = new Fixture(); var node = new LocateVisionTemplateNodeModel();
+        using var fixture = new Fixture(); var node = new LocateVisionTemplatePoseNodeModel();
         using (var editor = new VisionTemplateEditorModel(node, fixture.Editing, () => throw new InvalidOperationException(), fixture.Reader))
         {
             await editor.ReadSourceAsync(fixture.SamplePath);
@@ -1443,7 +1432,7 @@ public sealed class VisionTemplateAuthoringTests
     {
         using var fixture = new Fixture();
         var editing = new VisionTemplateEditingRuntime(fixture.Catalog, fixture.Runtime, () => new VisionAlgorithmResourceContext());
-        var node = new LocateVisionTemplateNodeModel(); using var editor = new VisionTemplateEditorModel(node, editing, () => throw new InvalidOperationException(), fixture.Reader);
+        var node = new LocateVisionTemplatePoseNodeModel(); using var editor = new VisionTemplateEditorModel(node, editing, () => throw new InvalidOperationException(), fixture.Reader);
         await editor.ReadSourceAsync(fixture.SamplePath); await editor.BuildAsync();
         Assert.Throws<InvalidOperationException>(editor.PrepareCommit); Assert.Empty(node.ModelAlgorithm.Settings);
     }
@@ -1459,7 +1448,7 @@ public sealed class VisionTemplateAuthoringTests
             try
             {
                 using var fixture = new Fixture();
-                var node = new LocateVisionTemplateNodeModel { Id = "locate", Frame = Input<ImageFrame>("source") };
+                var node = new LocateVisionTemplatePoseNodeModel { Id = "locate", Frame = Input<ImageFrame>("source") };
                 using var page = new VisionFrameEditorPageModel(node, reader: fixture.Reader, templates: fixture.Editing);
                 var descriptor = new WorkflowNodeEditorPageDescriptor("Image", "图像", WorkflowNodeEditorPageKind.Custom, 0, page);
                 if (wpf)
@@ -1488,7 +1477,7 @@ public sealed class VisionTemplateAuthoringTests
     [Fact]
     public async Task ReplacingSample_IncrementsReferenceVersion_EvenWhenSizeAndOriginMatch()
     {
-        using var fixture = new Fixture(); var node = new LocateVisionTemplateNodeModel();
+        using var fixture = new Fixture(); var node = new LocateVisionTemplatePoseNodeModel();
         using var editor = new VisionTemplateEditorModel(node, fixture.Editing, () => throw new InvalidOperationException(), fixture.Reader);
         await editor.ReadSourceAsync(fixture.SamplePath); await editor.BuildAsync(); editor.PrepareCommit();
         await editor.LoadResourceAsync(node.ModelAlgorithm.Settings["templatePath"]);
@@ -1501,7 +1490,7 @@ public sealed class VisionTemplateAuthoringTests
     [Fact]
     public async Task TrialMatch_UsesDraftModel_AndDoesNotPublishOrChangeRuntimeConfiguration()
     {
-        using var fixture = new Fixture(); var node = new LocateVisionTemplateNodeModel();
+        using var fixture = new Fixture(); var node = new LocateVisionTemplatePoseNodeModel();
         using var editor = new VisionTemplateEditorModel(node, fixture.Editing, () => throw new InvalidOperationException(), fixture.Reader);
         await editor.ReadSourceAsync(fixture.SamplePath); await editor.BuildAsync();
         using var image = await fixture.Reader.ReadAsync(fixture.SamplePath); using var frame = new ImageFrame("trial", image);
@@ -1518,7 +1507,7 @@ public sealed class VisionTemplateAuthoringTests
         var catalog = VisionAlgorithmCatalog.Compose(new IVisionAlgorithmModule[] { new OpenCvVisionAlgorithmModule(), gate });
         using var runtime = new VisionAlgorithmRuntime(catalog);
         var editing = new VisionTemplateEditingRuntime(catalog, runtime, () => new VisionAlgorithmResourceContext(fixture.Root));
-        var node = new LocateVisionTemplateNodeModel { ModelAlgorithm = new() { ImplementationId = "test.delayed-model" } };
+        var node = new LocateVisionTemplatePoseNodeModel { ModelAlgorithm = new() { ImplementationId = "test.delayed-model" } };
         using var editor = new VisionTemplateEditorModel(node, editing, () => throw new InvalidOperationException(), fixture.Reader);
         await editor.ReadSourceAsync(fixture.SamplePath);
         var task = editor.BuildAsync(); await gate.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -1531,7 +1520,7 @@ public sealed class VisionTemplateAuthoringTests
     [Fact]
     public async Task ResourceFolderCanMove_WithRecipeRelativeReference_AndReferenceMismatchStopsBeforeAcquisition()
     {
-        using var fixture = new Fixture(); var node = new LocateVisionTemplateNodeModel { Id = "locate", Frame = Input<ImageFrame>("source") };
+        using var fixture = new Fixture(); var node = new LocateVisionTemplatePoseNodeModel { Id = "locate", Frame = Input<ImageFrame>("source") };
         using (var editor = new VisionTemplateEditorModel(node, fixture.Editing, () => throw new InvalidOperationException(), fixture.Reader))
         { await editor.ReadSourceAsync(fixture.SamplePath); await editor.BuildAsync(); editor.PrepareCommit(); }
         var reference = node.ModelAlgorithm.Settings["templatePath"];

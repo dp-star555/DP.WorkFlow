@@ -17,7 +17,7 @@ public sealed class WorkflowCalibrationSample
 }
 
 /// <summary>输出独立DP.Vision标定事实，不写旧变量。</summary>
-[WorkflowNode("Vision.SolveCalibration", DisplayName = "求解仿射标定", Category = "5.Vision/ImageBuffer")]
+[WorkflowNode("Vision.SolveCalibration", DisplayName = "求解仿射标定", Category = WorkflowVisionCategories.Calibration)]
 public sealed class SolveVisionCalibrationNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
 {
     /// <inheritdoc/>
@@ -47,7 +47,7 @@ public sealed class SolveVisionCalibrationNodeHandler : WorkflowNodeHandler<Solv
 }
 
 /// <summary>强类型标定与数值绑定坐标转换。</summary>
-[WorkflowNode("Vision.MapCoordinate", DisplayName = "映射标定坐标", Category = "5.Vision/ImageBuffer")]
+[WorkflowNode("Vision.MapCoordinate", DisplayName = "映射标定坐标", Category = WorkflowVisionCategories.Calibration)]
 public sealed class MapVisionCoordinateNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
 {
     /// <inheritdoc/>
@@ -78,42 +78,5 @@ public sealed class MapVisionCoordinateNodeHandler : WorkflowNodeHandler<MapVisi
         var calibration = context.ResolveInput(node.Calibration) ?? throw new InvalidOperationException("标定结果为空。");
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: calibration.TransformWithRotation(
             new Coordinate2D(context.ResolveInput(node.X), context.ResolveInput(node.Y)), node.RotationRadians)));
-    }
-}
-
-/// <summary>两点距离与方向事实，单位由输入坐标系决定。</summary>
-/// <param name="Distance">欧氏距离。</param>
-/// <param name="AngleRadians">从+X向+Y的方向弧度；重合点为null。</param>
-public sealed record VisionDistanceResult([property: DisplayName("距离")] double Distance, [property: DisplayName("角度(弧度)")] double? AngleRadians);
-
-/// <summary>任意数值来源的两点几何测量。</summary>
-[WorkflowNode("Vision.MeasureDistance", DisplayName = "测量两点距离", Category = "5.Vision/ImageBuffer")]
-public sealed class MeasureVisionDistanceNodeModel : WorkflowNodeModel
-{
-    /// <inheritdoc/>
-    public override string NodeType => "Vision.MeasureDistance";
-    /// <summary>第一点X。</summary>
-    public WorkflowInput<double> X1 { get; set; } = WorkflowInput<double>.FromLiteral(0);
-    /// <summary>第一点Y。</summary>
-    public WorkflowInput<double> Y1 { get; set; } = WorkflowInput<double>.FromLiteral(0);
-    /// <summary>第二点X。</summary>
-    public WorkflowInput<double> X2 { get; set; } = WorkflowInput<double>.FromLiteral(0);
-    /// <summary>第二点Y。</summary>
-    public WorkflowInput<double> Y2 { get; set; } = WorkflowInput<double>.FromLiteral(0);
-}
-
-/// <summary>计算距离与方向，不对结果做产品裁决。</summary>
-public sealed class MeasureVisionDistanceNodeHandler : WorkflowNodeHandler<MeasureVisionDistanceNodeModel>
-{
-    /// <inheritdoc/>
-    protected override ValueTask<NodeExecutionResult> ExecuteAsync(MeasureVisionDistanceNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var a = new Coordinate2D(context.ResolveInput(node.X1), context.ResolveInput(node.Y1));
-        var b = new Coordinate2D(context.ResolveInput(node.X2), context.ResolveInput(node.Y2));
-        double dx = b.X - a.X, dy = b.Y - a.Y, distance = Math.Sqrt(dx * dx + dy * dy);
-        if (!double.IsFinite(distance)) throw new InvalidOperationException("几何距离溢出。");
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: new VisionDistanceResult(distance,
-            distance == 0 ? null : Math.Atan2(dy, dx))));
     }
 }

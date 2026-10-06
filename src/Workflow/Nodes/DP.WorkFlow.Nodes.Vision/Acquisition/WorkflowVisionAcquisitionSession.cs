@@ -41,7 +41,6 @@ public sealed class WorkflowVisionAcquisitionSession(IImageFileReader reader, IW
         {
             var folder = node switch
             {
-                LoadVisionFolderNodeModel legacy => (legacy.FolderPath, legacy.Extensions, legacy.Loop, Restart: true),
                 AcquireVisionImageNodeModel { SourceMode: EWorkflowVisionImageSource.Folder } input =>
                     (input.FolderPath, input.Extensions, input.Loop, Restart: input.RestartFolderEachRun),
                 _ => default
@@ -117,64 +116,5 @@ public sealed class WorkflowVisionAcquisitionSession(IImageFileReader reader, IW
         public readonly string Filter = filter;
         public readonly SemaphoreSlim Gate = new(1, 1);
         public int Index;
-    }
-}
-
-/// <summary>新版本文件夹输入；默认到达末尾失败而不是悄悄重复图像。</summary>
-[WorkflowNode("Vision.LoadFolder", DisplayName = "顺序读取图像目录", Category = "5.Vision/Acquisition")]
-[System.ComponentModel.Browsable(false)]
-public sealed class LoadVisionFolderNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator, IWorkflowVisionAlgorithmNode
-{
-    /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
-    [System.ComponentModel.Browsable(false)]
-    public VisionAlgorithmSelection Algorithm { get; set; } = new() { ImplementationId = "opencv.image-read" };
-
-    /// <inheritdoc/>
-    public IReadOnlyList<WorkflowVisionAlgorithmSlot> GetAlgorithmSlots() => new[] { new WorkflowVisionAlgorithmSlot("algorithm", typeof(IImageFileReader), Algorithm) };
-
-    /// <inheritdoc/>
-    public override string NodeType => "Vision.LoadFolder";
-    /// <summary>静态目录。</summary>
-    [WorkflowProperty("图像文件夹", "运行准备时按文件名冻结清单，每次执行读取下一张。", Category = "图像来源")]
-    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.FolderPath)]
-    public string FolderPath { get; set; } = string.Empty;
-    /// <summary>分号分隔的扩展名。</summary>
-    [WorkflowProperty("文件类型", "用分号分隔需要读取的图像扩展名，例如 .png;.bmp;.jpg。", Category = "图像来源")]
-    public string Extensions { get; set; } = ".png;.bmp;.jpg;.jpeg;.tif;.tiff";
-    /// <summary>明确请求循环。</summary>
-    [WorkflowProperty("循环读取", "开启后读取到末尾会回到第一张；关闭时末尾报错。", Category = "图像来源")]
-    public bool Loop { get; set; }
-    /// <inheritdoc/>
-    public IReadOnlyList<string> ValidateConfiguration() => !Directory.Exists(FolderPath) || string.IsNullOrWhiteSpace(Extensions)
-        ? new[] { "图像目录不存在或扩展名为空。" } : Array.Empty<string>();
-}
-
-/// <summary>通过运行级清单读取下一张。</summary>
-public sealed class LoadVisionFolderNodeHandler : WorkflowNodeHandler<LoadVisionFolderNodeModel>
-{
-    /// <inheritdoc/>
-    protected override ValueTask<NodeExecutionResult> ExecuteAsync(LoadVisionFolderNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
-        => ReadAsync(node.Id, node.Algorithm, context, cancellationToken);
-
-    internal static async ValueTask<NodeExecutionResult> ReadAsync(string nodeId, VisionAlgorithmSelection algorithm,
-        IWorkflowNodeExecutionContext context, CancellationToken cancellationToken, EWorkflowVisionPixelFormat format = EWorkflowVisionPixelFormat.Original)
-    {
-        var source = context.GetRequiredCapability<IWorkflowVisionFolderSource>();
-        Task<IImageSource> Read(string path, CancellationToken token) => WorkflowVisionAlgorithmInvocation.InvokeAsync(context, algorithm, "opencv.image-read",
-            (IImageFileReader reader, CancellationToken cancellation) => reader.ReadAsync(path, cancellation), token);
-        Task<IImageSource> next;
-        if (context.Services.GetService(typeof(IWorkflowVisionAlgorithmBindings)) is IWorkflowVisionAlgorithmBindings)
-        {
-            if (source is not IWorkflowVisionAlgorithmFolderSource algorithmSource)
-                throw new InvalidOperationException("文件夹来源未支持节点算法选择，请使用支持解码回调的文件夹来源。");
-            next = algorithmSource.NextAsync(nodeId, Read, cancellationToken);
-        }
-        else
-        {
-            WorkflowVisionAlgorithmInvocation.RequireLegacySelection(algorithm, "opencv.image-read");
-            next = source.NextAsync(nodeId, cancellationToken);
-        }
-        using var image = await next.ConfigureAwait(false);
-        return LoadVisionFileNodeHandler.Output(image, context, cancellationToken, format);
     }
 }

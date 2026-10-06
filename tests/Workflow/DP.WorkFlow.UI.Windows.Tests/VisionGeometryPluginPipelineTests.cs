@@ -56,7 +56,7 @@ public sealed class VisionGeometryPluginPipelineTests
         Set(pose, "Scale", WorkflowInput<double>.FromLiteral(2));
         var points = rig.Build("points", "TwoPoints"); Set(points, "OriginPoint", Input<VisionPoint>("origin")); Set(points, "DirectionPoint", Input<VisionPoint>("direction"));
         Set(points, "ReferenceLength", WorkflowInput<double>.FromLiteral(5));
-        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, pose,
+        var document = rig.Document(new AcquireVisionImageNodeModel { Id = "source", FilePath = rig.ScenePath }, pose,
             rig.Point("origin", 10, 20), rig.Point("direction", 20, 20), points);
         using var host = rig.Host(document); var run = await host.RunAsync(); Assert.True(run.Success, run.Message);
         var a = Output<VisionCoordinateSystemResult>(host, "pose"); var b = Output<VisionCoordinateSystemResult>(host, "points");
@@ -94,7 +94,7 @@ public sealed class VisionGeometryPluginPipelineTests
         using var rig = new Rig();
         var first = rig.Build("first", "Pose"); Set(first, "CoordinateName", "工件"); Set(first, "DefinitionVersion", 2);
         var second = rig.Build("second", "Pose"); Set(second, "CoordinateId", "fixture"); Set(second, "CoordinateName", "夹具");
-        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, first, second);
+        var document = rig.Document(new AcquireVisionImageNodeModel { Id = "source", FilePath = rig.ScenePath }, first, second);
         var session = new WorkflowDesignerSession(document, rig.Nodes) { SelectedNodeId = "second" };
         using var inspector = new WorkflowPropertyInspectorModel(session, "source");
         WorkflowPropertyEntry Entry() => inspector.Entries.Single(e => e.Name == "CoordinateSystem");
@@ -134,7 +134,7 @@ public sealed class VisionGeometryPluginPipelineTests
     public async Task AffineCoordinateBindingRejectsCaliperWithoutPartiallyChangingConfiguration()
     {
         using var rig = new Rig(); var build = rig.Build("affine", "Matrix"); Set(build, "M12", WorkflowInput<double>.FromLiteral(1));
-        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, build);
+        var document = rig.Document(new AcquireVisionImageNodeModel { Id = "source", FilePath = rig.ScenePath }, build);
         using var host = rig.Host(document); Assert.True((await host.RunAsync()).Success);
         var caliper = new MeasureVisionCaliperNodeModel { Id = "caliper", Frame = Input<ImageFrame>("source"), StartX = 4, StartY = 10, EndX = 24, EndY = 10 };
         Assert.Throws<NotSupportedException>(() => VisionCoordinateRebinding.Bind(caliper, "affine", rig.Frames));
@@ -161,7 +161,7 @@ public sealed class VisionGeometryPluginPipelineTests
     {
         using var rig = new Rig(); var build = rig.Build("calibrated", "Correspondences");
         Set(build, "CalibrationImageWidth", wrongSize ? 64 : 32); Set(build, "CalibrationImageHeight", 32);
-        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, build);
+        var document = rig.Document(new AcquireVisionImageNodeModel { Id = "source", FilePath = rig.ScenePath }, build);
         var session = new WorkflowDesignerSession(document, rig.Nodes) { SelectedNodeId = build.Id };
         using (var inspector = new WorkflowPropertyInspectorModel(session, build.Id))
         {
@@ -179,7 +179,7 @@ public sealed class VisionGeometryPluginPipelineTests
     public void SingularMatrixFailsCompilationRatherThanFailingDuringImageExecution()
     {
         using var rig = new Rig(); var build = rig.Build("singular", "Matrix"); Set(build, "M22", WorkflowInput<double>.FromLiteral(0));
-        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, build);
+        var document = rig.Document(new AcquireVisionImageNodeModel { Id = "source", FilePath = rig.ScenePath }, build);
         var error = Assert.Throws<WorkflowCompilationException>(() => new WorkflowCompiler(rig.Nodes).Compile(document));
         Assert.Contains(error.Errors, e => e.Code == "WF030" && e.NodeId == build.Id);
     }
@@ -190,7 +190,7 @@ public sealed class VisionGeometryPluginPipelineTests
         using var rig = new Rig(); var build = rig.Build("intersect", "LineIntersection");
         Set(build, "AxisLine", Input<VisionLine>("x-axis")); Set(build, "CrossLine", Input<VisionLine>("cross"));
         var crossB = rig.Point("q1", 10, 30);
-        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath },
+        var document = rig.Document(new AcquireVisionImageNodeModel { Id = "source", FilePath = rig.ScenePath },
             rig.Point("p0", 0, 20), rig.Point("p1", 20, 20), rig.Point("q0", 10, 0), crossB, rig.Line("x-axis", "p0", "p1"), rig.Line("cross", "q0", "q1"), build);
         using var host = rig.Host(document); Assert.True((await host.RunAsync()).Success);
         var system = Output<VisionCoordinateSystemResult>(host, "intersect").CoordinateSystem;
@@ -252,7 +252,7 @@ public sealed class VisionGeometryPluginPipelineTests
     {
         using var rig = new Rig();
         Assert.DoesNotContain(GetType().Assembly.GetReferencedAssemblies(), a => a.Name == "DP.WorkFlow.Nodes.Vision.Geometry");
-        Assert.Equal(30, rig.Nodes.Snapshot().Count);
+        Assert.Equal(24, rig.Nodes.Snapshot().Count);
         var document = rig.BasicDocument();
         var store = new WorkflowDocumentJsonStore(rig.Nodes); document = store.Deserialize(store.Serialize(document)).Document;
         var json = store.Serialize(document);
@@ -289,7 +289,7 @@ public sealed class VisionGeometryPluginPipelineTests
     {
         using var rig = new Rig(configure: (nodes, handlers) =>
         { nodes.Register(WorkflowNodeDescriptor.Create<ForeignPointNode, VisionPoint>(ports: Rig.Ports)); handlers.Register(new ForeignPointHandler()); });
-        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath },
+        var document = rig.Document(new AcquireVisionImageNodeModel { Id = "source", FilePath = rig.ScenePath },
             new ForeignPointNode { Id = "foreign" }, rig.Point("p", 1, 0), rig.Line("line", "foreign", "p"));
         using var host = rig.Host(document);
         Assert.False((await host.RunAsync()).Success);
@@ -301,7 +301,7 @@ public sealed class VisionGeometryPluginPipelineTests
     {
         using var rig = new Rig(configure: (nodes, handlers) =>
         { nodes.Register(WorkflowNodeDescriptor.Create<ForeignLocationNode, ForeignLocationResult>(ports: Rig.Ports)); handlers.Register(new ForeignLocationHandler()); });
-        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, new ForeignLocationNode { Id = "foreign-location" });
+        var document = rig.Document(new AcquireVisionImageNodeModel { Id = "source", FilePath = rig.ScenePath }, new ForeignLocationNode { Id = "foreign-location" });
         using var host = rig.Host(document);
         Assert.False((await host.RunAsync()).Success);
         Assert.DoesNotContain(host.Engine!.RunState.NodeOutputs, o => o.NodeId == "foreign-location");
@@ -447,8 +447,8 @@ public sealed class VisionGeometryPluginPipelineTests
             Set(distance, "Space", EVisionCoordinateSpace.Local);
             var roi = new AnalyzeVisionBlobsNodeModel { Id = "business-roi", Frame = Input<ImageFrame>("source"), MaximumGray = 255, Coordinates = coordinates,
                 Regions = [new() { Id = "roi", CenterX = 0, CenterY = 0, Width = 4, Height = 3 }] };
-            return Document(new LoadVisionFileNodeModel { Id = "source", FilePath = ScenePath }, new LoadVisionFileNodeModel { Id = "template", FilePath = TemplatePath },
-                new LocateVisionTemplateNodeModel { Id = "location", Frame = Input<ImageFrame>("source"), Template = Input<ImageFrame>("template"), MinimumScore = .9999 },
+            return Document(new AcquireVisionImageNodeModel { Id = "source", FilePath = ScenePath }, new AcquireVisionImageNodeModel { Id = "template", FilePath = TemplatePath },
+                new LocateVisionTemplatePoseNodeModel { Id = "location", Frame = Input<ImageFrame>("source"), Template = Input<ImageFrame>("template"), MinimumScore = .9999 },
                 build, Point("p0", 0, 0, coordinates), Point("p1", 3, 0, coordinates), Point("q0", 0, 2, coordinates), Line("line", "p0", "p1"), distance, roi);
         }
         /// <summary>参数姿态构建的业务坐标及随动ROI，定义可静态解析。</summary>
@@ -459,7 +459,7 @@ public sealed class VisionGeometryPluginPipelineTests
             var roi = new AnalyzeVisionBlobsNodeModel { Id = "business-roi", Frame = Input<ImageFrame>("source"), MaximumGray = 255,
                 Coordinates = GeometryPluginTestCatalog.Follow(build.Id, GeometryPluginTestCatalog.Definition(build)),
                 Regions = [new() { Id = "roi", CenterX = 0, CenterY = 0, Width = 4, Height = 3 }] };
-            return Document(new LoadVisionFileNodeModel { Id = "source", FilePath = ScenePath }, build, roi);
+            return Document(new AcquireVisionImageNodeModel { Id = "source", FilePath = ScenePath }, build, roi);
         }
         public AnalyzeVisionFrameNodeModel Point(string id, double x, double y, WorkflowVisionCoordinateBinding? coordinates = null)
         {
@@ -479,7 +479,7 @@ public sealed class VisionGeometryPluginPipelineTests
             var mapPoint = Node("Vision.TransformPoint", "map-point"); Set(mapPoint, "Point", Input<VisionPoint>("q0"));
             var mapLine = Node("Vision.TransformLine", "map-line"); Set(mapLine, "Line", Input<VisionLine>("line-a"));
             var select = Node("Vision.SelectPoint", "select"); Set(select, "Points", Input<IReadOnlyList<VisionPoint>>("blobs", "MeasuredCentroids"));
-            return Document(new LoadVisionFileNodeModel { Id = "source", FilePath = ScenePath },
+            return Document(new AcquireVisionImageNodeModel { Id = "source", FilePath = ScenePath },
                 Point("p0", 0, 0), Point("p1", 10, 0), Point("q0", 0, 5), Point("q1", 10, 5),
                 Line("line-a", "p0", "p1"), Line("line-b", "q0", "q1"), pointLine, lineLine, pointPoint, mapPoint, mapLine,
                 new AnalyzeVisionBlobsNodeModel { Id = "blobs", Frame = Input<ImageFrame>("source"), MaximumGray = 255 }, select);

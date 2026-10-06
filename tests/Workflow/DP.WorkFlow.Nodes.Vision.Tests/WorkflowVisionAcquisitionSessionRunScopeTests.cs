@@ -13,13 +13,13 @@ public sealed class WorkflowVisionAcquisitionSessionRunScopeTests
         new(nodes, kind);
 
     /// <summary>创建含 01.png / 02.png / 03.png 的临时目录，像素值即文件名序号。</summary>
-    private static string CreateFolder(out LoadVisionFolderNodeModel node)
+    private static string CreateFolder(out AcquireVisionImageNodeModel node)
     {
         string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(directory);
         foreach (var name in new[] { "01.png", "02.png", "03.png" })
             File.WriteAllText(Path.Combine(directory, name), name);
-        node = new LoadVisionFolderNodeModel { Id = "folder", FolderPath = directory };
+        node = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.Folder, RestartFolderEachRun = true, Id = "folder", FolderPath = directory };
         return directory;
     }
 
@@ -100,7 +100,7 @@ public sealed class WorkflowVisionAcquisitionSessionRunScopeTests
         try
         {
             var session = new WorkflowVisionAcquisitionSession(new NumberedReader());
-            var duplicate = new LoadVisionFolderNodeModel { Id = node.Id, FolderPath = directory };
+            var duplicate = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.Folder, RestartFolderEachRun = true, Id = node.Id, FolderPath = directory };
 
             // 嵌套作用域只是"不重置游标"，不是"跳过准备"：清单校验必须照常执行。
             await Assert.ThrowsAsync<InvalidOperationException>(() =>

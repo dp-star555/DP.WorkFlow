@@ -3,7 +3,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>将绘制的包含/排除ROI构建为同帧区域，供下游作为掩膜复用。</summary>
-[WorkflowNode("Vision.CreateRegion", DisplayName = "创建区域／掩膜", Category = "5.Vision/Region")]
+[WorkflowNode("Vision.CreateRegion", DisplayName = "创建区域／掩膜", Category = WorkflowVisionCategories.Region)]
 public sealed class CreateVisionRegionNodeModel : AnalyzeVisionFrameNodeModel
 {
     /// <inheritdoc/>

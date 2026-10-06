@@ -22,7 +22,7 @@ public static class WorkflowImageDemo
         source.FilePath = Path.Combine(AppContext.BaseDirectory, "VisionData", "geometry-scene.pgm");
         var template = (AcquireVisionImageNodeModel)session.AddNode("Vision.AcquireFrame", 480, 80).Node;
         template.FilePath = Path.Combine(AppContext.BaseDirectory, "VisionData", "geometry-template.pgm");
-        var location = (LocateVisionTemplateNodeModel)session.AddNode("Vision.LocateTemplate", 680, 80).Node;
+        var location = (LocateVisionTemplatePoseNodeModel)session.AddNode("Vision.LocateTemplatePose", 680, 80).Node;
         location.Frame = Input<ImageFrame>(source.Id); location.Template = Input<ImageFrame>(template.Id); location.MinimumScore = .9999;
         var build = (AnalyzeVisionFrameNodeModel)session.AddNode("Vision.BuildCoordinateSystem", 880, 80).Node;
         build.Frame = Input<ImageFrame>(source.Id);

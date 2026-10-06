@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using DP.Vision;
 using DP.Vision.Algorithms;
 
@@ -7,18 +8,25 @@ namespace DP.WorkFlow;
 public enum EVisionCoordinateBuildMode
 {
     /// <summary>模板匹配结果的参考点为原点、参考方向为X轴。</summary>
+    [Description("模板匹配结果")]
     Template,
     /// <summary>原图中的原点、角度和尺度。</summary>
+    [Description("原点+角度")]
     Pose,
     /// <summary>原点及正X方向点，配合已知局部长度。</summary>
+    [Description("两点")]
     TwoPoints,
     /// <summary>两直线交点为原点，首线为正X。</summary>
+    [Description("两线交点")]
     LineIntersection,
     /// <summary>固定业务到父坐标关系，与父到原图组合。</summary>
+    [Description("相对父坐标系")]
     Parent,
     /// <summary>直接指定局部到原图仿射矩阵。</summary>
+    [Description("仿射矩阵")]
     Matrix,
     /// <summary>局部到原图对应点，求解仿射标定。</summary>
+    [Description("对应点标定")]
     Correspondences
 }
 
@@ -40,7 +48,7 @@ public sealed class WorkflowVisionCoordinateSample
 public sealed record WorkflowVisionCoordinateChoice(string Id, string Name, int Version, EVisionCoordinateUnit Unit);
 
 /// <summary>定义坐标系（名称、版本、单位）并用本帧来源构建它；不持久化运行矩阵。</summary>
-[WorkflowNode("Vision.BuildCoordinateSystem", DisplayName = "构建本帧坐标系", Category = "5.Vision/Coordinates")]
+[WorkflowNode("Vision.BuildCoordinateSystem", DisplayName = "构建本帧坐标系", Category = WorkflowVisionCategories.Location)]
 public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometryNodeModel, IWorkflowNodeDocumentConfigurationValidator,
     IWorkflowVisionCoordinateProducerNode, IWorkflowDocumentPropertyChoices
 {
@@ -92,34 +100,34 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
             .Append(new KeyValuePair<string, object?>("新建坐标系", fresh)).ToArray();
     }
     /// <summary>构建来源。</summary>
-    [WorkflowProperty("构建方式", "Template使用模板匹配结果，Parent使用上游坐标绑定，其余方式直接构建局部到原图。", Category = "坐标")]
+    [WorkflowProperty("构建方式", "“模板匹配结果”以匹配参考点和方向为原点和X轴；“相对父坐标系”在上游坐标系上叠加固定关系；其余方式直接构建局部到原图。", Category = "坐标")]
     public EVisionCoordinateBuildMode Mode { get; set; }
     /// <summary>模板匹配结果。</summary>
     [WorkflowProperty("模板匹配结果", "绑定模板匹配节点的输出；原点取模板参考点，X轴取参考方向。模板参考变化后，下游ROI需重新确认。", Category = "模板")]
     [WorkflowPropertyVisibleWhen(nameof(Mode), "Template")]
     public WorkflowInput<TemplatePoseResult> Template { get; set; } = WorkflowInput<TemplatePoseResult>.FromLiteral(null);
     /// <summary>原点X。</summary>
-    [WorkflowProperty("原点X", "Pose为原图像素；Parent为父坐标单位。", Category = "姿态")]
+    [WorkflowProperty("原点X", "“原点+角度”方式为原图像素；“相对父坐标系”方式为父坐标单位。", Category = "姿态")]
     [WorkflowPropertyVisibleWhen(nameof(Mode), "Pose", "Parent")]
     public WorkflowInput<double> OriginX { get; set; } = WorkflowInput<double>.FromLiteral(0);
     /// <summary>原点Y。</summary>
-    [WorkflowProperty("原点Y", "Pose为原图像素；Parent为父坐标单位。", Category = "姿态")]
+    [WorkflowProperty("原点Y", "“原点+角度”方式为原图像素；“相对父坐标系”方式为父坐标单位。", Category = "姿态")]
     [WorkflowPropertyVisibleWhen(nameof(Mode), "Pose", "Parent")]
     public WorkflowInput<double> OriginY { get; set; } = WorkflowInput<double>.FromLiteral(0);
     /// <summary>X轴方向，度，顺时针为正。</summary>
-    [WorkflowProperty("角度(°)", "顺时针为正，单位度。Pose相对原图；Parent相对父坐标。可绑定模板匹配的角度输出。", Category = "姿态")]
+    [WorkflowProperty("角度(°)", "顺时针为正，单位度。“原点+角度”相对原图；“相对父坐标系”相对父坐标。可绑定模板匹配的角度输出。", Category = "姿态")]
     [WorkflowPropertyVisibleWhen(nameof(Mode), "Pose", "Parent")]
     public WorkflowInput<double> Angle { get; set; } = WorkflowInput<double>.FromLiteral(0);
     /// <summary>每局部单位对应的长度。</summary>
-    [WorkflowProperty("尺度", "Pose/直线方式为原图像素每局部单位；Template为模板像素每局部单位；Parent为父单位每局部单位。", Category = "姿态")]
+    [WorkflowProperty("尺度", "“原点+角度”和直线方式为原图像素每局部单位；“模板匹配结果”为模板像素每局部单位；“相对父坐标系”为父单位每局部单位。", Category = "姿态")]
     [WorkflowPropertyVisibleWhen(nameof(Mode), "Template", "Pose", "Parent", "LineIntersection")]
     public WorkflowInput<double> Scale { get; set; } = WorkflowInput<double>.FromLiteral(1);
     /// <summary>双点原点。</summary>
-    [WorkflowProperty("原点输入", "TwoPoints模式的同帧视觉点。", Category = "双点")]
+    [WorkflowProperty("原点输入", "“两点”方式的原点，同帧视觉点。", Category = "双点")]
     [WorkflowPropertyVisibleWhen(nameof(Mode), "TwoPoints")]
     public WorkflowInput<VisionPoint> OriginPoint { get; set; } = WorkflowInput<VisionPoint>.FromLiteral(null);
     /// <summary>双点方向。</summary>
-    [WorkflowProperty("方向点输入", "TwoPoints模式正X方向的同帧视觉点。", Category = "双点")]
+    [WorkflowProperty("方向点输入", "“两点”方式正X方向上的同帧视觉点。", Category = "双点")]
     [WorkflowPropertyVisibleWhen(nameof(Mode), "TwoPoints")]
     public WorkflowInput<VisionPoint> DirectionPoint { get; set; } = WorkflowInput<VisionPoint>.FromLiteral(null);
     /// <summary>已知参考长度。</summary>
@@ -156,7 +164,7 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
     [WorkflowPropertyVisibleWhen(nameof(Mode), "Correspondences")]
     public List<WorkflowVisionCoordinateSample> Samples { get; set; } = [];
     /// <summary>固定标定适用的图像宽度。</summary>
-    [WorkflowProperty("标定图像宽", "Correspondences固定标定适用的图像尺寸。", Category = "标定")]
+    [WorkflowProperty("标定图像宽", "“对应点标定”适用的图像尺寸。", Category = "标定")]
     [WorkflowPropertyVisibleWhen(nameof(Mode), "Correspondences")]
     public int CalibrationImageWidth { get; set; }
     /// <summary>固定标定适用的图像高度。</summary>
@@ -164,7 +172,7 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
     [WorkflowPropertyVisibleWhen(nameof(Mode), "Correspondences")]
     public int CalibrationImageHeight { get; set; }
     /// <summary>最大允许拟合误差。</summary>
-    [WorkflowProperty("最大RMS", "Correspondences原图像素误差阈值；不代表独立标定验证精度。", Category = "标定")]
+    [WorkflowProperty("最大RMS", "“对应点标定”的原图像素误差阈值；不代表独立标定验证精度。", Category = "标定")]
     [WorkflowPropertyVisibleWhen(nameof(Mode), "Correspondences")]
     public double MaximumRms { get; set; } = 1;
     /// <inheritdoc/>

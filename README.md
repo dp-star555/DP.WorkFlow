@@ -26,7 +26,7 @@ DP.WorkFlow 是从旧 `WorkFlow.Rebuild` 独立出来的 .NET 8 重构主线。�
 - [多厂商图像采集 Provider 实施与验收基线](docs/vision-acquisition-providers.md)（阶段A–E 已实施：HALCON 与 Basler 两个真实 Provider；阶段F 受外部依赖阻塞）
 - [新版视觉节点、ROI 与双宿主示例](docs/nodes/new-vision-file-pipeline.md)
 - [模板定位坐标系、ROI随动与双坐标结果](docs/nodes/vision-coordinate-systems.md)
-- [视觉节点盘点、带来源几何与测量复核](docs/nodes/vision-geometry-measurement.md)（32种注册类型、28种工具箱入口，`--geometry-demo` / `--coordinate-demo`）
+- [视觉节点盘点、带来源几何与测量复核](docs/nodes/vision-geometry-measurement.md)（26种注册类型，全部在工具箱中显示，`--geometry-demo` / `--coordinate-demo`）
 
 WinForms/WPF 示例使用20种内置视觉节点和12种目录发现的独立节点（条码1、水平单行OCR1、几何及坐标10）及原生图像页。图像获取统一选择文件、文件夹、面阵或线扫，四种已发布取图类型保留配方兼容并从工具箱隐藏。启动即有可运行的图像获取（文件）→预处理→Region→形态学→Blob→筛选→掩码颜色流程。`--geometry-demo` 启动模板定位→局部点→生成直线→距离示例。构建需保留同级 `../DP.Vision/` 源码。更早的旧视觉节点、MachineVision 工程、兼容 Adapter、旧页面及 Paddle 工作流/工具已删除；不会静默转换未知旧文档。相机采集由独立 `DP.Vision.Halcon` 以插件形式提供：示例按 Driver Module 接口扫描 `plugins/` 中的 DLL，编译期不引用任何 HALCON 类型，工作流文档只保存逻辑SourceId。详见[清理决定](docs/decisions/0014-vision-clean-break.md)和[已落地算子及用法](docs/nodes/vision-operators.md)。
 

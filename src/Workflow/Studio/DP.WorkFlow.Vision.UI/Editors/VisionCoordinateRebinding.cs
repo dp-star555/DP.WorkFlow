@@ -5,7 +5,7 @@ using DP.Vision.UI;
 namespace DP.WorkFlow.Vision.UI;
 
 /// <summary>
-/// 切换节点的坐标系绑定，并按本帧坐标系换算已保存的范围：面积ROI、卡尺端点（圆弧卡尺为圆心、半径与起始角）及间隔、鲁棒直线距离阈值。
+/// 切换节点的坐标系绑定，并按本帧坐标系换算已保存的范围：面积ROI、卡尺端点（圆弧卡尺为圆心、半径与起始角）及间隔、鲁棒直线距离阈值、找线找圆的长度参数与起始角。
 /// 换算经过同一张原图：旧局部（或原图）→ 原图 → 新局部（或原图），图上位置保持不变。
 /// 需要节点输入图像和坐标来源已在本轮运行；几何点保持其显式输入空间，不改写数值。
 /// </summary>
@@ -88,12 +88,23 @@ public static class VisionCoordinateRebinding
             caliper.MinimumSeparation *= ratio; caliper.BandSampleStep *= ratio; caliper.ScanStep *= ratio; caliper.FitDistanceThreshold *= ratio;
         }
         if (node is FitVisionRobustLineNodeModel fit) fit.DistanceThreshold *= fromScale / toScale;
+        if (node is FindVisionShapeNodeModel shape)
+        {
+            // 搜索ROI随 Regions 换算；这里换算卡尺与拟合的长度参数，找圆的起始角随坐标系方向调整。
+            double ratio = fromScale / toScale;
+            shape.BandSampleStep *= ratio; shape.MinimumSeparation *= ratio; shape.DistanceThreshold *= ratio;
+            if (shape is FindVisionCircleNodeModel circle)
+            {
+                circle.SearchLength *= ratio;
+                circle.StartAngle += ((from?.RotationRadians ?? 0) - (to?.RotationRadians ?? 0)) * 180 / Math.PI;
+            }
+        }
         if (regions is not null) node.Regions = regions;
     }
 
-    // 卡尺与鲁棒拟合用单一尺度换算距离参数，要求相似变换；其它节点不需要尺度。
+    // 卡尺、鲁棒拟合与找线找圆用单一尺度换算距离参数，要求相似变换；其它节点不需要尺度。
     private static double SimilarityScaleOrOne(this VisionCoordinateSystem system, AnalyzeVisionFrameNodeModel node) =>
-        node is MeasureVisionCaliperNodeModel or FitVisionRobustLineNodeModel ? system.SimilarityScale : 1;
+        node is MeasureVisionCaliperNodeModel or FitVisionRobustLineNodeModel or FindVisionShapeNodeModel ? system.SimilarityScale : 1;
 
     private static WorkflowVisionPreview CaptureInput(AnalyzeVisionFrameNodeModel node, IWorkflowVisionPreviewSource frames)
     {

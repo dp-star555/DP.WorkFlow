@@ -141,9 +141,9 @@ public sealed class VisionTemplateAuthoringPageModel(VisionFrameEditorPageModel 
             () => TestSource.ToString(), v => TestSource = Enum.Parse<EVisionTemplateTestSource>((string)v!),
             new[] { new WorkflowPropertyChoice("制作区域（0°/1倍自检）", "SampleRegion"), new WorkflowPropertyChoice("模板样图（整图）", "Sample"), new WorkflowPropertyChoice("当前输入（节点搜索范围）", "Input"), new WorkflowPropertyChoice("测试图像（节点搜索范围）", "TestImage") }, new WorkflowPropertyEditorAttribute("Template.TestSource")));
         Add("Score", "最小分数", "4. 测试设置", WorkflowPropertyEditorKind.Number, typeof(double),
-            () => Frame.EditingNode is LocateVisionTemplatePoseNodeModel pose ? pose.MinimumScore : ((LocateVisionTemplateNodeModel)Frame.EditingNode).MinimumScore,
+            () => ((LocateVisionTemplatePoseNodeModel)Frame.EditingNode).MinimumScore,
             v => { var score = (double)v!; if (!double.IsFinite(score) || score < 0 || score > 1) throw new ArgumentOutOfRangeException(nameof(score), "最小分数必须在0到1之间。");
-                if (Frame.EditingNode is LocateVisionTemplatePoseNodeModel pose) pose.MinimumScore = score; else ((LocateVisionTemplateNodeModel)Frame.EditingNode).MinimumScore = score; Draft.ResetTrial(); }, minimum: 0, maximum: 1);
+                ((LocateVisionTemplatePoseNodeModel)Frame.EditingNode).MinimumScore = score; Draft.ResetTrial(); }, minimum: 0, maximum: 1);
         if (Frame.EditingNode is LocateVisionTemplatePoseNodeModel poseNode)
         {
             Add("WorkBudget", "比较预算", "4. 测试设置", WorkflowPropertyEditorKind.Number, typeof(long), () => poseNode.MaximumWork,

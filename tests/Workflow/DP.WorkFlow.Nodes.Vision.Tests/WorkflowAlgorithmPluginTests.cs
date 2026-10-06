@@ -119,29 +119,6 @@ public sealed class WorkflowAlgorithmPluginTests
         Assert.True((await host.RunAsync()).Success);
     }
 
-    [Fact]
-    public void LegacyTemplateRecipe_MigratesToExplicitOpenCvChoice()
-    {
-        var nodes = new WorkflowNodeCatalog().RegisterImageNodes(); var store = new WorkflowDocumentJsonStore(nodes);
-        var legacy = System.Text.Json.Nodes.JsonNode.Parse(store.Serialize(Document(new LocateVisionTemplateNodeModel { Id = "template" })))!;
-        RemoveAlgorithm(legacy);
-        var document = store.Deserialize(legacy.ToJsonString()).Document;
-        var node = Assert.IsType<LocateVisionTemplateNodeModel>(Assert.Single(document.CanvasProjection.Nodes).Node);
-        Assert.Equal("opencv.template", node.Algorithm.ImplementationId);
-        Assert.Throws<InvalidOperationException>(() => { node.InitializationSettings["old"] = "value"; node.ImplementationId = "other"; });
-        static void RemoveAlgorithm(System.Text.Json.Nodes.JsonNode? current)
-        {
-            if (current is System.Text.Json.Nodes.JsonObject obj)
-                foreach (var property in obj.ToArray())
-                {
-                    if (property.Key.Equals("algorithm", StringComparison.OrdinalIgnoreCase)) obj.Remove(property.Key);
-                    else RemoveAlgorithm(property.Value);
-                }
-            else if (current is System.Text.Json.Nodes.JsonArray array)
-                foreach (var child in array) RemoveAlgorithm(child);
-        }
-    }
-
     private sealed class RejectPreparation : IWorkflowRunPreparationService
     {
         public ValueTask PrepareAsync(WorkflowRunPreparationContext context, CancellationToken cancellationToken) => throw new InvalidOperationException("模拟采集准备失败");

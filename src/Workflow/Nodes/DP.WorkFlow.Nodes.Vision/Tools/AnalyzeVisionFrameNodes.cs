@@ -39,7 +39,7 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
 
     /// <summary>面积节点可使用精确区域掩膜；其他节点不展示此属性。</summary>
     [System.ComponentModel.Browsable(false), System.Text.Json.Serialization.JsonIgnore]
-    public bool SupportsRegionMask => RangeCapability == EWorkflowVisionRange.Region;
+    public virtual bool SupportsRegionMask => RangeCapability == EWorkflowVisionRange.Region;
 
     /// <summary>可空业务坐标绑定；启用后Regions/卡尺端点使用局部单位，运行中不改配置。属性面板以“坐标系”下拉编辑（绑定时换算范围），不直接编辑此对象。</summary>
     [System.ComponentModel.Browsable(false)]
@@ -117,7 +117,7 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
         bool hasMask = Mask is not null && !(Mask.Source == WorkflowValueSource.Literal && Mask.LiteralValue is null);
         if (Mask is null || hasMask && (Mask!.Source != WorkflowValueSource.Binding || Mask.Binding is null || Mask.LiteralValue is not null))
             errors.Add("区域掩码只能使用绑定或空Literal表示未启用。");
-        if (hasMask && RangeCapability != EWorkflowVisionRange.Region)
+        if (hasMask && !SupportsRegionMask)
             errors.Add("此算子不支持区域掩码。");
         if (Mask?.Binding is { IsPublicData: false } maskInput && maskInput.NodeId == Id)
             errors.Add("区域掩膜不能绑定自身结果。");
@@ -164,7 +164,7 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
 }
 
 /// <summary>新版Blob节点，输出中立BlobAnalysisResult。</summary>
-[WorkflowNode("Vision.AnalyzeBlobs", DisplayName = "分析连通域", Category = "5.Vision/ImageBuffer")]
+[WorkflowNode("Vision.AnalyzeBlobs", DisplayName = "分析连通域", Category = WorkflowVisionCategories.Inspection)]
 public sealed class AnalyzeVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
@@ -219,7 +219,7 @@ public sealed class AnalyzeVisionBlobsNodeHandler : WorkflowNodeHandler<AnalyzeV
 }
 
 /// <summary>新版颜色统计节点，输出中立ColorAnalysisResult，不输出产品OK/NG。</summary>
-[WorkflowNode("Vision.AnalyzeColor", DisplayName = "统计RGB颜色", Category = "5.Vision/ImageBuffer")]
+[WorkflowNode("Vision.AnalyzeColor", DisplayName = "统计RGB颜色", Category = WorkflowVisionCategories.Inspection)]
 public sealed class AnalyzeVisionColorNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>

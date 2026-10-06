@@ -4,7 +4,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>显式采样带卡尺（直线或圆弧），参数为原图像素边界坐标。</summary>
-[WorkflowNode("Vision.MeasureCaliper", DisplayName = "亚像素采样卡尺", Category = "5.Vision/Measurement")]
+[WorkflowNode("Vision.MeasureCaliper", DisplayName = "亚像素采样卡尺", Category = WorkflowVisionCategories.Measurement)]
 public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
@@ -83,7 +83,7 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
     [WorkflowProperty("最小梯度", "绝对灰度变化/像素。", Category = "边缘")]
     public double MinimumGradient { get; set; } = 5;
     /// <summary>极性。</summary>
-    [WorkflowProperty("边缘极性", "Rising暗到亮，Falling亮到暗，均沿扫描方向（直线为起点到终点，圆弧为起始角到终止角）。", Category = "边缘")]
+    [WorkflowProperty("边缘极性", "均沿扫描方向判断明暗变化（直线为起点到终点，圆弧为起始角到终止角）。", Category = "边缘")]
     public ECaliperPolarity Polarity { get; set; }
     /// <summary>边缘最小间距。</summary>
     [WorkflowProperty("边缘最小间距", "梯度强者优先的非极大抑制；原图像素，绑定定位后为局部单位。", Category = "边缘")]
@@ -175,7 +175,7 @@ public sealed class MeasureVisionCaliperNodeHandler : WorkflowNodeHandler<Measur
 }
 
 /// <summary>聚合同帧多个卡尺证据，以RANSAC和正交TLS拟合直线。</summary>
-[WorkflowNode("Vision.FitRobustLine", DisplayName = "鲁棒拟合直线", Category = "5.Vision/Measurement")]
+[WorkflowNode("Vision.FitRobustLine", DisplayName = "鲁棒拟合直线", Category = WorkflowVisionCategories.Measurement)]
 public sealed class FitVisionRobustLineNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>

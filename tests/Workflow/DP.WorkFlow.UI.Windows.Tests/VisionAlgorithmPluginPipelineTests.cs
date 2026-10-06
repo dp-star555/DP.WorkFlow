@@ -18,9 +18,9 @@ public sealed class VisionAlgorithmPluginPipelineTests
         {
             var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
             var document = new WorkflowDocument { EntryNodeId = "source" };
-            var source = new LoadVisionFileNodeModel { Id = "source", FilePath = path };
-            var template = new LoadVisionFileNodeModel { Id = "template", FilePath = path };
-            var locate = new LocateVisionTemplateNodeModel { Id = "locate", Frame = Input<ImageFrame>(source.Id), Template = Input<ImageFrame>(template.Id) };
+            var source = new AcquireVisionImageNodeModel { Id = "source", FilePath = path };
+            var template = new AcquireVisionImageNodeModel { Id = "template", FilePath = path };
+            var locate = new LocateVisionTemplatePoseNodeModel { Id = "locate", Frame = Input<ImageFrame>(source.Id), Template = Input<ImageFrame>(template.Id) };
             foreach (var node in new IWorkflowNodeModel[] { source, template, locate }) document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
             Connect(document, "source", "template"); Connect(document, "template", "locate");
             var store = new WorkflowDocumentJsonStore(nodes); document = store.Deserialize(store.Serialize(document)).Document;
@@ -62,7 +62,7 @@ public sealed class VisionAlgorithmPluginPipelineTests
         Assert.Throws<ArgumentOutOfRangeException>(() => inspector.SetValue(inspector.Entries.Single(e => e.Name == "Algorithm.patch.scale"), "99"));
         Assert.Equal("1.5", node.Algorithm.Settings["scale"]);
         var provider = WorkflowVisionAlgorithmChoices.CreateProvider(algorithms);
-        Assert.Contains(provider(WorkflowPropertyEditorKeys.VisionTemplateAlgorithm, "ImplementationId"), c => Equals(c.Value, "opencv.template"));
+        Assert.Contains(provider(WorkflowPropertyEditorKeys.VisionAlgorithmPrefix + "location.template-pose", "ImplementationId"), c => Equals(c.Value, "opencv.template-pose"));
         Assert.Equal(2, provider(WorkflowPropertyEditorKeys.VisionAlgorithmPrefix + "anomaly.patch", "ImplementationId").Count);
     }
 
@@ -94,36 +94,6 @@ public sealed class VisionAlgorithmPluginPipelineTests
         Assert.Equal("company.color", node.Algorithm.ImplementationId);
         var restored = new WorkflowDocumentJsonStore(nodes).Deserialize(new WorkflowDocumentJsonStore(nodes).Serialize(document)).Document;
         Assert.Equal("company.color", Assert.IsType<AnalyzeVisionColorNodeModel>(Assert.Single(restored.CanvasProjection.Nodes).Node).Algorithm.ImplementationId);
-    }
-
-    [Fact]
-    public async Task EdgeMeasurement_UsesPreparedEngineAndRetainsFrameIdentity()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "edge-plugin-" + Guid.NewGuid().ToString("N") + ".pgm");
-        var pixels = Enumerable.Range(0, 32 * 32).Select(index => index % 32 < 16 ? "0" : "255");
-        File.WriteAllText(path, "P2\n32 32\n255\n" + string.Join(" ", pixels) + "\n");
-        try
-        {
-            var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
-            var source = new LoadVisionFileNodeModel { Id = "source", FilePath = path };
-            var edge = new MeasureVisionEdgesNodeModel { Id = "edge", Frame = Input<ImageFrame>(source.Id) };
-            var document = new WorkflowDocument { EntryNodeId = source.Id };
-            foreach (var node in new IWorkflowNodeModel[] { source, edge }) document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
-            Connect(document, source.Id, edge.Id);
-            using var frames = new WorkflowVisionFrameScope();
-            using var runtime = new VisionAlgorithmRuntime(VisionAlgorithmCatalog.Compose(new[] { new OpenCvVisionAlgorithmModule() }));
-            using var bindings = new WorkflowVisionAlgorithmBindings(runtime, frames);
-            var services = new WorkflowServiceProvider().Add<IWorkflowVisionFrameScope>(frames).Add<IWorkflowVisionAlgorithmBindings>(bindings)
-                .Add<IWorkflowNodeCapabilityProvider>(bindings).Add<IWorkflowRunPreparationService>(bindings).Add<IWorkflowRunResourceOwner>(frames);
-            using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
-            host.Configure(document, new WorkflowContext(services));
-            var run = await host.RunAsync(); Assert.True(run.Success, run.Message);
-            var result = Assert.IsType<EdgeMeasurementResult>(host.Engine!.RunState.NodeOutputs.Single(o => o.NodeId == edge.Id).Value);
-            var frame = Assert.IsType<ImageFrame>(host.Engine.RunState.NodeOutputs.Single(o => o.NodeId == source.Id).Value);
-            Assert.Equal(frame.FrameId, result.FrameId); Assert.True(result.PointCount >= 6); Assert.InRange(result.RmsError, 0, .01);
-            using var preview = frames.Capture(edge.Id); Assert.Same(result, preview!.Facts);
-        }
-        finally { File.Delete(path); }
     }
 
     private static WorkflowInput<T> Input<T>(string id) => WorkflowInput<T>.FromBinding(new WorkflowBindingKey(id, "$"));

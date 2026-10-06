@@ -19,7 +19,7 @@ public sealed class NewVisionCompletionTests
         try
         {
             WritePng(Path.Combine(directory, "b.png"), 200); WritePng(Path.Combine(directory, "a.png"), 50);
-            var node = new LoadVisionFolderNodeModel { Id = "folder", FolderPath = directory };
+            var node = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.Folder, RestartFolderEachRun = true, Id = "folder", FolderPath = directory };
             var preparation = new WorkflowRunPreparationContext(new[] { node }, WorkflowRunScopeKind.Root);
             var session = new WorkflowVisionAcquisitionSession(new OpenCvImageFileReader());
             // 开新一轮由根宿主完成：先准备产出候选清单，再退役上一轮并启用它（AR-01 阶段 2）。
@@ -121,7 +121,7 @@ public sealed class NewVisionCompletionTests
         try
         {
             WritePng(path, 100, 5);
-            var file = new LoadVisionFileNodeModel { Id = "file", FilePath = path };
+            var file = new AcquireVisionImageNodeModel { Id = "file", FilePath = path };
             var color = new AnalyzeVisionColorNodeModel { Id = "color", Frame = WorkflowInput<ImageFrame>.FromBinding(new("file", "$")),
                 Regions = new() { new() { Id = "include", CenterX = 2.5, CenterY = 2.5, Width = 3, Height = 3 },
                     new() { Id = "hole", Exclude = true, CenterX = 2.5, CenterY = 2.5, Width = 1, Height = 1 } } };
@@ -152,15 +152,15 @@ public sealed class NewVisionCompletionTests
                 File.WriteAllBytes(path, image.ToBytes(".png"));
             }
             WritePng(templatePath, 255, 5);
-            var template = new LoadVisionFileNodeModel { Id = "template", FilePath = templatePath };
-            var file = new LoadVisionFileNodeModel { Id = "file", FilePath = path };
-            var locate = new LocateVisionTemplateNodeModel { Id = "locate", MinimumScore = .999,
+            var template = new AcquireVisionImageNodeModel { Id = "template", FilePath = templatePath };
+            var file = new AcquireVisionImageNodeModel { Id = "file", FilePath = path };
+            var locate = new LocateVisionTemplatePoseNodeModel { Id = "locate", MinimumScore = .999,
                 Frame = WorkflowInput<ImageFrame>.FromBinding(new("file", "$")), Template = WorkflowInput<ImageFrame>.FromBinding(new("template", "$")) };
             var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
             using var scope = new WorkflowVisionFrameScope();
             using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
             host.Configure(Document(template, file, locate), new WorkflowContext(new WorkflowServiceProvider()
-                .Add<IImageFileReader>(new OpenCvImageFileReader()).Add<IWorkflowVisionFrameScope>(scope).Add<ITemplateLocator>(new OpenCvTemplateLocator())));
+                .Add<IImageFileReader>(new OpenCvImageFileReader()).Add<IWorkflowVisionFrameScope>(scope).Add<ITemplatePoseLocator>(new OpenCvTemplatePoseLocator())));
             Assert.True((await host.RunAsync()).Success);
             var result = Assert.IsType<TemplatePoseResult>(host.Engine!.RunState.NodeOutputs.Last().Value);
             Assert.True(result.Found); Assert.Equal(10.5, result.CenterX); Assert.Equal(9.5, result.CenterY);
@@ -177,7 +177,7 @@ public sealed class NewVisionCompletionTests
             var reader = new PendingReader();
             using var scope = new WorkflowVisionFrameScope();
             using var host = new WorkflowRuntimeHost(new WorkflowNodeCatalog().RegisterImageNodes(), new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
-            host.Configure(Document(new LoadVisionFileNodeModel { Id = "file", FilePath = path }), new WorkflowContext(new WorkflowServiceProvider()
+            host.Configure(Document(new AcquireVisionImageNodeModel { Id = "file", FilePath = path }), new WorkflowContext(new WorkflowServiceProvider()
                 .Add<IImageFileReader>(reader).Add<IWorkflowVisionFrameScope>(scope)));
             var run = host.RunAsync(); await reader.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
             await host.StopAsync();
@@ -239,14 +239,14 @@ public sealed class NewVisionCompletionTests
         });
         var provider = WorkflowVisionSourceChoices.CreateProvider(catalog);
 
-        var area = provider(WorkflowPropertyEditorKeys.VisionAreaSource, nameof(CaptureAreaFrameNodeModel.Source));
+        var area = provider(WorkflowPropertyEditorKeys.VisionAreaSource, nameof(AcquireVisionImageNodeModel.AreaSource));
         Assert.Equal(
             new[] { "Camera.Area", "Camera.Broken（不可用：HALCON SDK 未部署。）", "Camera.Legacy（采集类型未声明）" },
             area.Select(choice => choice.Label));
         // 候选提交的是逻辑标识而不是显示文本：不可用源被选中时仍应绑定到它的SourceId。
         Assert.All(area, choice => Assert.IsType<VisionSourceReference>(choice.Value));
 
-        var line = provider(WorkflowPropertyEditorKeys.VisionLineScanSource, nameof(CaptureLineScanFrameNodeModel.Source));
+        var line = provider(WorkflowPropertyEditorKeys.VisionLineScanSource, nameof(AcquireVisionImageNodeModel.LineSource));
         Assert.Equal(new[] { "Camera.Legacy（采集类型未声明）", "Camera.Line" }, line.Select(choice => choice.Label));
 
         // 只回答节点真正声明的键；其它键没有候选，编辑器退回文本输入。
@@ -258,7 +258,7 @@ public sealed class NewVisionCompletionTests
     {
         using var frames = new WorkflowVisionFrameScope();
         var context = new WorkflowRunPreparationContext(new IWorkflowNodeModel[]
-        { new LoadVisionFileNodeModel { Id = "same" }, new CaptureAreaFrameNodeModel { Id = "same" } },
+        { new AcquireVisionImageNodeModel { Id = "same" }, new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.AreaCamera, Id = "same" } },
             WorkflowRunScopeKind.Root);
         await Assert.ThrowsAsync<InvalidOperationException>(() => frames.PrepareAsync(context, default).AsTask());
     }
@@ -274,7 +274,7 @@ public sealed class NewVisionCompletionTests
             WritePng(path, 1);
             using var frames = new WorkflowVisionFrameScope();
             var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
-            var file = new LoadVisionFileNodeModel { Id = "file", FilePath = path };
+            var file = new AcquireVisionImageNodeModel { Id = "file", FilePath = path };
             var color = new AnalyzeVisionColorNodeModel { Id = "color", Frame = WorkflowInput<ImageFrame>.FromBinding(new("file", "$")) };
             using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
             host.Configure(Document(file, color), new WorkflowContext(new WorkflowServiceProvider()

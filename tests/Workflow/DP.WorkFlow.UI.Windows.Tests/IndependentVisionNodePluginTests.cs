@@ -52,12 +52,35 @@ public sealed class IndependentVisionNodePluginTests
         var reading = Assert.IsType<BarcodeReadResult>(output.GetType().GetProperty("Reading")!.GetValue(output));
         Assert.Equal("DP-PLUGIN-001", Assert.Single(reading.Observations).Text);
         Assert.Equal(EAlgorithmStatus.Completed, reading.Status);
+        object? Member(string name) => output.GetType().GetProperty(name)!.GetValue(output);
+        Assert.Equal("DP-PLUGIN-001", Member("Text")); Assert.Equal("DP-PLUGIN-001", Member("JoinedText"));
+        Assert.Equal(1, Member("Count")); Assert.Equal(true, Member("CountMatched"));
+        Assert.NotNull(Assert.Single(reading.Observations).Location);
         using var preview = rig.Frames.Capture(node.Id); Assert.Same(output, preview!.Facts); Assert.Equal(preview.Frame.FrameId, fact.FrameId);
         using var page = new VisionFrameEditorPageModel(node, rig.Frames);
         using var canvas = page.Capture(1); Assert.NotNull(canvas); Assert.Contains("DP-PLUGIN-001", page.Status);
         Assert.NotSame(AssemblyLoadContext.Default, AssemblyLoadContext.GetLoadContext(node.GetType().Assembly));
         using var plan = await rig.Runtime.PrepareAsync(new[] { new VisionAlgorithmRequest("engine", typeof(IBarcodeReader), new() { ImplementationId = "zxing.code" }) });
         Assert.NotSame(AssemblyLoadContext.Default, plan.Invoke<IBarcodeReader, AssemblyLoadContext?>("engine", reader => AssemblyLoadContext.GetLoadContext(reader.GetType().Assembly)));
+    }
+
+    [Fact]
+    public async Task BarcodeFilters_KeepRawReading_AndReportCountAgainstExpectation()
+    {
+        using var rig = new Rig();
+        var node = (AnalyzeVisionFrameNodeModel)rig.Nodes.GetOrThrow("Vision.ReadBarcode").Factory(); node.Id = "read";
+        void Set(string name, object value) => node.GetType().GetProperty(name)!.SetValue(node, value);
+        Set("TextPattern", "^SN"); Set("ExpectedCount", 0);
+        using var host = rig.Host(rig.Document(node));
+        var run = await host.RunAsync(); Assert.True(run.Success, run.Message);
+        var output = host.Engine!.RunState.NodeOutputs.Single(o => o.NodeId == node.Id).Value!;
+        object? Member(string name) => output.GetType().GetProperty(name)!.GetValue(output);
+        // 原始读取仍保留被过滤的码；过滤后为空时“个数合格”为假，首个文本为空字符串。
+        Assert.Single(Assert.IsType<BarcodeReadResult>(Member("Reading")).Observations);
+        Assert.Equal(0, Member("Count")); Assert.Equal(false, Member("CountMatched")); Assert.Equal("", Member("Text"));
+        Assert.Contains("文本规则", ((IWorkflowVisionFrameFact)output).Summary);
+        Set("TextPattern", "[");
+        Assert.Contains(node.ValidateConfiguration(), e => e.Contains("正则", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -128,29 +151,41 @@ public sealed class IndependentVisionNodePluginTests
     }
 
     [Fact]
-    public async Task OcrPlugin_BindsTypedRecognizer_RejectsMasksAndSupportsAxisAlignedEditing()
+    public async Task OcrPlugin_RecognizesRectifiedTextBox_AndRequiresOneRectangle()
     {
         using var rig = new Rig(extra: new OcrModule());
         var node = (AnalyzeVisionFrameNodeModel)rig.Nodes.GetOrThrow("Vision.RecognizeTextLine").Factory(); node.Id = "ocr";
-        node.Width = 80; node.Height = 32;
         var selection = Assert.Single(((IWorkflowVisionAlgorithmNode)node).GetAlgorithmSlots()).Selection;
         selection.ImplementationId = "test.ocr"; selection.Dependencies.Clear();
+        Assert.Contains(node.ValidateConfiguration(), e => e.Contains("矩形文字框", StringComparison.Ordinal));
+        Assert.False(node.SupportsRegionMask);
         using (var page = new VisionFrameEditorPageModel(node))
         {
-            Assert.True(page.CanEdit); Assert.False(page.SupportsRegions);
-            page.Editor.Load(new DP.Vision.UI.RoiDocument(new[] { new DP.Vision.UI.RoiDefinition("line", new RectangleGeometry(new PointD(50, 20), 80, 32), DP.Vision.UI.ERoiConstraint.AxisAligned) }));
-            Assert.Equal(10, node.X); Assert.Equal(4, node.Y); Assert.False(node.FullImage); Assert.Empty(node.Regions);
+            Assert.True(page.SupportsRegions);
+            // 竖排文字框：宽度方向（文字行方向）旋转90°，校正后仍为 80×32 的水平小图。
+            page.Editor.Load(new DP.Vision.UI.RoiDocument(new[] { new DP.Vision.UI.RoiDefinition("line", new RectangleGeometry(new PointD(60, 70), 80, 32, Math.PI / 2)) }));
         }
-        using var host = rig.Host(rig.Document(node)); var result = await host.RunAsync(); Assert.True(result.Success, result.Message);
+        var document = rig.Document(node);
+        Assert.Single(node.Regions); Assert.Empty(node.ValidateConfiguration());
+        using var host = rig.Host(document); var result = await host.RunAsync(); Assert.True(result.Success, result.Message);
         var output = host.Engine!.RunState.NodeOutputs.Single(o => o.NodeId == "ocr").Value!;
         Assert.Contains("AB", ((IWorkflowVisionFrameFact)output).Summary);
-        node.Regions.Add(new WorkflowVisionRoi { Id = "unsupported" }); Assert.NotEmpty(node.ValidateConfiguration());
+        Assert.Equal((80, 32), Ocr.LastPatch);
+        node.Regions.Add(new WorkflowVisionRoi { Id = "second", CenterX = 20, CenterY = 20, Width = 10, Height = 10 });
+        Assert.Contains(node.ValidateConfiguration(), e => e.Contains("矩形文字框", StringComparison.Ordinal));
+        node.Regions.RemoveAt(1); node.Regions[0].Exclude = true;
+        Assert.Contains(node.ValidateConfiguration(), e => e.Contains("矩形文字框", StringComparison.Ordinal));
     }
 
     private sealed class Ocr : ITextLineRecognizer
     {
-        public TextLineRecognition Recognize(IImageSource frame, PixelBounds bounds, CancellationToken token) => new(bounds, "test-model", 80, 80,
-            new[] { new CtcStep(1, .9f), new CtcStep(2, .8f) }, new[] { new CtcToken("A", 0, 1, .9f), new CtcToken("B", 1, 2, .8f) });
+        public static (int Width, int Height) LastPatch;
+        public TextLineRecognition Recognize(IImageSource frame, PixelBounds bounds, CancellationToken token)
+        {
+            LastPatch = (frame.Info.Width, frame.Info.Height);
+            return new(bounds, "test-model", 80, 80,
+                new[] { new CtcStep(1, .9f), new CtcStep(2, .8f) }, new[] { new CtcToken("A", 0, 1, .9f), new CtcToken("B", 1, 2, .8f) });
+        }
         public void Dispose() { }
     }
     private sealed class OcrModule : IVisionAlgorithmModule
@@ -185,7 +220,7 @@ public sealed class IndependentVisionNodePluginTests
         }
         public WorkflowDocument Document(AnalyzeVisionFrameNodeModel node)
         {
-            var source = new LoadVisionFileNodeModel { Id = "source", FilePath = Path.Combine(AppContext.BaseDirectory, "VisionData", "barcode.pgm") };
+            var source = new AcquireVisionImageNodeModel { Id = "source", FilePath = Path.Combine(AppContext.BaseDirectory, "VisionData", "barcode.pgm") };
             node.Frame = WorkflowInput<ImageFrame>.FromBinding(new WorkflowBindingKey(source.Id, "$"));
             var document = new WorkflowDocument { EntryNodeId = source.Id };
             document.CanvasProjection.Nodes.Add(new() { Node = source }); document.CanvasProjection.Nodes.Add(new() { Node = node });

@@ -40,7 +40,7 @@ public static class WorkflowVisionAlgorithmProperties
         var rootLabel = capability?.DisplayName ?? slot.Name;
         if (slot.Name != "algorithm") rootLabel += "（" + slot.Name + "）";
         Walk(slot.ContractType, slot.RequiredFeatures ?? Array.Empty<string>(), Array.Empty<string>(), rootName,
-            "算法/" + rootLabel, node is LocateVisionTemplateNodeModel && slot.Name == "locator");
+            "算法/" + rootLabel);
         foreach (var entry in entries)
             entry.InGroup("算法", entry.Category.Split('/').Skip(1).ToArray());
         return entries;
@@ -55,7 +55,7 @@ public static class WorkflowVisionAlgorithmProperties
             if (existing >= 0) entries[existing] = message; else entries.Add(message);
         }
 
-        void Walk(Type? contract, IReadOnlyList<string> features, string[] path, string name, string category, bool legacyRoot = false)
+        void Walk(Type? contract, IReadOnlyList<string> features, string[] path, string name, string category)
         {
             if (++visited > 512 || path.Length > 64) { Message(name, category, "依赖数量或深度超过编辑预算，请修正配方或清空上级配置。"); return; }
             var selection = Find(path);
@@ -68,31 +68,28 @@ public static class WorkflowVisionAlgorithmProperties
                 var descriptors = contract is null ? Array.Empty<VisionAlgorithmDescriptor>() : catalog.Implementations
                     .Where(d => Compatible(contract, d.ContractType) && features.All(f => d.Features.Contains(f, StringComparer.Ordinal))).ToArray();
                 var descriptor = descriptors.FirstOrDefault(d => d.ImplementationId == id);
-                if (!legacyRoot)
-                {
-                    var choices = descriptors.Select(d => new WorkflowPropertyChoice($"{d.Engine} / {d.ImplementationId}", d.ImplementationId)).ToList();
-                    if (path.Length != 0 || string.IsNullOrEmpty(id)) choices.Insert(0, new WorkflowPropertyChoice("未选择", string.Empty));
-                    if (!string.IsNullOrEmpty(id) && !choices.Any(c => Equals(c.Value, id)))
-                        choices.Add(new WorkflowPropertyChoice(id + "（未安装或不兼容）", id));
-                    entries.Add(WorkflowPropertyEntry.CreateChoice(name + ".ImplementationId", "算法实现", category,
-                        "按当前能力选择实现；有配置时先点击清空配置。未选择的依赖会阻止运行。",
-                        () => Find(path)?.ImplementationId ?? string.Empty, value =>
+                var choices = descriptors.Select(d => new WorkflowPropertyChoice($"{d.Engine} / {d.ImplementationId}", d.ImplementationId)).ToList();
+                if (path.Length != 0 || string.IsNullOrEmpty(id)) choices.Insert(0, new WorkflowPropertyChoice("未选择", string.Empty));
+                if (!string.IsNullOrEmpty(id) && !choices.Any(c => Equals(c.Value, id)))
+                    choices.Add(new WorkflowPropertyChoice(id + "（未安装或不兼容）", id));
+                entries.Add(WorkflowPropertyEntry.CreateChoice(name + ".ImplementationId", "算法实现", category,
+                    "按当前能力选择实现；有配置时先点击清空配置。未选择的依赖会阻止运行。",
+                    () => Find(path)?.ImplementationId ?? string.Empty, value =>
+                    {
+                        var nextId = (string)value!;
+                        var current = Find(path);
+                        if (current?.ImplementationId == nextId) return;
+                        if (current is not null && (current.SettingsVersion != 1 || current.Settings?.Count > 0 || current.Dependencies?.Count > 0))
+                            throw new InvalidOperationException("请先清空原实现的初始化参数和依赖选择，再切换实现。");
+                        if (path.Length == 0) Required(path).ImplementationId = nextId;
+                        else
                         {
-                            var nextId = (string)value!;
-                            var current = Find(path);
-                            if (current?.ImplementationId == nextId) return;
-                            if (current is not null && (current.SettingsVersion != 1 || current.Settings?.Count > 0 || current.Dependencies?.Count > 0))
-                                throw new InvalidOperationException("请先清空原实现的初始化参数和依赖选择，再切换实现。");
-                            if (path.Length == 0) Required(path).ImplementationId = nextId;
-                            else
-                            {
-                                var parent = Required(path[..^1]);
-                                if (nextId.Length == 0) parent.Dependencies.Remove(path[^1]);
-                                else parent.Dependencies[path[^1]] = new VisionAlgorithmSelection { ImplementationId = nextId };
-                            }
-                        }, choices, new WorkflowPropertyEditorAttribute(WorkflowPropertyEditorKeys.VisionAlgorithmPrefix
-                            + (contract is null ? "unknown" : ((VisionCapabilityAttribute?)Attribute.GetCustomAttribute(contract, typeof(VisionCapabilityAttribute)))?.Id))));
-                }
+                            var parent = Required(path[..^1]);
+                            if (nextId.Length == 0) parent.Dependencies.Remove(path[^1]);
+                            else parent.Dependencies[path[^1]] = new VisionAlgorithmSelection { ImplementationId = nextId };
+                        }
+                    }, choices, new WorkflowPropertyEditorAttribute(WorkflowPropertyEditorKeys.VisionAlgorithmPrefix
+                        + (contract is null ? "unknown" : ((VisionCapabilityAttribute?)Attribute.GetCustomAttribute(contract, typeof(VisionCapabilityAttribute)))?.Id))));
                 if (selection is null)
                 { Message(name, category, "尚未选择依赖实现；请选择后配置其参数。"); return; }
                 entries.Add(WorkflowPropertyEntry.Create(name + ".Reset", "清空配置以切换实现", category + "/高级",
@@ -103,16 +100,13 @@ public static class WorkflowVisionAlgorithmProperties
                         var current = Required(path);
                         current.Settings = new(StringComparer.Ordinal); current.Dependencies = new(StringComparer.Ordinal); current.SettingsVersion = 1;
                     }));
-                if (!legacyRoot)
-                {
-                    entries.Add(WorkflowPropertyEntry.Create(name + ".SettingsVersion", "参数版本", category + "/高级",
-                        "按实现的配置版本解释参数；需要升级时请使用算法面板的配置升级。", WorkflowPropertyEditorKind.Number, typeof(int),
-                        () => Required(path).SettingsVersion, value =>
-                        {
-                            if ((int)value! < 1) throw new ArgumentOutOfRangeException(nameof(value), "参数版本必须大于 0。");
-                            Required(path).SettingsVersion = (int)value;
-                        }));
-                }
+                entries.Add(WorkflowPropertyEntry.Create(name + ".SettingsVersion", "参数版本", category + "/高级",
+                    "按实现的配置版本解释参数；需要升级时请使用算法面板的配置升级。", WorkflowPropertyEditorKind.Number, typeof(int),
+                    () => Required(path).SettingsVersion, value =>
+                    {
+                        if ((int)value! < 1) throw new ArgumentOutOfRangeException(nameof(value), "参数版本必须大于 0。");
+                        Required(path).SettingsVersion = (int)value;
+                    }));
                 if (selection.Settings is null || selection.Dependencies is null) { Message(name, category, "参数或依赖为空，请清空配置后重新设置。"); return; }
                 // 未安装实现、未知键和插件不支持的参数类型仍用普通字符串子项展示，不能丢弃配方内容。
                 foreach (var key in selection.Settings.Keys.Where(key => descriptor is null || !descriptor.Parameters.Any(parameter => parameter.Id == key && Supported(parameter.ValueType))))

@@ -1,19 +1,19 @@
 # 视觉节点盘点与带来源几何测量
 
-更新于2026-10-02。按实际注册入口和部署包盘点：20种内置节点，条码1种、水平单行OCR1种、几何及坐标9种，共31种注册类型。四种旧取图类型保留配方兼容且从工具箱隐藏，因此工具箱展示27种视觉节点。算法实现与节点模板分别部署；几何计算加入现有托管模块managed.geometry，没有增加功能×引擎组合DLL。独立业务坐标的完整构建、ROI绑定和兼容规则见[坐标系统](vision-coordinate-systems.md)。
+更新于2026-10-06。按实际注册入口和部署包盘点：15种内置节点，读码1种、单行文字识别1种、几何及坐标9种，共26种注册类型，全部在工具箱中显示。算法实现与节点模板分别部署；几何计算加入现有托管模块managed.geometry，鲁棒圆拟合为managed.robust-circle，没有增加功能×引擎组合DLL。独立业务坐标的完整构建、ROI绑定和兼容规则见[坐标系统](vision-coordinate-systems.md)。
 
 ## 当前能力和缺口
 
 | 领域 | 实际节点/能力 | 仍缺少的能力 |
 |---|---|---|
-| 图像来源（1个入口、4个兼容类型） | AcquireFrame统一选择文件、文件夹、面阵和线扫；旧LoadFile、LoadFolder、CaptureAreaFrame、CaptureLineScanFrame仍可运行 | 相机现场触发、重连和吞吐验收 |
-| 预处理与区域（3） | PreprocessImage、ThresholdRegion、MorphRegion | 独立区域并/差、输出裁剪或校正图像及来源映射 |
-| Blob和颜色（3） | AnalyzeBlobs、SelectBlobs、AnalyzeColor | 凸度、孔洞计数、真实亚像素周长、Lab/ΔE |
-| 引导定位（3） | LocateTemplate、LocateTemplatePose、MapPoseCoordinate | 连续姿态细化、多实例、学习式形状模板、模板制作与资产库 |
-| 边缘测量（3） | MeasureEdges、MeasureCaliper、FitRobustLine | 业务边缘配对、鲁棒圆/圆弧 |
-| 旧标定与距离（3） | SolveCalibration、MapCoordinate、MeasureDistance | 带单位和来源的物理标定、畸变及手眼标定 |
-| 独立业务节点（2） | ReadBarcode、RecognizeTextLine | 真实OCR模型现场精度复核 |
-| 新几何包（10） | 下表全部节点 | 角度、圆相关测量、标定设备身份/有效期管理 |
+| 图像来源（1） | AcquireFrame统一选择文件、文件夹、面阵和线扫，可选输出8位灰度 | 相机现场触发、重连和吞吐验收 |
+| 预处理与区域（4） | PreprocessImage、CreateRegion、ThresholdRegion、MorphRegion | 独立区域并/差、输出裁剪或校正图像及来源映射 |
+| 连通域和颜色（3） | AnalyzeBlobs、SelectBlobs（含排序与首个）、AnalyzeColor | 凸度、孔洞计数、真实亚像素周长、Lab/ΔE |
+| 引导定位（1＋几何包） | LocateTemplatePose（模板定位，固定角度尺度即平移）；坐标换算用几何包的构建本帧坐标系与点/线转换 | 连续姿态细化、多实例、学习式形状模板 |
+| 边缘测量（4） | MeasureCaliper、FitRobustLine、FindLine、FindCircle | 业务边缘配对、边缘对宽度测量 |
+| 手眼标定（2） | SolveCalibration、MapCoordinate | 带单位和来源的物理标定、畸变、标定设备身份/有效期管理 |
+| 独立业务节点（2） | ReadBarcode（过滤、排序、期望个数、文本输出）、RecognizeTextLine（可旋转文字框，跟随定位） | 真实OCR模型现场精度复核 |
+| 新几何包（9） | 下表全部节点 | 角度测量、点到圆等圆相关距离 |
 
 计数是NodeType数量，不是算法接口数量。引擎层还有未接入Workflow的字符分割、字符比对、空白/固定区域质量、条码印刷质量、块异常检测等算法；它们不等于已有对应工具箱节点。OpenCV没有IBarcodeReader实现，读码使用ZXing；两种块异常检测实现属于同一能力。已取消的整图OCR/切字/打印质量节点未恢复。
 
