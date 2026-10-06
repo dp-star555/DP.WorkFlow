@@ -13,7 +13,7 @@
 | Vision.ThresholdRegion | RegionAnalysisResult | 0..255灰度闭区间分割，原图矩形及精确ROI/绑定掩码交集 |
 | Vision.MorphRegion | RegionAnalysisResult | 膨胀、腐蚀、开闭、填孔；方形/离散椭圆/十字核 |
 | Vision.SelectBlobs | BlobAnalysisResult | 面积、栅格圆度、面积矩长短轴比筛选；保留原顺序和精确Region |
-| Vision.MeasureCaliper | CaliperResult | 双线性带采样、灰度剖面、极性、梯度峰抛物线插值、间距抑制 |
+| Vision.MeasureCaliper | VisionCaliperMeasurement | 直线或圆弧卡尺：双线性带采样、灰度剖面、极性、梯度峰抛物线插值、间距抑制 |
 | Vision.FitRobustLine | RobustLineResult | 聚合同帧卡尺边缘，确定性RANSAC＋正交TLS，输出内点索引与RMS |
 | Vision.LocateTemplatePose | TemplatePoseResult | 显式角度／尺度区间；OpenCV按步长采样，HALCON资源模型原生范围搜索；单个最佳姿态 |
 | Vision.MapPoseCoordinate | Coordinate2D | 模板→图像或图像→模板的姿态坐标映射；未检出明确失败 |
@@ -60,15 +60,15 @@ var blob = new AnalyzeVisionBlobsNodeModel {
 
 ## 卡尺与鲁棒直线
 
-在同一输入帧上放置至少三个扫描带。例如三个水平带穿过一条近竖直边缘，分别得到CaliperResult；将它们按顺序绑定到`FitVisionRobustLineNodeModel.Samples`。
+在同一输入帧上放置至少三个扫描带。例如三个水平带穿过一条近竖直边缘，分别得到卡尺结果（VisionCaliperMeasurement）；将它们按顺序绑定到`FitVisionRobustLineNodeModel.Samples`。
 
 ```csharp
 var fit = new FitVisionRobustLineNodeModel {
     Frame = WorkflowInput<ImageFrame>.FromBinding(new("image", "$")),
     Samples = new() {
-        WorkflowInput<CaliperResult>.FromBinding(new("caliper1", "$")),
-        WorkflowInput<CaliperResult>.FromBinding(new("caliper2", "$")),
-        WorkflowInput<CaliperResult>.FromBinding(new("caliper3", "$"))
+        WorkflowInput<VisionCaliperMeasurement>.FromBinding(new("caliper1", "$")),
+        WorkflowInput<VisionCaliperMeasurement>.FromBinding(new("caliper2", "$")),
+        WorkflowInput<VisionCaliperMeasurement>.FromBinding(new("caliper3", "$"))
     },
     DistanceThreshold = .5, MinimumInliers = 3
 };
@@ -78,6 +78,17 @@ var fit = new FitVisionRobustLineNodeModel {
 - 沿带约1px均匀采样，垂直方向使用BandSampleStep（默认1px）平均；绑定定位后间隔乘尺度，不暗中滤波。端部各约两个采样步长不输出梯度峰，那里没有足够插值邻域。
 - `Profile`保存灰度剖面；`Edges`按扫描距离排序，含Position、Distance、带符号Gradient。Rising/Falling均相对于起点→终点，反向扫描会反转极性。
 - 可用两条已选边缘坐标绑定现有距离节点计算宽度；当前不自动选择业务意义上的边缘对。
+- 输出`VisionCaliperMeasurement`保留直线卡尺原有成员名（Start/End/Profile/Edges/Count/MeasuredEdges/LocatedEdges），已有绑定路径不变；直线形状的原始`CaliperResult`在`Line`成员中。
+
+### 圆弧卡尺
+
+`Shape = Arc`时沿圆弧扫描：圆心`CenterX/CenterY`、半径`Radius`、起始角`StartAngle`与扫描角度`SweepAngle`（度，X轴正向起顺时针，图像Y向下；正为顺时针，绝对值(0,360]）。
+
+- 沿扫描圆弧按约1px弧长均匀取点，每点沿**半径方向**取`2×HalfWidth+1`个点（间隔BandSampleStep）求平均；剖面、梯度、峰值插值和间距抑制与直线卡尺相同。
+- `Edges[i].Distance`为从起始角开始的弧长，`AngleDegrees`为边缘所在角度；Rising/Falling相对扫描方向（起始角→终止角）。
+- 采样带内侧不能越过圆心（`Radius ≥ HalfWidth×BandSampleStep`），整条环形采样带必须在图像内。
+- 绑定坐标系时圆心、半径、起始角为局部表达，运行时按相似变换换算到原图（角度加坐标系旋转，半径与间隔乘尺度）。
+- 圆弧卡尺是工作流内置的托管实现，不经过可替换的`ICaliperMeasurer`算法实现选择。
 - RANSAC最多8192点、1024次采样，总距离评估不超过400万；正交重拟合内点集合不稳定、方向不可辨识、重合或证据不足均失败。不是鲁棒圆/圆弧拟合。
 - 亚像素插值已用非整数边缘合成真值验证，但不代表现场光学、标定与机械测量精度已经验收。
 

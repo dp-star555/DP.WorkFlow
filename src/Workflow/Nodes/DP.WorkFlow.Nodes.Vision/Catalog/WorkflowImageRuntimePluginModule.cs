@@ -46,7 +46,7 @@ public static class WorkflowImageNodes
             .Register(WorkflowNodeDescriptor.Create<CreateVisionRegionNodeModel, RegionAnalysisResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<MorphVisionRegionNodeModel, RegionAnalysisResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<SelectVisionBlobsNodeModel, BlobAnalysisResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<MeasureVisionCaliperNodeModel, CaliperResult>(ports: ports))
+            .Register(WorkflowNodeDescriptor.Create<MeasureVisionCaliperNodeModel, VisionCaliperMeasurement>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<FitVisionRobustLineNodeModel, RobustLineResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<LocateVisionTemplatePoseNodeModel, TemplatePoseResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<MapVisionPoseCoordinateNodeModel, Coordinate2D>(ports: ports));

@@ -32,6 +32,8 @@ internal sealed class VisionFrameEditorControl : UserControl
     private readonly ModernUI.WinForms.ModernSelect _source = ToolSelect(130);
     private readonly ModernUI.WinForms.ModernSelect _tool = ToolSelect(140);
     private readonly ModernUI.WinForms.ModernSelect _purpose = ToolSelect(80);
+    private readonly ModernUI.WinForms.ModernSelect _shape = ToolSelect(140);
+    private readonly ToolStripControlHost? _shapeHost;
     private readonly ModernUI.WinForms.ModernInputNumber _radius = new() { Size = new Size(90, 30), Minimum = 1, Maximum = 500, Value = 10, Theme = Theme };
     private readonly ToolStripControlHost _toolHost, _purposeHost, _radiusHost;
     private readonly ImageList _toolIcons = new() { ImageSize = new Size(IconPixels, IconPixels), ColorDepth = ColorDepth.Depth32Bit };
@@ -68,6 +70,21 @@ internal sealed class VisionFrameEditorControl : UserControl
             Guard(() => editor.Tool = choice.Tool); _canvas.Focus();
         };
         _toolbar.Items.Add(_toolHost = Fit(Host(_tool, "区域类型"), () => _tools.Select(t => t.Text), 66));
+        // 卡尺节点的区域类型是卡尺形状：直线卡尺 / 圆弧卡尺，切换时保持在图上的位置。
+        if (model.Caliper is { } shapeCaliper)
+        {
+            _toolIcons.Images.Add("caliper-" + EVisionCaliperShape.Line, CaliperIcon(arc: false));
+            _toolIcons.Images.Add("caliper-" + EVisionCaliperShape.Arc, CaliperIcon(arc: true));
+            _shape.ImageList = _toolIcons; _shape.ImageKeyMember = nameof(VisionCaliperShapeChoice.IconKey);
+            _shape.Items.AddRange(VisionCaliperShapeChoice.All.Cast<object>().ToArray());
+            _shape.SelectedIndexChanged += (_, _) =>
+            {
+                if (_syncing || _shape.SelectedItem is not VisionCaliperShapeChoice choice) return;
+                if (shapeCaliper.SetShape(choice.Shape)) { _model.NotifyConfigurationChanged(); _model.InvalidatePreview(); RefreshPreview(); }
+                _canvas.Focus();
+            };
+            _toolbar.Items.Add(_shapeHost = Fit(Host(_shape, "区域类型：卡尺形状"), () => VisionCaliperShapeChoice.All.Select(c => c.Text), 66));
+        }
         _purpose.Items.AddRange(new object[] { "包含", "排除" });
         _purpose.SelectedIndexChanged += (_, _) =>
         {
@@ -223,7 +240,38 @@ internal sealed class VisionFrameEditorControl : UserControl
         };
     }
 
-    /// <summary>卡尺图上编辑：拖动起点/终点/带宽方块/采样带内部，松开后通知参数页刷新。</summary>
+    // 卡尺形状图标：直线带箭头 / 圆弧带箭头。
+    private static Bitmap CaliperIcon(bool arc)
+    {
+        var bitmap = new Bitmap(IconPixels, IconPixels);
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using var pen = new Pen(Theme.Text, IconPixels / 12f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+        float u = IconPixels / 32f;
+        if (arc)
+        {
+            graphics.DrawArc(pen, 5 * u, 7 * u, 22 * u, 22 * u, 200, 140);
+            graphics.DrawLines(pen, new[] { new PointF(20 * u, 6 * u), new PointF(26 * u, 10.5f * u), new PointF(20 * u, 13 * u) });
+        }
+        else
+        {
+            graphics.DrawLine(pen, 5 * u, 16 * u, 27 * u, 16 * u);
+            graphics.DrawLines(pen, new[] { new PointF(21 * u, 10 * u), new PointF(27 * u, 16 * u), new PointF(21 * u, 22 * u) });
+        }
+        using var thin = new Pen(Color.FromArgb(150, Theme.Text), IconPixels / 20f);
+        for (var k = 0; k < 3; k++)
+            if (arc)
+            {
+                var angle = (215 + k * 40) * Math.PI / 180;
+                float cx = 16 * u, cy = 18 * u;
+                graphics.DrawLine(thin, cx + (float)Math.Cos(angle) * 7 * u, cy + (float)Math.Sin(angle) * 7 * u,
+                    cx + (float)Math.Cos(angle) * 15 * u, cy + (float)Math.Sin(angle) * 15 * u);
+            }
+            else graphics.DrawLine(thin, (9 + k * 5) * u, 11 * u, (9 + k * 5) * u, 21 * u);
+        return bitmap;
+    }
+
+    /// <summary>卡尺图上编辑：拖动起点/终点/带宽方块/采样带内部（圆弧另有圆心与半径），松开后通知参数页刷新。</summary>
     private void AttachCaliper(VisionCaliperGizmo caliper)
     {
         double Unit() => 1 / Math.Max(1e-9, _canvas.Viewport.Scale);
@@ -244,7 +292,8 @@ internal sealed class VisionFrameEditorControl : UserControl
             }
             _canvas.Cursor = View is 4 or 5 ? Cursors.Default : caliper.Hit(point, Unit()) switch
             {
-                EVisionCaliperHandle.Body => Cursors.SizeAll,
+                EVisionCaliperHandle.Body or EVisionCaliperHandle.Center => Cursors.SizeAll,
+                EVisionCaliperHandle.Radius => Cursors.Hand,
                 EVisionCaliperHandle.Width => Cursors.SizeNS,
                 EVisionCaliperHandle.Start or EVisionCaliperHandle.End => Cursors.Cross,
                 _ => Cursors.Default
@@ -296,6 +345,12 @@ internal sealed class VisionFrameEditorControl : UserControl
             // 卡尺不是面积ROI：扫描线与采样带直接在图上拖动，不显示区域类型。
             _toolHost.Visible = _model.Caliper is null; _toolHost.Enabled = editor != null;
             _purposeHost.Visible = regions; _purposeHost.Enabled = editor != null;
+            if (_shapeHost is not null && _model.Caliper is { } caliper)
+            {
+                _shapeHost.Enabled = caliper.IsEditable;
+                var shapeChoice = VisionCaliperShapeChoice.All.FirstOrDefault(c => c.Shape == caliper.Shape);
+                if (shapeChoice is not null && !Equals(_shape.SelectedItem, shapeChoice)) _shape.SelectedItem = shapeChoice;
+            }
             _radiusHost.Visible = editor?.Tool is ERoiTool.Brush or ERoiTool.Eraser;
             if (editor == null) return;
             if (RoiToolChoice.Find(_tools, editor.Tool) is { } choice && !ReferenceEquals(_tool.SelectedItem, choice)) _tool.SelectedItem = choice;

@@ -33,7 +33,7 @@
 | Vision.MeasurePointLineDistance | 点＋线＋Space＋Mode → GeometricDistanceResult | 无限直线垂足或有限线段最近点 |
 | Vision.MeasureLineDistance | 两条线＋Space＋Mode → GeometricDistanceResult | 无限直线或有限线段最短距离 |
 
-既有结果新增投影：BlobAnalysisResult.MeasuredCentroids、CaliperResult.MeasuredEdges、RobustLineResult.MeasuredA/MeasuredB/MeasuredLine、EdgeMeasurementResult.MeasuredA/MeasuredB/MeasuredLine，以及两种模板定位的MeasuredCenter。圆模型的MeasuredLine为空，不能将圆参数当直线。旧Centroid、Position、A/B和裸Coordinate2D保持原有语义。
+既有结果新增投影：BlobAnalysisResult.MeasuredCentroids、VisionCaliperMeasurement.MeasuredEdges（直线/圆弧卡尺）、RobustLineResult.MeasuredA/MeasuredB/MeasuredLine、EdgeMeasurementResult.MeasuredA/MeasuredB/MeasuredLine，以及两种模板定位的MeasuredCenter。圆模型的MeasuredLine为空，不能将圆参数当直线。旧Centroid、Position、A/B和裸Coordinate2D保持原有语义。
 
 ## 坐标如何影响后续节点
 

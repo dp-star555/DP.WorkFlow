@@ -109,7 +109,7 @@ public sealed class VisionOperatorPipelineTests
             var calipers = new[] { 6.5, 14.5, 22.5 }.Select((y, i) => new MeasureVisionCaliperNodeModel
             { Id = "caliper" + i, Frame = Input<ImageFrame>("file"), StartX = .5, EndX = 63.5, StartY = y, EndY = y, HalfWidth = 0, Polarity = ECaliperPolarity.Rising }).ToArray();
             var fit = new FitVisionRobustLineNodeModel { Id = "fit", Frame = Input<ImageFrame>("file"), DistanceThreshold = .2,
-                Samples = calipers.Select(c => Input<CaliperResult>(c.Id)).ToList() };
+                Samples = calipers.Select(c => Input<VisionCaliperMeasurement>(c.Id)).ToList() };
             var sequence = new List<IWorkflowNodeModel> { new LoadVisionFileNodeModel { Id = "file", FilePath = path } };
             if (mixFrames)
             {
