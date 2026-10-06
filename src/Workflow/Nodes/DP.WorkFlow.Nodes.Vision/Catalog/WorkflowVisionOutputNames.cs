@@ -62,6 +62,17 @@ public static class WorkflowVisionOutputNames
         ["Profile"] = "灰度剖面",
         ["Edges"] = "边缘",
         ["Shape"] = "卡尺形状",
+        ["ArcDirection"] = "搜索方向",
+        ["Profiles"] = "各卡尺剖面",
+        ["CaliperIndex"] = "卡尺序号",
+        ["Fit"] = "拟合结果",
+        ["FitMessage"] = "拟合说明",
+        ["FitSummary"] = "拟合摘要",
+        ["MeasuredFitLine"] = "拟合直线",
+        ["Points"] = "拟合点",
+        ["CaliperIndices"] = "拟合点卡尺序号",
+        ["Inliers"] = "是否计算点",
+        ["OutlierCount"] = "忽略点数",
         ["Center"] = "圆心",
         ["StartAngleDegrees"] = "起始角(°)",
         ["SweepDegrees"] = "扫描角度(°)",
@@ -122,7 +133,7 @@ public static class WorkflowVisionOutputNames
         {
             typeof(ImageFrame), typeof(BlobAnalysisResult), typeof(BlobObservation), typeof(BlobShapeFeatures), typeof(ColorAnalysisResult),
             typeof(TemplatePoseResult), typeof(AffineCalibration), typeof(Coordinate2D),
-            typeof(RegionAnalysisResult), typeof(CaliperResult), typeof(VisionCaliperMeasurement), typeof(VisionCaliperEdge), typeof(RobustLineResult), typeof(RobustCircleResult), typeof(VisionFindLineResult), typeof(VisionFindCircleResult), typeof(VisionPoint), typeof(VisionLine),
+            typeof(RegionAnalysisResult), typeof(CaliperResult), typeof(VisionCaliperMeasurement), typeof(VisionCaliperEdge), typeof(VisionCaliperFit), typeof(RobustLineResult), typeof(VisionPoint), typeof(VisionLine),
             typeof(GeometricDistanceResult), typeof(VisionCoordinateSystemResult), typeof(VisionCoordinateDefinition)
         })
             WorkflowOutputDisplayNames.Register(type, Names);

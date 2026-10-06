@@ -90,12 +90,25 @@ var fit = new FitVisionRobustLineNodeModel {
 - 可用两条已选边缘坐标绑定现有距离节点计算宽度；当前不自动选择业务意义上的边缘对。
 - 输出`VisionCaliperMeasurement`保留直线卡尺原有成员名（Start/End/Profile/Edges/Count/MeasuredEdges/LocatedEdges），已有绑定路径不变；直线形状的原始`CaliperResult`在`Line`成员中。
 
+### 搜索间隔、卡尺数量与卡尺内拟合
+
+- `ScanStep`（搜索间隔，默认1，原图0.1..10px）：沿搜索方向每隔多少像素取一个剖面点，对直线、沿圆弧、径向三种方式都生效。直线卡尺为1px时调用可替换的直线卡尺算法实现，其它间隔使用同一规则的托管采样。
+- `CaliperCount`（卡尺数量，默认1）：
+  - 直线：采样带沿宽度均分为N个并排子卡尺（1..64，不超过`2×HalfWidth+1`），每个都沿起点→终点搜索。
+  - 圆弧径向搜索：圆弧均分为N段，每段一个径向卡尺（1..128）。沿圆弧扫描时忽略。
+- N ≥ 3 时在节点内拟合：每个卡尺按`FitPoint`（最强边缘/第一个/最后一个）取一个点。直线用RANSAC＋正交TLS（DP.Vision `RobustLineFitter`），圆用确定性RANSAC＋Kåsa最小二乘精修；`FitDistanceThreshold`以内为计算点，其余为忽略点。
+- 输出`Fit`含拟合点、是否计算点、RMS、直线端点A/B或圆心/半径；`MeasuredFitLine`为带来源的拟合直线。不足3个卡尺找到边或拟合失败时`Fit`为空，原因写在`FitMessage`。
+- 结果图上：全部边缘为小灰点，计算点绿色、忽略点红色，拟合线段或圆为黄色。不画文字标签，点击后在状态栏显示说明。
+
 ### 圆弧卡尺
 
 `Shape = Arc`时沿圆弧扫描：圆心`CenterX/CenterY`、半径`Radius`、起始角`StartAngle`与扫描角度`SweepAngle`（度，X轴正向起顺时针，图像Y向下；正为顺时针，绝对值(0,360]）。
 
-- 沿扫描圆弧按约1px弧长均匀取点，每点沿**半径方向**取`2×HalfWidth+1`个点（间隔BandSampleStep）求平均；剖面、梯度、峰值插值和间距抑制与直线卡尺相同。
-- `Edges[i].Distance`为从起始角开始的弧长，`AngleDegrees`为边缘所在角度；Rising/Falling相对扫描方向（起始角→终止角）。
+- `ArcDirection`（搜索方向，默认由内到外）：
+  - **由内到外 / 由外到内**：沿半径搜索边缘（常用于找圆）。圆弧按扫描角度均分为`CaliperCount`段（默认8，1..128），每段一个径向卡尺，在`[Radius−带宽, Radius+带宽]`内按约1px取点（带宽至少±2px），每点沿该段圆弧按约1px弧长求平均。`Edges[i].Distance`为从搜索起点（内圈或外圈）算起的径向距离，`AngleDegrees`为该卡尺中心角，`CaliperIndex`为卡尺序号；`Profiles`保存每个卡尺的剖面，`Profile`为平均剖面。图上每个卡尺画一个指向搜索方向的箭头。
+  - **沿圆弧**：以下规则。
+- 沿圆弧扫描时，沿扫描圆弧按约1px弧长均匀取点，每点沿**半径方向**取`2×HalfWidth+1`个点（间隔BandSampleStep）求平均；剖面、梯度、峰值插值和间距抑制与直线卡尺相同。
+- 沿圆弧扫描时`Edges[i].Distance`为从起始角开始的弧长，`AngleDegrees`为边缘所在角度。Rising/Falling相对搜索方向：沿圆弧为起始角→终止角，径向为由内到外或由外到内。
 - 采样带内侧不能越过圆心（`Radius ≥ HalfWidth×BandSampleStep`），整条环形采样带必须在图像内。
 - 绑定坐标系时圆心、半径、起始角为局部表达，运行时按相似变换换算到原图（角度加坐标系旋转，半径与间隔乘尺度）。
 - 圆弧卡尺是工作流内置的托管实现，不经过可替换的`ICaliperMeasurer`算法实现选择。

@@ -73,7 +73,7 @@ public static class VisionCoordinateRebinding
             var center = Point(arc.CenterX, arc.CenterY);
             arc.CenterX = center.X; arc.CenterY = center.Y; arc.Radius *= ratio;
             arc.StartAngle += fromRotation - toRotation;
-            arc.MinimumSeparation *= ratio; arc.BandSampleStep *= ratio;
+            arc.MinimumSeparation *= ratio; arc.BandSampleStep *= ratio; arc.ScanStep *= ratio; arc.FitDistanceThreshold *= ratio;
         }
         else if (node is MeasureVisionCaliperNodeModel caliper)
         {
@@ -85,7 +85,7 @@ public static class VisionCoordinateRebinding
             _ = new CaliperOptions(new PointD(imageStart.X, imageStart.Y), new PointD(imageEnd.X, imageEnd.Y), caliper.HalfWidth, caliper.MinimumGradient,
                 caliper.Polarity, caliper.MinimumSeparation * fromScale, caliper.BandSampleStep * fromScale);
             caliper.StartX = start.X; caliper.StartY = start.Y; caliper.EndX = end.X; caliper.EndY = end.Y;
-            caliper.MinimumSeparation *= ratio; caliper.BandSampleStep *= ratio;
+            caliper.MinimumSeparation *= ratio; caliper.BandSampleStep *= ratio; caliper.ScanStep *= ratio; caliper.FitDistanceThreshold *= ratio;
         }
         if (node is FitVisionRobustLineNodeModel fit) fit.DistanceThreshold *= fromScale / toScale;
         if (node is FindVisionShapeNodeModel shape)
