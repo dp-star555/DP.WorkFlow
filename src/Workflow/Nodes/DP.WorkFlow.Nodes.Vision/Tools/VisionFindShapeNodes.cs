@@ -128,13 +128,16 @@ public abstract class FindVisionShapeNodeModel : AnalyzeVisionFrameNodeModel, IW
     protected abstract WorkflowVisionRoi DefaultRoi(int imageWidth, int imageHeight);
 
     /// <summary>
-    /// 搜索ROI仍是新建时的占位值时，按首张图像尺寸改为居中的默认搜索ROI；用户改过或绑定坐标系时不动。
+    /// 搜索ROI为空或仍是新建时的占位值时，按首张图像尺寸改为居中的默认搜索ROI；用户改过或绑定坐标系时不动。
     /// </summary>
     /// <param name="imageWidth">图像宽度。</param><param name="imageHeight">图像高度。</param>
     /// <returns>修改了搜索ROI时返回 <see langword="true"/>。</returns>
     public bool FitPlaceholderSearchRoi(int imageWidth, int imageHeight)
     {
-        if (Coordinates is not null || imageWidth < 8 || imageHeight < 8 || Regions is not { Count: 1 } || !SameRoi(Regions[0], PlaceholderRoi())) return false;
+        if (Coordinates is not null || imageWidth < 8 || imageHeight < 8) return false;
+        // 旧配方没有搜索范围时也补一个居中的默认范围，便于直接在图上拖动调整。
+        if (Regions is null || Regions.Count == 0) { Regions = new() { DefaultRoi(imageWidth, imageHeight) }; return true; }
+        if (Regions.Count != 1 || !SameRoi(Regions[0], PlaceholderRoi())) return false;
         Regions = new() { DefaultRoi(imageWidth, imageHeight) };
         return true;
     }

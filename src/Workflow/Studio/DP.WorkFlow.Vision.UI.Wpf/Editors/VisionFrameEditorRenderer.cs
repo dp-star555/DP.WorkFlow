@@ -65,7 +65,7 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
         };
         _toolbar.Items.Add(_tool);
         // 卡尺节点的区域类型是卡尺形状：直线卡尺 / 圆弧卡尺，切换时保持在图上的位置。
-        if (model.Caliper is { } shapeCaliper)
+        if (model.Caliper is VisionCaliperGizmo shapeCaliper)
         {
             _shape.ItemsSource = VisionCaliperShapeChoice.All.Select(ShapeItem).ToArray();
             _shape.SelectionChanged += (_, _) =>
@@ -188,7 +188,7 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
 
     private void OnTick(object? sender, EventArgs e) => RefreshPreview();
     /// <summary>卡尺图上编辑：拖动起点/终点/带宽方块/采样带内部，松开后通知参数页刷新。</summary>
-    private void AttachCaliper(VisionCaliperGizmo caliper)
+    private void AttachCaliper(IVisionCanvasGizmo caliper)
     {
         double Unit() => 1 / Math.Max(1e-9, _canvas.Viewport.Scale);
         PointD ToImage(System.Windows.Input.MouseEventArgs e)
@@ -214,7 +214,7 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
             {
                 EVisionCaliperHandle.Body or EVisionCaliperHandle.Center => System.Windows.Input.Cursors.SizeAll,
                 EVisionCaliperHandle.Radius or EVisionCaliperHandle.Step => System.Windows.Input.Cursors.Hand,
-                EVisionCaliperHandle.Width => System.Windows.Input.Cursors.SizeNS,
+                EVisionCaliperHandle.Width or EVisionCaliperHandle.Length => System.Windows.Input.Cursors.SizeNS,
                 EVisionCaliperHandle.Start or EVisionCaliperHandle.End => System.Windows.Input.Cursors.Cross,
                 _ => null
             };
@@ -267,7 +267,7 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
             // 卡尺不是面积ROI：扫描线与采样带直接在图上拖动，不显示区域类型。
             _tool.Visibility = _model.Caliper is null ? Visibility.Visible : Visibility.Collapsed; _tool.IsEnabled = editor != null;
             _purpose.Visibility = regions ? Visibility.Visible : Visibility.Collapsed; _purpose.IsEnabled = editor != null;
-            if (_model.Caliper is { } caliper)
+            if (_model.Caliper is VisionCaliperGizmo caliper)
             {
                 if (_shape.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (i.Tag as VisionCaliperShapeChoice)?.Shape == caliper.Shape) is { } shapeItem
                     && !ReferenceEquals(_shape.SelectedItem, shapeItem)) _shape.SelectedItem = shapeItem;
