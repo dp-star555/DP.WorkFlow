@@ -140,6 +140,30 @@ public sealed class VisionArcCaliperTests
     }
 
     [Fact]
+    public void FindCircle_SectorCalipers_FindDiskEdge()
+    {
+        // 暗圆盘（半径 40，圆心 (100,100)）在亮背景上：由内向外扫描，暗→亮边缘在半径 40 处。
+        var pixels = new byte[200 * 200];
+        for (var y = 0; y < 200; y++)
+            for (var x = 0; x < 200; x++) pixels[y * 200 + x] = (x + .5 - 100) * (x + .5 - 100) + (y + .5 - 100) * (y + .5 - 100) <= 1600 ? (byte)20 : (byte)220;
+        using var image = VisionImage.CopyFrom(new ImageInfo(200, 200, EPixelLayout.Gray8), pixels);
+        using var frame = new ImageFrame("disk", image);
+        var node = new FindVisionCircleNodeModel
+        {
+            CaliperCount = 8, SearchLength = 20, HalfWidth = 6, BandSampleStep = 1,
+            Regions = new() { new() { Id = "search", Shape = EWorkflowVisionRoiShape.Ellipse, CenterX = 100, CenterY = 100, Width = 80, Height = 80 } }
+        };
+        var scans = node.CaliperScans();
+        Assert.All(scans, s => Assert.Equal(new PointD(100, 100), s.ArcCenter));
+        foreach (var scan in scans)
+        {
+            var edge = Assert.Single(VisionSectorCaliper.Measure(frame, scan, node.HalfWidth, 1, 20, ECaliperPolarity.Rising, 2));
+            Assert.InRange(Math.Sqrt(Math.Pow(edge.Position.X - 100, 2) + Math.Pow(edge.Position.Y - 100, 2)), 39.3, 40.7);
+            Assert.InRange(edge.Distance, 9.3, 10.7);
+        }
+    }
+
+    [Fact]
     public void NewFindNodes_HavePlaceholderSearchRoi_FittedToFirstImage()
     {
         var line = new FindVisionLineNodeModel();

@@ -108,6 +108,29 @@ public sealed class VisionFindShapeGizmoTests
     }
 
     [Fact]
+    public void FindCircle_CalipersAreAnnularSectors()
+    {
+        var node = new FindVisionCircleNodeModel
+        {
+            CaliperCount = 8, SearchLength = 20, HalfWidth = 5, BandSampleStep = 1,
+            Regions = new() { new() { Id = "search", Shape = EWorkflowVisionRoiShape.Ellipse, CenterX = 100, CenterY = 100, Width = 80, Height = 80 } }
+        };
+        var bands = new VisionFindShapeGizmo(node).Visuals(1).Where(v => v.Id.StartsWith("find-caliper", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(8, bands.Length);
+        foreach (var band in bands)
+        {
+            var outline = Assert.IsType<ContourGeometry>(band.Geometry).Points;
+            Assert.True(outline.Count > 4);
+            // 轮廓只落在内外两条弧上（半径 30 / 50），不是矩形。
+            Assert.All(outline, p =>
+            {
+                var r = Math.Sqrt(Math.Pow(p.X - 100, 2) + Math.Pow(p.Y - 100, 2));
+                Assert.True(Math.Abs(r - 30) < 1e-6 || Math.Abs(r - 50) < 1e-6, r.ToString());
+            });
+        }
+    }
+
+    [Fact]
     public void FindLine_WithCoordinates_DisplaysAndWritesLocalValues()
     {
         // 局部→原图：尺度 2、平移 (10, 20)。
