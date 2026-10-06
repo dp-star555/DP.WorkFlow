@@ -140,6 +140,29 @@ public sealed class VisionArcCaliperTests
     }
 
     [Fact]
+    public void NewFindNodes_HavePlaceholderSearchRoi_FittedToFirstImage()
+    {
+        var line = new FindVisionLineNodeModel();
+        var circle = new FindVisionCircleNodeModel();
+        // 新建即可通过搜索范围校验（只剩输入图像未绑定这类与范围无关的提示）。
+        Assert.DoesNotContain(line.ValidateConfiguration(), e => e.Contains("搜索框", StringComparison.Ordinal));
+        Assert.DoesNotContain(circle.ValidateConfiguration(), e => e.Contains("期望圆", StringComparison.Ordinal) || e.Contains("搜索长度", StringComparison.Ordinal));
+        Assert.Equal(10, line.CaliperScans().Count);
+
+        Assert.True(line.FitPlaceholderSearchRoi(2544, 1608));
+        var box = Assert.Single(line.Regions);
+        Assert.Equal((1272d, 804d, 1272d, 322d), (box.CenterX, box.CenterY, box.Width, box.Height));
+        Assert.False(line.FitPlaceholderSearchRoi(100, 100));   // 已不是占位值，不再改。
+
+        Assert.True(circle.FitPlaceholderSearchRoi(1000, 800));
+        Assert.Equal((500d, 400d, 320d, 320d), (circle.Regions[0].CenterX, circle.Regions[0].CenterY, circle.Regions[0].Width, circle.Regions[0].Height));
+
+        var edited = new FindVisionLineNodeModel();
+        edited.Regions[0].CenterX = 10;                          // 用户已移动过搜索框。
+        Assert.False(edited.FitPlaceholderSearchRoi(2544, 1608));
+    }
+
+    [Fact]
     public void ArcCaliperOptions_RejectInvalidBands()
     {
         Assert.Throws<ArgumentException>(() => new VisionArcCaliperOptions(new PointD(50, 50), 0, 0, 90));

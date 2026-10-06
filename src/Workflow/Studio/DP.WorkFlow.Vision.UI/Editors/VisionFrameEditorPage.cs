@@ -285,7 +285,23 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             if (view == 2 && _node is LocateVisionTemplatePoseNodeModel p && p.Template.Binding is { IsPublicData: false } poseTemplate) id = poseTemplate.NodeId;
             using var current = view == 3 ? null : _frames?.Capture(id);
             var frame = view == 3 ? _manual : current?.Frame;
-            if (frame is null) { CoordinateEditingReady = false; return null; }
+            if (frame is null)
+            {
+                CoordinateEditingReady = false;
+                if (_node is FindVisionShapeNodeModel)
+                    Status = "还没有图像：先运行一次流程取图，再在图上调整搜索范围；新建节点已带默认搜索范围，取到图像后自动居中。";
+                return null;
+            }
+            // 新建的找线/找圆带占位搜索范围：首次拿到图像时按图像尺寸居中，并同步到ROI编辑器和参数页。
+            if (view is 0 or 1 && _node is FindVisionShapeNodeModel placeholder
+                && placeholder.FitPlaceholderSearchRoi(frame.Image.Info.Width, frame.Image.Info.Height))
+            {
+                _loading = true;
+                try { Editor.Cancel(); Editor.Load(new RoiDocument(placeholder.Regions.Select(r => EditableRoi(placeholder, r, r.ToGeometry())))); }
+                finally { _loading = false; }
+                _lastKey = null;
+                _configurationChanged?.Invoke();
+            }
             UpdateCoordinatePreview(frame, view);
             // 绑定坐标系的卡尺按本帧坐标系换算到原图显示和拖动；没有同帧定位时不显示。
             if (Caliper is not null) Caliper.Coordinates = CoordinateEditingReady ? _displayCoordinates : null;

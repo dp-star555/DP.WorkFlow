@@ -118,6 +118,30 @@ public abstract class FindVisionShapeNodeModel : AnalyzeVisionFrameNodeModel, IW
         return errors;
     }
 
+    /// <summary>新建节点的默认搜索ROI标识；拿到第一张图像前用占位尺寸，便于在没有图像时也能通过校验。</summary>
+    internal const string DefaultRoiId = "search";
+
+    /// <summary>新建节点的占位搜索ROI（还没有图像时使用）。</summary>
+    protected abstract WorkflowVisionRoi PlaceholderRoi();
+
+    /// <summary>按图像尺寸给出合适的默认搜索ROI（居中）。</summary>
+    protected abstract WorkflowVisionRoi DefaultRoi(int imageWidth, int imageHeight);
+
+    /// <summary>
+    /// 搜索ROI仍是新建时的占位值时，按首张图像尺寸改为居中的默认搜索ROI；用户改过或绑定坐标系时不动。
+    /// </summary>
+    /// <param name="imageWidth">图像宽度。</param><param name="imageHeight">图像高度。</param>
+    /// <returns>修改了搜索ROI时返回 <see langword="true"/>。</returns>
+    public bool FitPlaceholderSearchRoi(int imageWidth, int imageHeight)
+    {
+        if (Coordinates is not null || imageWidth < 8 || imageHeight < 8 || Regions is not { Count: 1 } || !SameRoi(Regions[0], PlaceholderRoi())) return false;
+        Regions = new() { DefaultRoi(imageWidth, imageHeight) };
+        return true;
+    }
+
+    private static bool SameRoi(WorkflowVisionRoi a, WorkflowVisionRoi b) => a.Id == b.Id && a.Shape == b.Shape && a.Enabled == b.Enabled
+        && a.Exclude == b.Exclude && a.CenterX == b.CenterX && a.CenterY == b.CenterY && a.Width == b.Width && a.Height == b.Height && a.Angle == b.Angle;
+
     /// <summary>唯一启用的包含ROI，且是指定形状；绑定坐标系时为业务坐标表达。</summary>
     internal T SearchRoi<T>(EWorkflowVisionRoiShape shape, string message) where T : Geometry
     {
@@ -152,8 +176,19 @@ public abstract class FindVisionShapeNodeModel : AnalyzeVisionFrameNodeModel, IW
 public sealed class FindVisionLineNodeModel : FindVisionShapeNodeModel
 {
     private const string BoxMessage = "请在图像页绘制一个矩形搜索框（只能有一个，且不能是排除ROI）；卡尺沿框的宽度方向排布、沿高度方向扫描。";
+    /// <summary>新建时带一个占位搜索框，首次拿到图像时自动居中。</summary>
+    public FindVisionLineNodeModel() => Regions = new() { PlaceholderRoi() };
     /// <inheritdoc/>
     public override string NodeType => "Vision.FindLine";
+    /// <inheritdoc/>
+    protected override WorkflowVisionRoi PlaceholderRoi() => new()
+    { Id = DefaultRoiId, Shape = EWorkflowVisionRoiShape.Rectangle, CenterX = 320, CenterY = 240, Width = 240, Height = 80 };
+    /// <inheritdoc/>
+    protected override WorkflowVisionRoi DefaultRoi(int imageWidth, int imageHeight) => new()
+    {
+        Id = DefaultRoiId, Shape = EWorkflowVisionRoiShape.Rectangle, CenterX = imageWidth / 2d, CenterY = imageHeight / 2d,
+        Width = Math.Round(imageWidth * .5), Height = Math.Round(Math.Max(8, imageHeight * .2))
+    };
     /// <inheritdoc/>
     [Browsable(false)]
     public override VisionAlgorithmSelection FitterAlgorithm { get; set; } = new() { ImplementationId = "managed.robust-line" };
@@ -196,8 +231,19 @@ public sealed class FindVisionLineNodeModel : FindVisionShapeNodeModel
 public sealed class FindVisionCircleNodeModel : FindVisionShapeNodeModel
 {
     private const string CircleMessage = "请在图像页绘制一个圆形ROI作为期望圆（只能有一个，宽高相等，且不能是排除ROI）。";
+    /// <summary>新建时带一个占位期望圆，首次拿到图像时自动居中。</summary>
+    public FindVisionCircleNodeModel() => Regions = new() { PlaceholderRoi() };
     /// <inheritdoc/>
     public override string NodeType => "Vision.FindCircle";
+    /// <inheritdoc/>
+    protected override WorkflowVisionRoi PlaceholderRoi() => new()
+    { Id = DefaultRoiId, Shape = EWorkflowVisionRoiShape.Ellipse, CenterX = 320, CenterY = 240, Width = 160, Height = 160 };
+    /// <inheritdoc/>
+    protected override WorkflowVisionRoi DefaultRoi(int imageWidth, int imageHeight)
+    {
+        var diameter = Math.Round(Math.Max(SearchLength + 4, Math.Min(imageWidth, imageHeight) * .4));
+        return new() { Id = DefaultRoiId, Shape = EWorkflowVisionRoiShape.Ellipse, CenterX = imageWidth / 2d, CenterY = imageHeight / 2d, Width = diameter, Height = diameter };
+    }
     /// <inheritdoc/>
     [Browsable(false)]
     public override VisionAlgorithmSelection FitterAlgorithm { get; set; } = new() { ImplementationId = "managed.robust-circle" };
