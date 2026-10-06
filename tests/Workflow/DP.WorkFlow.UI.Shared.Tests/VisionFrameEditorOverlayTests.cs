@@ -39,4 +39,13 @@ public sealed class VisionFrameEditorOverlayTests
         using var caliper = new VisionFrameEditorPageModel(new MeasureVisionCaliperNodeModel());
         Assert.Equal(0, caliper.DefaultView);
     }
+
+    [Fact]
+    public void DefaultView_ShowsResultsOnceTheNodeHasRun()
+    {
+        Assert.Equal(1, VisionFrameEditorPageModel.DefaultViewFor(false, editable: true, hasResult: true));
+        Assert.Equal(0, VisionFrameEditorPageModel.DefaultViewFor(false, editable: true, hasResult: false));
+        Assert.Equal(1, VisionFrameEditorPageModel.DefaultViewFor(false, editable: false, hasResult: false));
+        Assert.Equal(4, VisionFrameEditorPageModel.DefaultViewFor(true, editable: true, hasResult: true));
+    }
 }
