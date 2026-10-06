@@ -18,9 +18,45 @@ public enum EVisionEdgeChoice
     Last
 }
 
-/// <summary>一把卡尺的原图位置：沿 <see cref="Start"/>→<see cref="End"/> 扫描，垂直方向单侧带宽 <see cref="HalfBand"/>。</summary>
+/// <summary>
+/// 一把卡尺的原图位置：沿 <see cref="Start"/>→<see cref="End"/> 扫描，垂直方向单侧带宽 <see cref="HalfBand"/>。
+/// 找圆的卡尺带 <see cref="ArcCenter"/>：采样带是以它为圆心的圆环扇形，<see cref="HalfBand"/> 为期望圆上的单侧弧长。
+/// </summary>
 /// <param name="Start">扫描起点。</param><param name="End">扫描终点。</param><param name="HalfBand">垂直方向单侧带宽，原图像素。</param>
-public sealed record VisionCaliperScan(PointD Start, PointD End, double HalfBand);
+/// <param name="ArcCenter">圆环扇形卡尺的圆心；直线卡尺为空。</param>
+public sealed record VisionCaliperScan(PointD Start, PointD End, double HalfBand, PointD? ArcCenter = null)
+{
+    /// <summary>采样带外轮廓（原图像素，闭合多边形）；圆环扇形的内外弧按 <paramref name="arcSegments"/> 段折线近似。</summary>
+    /// <param name="minimumHalfBand">显示用的最小单侧带宽（太窄时按屏幕最小宽度显示）。</param>
+    /// <param name="arcSegments">每条弧的折线段数。</param>
+    public IReadOnlyList<PointD> Outline(double minimumHalfBand = 0, int arcSegments = 12)
+    {
+        double half = Math.Max(HalfBand, minimumHalfBand);
+        if (ArcCenter is not { } c)
+        {
+            double dx = End.X - Start.X, dy = End.Y - Start.Y, length = Math.Max(1e-12, Math.Sqrt(dx * dx + dy * dy));
+            double nx = -dy / length * half, ny = dx / length * half;
+            return new[] { new PointD(Start.X - nx, Start.Y - ny), new PointD(End.X - nx, End.Y - ny), new PointD(End.X + nx, End.Y + ny), new PointD(Start.X + nx, Start.Y + ny) };
+        }
+        var (angle, halfAngle, startRadius, endRadius) = Sector(half);
+        var points = new List<PointD>(2 * arcSegments + 2);
+        for (int i = 0; i <= arcSegments; i++) points.Add(Polar(c, startRadius, angle - halfAngle + 2 * halfAngle * i / arcSegments));
+        for (int i = arcSegments; i >= 0; i--) points.Add(Polar(c, endRadius, angle - halfAngle + 2 * halfAngle * i / arcSegments));
+        return points;
+    }
+
+    /// <summary>扇形参数：中心角、单侧张角（按期望圆半径上的弧长 <paramref name="half"/> 换算）、起止半径。</summary>
+    internal (double Angle, double HalfAngle, double StartRadius, double EndRadius) Sector(double half)
+    {
+        var c = ArcCenter ?? throw new InvalidOperationException("不是圆环扇形卡尺。");
+        double startRadius = Distance(c, Start), endRadius = Distance(c, End), radius = Math.Max(1e-9, (startRadius + endRadius) / 2);
+        var mid = startRadius >= endRadius ? Start : End;
+        return (Math.Atan2(mid.Y - c.Y, mid.X - c.X), Math.Min(Math.PI, half / radius), startRadius, endRadius);
+    }
+
+    internal static PointD Polar(PointD center, double radius, double angle) => new(center.X + radius * Math.Cos(angle), center.Y + radius * Math.Sin(angle));
+    private static double Distance(PointD a, PointD b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+}
 
 /// <summary>边缘对模式下一把卡尺选中的边缘对。</summary>
 /// <param name="First">第一个边缘。</param><param name="Second">第二个边缘。</param><param name="Width">宽度，原图像素。</param>
@@ -160,12 +196,16 @@ public abstract class FindVisionShapeNodeModel : AnalyzeVisionFrameNodeModel, IW
     /// <summary>本节点每把卡尺的原图扫描线；绑定坐标系时按本帧坐标系换算。</summary>
     internal abstract IReadOnlyList<(PointD Start, PointD End)> Scans(VisionCoordinateSystem? coordinates);
 
+    /// <summary>圆环扇形卡尺的原图圆心；直线排布的卡尺为空。</summary>
+    internal virtual PointD? ArcCenter(VisionCoordinateSystem? coordinates) => null;
+
     /// <summary>按当前搜索ROI排布的各把卡尺（原图像素），供图像页预览；搜索ROI无效时抛出 <see cref="InvalidOperationException"/>。</summary>
     /// <param name="coordinates">本帧坐标系；未绑定时为空。</param>
     public IReadOnlyList<VisionCaliperScan> CaliperScans(VisionCoordinateSystem? coordinates = null)
     {
         double halfBand = HalfWidth * BandSampleStep * (coordinates?.SimilarityScale ?? 1);
-        return Scans(coordinates).Select(s => new VisionCaliperScan(s.Start, s.End, halfBand)).ToArray();
+        var center = ArcCenter(coordinates);
+        return Scans(coordinates).Select(s => new VisionCaliperScan(s.Start, s.End, halfBand, center)).ToArray();
     }
 
     /// <summary>业务坐标点换算到原图；未绑定坐标系时原样返回。</summary>
@@ -291,6 +331,8 @@ public sealed class FindVisionCircleNodeModel : FindVisionShapeNodeModel
         if (Math.Abs(circle.RadiusX - circle.RadiusY) > 1e-6 * Math.Max(circle.RadiusX, circle.RadiusY)) throw new InvalidOperationException(CircleMessage);
         return circle;
     }
+
+    internal override PointD? ArcCenter(VisionCoordinateSystem? coordinates) => ToImage(ExpectedCircle().Center, coordinates);
 
     internal override IReadOnlyList<(PointD Start, PointD End)> Scans(VisionCoordinateSystem? coordinates)
     {
@@ -426,12 +468,12 @@ public sealed class VisionFindCircleResult : IVisionGeometryFact
 
 /// <summary>一次卡尺排布的扫描线和各卡尺选中的边缘点。</summary>
 internal sealed class VisionShapeProbe(string frameId, IReadOnlyList<(PointD Start, PointD End)> scans, IReadOnlyList<PointD> edges, int outside,
-    double halfBand = 0, IReadOnlyList<VisionFoundEdgePair>? pairs = null)
+    double halfBand = 0, IReadOnlyList<VisionFoundEdgePair>? pairs = null, PointD? arcCenter = null)
 {
     public IReadOnlyList<(PointD Start, PointD End)> Scans { get; } = scans;
     public IReadOnlyList<PointD> Edges { get; } = edges;
     public IReadOnlyList<VisionFoundEdgePair> Pairs { get; } = pairs ?? Array.Empty<VisionFoundEdgePair>();
-    public IReadOnlyList<VisionCaliperScan> CaliperScans => Scans.Select(s => new VisionCaliperScan(s.Start, s.End, halfBand)).ToArray();
+    public IReadOnlyList<VisionCaliperScan> CaliperScans => Scans.Select(s => new VisionCaliperScan(s.Start, s.End, halfBand, arcCenter)).ToArray();
     public IReadOnlyList<bool> InlierFlags(IReadOnlyList<int> inliers)
     {
         var flags = new bool[Edges.Count];
@@ -500,35 +542,44 @@ internal static class VisionShapeFinding
         if (errors.Count > 0) throw new InvalidOperationException(string.Join("；", errors));
         double scale = coordinates?.SimilarityScale ?? 1, step = node.BandSampleStep * scale;
         if (step < .1 || step > 10) throw new InvalidOperationException("垂直采样间隔换算到原图须在0.1..10像素。");
-        var scans = node.Scans(coordinates);
+        var scans = node.CaliperScans(coordinates);
         var edges = new List<PointD>(); var pairs = new List<VisionFoundEdgePair>(); int outside = 0;
         bool pairMode = node.EdgeMode == EVisionCaliperEdgeMode.Pair;
-        foreach (var (start, end) in scans)
+        foreach (var scan in scans)
         {
             token.ThrowIfCancellationRequested();
+            var (start, end) = (scan.Start, scan.End);
             double length = Math.Sqrt(Math.Pow(end.X - start.X, 2) + Math.Pow(end.Y - start.Y, 2));
             if (length < 4) throw new InvalidOperationException("卡尺扫描长度换算到原图不足4像素，请加大搜索范围。");
-            if (!Inside(frame.Image.Info, start, end, node.HalfWidth * step)) { outside++; continue; }
+            if (!Inside(frame.Image.Info, scan)) { outside++; continue; }
             // 边缘对模式需要两种极性的边缘，配对时再按“边缘极性”判断第一个边缘。
-            var options = new CaliperOptions(start, end, node.HalfWidth, node.MinimumGradient, pairMode ? ECaliperPolarity.Any : node.Polarity,
-                node.MinimumSeparation * scale, step);
-            var result = WorkflowVisionAlgorithmInvocation.Invoke(context, "caliper", node.CaliperAlgorithm, "managed.caliper",
-                (ICaliperMeasurer measurer) => measurer.Measure(frame, options, token), token);
+            var polarity = pairMode ? ECaliperPolarity.Any : node.Polarity;
+            IReadOnlyList<VisionCaliperEdge> found;
+            if (scan.ArcCenter is not null)
+                // 找圆：圆环扇形采样带，沿半径扫描、沿圆弧方向求平均（扇形外侧更宽，与圆周方向一致）。
+                found = VisionSectorCaliper.Measure(frame, scan, node.HalfWidth, step, node.MinimumGradient, polarity, node.MinimumSeparation * scale, token);
+            else
+            {
+                var options = new CaliperOptions(start, end, node.HalfWidth, node.MinimumGradient, polarity, node.MinimumSeparation * scale, step);
+                found = VisionCaliperMeasurement.FromLine(WorkflowVisionAlgorithmInvocation.Invoke(context, "caliper", node.CaliperAlgorithm, "managed.caliper",
+                    (ICaliperMeasurer measurer) => measurer.Measure(frame, options, token), token)).Edges;
+            }
             if (!pairMode)
             {
-                if (Pick(result.Edges, node.EdgeChoice) is { } edge) edges.Add(edge.Position);
+                if (Pick(found, node.EdgeChoice) is { } edge) edges.Add(edge.Position);
                 continue;
             }
-            if (PickPair(result.Edges, node.Polarity, node.MinimumPairWidth * scale, node.MaximumPairWidth * scale, node.EdgeChoice) is { } pair)
+            if (PickPair(found, node.Polarity, node.MinimumPairWidth * scale, node.MaximumPairWidth * scale, node.EdgeChoice) is { } pair)
             {
                 edges.Add(new PointD((pair.First.Position.X + pair.Second.Position.X) / 2, (pair.First.Position.Y + pair.Second.Position.Y) / 2));
                 pairs.Add(new VisionFoundEdgePair(pair.First.Position, pair.Second.Position, pair.Second.Distance - pair.First.Distance));
             }
         }
-        return new VisionShapeProbe(frame.FrameId, scans, edges, outside, node.HalfWidth * step, pairMode ? pairs : null);
+        return new VisionShapeProbe(frame.FrameId, scans.Select(s => (s.Start, s.End)).ToArray(), edges, outside, node.HalfWidth * step,
+            pairMode ? pairs : null, node.ArcCenter(coordinates));
     }
 
-    private static CaliperEdge? Pick(IReadOnlyList<CaliperEdge> edges, EVisionEdgeChoice choice) => edges.Count == 0 ? null : choice switch
+    private static VisionCaliperEdge? Pick(IReadOnlyList<VisionCaliperEdge> edges, EVisionEdgeChoice choice) => edges.Count == 0 ? null : choice switch
     {
         EVisionEdgeChoice.First => edges.MinBy(e => e.Distance),
         EVisionEdgeChoice.Last => edges.MaxBy(e => e.Distance),
@@ -536,7 +587,7 @@ internal static class VisionShapeFinding
     };
 
     // 边缘对：同一套配对规则，再按边缘选择取首个/末个/两边梯度之和最强的一对。
-    private static (CaliperEdge First, CaliperEdge Second)? PickPair(IReadOnlyList<CaliperEdge> edges, ECaliperPolarity polarity, double minimum, double maximum,
+    private static (VisionCaliperEdge First, VisionCaliperEdge Second)? PickPair(IReadOnlyList<VisionCaliperEdge> edges, ECaliperPolarity polarity, double minimum, double maximum,
         EVisionEdgeChoice choice)
     {
         var sorted = edges.OrderBy(e => e.Distance).ToArray();
@@ -551,13 +602,48 @@ internal static class VisionShapeFinding
         };
     }
 
-    // 与卡尺的采样规则一致：采样带四角都须落在像素中心范围 [0.5, 尺寸-0.5] 内。
-    private static bool Inside(ImageInfo info, PointD start, PointD end, double halfBand)
+    // 与卡尺的采样规则一致：采样带轮廓都须落在像素中心范围 [0.5, 尺寸-0.5] 内。
+    private static bool Inside(ImageInfo info, VisionCaliperScan scan) =>
+        scan.Outline().All(p => p.X >= .5 && p.Y >= .5 && p.X <= info.Width - .5 && p.Y <= info.Height - .5);
+}
+
+/// <summary>
+/// 找圆用的圆环扇形卡尺：沿半径从起点到终点按 1px 取剖面，每点沿圆弧方向取 2×半宽+1 个双线性采样求平均
+/// （采样间隔按期望圆上的弧长换算成固定张角，扇形外侧采样更疏），再按与直线卡尺相同的梯度峰值规则找边缘。
+/// </summary>
+public static class VisionSectorCaliper
+{
+    /// <summary>测量一把圆环扇形卡尺。</summary>
+    /// <param name="frame">Gray8 输入帧。</param><param name="scan">带圆心的卡尺位置。</param>
+    /// <param name="halfWidth">圆弧方向单侧采样点数。</param><param name="bandSampleStep">期望圆上的圆弧方向采样间隔，原图像素。</param>
+    /// <param name="minimumGradient">最小绝对梯度。</param><param name="polarity">沿扫描方向的极性。</param>
+    /// <param name="minimumSeparation">边缘最小间距。</param><param name="token">取消。</param>
+    /// <returns>按距扫描起点距离排序的边缘。</returns>
+    public static IReadOnlyList<VisionCaliperEdge> Measure(ImageFrame frame, VisionCaliperScan scan, int halfWidth, double bandSampleStep,
+        double minimumGradient, ECaliperPolarity polarity, double minimumSeparation, CancellationToken token = default)
     {
-        double dx = end.X - start.X, dy = end.Y - start.Y, length = Math.Sqrt(dx * dx + dy * dy);
-        double nx = -dy / length * halfBand, ny = dx / length * halfBand;
-        return new[] { (start.X + nx, start.Y + ny), (start.X - nx, start.Y - ny), (end.X + nx, end.Y + ny), (end.X - nx, end.Y - ny) }
-            .All(p => p.Item1 >= .5 && p.Item2 >= .5 && p.Item1 <= info.Width - .5 && p.Item2 <= info.Height - .5);
+        var center = scan.ArcCenter ?? throw new ArgumentException("不是圆环扇形卡尺。", nameof(scan));
+        var info = frame.Image.Info;
+        var pixels = VisionCaliperProfile.Pixels(frame);
+        var (angle, halfAngle, startRadius, endRadius) = scan.Sector(halfWidth * bandSampleStep);
+        double length = Math.Abs(endRadius - startRadius), sign = Math.Sign(endRadius - startRadius);
+        double angleStep = halfWidth == 0 ? 0 : halfAngle / halfWidth;
+        int count = (int)Math.Ceiling(length) + 1; double step = length / (count - 1);
+        var profile = new double[count];
+        for (int i = 0; i < count; i++)
+        {
+            token.ThrowIfCancellationRequested();
+            double radius = startRadius + sign * i * step;
+            for (int b = -halfWidth; b <= halfWidth; b++)
+            {
+                var p = VisionCaliperScan.Polar(center, radius, angle + b * angleStep);
+                profile[i] += VisionCaliperProfile.Sample(pixels, info.Width, info.Height, p.X, p.Y);
+            }
+            profile[i] /= halfWidth * 2 + 1;
+        }
+        return VisionCaliperProfile.FindEdges(profile, step, minimumGradient, polarity, minimumSeparation, token)
+            .Select(e => new VisionCaliperEdge(VisionCaliperScan.Polar(center, startRadius + sign * e.Distance, angle), e.Distance, e.Gradient, null))
+            .ToArray();
     }
 }
 

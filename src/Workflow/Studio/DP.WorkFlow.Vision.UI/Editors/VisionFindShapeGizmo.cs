@@ -147,7 +147,7 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
         return visuals;
     }
 
-    // 每把卡尺：半透明填充的青色采样带（太窄时按屏幕最小宽度显示），与淡灰色搜索边界区分；扫描方向上画黄色箭头。
+    // 每把卡尺：半透明填充的青色采样带（找圆为圆环扇形；太窄时按屏幕最小宽度显示），与淡灰色搜索边界区分；扫描方向上画黄色箭头。
     private void AddCalipers(List<Visual> visuals, double unit)
     {
         var scans = Scans();
@@ -158,11 +158,8 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
             if (length < 1e-9) continue;
             var direction = ((end.X - start.X) / length, (end.Y - start.Y) / length);
             var normal = (-direction.Item2, direction.Item1);
-            var half = Math.Max(scans[i].HalfBand, 2.5 * unit);
-            visuals.Add(new Visual($"find-caliper{i}", new ContourGeometry(new[]
-            {
-                Offset(start, normal, -half), Offset(end, normal, -half), Offset(end, normal, half), Offset(start, normal, half)
-            }, closed: true, filled: true), CaliperColor));
+            // 找线为矩形采样带，找圆为圆环扇形采样带，与运行时采样范围一致。
+            visuals.Add(new Visual($"find-caliper{i}", new ContourGeometry(scans[i].Outline(2.5 * unit), closed: true, filled: true), CaliperColor));
             var head = Math.Min(length / 3, 9 * unit);
             visuals.Add(new Visual($"find-arrow{i}", new ContourGeometry(new[]
             {
