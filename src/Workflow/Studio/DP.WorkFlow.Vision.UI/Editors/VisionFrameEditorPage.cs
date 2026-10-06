@@ -108,6 +108,15 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             : new RoiDefinition(roi.Id, shape, purpose, roi.Enabled);
     }
 
+    /// <summary>
+    /// 可编辑的ROI、卡尺、找线/找圆搜索范围只在输入图像（及模板测试图像）上显示和拖动；结果图像只显示运行结果。
+    /// </summary>
+    /// <param name="view">视图编号。</param>
+    public static bool ShowsEditableOverlays(int view) => view is 0 or 3;
+
+    /// <summary>打开窗口时的默认视图：有可编辑范围的节点进入输入图像，其它进入结果图像。</summary>
+    public int DefaultView => IsTemplateEditor ? 4 : CanEdit || Caliper is not null ? 0 : 1;
+
     /// <summary>卡尺节点的图上编辑器；其他节点为空。</summary>
     public IVisionCanvasGizmo? Caliper { get; }
 
@@ -317,7 +326,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             // 显示预算不是算法结果裁剪；大结果明确拒绝显示并保留完整运行事实。
             var layers = new List<CanvasLayer>();
             string maskStatus = "";
-            if (ShowMask && analysis?.RangeCapability == EWorkflowVisionRange.Region && analysis is not FindVisionShapeNodeModel && view is 0 or 1 or 3)
+            if (ShowMask && analysis?.RangeCapability == EWorkflowVisionRange.Region && analysis is not FindVisionShapeNodeModel && ShowsEditableOverlays(view))
             {
                 try
                 {
@@ -333,14 +342,18 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
                 { maskStatus = " 无法预览掩膜：" + error.Message; }
             }
             layers.Add(new CanvasLayer("facts", ELayerKind.Annotation, visuals));
-            if (Caliper is { IsEditable: true } && view is 0 or 1 or 3)
+            if (Caliper is { IsEditable: true } && ShowsEditableOverlays(view))
                 layers.Add(new CanvasLayer("caliper", ELayerKind.Annotation, Caliper.Visuals(_imagePixelsPerScreenPixel), 10, name: "卡尺"));
             var overlay = new GeometryOverlay(frame.FrameId, layers);
             var canvas = new CanvasFrame(frame.FrameId, ++_sequence, frame.Image, overlay);
             _visuals = visuals; _pickFacts = facts; _lastKey = key;
             Status = Describe(facts, frame) + maskStatus;
             // 卡尺尺寸说明放在状态栏，图上不画文字标签。
-            if (Caliper is not null) Status += (Caliper.IsEditable ? " " + Caliper.Caption + "。" : "") + " " + Caliper.Hint;
+            if (Caliper is not null)
+                Status += ShowsEditableOverlays(view)
+                    ? (Caliper.IsEditable ? " " + Caliper.Caption + "。" : "") + " " + Caliper.Hint
+                    : " 切换到“输入图像”可查看和拖动编辑范围。";
+            else if (CanEdit && view == 1) Status += " 切换到“输入图像”可查看和编辑ROI。";
             if (_node is AnalyzeVisionFrameNodeModel { Coordinates: { } binding })
                 Status += CoordinateEditingReady ? $" {(SupportsRegions ? "ROI" : "几何表达")}绑定坐标系 {binding.CoordinateSystemId}，按本帧坐标系显示。" : " 当前视图只读，不使用其他帧的定位。";
             return canvas;

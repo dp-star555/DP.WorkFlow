@@ -46,8 +46,10 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
     public WorkflowVisionCoordinateBinding? Coordinates { get; set; }
 
     /// <summary>此节点是否支持显式定位；不支持的算子不能用外接框假装随动。</summary>
+    [System.ComponentModel.Browsable(false)]
     public bool SupportsCoordinates => RangeCapability is EWorkflowVisionRange.Region or EWorkflowVisionRange.SamplingBand or EWorkflowVisionRange.GeometryFacts;
     /// <summary>可扩展节点必须显式声明范围执行能力。</summary>
+    [System.ComponentModel.Browsable(false)]
     public virtual EWorkflowVisionRange RangeCapability => EWorkflowVisionRange.None;
 
     /// <summary>为外部领域Handler解析并验证定位；不读取活动编辑器或缓存上一帧。</summary>
