@@ -19,10 +19,20 @@ public enum EWorkflowVisionImageSource
     LineCamera = 3
 }
 
+/// <summary>图像获取输出的像素格式。</summary>
+public enum EWorkflowVisionPixelFormat
+{
+    /// <summary>按文件或相机的原始格式输出。</summary>
+    Original = 0,
+    /// <summary>彩色按亮度转换为8位灰度；16位灰度需用图像预处理转换。</summary>
+    Gray8 = 1
+}
+
 /// <summary>统一文件、目录及相机取图入口，输出具有独立租约和帧身份的 ImageFrame。</summary>
 [WorkflowNode("Vision.AcquireFrame", DisplayName = "图像获取", Category = "5.Vision/Acquisition",
     Description = "选择文件、文件夹或相机来源，输出统一图像帧。")]
-public sealed class AcquireVisionImageNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator, IWorkflowVisionAlgorithmNode
+public sealed class AcquireVisionImageNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator, IWorkflowVisionAlgorithmNode,
+    IWorkflowDocumentPropertyChoices
 {
     /// <inheritdoc/>
     public override string NodeType => "Vision.AcquireFrame";
@@ -31,6 +41,17 @@ public sealed class AcquireVisionImageNodeModel : WorkflowNodeModel, IWorkflowNo
     [WorkflowProperty("图像来源", "文件、文件夹、面阵相机或线扫相机；切换来源会保留其他来源的配置。", Category = "图像来源")]
     [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.VisionImageSourceMode)]
     public EWorkflowVisionImageSource SourceMode { get; set; }
+
+    /// <summary>输出像素格式；文件、文件夹与相机来源都适用。</summary>
+    [WorkflowProperty("像素格式", "保持原样：按文件或相机的原始格式输出。8位灰度：彩色按亮度转换为8位灰度；16位灰度请用图像预处理转换。模板匹配、卡尺、边缘测量、阈值分割、连通域分析只支持8位灰度。", Category = "图像来源")]
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.DocumentChoice)]
+    public EWorkflowVisionPixelFormat PixelFormat { get; set; }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<KeyValuePair<string, object?>> GetPropertyChoices(string propertyName, IReadOnlyList<IWorkflowNodeModel> documentNodes) =>
+        propertyName == nameof(PixelFormat)
+            ? [new("保持原样", EWorkflowVisionPixelFormat.Original), new("8位灰度", EWorkflowVisionPixelFormat.Gray8)]
+            : [];
 
     /// <summary>离线文件解码器；相机模式不声明此能力。</summary>
     [Browsable(false)]
@@ -156,10 +177,10 @@ public sealed class AcquireVisionImageNodeHandler : WorkflowNodeHandler<AcquireV
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(AcquireVisionImageNodeModel node,
         IWorkflowNodeExecutionContext context, CancellationToken cancellationToken) => node.SourceMode switch
     {
-        EWorkflowVisionImageSource.File => LoadVisionFileNodeHandler.ReadAsync(node.FilePath, node.Algorithm, context, cancellationToken),
-        EWorkflowVisionImageSource.Folder => LoadVisionFolderNodeHandler.ReadAsync(node.Id, node.Algorithm, context, cancellationToken),
+        EWorkflowVisionImageSource.File => LoadVisionFileNodeHandler.ReadAsync(node.FilePath, node.Algorithm, context, cancellationToken, node.PixelFormat),
+        EWorkflowVisionImageSource.Folder => LoadVisionFolderNodeHandler.ReadAsync(node.Id, node.Algorithm, context, cancellationToken, node.PixelFormat),
         EWorkflowVisionImageSource.AreaCamera or EWorkflowVisionImageSource.LineCamera =>
-            VisionCaptureNodeExecution.ExecuteAsync(context, node.Id, node.Source, node.CreateRequest(), cancellationToken),
+            VisionCaptureNodeExecution.ExecuteAsync(context, node.Id, node.Source, node.CreateRequest(), cancellationToken, node.PixelFormat),
         _ => throw new InvalidOperationException("图像来源类型未定义。")
     };
 }

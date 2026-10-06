@@ -20,6 +20,7 @@ internal static class VisionCaptureNodeExecution
     /// <param name="source">逻辑视觉源；运行前已校验，这里做最后一道兜底。</param>
     /// <param name="request">节点配置翻译出的中立采集请求。</param>
     /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="format">输出像素格式。</param>
     /// <returns>节点执行结果。</returns>
     /// <exception cref="InvalidOperationException">节点没有绑定逻辑图像源。</exception>
     public static async ValueTask<NodeExecutionResult> ExecuteAsync(
@@ -27,7 +28,8 @@ internal static class VisionCaptureNodeExecution
         string nodeId,
         VisionSourceReference? source,
         VisionCaptureRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        EWorkflowVisionPixelFormat format = EWorkflowVisionPixelFormat.Original)
     {
         if (source is null)
             throw new InvalidOperationException($"节点 {nodeId} 未配置逻辑图像源；采集节点必须在运行前绑定到已发布的源。");
@@ -35,7 +37,7 @@ internal static class VisionCaptureNodeExecution
         using var captured = await acquisition.CaptureAsync(
             source, request, CreateOwner(nodeId, context), cancellationToken).ConfigureAwait(false);
         ReportSourceFacts(captured.Metadata, context);
-        return LoadVisionFileNodeHandler.Output(captured.Frame, context, cancellationToken);
+        return LoadVisionFileNodeHandler.Output(captured.Frame, context, cancellationToken, format);
     }
 
     /// <summary>把Workflow执行身份翻译成中立发起方身份；设备冲突诊断需要能指出是谁在请求。</summary>
