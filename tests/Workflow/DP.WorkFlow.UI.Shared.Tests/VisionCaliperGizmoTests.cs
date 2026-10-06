@@ -238,5 +238,32 @@ public sealed class VisionCaliperGizmoTests
         Assert.Equal((0d, -10d), (node.EndX, node.EndY));
     }
 
+    [Fact]
+    public void StepHandle_ChangesSamplingIntervalKeepingBandWidth()
+    {
+        // 水平卡尺 (0,50)→(200,50)，带宽 ±20 = 20 点 × 1px。
+        var node = new MeasureVisionCaliperNodeModel { StartX = 0, StartY = 50, EndX = 200, EndY = 50, HalfWidth = 20, BandSampleStep = 1 };
+        var gizmo = new VisionCaliperGizmo(node);
+        var visuals = gizmo.Visuals(1);
+        // 标尺在 1/4 处（x=50）；间隔 1px 在 1 屏幕像素/原图像素下按 4px 抽稀。
+        Assert.Contains(visuals, v => v.Id == "caliper-step-ruler");
+        Assert.Equal(11, visuals.Count(v => v.Id.StartsWith("caliper-step-dot", StringComparison.Ordinal)));
+        // 把手在第 14 个采样点（离扫描线 14px）。
+        var handle = Assert.IsType<RectangleGeometry>(Assert.Single(visuals, v => v.Id == "caliper-step").Geometry);
+        Assert.Equal((50d, 64d), (Math.Round(handle.Center.X, 6), Math.Round(handle.Center.Y, 6)));
+        Assert.Equal(EVisionCaliperHandle.Step, gizmo.Hit(new PointD(51, 64), 1));
+
+        // 拖到离扫描线 28px：间隔 2px，带宽仍 ±20 → 半宽 10。
+        gizmo.BeginDrag(EVisionCaliperHandle.Step, new PointD(50, 64), 1);
+        gizmo.Drag(new PointD(50, 78));
+        Assert.Equal((2d, 10), (node.BandSampleStep, node.HalfWidth));
+        Assert.Equal(20d, gizmo.HalfBand);
+        // 拖到 3.5px：间隔 0.25px → 需要 80 步，最多 63 步，带宽缩为 15.75。
+        gizmo.Drag(new PointD(50, 53.5));
+        Assert.True(gizmo.EndDrag());
+        Assert.Equal((.25, 63), (node.BandSampleStep, node.HalfWidth));
+        Assert.Contains("127 点 × 间隔 0.25px", gizmo.Caption);
+    }
+
     private static double Distance(PointD a, PointD b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
 }

@@ -178,6 +178,10 @@ public sealed class ModernInputNumber : ModernControl, IModernValidationControl
         }
     }
 
+    [Category("Behavior"), DefaultValue(false)]
+    [Description("输入过程中只要文本能解析为范围内的数值就立即更新 Value 并引发 ValueChanged；回车或离开输入框时再格式化文本。")]
+    public bool CommitWhileTyping { get; set; }
+
     [Category("Appearance"), DefaultValue("")]
     [Description("可选的标准或自定义 Decimal 格式字符串；空值使用 DecimalPlaces。")]
     public string FormatString
@@ -380,7 +384,7 @@ public sealed class ModernInputNumber : ModernControl, IModernValidationControl
         if (TryGetInputValue(out var value, out var hasValue))
         {
             SetValueCore(value, hasValue);
-            if (commit) RaiseCommitted();
+            if (commit) { SynchronizeText(force: true); RaiseCommitted(); }
             return;
         }
 
@@ -396,6 +400,14 @@ public sealed class ModernInputNumber : ModernControl, IModernValidationControl
     private void Input_TextChanged(object? sender, EventArgs e)
     {
         if (_input.HasError && TryGetInputValue(out _, out _)) ClearValidationError();
+        if (!CommitWhileTyping || ReadOnly || _synchronizingText || !TryGetInputValue(out var value, out var hasValue)) return;
+        // 输入中：只更新值，不改写正在编辑的文本。
+        var changed = _hasValue != hasValue || hasValue && _value != value;
+        if (!changed) return;
+        _value = value;
+        _hasValue = hasValue;
+        UpdateStepButtons();
+        ValueChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private bool TryGetInputValue(out decimal value, out bool hasValue)
@@ -416,11 +428,19 @@ public sealed class ModernInputNumber : ModernControl, IModernValidationControl
                value >= Minimum && value <= Maximum;
     }
 
-    private void SynchronizeText()
+    private bool _synchronizingText;
+
+    private void SynchronizeText(bool force = false)
     {
         if (_input is null) return;
+        // 边输入边提交时，外部回写同一个值（例如属性面板刷新）不能打断正在编辑的文本和光标。
+        if (!force && CommitWhileTyping && _input.InnerTextBox.Focused
+            && TryGetInputValue(out var typed, out var typedHasValue) && typedHasValue == _hasValue && typed == _value) return;
         var formatted = !_hasValue ? string.Empty : PrefixText + _value.ToString(EffectiveFormat, Culture) + SuffixText;
-        if (_input.Text != formatted) _input.Text = formatted;
+        if (_input.Text == formatted) return;
+        _synchronizingText = true;
+        try { _input.Text = formatted; }
+        finally { _synchronizingText = false; }
     }
 
     private string EffectiveFormat => FormatString.Length > 0

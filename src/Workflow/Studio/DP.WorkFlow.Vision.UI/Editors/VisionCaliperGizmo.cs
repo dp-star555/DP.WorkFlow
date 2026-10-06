@@ -17,7 +17,9 @@ public enum EVisionCaliperHandle
     /// <summary>圆弧圆心：整体平移。</summary>
     Center,
     /// <summary>圆弧半径控制点（扫描圆弧中点）。</summary>
-    Radius
+    Radius,
+    /// <summary>采样间隔控制点（扫描路径 1/4 处的采样标尺）：保持带宽，调整垂直采样间隔与点数。</summary>
+    Step
 }
 
 /// <summary>
@@ -32,6 +34,8 @@ public sealed class VisionCaliperGizmo
     private const uint SampleColor = 0x7022D3EE;
     private const uint AxisColor = 0xFFFACC15;
     private const uint HandleColor = 0xFFF8FAFC;
+    private const uint StepColor = 0xFFFB923C;
+    private const double StepStation = .25;
     private const double HandleScreenRadius = 5;
     private const int MaximumHalfWidth = 63;
     private const double MinimumBandStep = .1;
@@ -42,6 +46,8 @@ public sealed class VisionCaliperGizmo
     private PointD _dragAnchor;
     private string _dragOriginKey = string.Empty;
     private (PointD Start, PointD End, PointD Center, double Step) _dragOrigin;
+    private int _dragStepIndex = 1;
+    private double _dragHalfBand;
     private VisionCoordinateSystem? _coordinates;
 
     /// <summary>为卡尺节点创建可视化编辑器。</summary>
@@ -107,8 +113,8 @@ public sealed class VisionCaliperGizmo
             ? "卡尺已绑定坐标系，本帧没有坐标系结果，无法显示；请先运行流程（坐标来源需成功构建）。"
             : "卡尺绑定的坐标系不是旋转+等比缩放，无法在图上换算带宽，请在参数页编辑。"
         : (Bound ? "按本帧坐标系显示，拖动结果换算为局部单位写回。" : "") + (IsArc
-            ? "拖动起点/终点调整扫描角度，拖动弧中点菱形调整半径，拖动两侧方块调整带宽，拖动圆心或采样带内部整体平移。"
-            : "拖动起点/终点调整扫描方向与长度，拖动两侧方块调整带宽，拖动采样带内部整体平移。");
+            ? "拖动起点/终点调整扫描角度，拖动弧中点黄色菱形调整半径，拖动两侧方块调整带宽，拖动橙色标尺上的菱形调整采样间隔，拖动圆心或采样带内部整体平移。"
+            : "拖动起点/终点调整扫描方向与长度，拖动两侧方块调整带宽，拖动橙色标尺上的菱形调整采样间隔，拖动采样带内部整体平移。");
 
     private bool IsArc => _node.Shape == EVisionCaliperShape.Arc;
 
@@ -223,6 +229,7 @@ public sealed class VisionCaliperGizmo
         foreach (var side in new[] { -1, 1 })
             visuals.Add(new Visual($"caliper-width{side}", new RectangleGeometry(At(middle, 0, side * WidthHandleOffset(unit)),
                 radius * 1.6, radius * 1.6, angle), HandleColor));
+        AddStepRuler(visuals, unit, angle);
         return visuals;
     }
 
@@ -264,7 +271,40 @@ public sealed class VisionCaliperGizmo
         foreach (var side in new[] { -1, 1 })
             visuals.Add(new Visual($"caliper-width{side}", new RectangleGeometry(ArcPoint(r + side * WidthHandleOffset(unit), .5),
                 handle * 1.6, handle * 1.6, angle), HandleColor));
+        var (_, stepRadial) = ArcAxes(StepStation);
+        AddStepRuler(visuals, unit, Math.Atan2(stepRadial.Y, stepRadial.X));
         return visuals;
+    }
+
+    // 采样标尺：扫描路径 1/4 处沿投影方向标出每个垂直采样点（过密时抽稀），菱形把手在第 K 个采样点上。
+    private void AddStepRuler(List<Visual> visuals, double unit, double angle)
+    {
+        if (_node.HalfWidth < 1 || ImageStep <= 0) return;
+        visuals.Add(new Visual("caliper-step-ruler", new ContourGeometry(new[]
+        {
+            BandPoint(StepStation, -HalfBand), BandPoint(StepStation, HalfBand)
+        }), StepColor & 0x90FFFFFF));
+        var stride = Math.Max(1, (int)Math.Ceiling(4 * unit / ImageStep));
+        var dot = 1.6 * unit;
+        for (var k = -_node.HalfWidth; k <= _node.HalfWidth; k += stride)
+            visuals.Add(new Visual($"caliper-step-dot{k}", new EllipseGeometry(BandPoint(StepStation, k * ImageStep), dot, dot), StepColor));
+        var handle = HandleScreenRadius * unit;
+        visuals.Add(new Visual("caliper-step", new RectangleGeometry(StepHandlePoint(unit), handle * 1.6, handle * 1.6, angle + Math.PI / 4), StepColor));
+    }
+
+    // 间隔把手放在第 K 个采样点上，K 取使其离扫描路径至少 14 屏幕像素的最小值（不超过半宽）。
+    private int StepHandleIndex(double unit) =>
+        Math.Clamp((int)Math.Ceiling(14 * unit / Math.Max(1e-9, ImageStep)), 1, Math.Max(1, _node.HalfWidth));
+
+    private PointD StepHandlePoint(double unit) => BandPoint(StepStation, StepHandleIndex(unit) * ImageStep);
+
+    // 扫描进度 t、偏离扫描路径 across（直线为法向，圆弧为半径方向）处的原图点。
+    private PointD BandPoint(double t, double across)
+    {
+        if (IsArc) return ArcPoint(ImageRadius + across, t);
+        var (direction, normal) = Axes();
+        var along = Length * t;
+        return new PointD(Start.X + direction.X * along + normal.X * across, Start.Y + direction.Y * along + normal.Y * across);
     }
 
     private void AddEndHandles(List<Visual> visuals, double radius)
@@ -302,6 +342,7 @@ public sealed class VisionCaliperGizmo
         var tolerance = (HandleScreenRadius + 4) * unit;
         if (Distance(point, End) <= tolerance) return EVisionCaliperHandle.End;
         if (Distance(point, Start) <= tolerance) return EVisionCaliperHandle.Start;
+        if (_node.HalfWidth >= 1 && Distance(point, StepHandlePoint(unit)) <= tolerance) return EVisionCaliperHandle.Step;
         if (IsArc)
         {
             if (Distance(point, Center) <= tolerance) return EVisionCaliperHandle.Center;
@@ -323,12 +364,15 @@ public sealed class VisionCaliperGizmo
     /// <summary>开始拖动控制点。</summary>
     /// <param name="handle">控制点。</param>
     /// <param name="point">按下位置（原图坐标）。</param>
-    public void BeginDrag(EVisionCaliperHandle handle, PointD point)
+    /// <param name="imagePixelsPerScreenPixel">当前每屏幕像素对应的原图像素；决定采样间隔把手位于第几个采样点。</param>
+    public void BeginDrag(EVisionCaliperHandle handle, PointD point, double imagePixelsPerScreenPixel = 1)
     {
         _drag = handle;
         _dragAnchor = point;
         _dragOriginKey = Key;
         _dragOrigin = (ToImage(_node.StartX, _node.StartY), ToImage(_node.EndX, _node.EndY), Center, ImageStep);
+        _dragStepIndex = StepHandleIndex(Math.Max(1e-6, imagePixelsPerScreenPixel));
+        _dragHalfBand = HalfBand;
     }
 
     /// <summary>按指针位置更新正在拖动的控制点并写回节点参数。</summary>
@@ -355,6 +399,9 @@ public sealed class VisionCaliperGizmo
                 break;
             case EVisionCaliperHandle.Width:
                 SetHalfBand(Math.Abs(Project(point).Across), _dragOrigin.Step);
+                break;
+            case EVisionCaliperHandle.Step:
+                SetStep(Math.Abs(Project(point).Across));
                 break;
             case EVisionCaliperHandle.Body:
                 var dx = point.X - _dragAnchor.X;
@@ -394,6 +441,9 @@ public sealed class VisionCaliperGizmo
             case EVisionCaliperHandle.Width:
                 SetHalfBand(Math.Min(ImageRadius, Math.Abs(Distance(point, center) - ImageRadius)), _dragOrigin.Step);
                 break;
+            case EVisionCaliperHandle.Step:
+                SetStep(Math.Abs(Distance(point, center) - ImageRadius));
+                break;
             case EVisionCaliperHandle.Center or EVisionCaliperHandle.Body:
                 WriteCenter(new PointD(_dragOrigin.Center.X + point.X - _dragAnchor.X, _dragOrigin.Center.Y + point.Y - _dragAnchor.Y));
                 break;
@@ -425,6 +475,19 @@ public sealed class VisionCaliperGizmo
         _node.HalfWidth = Math.Clamp((int)Math.Floor(target / step + .5), 0, MaximumHalfWidth);
         // 圆弧内侧不能越过圆心。
         if (IsArc) while (_node.HalfWidth > 0 && _node.HalfWidth * step > ImageRadius) _node.HalfWidth--;
+    }
+
+    /// <summary>
+    /// 间隔把手离扫描路径 <paramref name="offset"/>（原图像素）：它位于第 K 个采样点，间隔 = offset / K（原图 0.1..10px）。
+    /// 带宽保持拖动开始时的值，半宽（点数）随之变化，最多 63 步。
+    /// </summary>
+    private void SetStep(double offset)
+    {
+        var step = Math.Clamp(offset / Math.Max(1, _dragStepIndex), MinimumBandStep, MaximumBandStep);
+        var halfWidth = Math.Clamp((int)Math.Floor(_dragHalfBand / step + .5), 1, MaximumHalfWidth);
+        if (IsArc) while (halfWidth > 1 && halfWidth * step > ImageRadius) halfWidth--;
+        _node.BandSampleStep = Bound ? Round(step / Scale) : Math.Round(step, 2);
+        _node.HalfWidth = halfWidth;
     }
 
     private PointD ArcPoint(double radius, double t)

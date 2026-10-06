@@ -284,6 +284,32 @@ public sealed class ModernControlBehaviorTests
     }
 
     [Fact]
+    public void InputNumber_CommitWhileTyping_UpdatesValueWithoutRewritingText()
+    {
+        RunInSta(() =>
+        {
+            using var host = new Form { ClientSize = new Size(240, 60) };
+            using var number = new ModernInputNumber { Bounds = new Rectangle(10, 10, 180, 34), DecimalPlaces = 3, Value = 1, CommitWhileTyping = true };
+            var changes = 0;
+            number.ValueChanged += (_, _) => changes++;
+            host.Controls.Add(number);
+            host.Show();
+
+            var text = number.Controls.OfType<ModernInput>().Single().InnerTextBox;
+            text.Focus();
+            text.Text = "12";
+            Assert.Equal((12m, 1), (number.Value, changes));
+            // 外部回写同一个值（例如属性面板刷新）不改写正在输入的文本。
+            number.Value = 12;
+            Assert.Equal("12", text.Text);
+            text.Text = "12.";
+            Assert.Equal(1, changes);
+            SendKey(text, Keys.Enter);
+            Assert.Equal("12.000", text.Text);
+        });
+    }
+
+    [Fact]
     public void FirstUserCommitIsNotSuppressedByAnEmptyOrNullSentinel()
     {
         RunInSta(() =>
