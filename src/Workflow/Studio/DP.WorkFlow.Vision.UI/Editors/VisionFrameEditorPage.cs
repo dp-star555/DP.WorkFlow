@@ -22,8 +22,8 @@ public sealed class VisionFrameEditorPageProvider(IWorkflowVisionPreviewSource? 
     {
         if (!CanProvide(context)) yield break;
         yield return new WorkflowNodeEditorPageDescriptor("Image", "图像与测量范围",
-            WorkflowNodeEditorPageKind.Custom, 450, new VisionFrameEditorPageModel(context.Node, frames, reader, templates, enableTemplateEditing: false,
-                configurationChanged: context.Session.NotifyNodeConfigurationChanged),
+            WorkflowNodeEditorPageKind.Custom, 450, new VisionFrameEditorPageModel(context.Node, frames, reader,
+                templates, enableTemplateEditing: false, configurationChanged: context.Session.NotifyNodeConfigurationChanged),
             IconKey: "Image", RendererKey: RendererKey, Priority: 100);
         if (context.Node is IWorkflowVisionTemplateNode && context.RequestedPropertyEditor == WorkflowPropertyEditorKeys.VisionTemplateEditor)
             yield return new WorkflowNodeEditorPageDescriptor("Template", "模板制作/选择", WorkflowNodeEditorPageKind.Custom, 460,
