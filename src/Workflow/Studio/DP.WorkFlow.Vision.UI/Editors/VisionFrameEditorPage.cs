@@ -114,8 +114,27 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     /// <param name="view">视图编号。</param>
     public static bool ShowsEditableOverlays(int view) => view is 0 or 3;
 
-    /// <summary>打开窗口时的默认视图：有可编辑范围的节点进入输入图像，其它进入结果图像。</summary>
-    public int DefaultView => IsTemplateEditor ? 4 : CanEdit || Caliper is not null ? 0 : 1;
+    /// <summary>打开窗口时的默认视图：已运行出结果时进入结果图像；还没有结果且可编辑范围的节点进入输入图像。</summary>
+    public int DefaultView
+    {
+        get
+        {
+            bool hasResult;
+            lock (_gate)
+            {
+                using var current = _disposed ? null : _frames?.Capture(_node.Id);
+                hasResult = current?.Facts is not null;
+            }
+            return DefaultViewFor(IsTemplateEditor, CanEdit || Caliper is not null, hasResult);
+        }
+    }
+
+    /// <summary>默认视图规则：模板制作 4；有结果 1；无结果但可编辑 0；其它 1。</summary>
+    /// <param name="templateEditor">是否独立模板编辑。</param>
+    /// <param name="editable">是否有可编辑的ROI或卡尺。</param>
+    /// <param name="hasResult">节点是否已有运行结果。</param>
+    public static int DefaultViewFor(bool templateEditor, bool editable, bool hasResult)
+        => templateEditor ? 4 : hasResult || !editable ? 1 : 0;
 
     /// <summary>卡尺节点的图上编辑器；其他节点为空。</summary>
     public IVisionCanvasGizmo? Caliper { get; }
