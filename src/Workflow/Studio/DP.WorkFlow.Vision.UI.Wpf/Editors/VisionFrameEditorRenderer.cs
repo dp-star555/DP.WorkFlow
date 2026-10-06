@@ -33,6 +33,7 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
     private readonly ToolBar _toolbar = new() { Padding = new Thickness(4, 3, 4, 3) };
     private readonly ComboBox _source = new() { MinWidth = 150, Height = 30, Margin = new Thickness(2), VerticalContentAlignment = VerticalAlignment.Center, ToolTip = "显示的图像" };
     private readonly ComboBox _tool = new() { MinWidth = 170, Height = 30, Margin = new Thickness(2), VerticalContentAlignment = VerticalAlignment.Center, ToolTip = "区域类型" };
+    private readonly ComboBox _shape = new() { MinWidth = 150, Height = 30, Margin = new Thickness(2), VerticalContentAlignment = VerticalAlignment.Center, ToolTip = "区域类型：卡尺形状" };
     private readonly ComboBox _purpose = new() { MinWidth = 80, Height = 30, Margin = new Thickness(2), VerticalContentAlignment = VerticalAlignment.Center, ToolTip = "包含/排除：作用于选中的区域；画笔写入所选用途" };
     private readonly Slider _radius = new() { Width = 110, Minimum = 1, Maximum = 200, Value = 10, IsSnapToTickEnabled = true, TickFrequency = 1, VerticalAlignment = VerticalAlignment.Center, ToolTip = "笔刷半径（像素）" };
     private readonly IReadOnlyList<VisionFrameView> _views;
@@ -63,6 +64,18 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
             Guard(() => editor.Tool = choice.Tool); _canvas.Focus();
         };
         _toolbar.Items.Add(_tool);
+        // 卡尺节点的区域类型是卡尺形状：直线卡尺 / 圆弧卡尺，切换时保持在图上的位置。
+        if (model.Caliper is { } shapeCaliper)
+        {
+            _shape.ItemsSource = VisionCaliperShapeChoice.All.Select(ShapeItem).ToArray();
+            _shape.SelectionChanged += (_, _) =>
+            {
+                if (_syncing || (_shape.SelectedItem as ComboBoxItem)?.Tag is not VisionCaliperShapeChoice choice) return;
+                if (shapeCaliper.SetShape(choice.Shape)) { _model.NotifyConfigurationChanged(); _model.InvalidatePreview(); RefreshPreview(); }
+                _canvas.Focus();
+            };
+            _toolbar.Items.Add(_shape);
+        }
         _purpose.ItemsSource = new[] { "包含", "排除" };
         _purpose.SelectionChanged += (_, _) =>
         {
@@ -154,6 +167,14 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
         return new ComboBoxItem { Content = panel, Tag = choice };
     }
 
+    private static object ShapeItem(VisionCaliperShapeChoice choice)
+    {
+        var panel = new StackPanel { Orientation = Orientation.Horizontal };
+        panel.Children.Add(Icon(choice.Shape == EVisionCaliperShape.Arc ? VisionToolIcons.ArcCaliper : VisionToolIcons.LineCaliper));
+        panel.Children.Add(new TextBlock { Text = choice.Text, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+        return new ComboBoxItem { Content = panel, Tag = choice };
+    }
+
     internal void InitializeTemplate(Func<Task> open)
     {
         bool started = false;
@@ -191,7 +212,8 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
             }
             _canvas.Cursor = View is 4 or 5 ? null : caliper.Hit(point, Unit()) switch
             {
-                EVisionCaliperHandle.Body => System.Windows.Input.Cursors.SizeAll,
+                EVisionCaliperHandle.Body or EVisionCaliperHandle.Center => System.Windows.Input.Cursors.SizeAll,
+                EVisionCaliperHandle.Radius => System.Windows.Input.Cursors.Hand,
                 EVisionCaliperHandle.Width => System.Windows.Input.Cursors.SizeNS,
                 EVisionCaliperHandle.Start or EVisionCaliperHandle.End => System.Windows.Input.Cursors.Cross,
                 _ => null
@@ -245,6 +267,12 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
             // 卡尺不是面积ROI：扫描线与采样带直接在图上拖动，不显示区域类型。
             _tool.Visibility = _model.Caliper is null ? Visibility.Visible : Visibility.Collapsed; _tool.IsEnabled = editor != null;
             _purpose.Visibility = regions ? Visibility.Visible : Visibility.Collapsed; _purpose.IsEnabled = editor != null;
+            if (_model.Caliper is { } caliper)
+            {
+                _shape.IsEnabled = caliper.IsEditable;
+                if (_shape.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (i.Tag as VisionCaliperShapeChoice)?.Shape == caliper.Shape) is { } shapeItem
+                    && !ReferenceEquals(_shape.SelectedItem, shapeItem)) _shape.SelectedItem = shapeItem;
+            }
             _radius.Visibility = editor?.Tool is ERoiTool.Brush or ERoiTool.Eraser ? Visibility.Visible : Visibility.Collapsed;
             if (editor == null) return;
             if (_tool.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (i.Tag as RoiToolChoice)?.Tool == editor.Tool) is { } item && !ReferenceEquals(_tool.SelectedItem, item)) _tool.SelectedItem = item;
@@ -269,6 +297,8 @@ internal static class VisionToolIcons
 {
     public const string Eye = "M1.3,8 C4.5,2.9 11.5,2.9 14.7,8 C11.5,13.1 4.5,13.1 1.3,8 Z M6.2,8 A1.8,1.8 0 1 0 9.8,8 A1.8,1.8 0 1 0 6.2,8 Z";
     public const string EyeOff = Eye + " M2.6,2.6 L13.4,13.4";
+    public const string LineCaliper = "M1.9,8 L14.1,8 M10.6,4.6 L14.1,8 L10.6,11.4 M4.5,5.2 L4.5,10.8 M7.3,5.2 L7.3,10.8";
+    public const string ArcCaliper = "M2.6,11.4 A6.2,6.2 0 0 1 13.4,7.2 M10.6,4.4 L13.4,7.2 L9.9,8.4 M4.2,6.8 L2.2,5.2 M6.8,4.8 L5.9,2.5";
     public const string FitWindow = "M2.2,5.8 L2.2,2.2 L5.8,2.2 M10.2,2.2 L13.8,2.2 L13.8,5.8 M13.8,10.2 L13.8,13.8 L10.2,13.8 M5.8,13.8 L2.2,13.8 L2.2,10.2";
 
     public static string? For(ERoiTool tool) => tool switch

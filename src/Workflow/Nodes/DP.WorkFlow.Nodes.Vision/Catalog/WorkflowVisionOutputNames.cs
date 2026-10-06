@@ -61,6 +61,14 @@ public static class WorkflowVisionOutputNames
         ["SampleStep"] = "采样步长",
         ["Profile"] = "灰度剖面",
         ["Edges"] = "边缘",
+        ["Shape"] = "卡尺形状",
+        ["Center"] = "圆心",
+        ["StartAngleDegrees"] = "起始角(°)",
+        ["SweepDegrees"] = "扫描角度(°)",
+        ["Path"] = "扫描路径",
+        ["Line"] = "直线卡尺原始结果",
+        ["Gradient"] = "梯度",
+        ["Position"] = "位置",
         ["MeasuredEdges"] = "边缘点",
         ["LocatedEdges"] = "边缘点(双坐标)",
         ["PixelCount"] = "像素数",
@@ -98,7 +106,7 @@ public static class WorkflowVisionOutputNames
         {
             typeof(ImageFrame), typeof(BlobAnalysisResult), typeof(ColorAnalysisResult), typeof(EdgeMeasurementResult),
             typeof(TemplatePoseResult), typeof(AffineCalibration), typeof(Coordinate2D),
-            typeof(RegionAnalysisResult), typeof(CaliperResult), typeof(RobustLineResult), typeof(VisionPoint), typeof(VisionLine),
+            typeof(RegionAnalysisResult), typeof(CaliperResult), typeof(VisionCaliperMeasurement), typeof(VisionCaliperEdge), typeof(RobustLineResult), typeof(VisionPoint), typeof(VisionLine),
             typeof(GeometricDistanceResult), typeof(VisionCoordinateSystemResult), typeof(VisionCoordinateDefinition)
         })
             WorkflowOutputDisplayNames.Register(type, Names);

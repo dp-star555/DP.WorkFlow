@@ -3,7 +3,7 @@ using DP.Vision.Algorithms;
 
 namespace DP.WorkFlow;
 
-/// <summary>显式采样带卡尺，参数为原图像素边界坐标。</summary>
+/// <summary>显式采样带卡尺（直线或圆弧），参数为原图像素边界坐标。</summary>
 [WorkflowNode("Vision.MeasureCaliper", DisplayName = "亚像素采样卡尺", Category = "5.Vision/Measurement")]
 public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
@@ -18,20 +18,47 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
     public override string NodeType => "Vision.MeasureCaliper";
     /// <inheritdoc/>
     public override EWorkflowVisionRange RangeCapability => EWorkflowVisionRange.SamplingBand;
+    /// <summary>扫描路径形状。</summary>
+    [WorkflowProperty("卡尺形状", "直线卡尺沿起点→终点扫描；圆弧卡尺沿圆弧按起始角→扫描角度扫描，采样带沿半径方向。", Category = "采样带")]
+    public EVisionCaliperShape Shape { get; set; }
     /// <summary>起点X。</summary>
+    [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Line))]
     [WorkflowProperty("起点X", "原图像素边界坐标；绑定定位后为所选坐标系的局部单位。", Category = "采样带")]
     public double StartX { get; set; } = .5;
     /// <summary>起点Y。</summary>
+    [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Line))]
     [WorkflowProperty("起点Y", "原图像素边界坐标；绑定定位后为所选坐标系的局部单位。", Category = "采样带")]
     public double StartY { get; set; } = 2.5;
     /// <summary>终点X。</summary>
+    [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Line))]
     [WorkflowProperty("终点X", "与起点同空间，绑定定位后为局部单位；起终点决定扫描方向。", Category = "采样带")]
     public double EndX { get; set; } = 20.5;
     /// <summary>终点Y。</summary>
+    [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Line))]
     [WorkflowProperty("终点Y", "与起点同空间，绑定定位后为局部单位；起终点决定扫描方向。", Category = "采样带")]
     public double EndY { get; set; } = 2.5;
+    /// <summary>圆弧圆心X。</summary>
+    [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Arc))]
+    [WorkflowProperty("圆心X", "原图像素边界坐标；绑定定位后为所选坐标系的局部单位。", Category = "采样带")]
+    public double CenterX { get; set; } = 50;
+    /// <summary>圆弧圆心Y。</summary>
+    [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Arc))]
+    [WorkflowProperty("圆心Y", "原图像素边界坐标；绑定定位后为所选坐标系的局部单位。", Category = "采样带")]
+    public double CenterY { get; set; } = 50;
+    /// <summary>扫描圆弧半径。</summary>
+    [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Arc))]
+    [WorkflowProperty("半径", "扫描圆弧半径，原图像素；绑定定位后为局部单位。采样带以此为中心沿半径方向展开。", Category = "采样带")]
+    public double Radius { get; set; } = 30;
+    /// <summary>起始角，度。</summary>
+    [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Arc))]
+    [WorkflowProperty("起始角", "度，从X轴正向起顺时针（图像Y向下）；绑定定位后相对坐标系X轴。", Category = "采样带", Unit = "°")]
+    public double StartAngle { get; set; }
+    /// <summary>扫描角度范围，度。</summary>
+    [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Arc))]
+    [WorkflowProperty("扫描角度", "度，绝对值 (0, 360]；正为顺时针、负为逆时针，决定扫描方向与极性方向。", Category = "采样带", Unit = "°")]
+    public double SweepAngle { get; set; } = 90;
     /// <summary>垂直采样半宽。</summary>
-    [WorkflowProperty("采样半宽", "单侧垂直采样步数0..63，与垂直采样间隔共同决定实际带宽。", Category = "采样带")]
+    [WorkflowProperty("采样半宽", "单侧垂直采样步数0..63（圆弧为半径方向），与垂直采样间隔共同决定实际带宽。", Category = "采样带")]
     public int HalfWidth { get; set; } = 2;
     /// <summary>垂直采样间隔；绑定定位时为局部单位。</summary>
     [WorkflowProperty("垂直采样间隔", "半宽为采样步数；实际半宽=半宽×间隔。随定位尺度转换，原图有效间隔必须在0.1..10。", Category = "采样带")]
@@ -40,7 +67,7 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
     [WorkflowProperty("最小梯度", "绝对灰度变化/像素。", Category = "边缘")]
     public double MinimumGradient { get; set; } = 5;
     /// <summary>极性。</summary>
-    [WorkflowProperty("边缘极性", "Rising暗到亮，Falling亮到暗，均沿起点到终点。", Category = "边缘")]
+    [WorkflowProperty("边缘极性", "Rising暗到亮，Falling亮到暗，均沿扫描方向（直线为起点到终点，圆弧为起始角到终止角）。", Category = "边缘")]
     public ECaliperPolarity Polarity { get; set; }
     /// <summary>边缘最小间距。</summary>
     [WorkflowProperty("边缘最小间距", "梯度强者优先的非极大抑制；原图像素，绑定定位后为局部单位。", Category = "边缘")]
@@ -56,14 +83,34 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
         double scale = coordinates?.SimilarityScale ?? 1;
         return new CaliperOptions(Map(StartX, StartY), Map(EndX, EndY), HalfWidth, MinimumGradient, Polarity, MinimumSeparation * scale, BandSampleStep * scale);
     }
+    internal VisionArcCaliperOptions ArcOptions(VisionCoordinateSystem? coordinates = null)
+    {
+        var center = new Coordinate2D(CenterX, CenterY);
+        if (coordinates is not null) center = coordinates.LocalToImage.Map(center);
+        double scale = coordinates?.SimilarityScale ?? 1, rotation = coordinates is null ? 0 : coordinates.RotationRadians * 180 / Math.PI;
+        return new VisionArcCaliperOptions(new PointD(center.X, center.Y), Radius * scale, StartAngle + rotation, SweepAngle, HalfWidth,
+            MinimumGradient, Polarity, MinimumSeparation * scale, BandSampleStep * scale);
+    }
     /// <inheritdoc/>
     public override IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = base.ValidateConfiguration().ToList();
         if (!FullImage) errors.Add("卡尺由起终点和带宽定义，不接受额外矩形范围。");
+        if (!Enum.IsDefined(Shape)) { errors.Add("未知卡尺形状。"); return errors; }
         try
         {
-            if (Coordinates is null) _ = Options();
+            if (Shape == EVisionCaliperShape.Arc)
+            {
+                // 局部单位的尺度要到运行时才知道：这里只校验形状，弧长与原图有效间隔在运行时按坐标系尺度校验。
+                if (Coordinates is null) _ = ArcOptions();
+                else if (!double.IsFinite(CenterX) || !double.IsFinite(CenterY) || !double.IsFinite(Radius) || Radius <= 0
+                    || !double.IsFinite(StartAngle) || !double.IsFinite(SweepAngle) || Math.Abs(SweepAngle) < 1e-9 || Math.Abs(SweepAngle) > 360
+                    || HalfWidth < 0 || HalfWidth > 63 || !double.IsFinite(BandSampleStep) || BandSampleStep < .01 || BandSampleStep > 100
+                    || Radius - HalfWidth * BandSampleStep < 0)
+                    throw new ArgumentException("局部圆弧采样带配置无效。");
+                if (Coordinates is not null) _ = new CaliperOptions(new PointD(0, 0), new PointD(4, 0), HalfWidth, MinimumGradient, Polarity, MinimumSeparation);
+            }
+            else if (Coordinates is null) _ = Options();
             else
             {
                 _ = new Coordinate2D(StartX, StartY); _ = new Coordinate2D(EndX, EndY);
@@ -87,8 +134,10 @@ public sealed class MeasureVisionCaliperNodeHandler : WorkflowNodeHandler<Measur
     {
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
         var coordinates = node.ResolveCoordinates(frame, context);
-        var result = WorkflowVisionAlgorithmInvocation.Invoke(context, node.Algorithm, "managed.caliper",
-            (ICaliperMeasurer algorithm) => algorithm.Measure(frame, node.Options(coordinates), cancellationToken), cancellationToken);
+        var result = node.Shape == EVisionCaliperShape.Arc
+            ? VisionArcCaliper.Measure(frame, node.ArcOptions(coordinates), cancellationToken)
+            : VisionCaliperMeasurement.FromLine(WorkflowVisionAlgorithmInvocation.Invoke(context, node.Algorithm, "managed.caliper",
+                (ICaliperMeasurer algorithm) => algorithm.Measure(frame, node.Options(coordinates), cancellationToken), cancellationToken));
         if (coordinates is not null) result = result.InCoordinates(coordinates);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
@@ -111,8 +160,8 @@ public sealed class FitVisionRobustLineNodeModel : AnalyzeVisionFrameNodeModel, 
     /// <inheritdoc/>
     public override EWorkflowVisionRange RangeCapability => EWorkflowVisionRange.GeometryFacts;
     /// <summary>同帧卡尺输出绑定列表，顺序决定点索引。</summary>
-    [WorkflowProperty("卡尺证据列表", "同帧CaliperResult绑定；列表顺序决定内点索引。", Category = "输入")]
-    public List<WorkflowInput<CaliperResult>> Samples { get; set; } = new();
+    [WorkflowProperty("卡尺证据列表", "同帧卡尺结果绑定；列表顺序决定内点索引。", Category = "输入")]
+    public List<WorkflowInput<VisionCaliperMeasurement>> Samples { get; set; } = new();
     /// <summary>内点距离，像素。</summary>
     [WorkflowProperty("内点距离阈值", "正交距离；原图像素，绑定定位后为业务局部单位。", Category = "拟合")]
     public double DistanceThreshold { get; set; } = .5;

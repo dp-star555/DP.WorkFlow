@@ -5,7 +5,7 @@ using DP.Vision.UI;
 namespace DP.WorkFlow.Vision.UI;
 
 /// <summary>
-/// 切换节点的坐标系绑定，并按本帧坐标系换算已保存的范围：面积ROI、卡尺端点及间隔、鲁棒直线距离阈值。
+/// 切换节点的坐标系绑定，并按本帧坐标系换算已保存的范围：面积ROI、卡尺端点（圆弧卡尺为圆心、半径与起始角）及间隔、鲁棒直线距离阈值。
 /// 换算经过同一张原图：旧局部（或原图）→ 原图 → 新局部（或原图），图上位置保持不变。
 /// 需要节点输入图像和坐标来源已在本轮运行；几何点保持其显式输入空间，不改写数值。
 /// </summary>
@@ -62,7 +62,20 @@ public static class VisionCoordinateRebinding
             var image = from?.ToImageGeometry(geometry) ?? geometry;
             return MapRegion(new RoiDefinition(r.Id, to?.ToLocalGeometry(image) ?? image, r.Exclude ? ERoiPurpose.Exclude : ERoiPurpose.Include, r.Enabled));
         }).ToList();
-        if (node is MeasureVisionCaliperNodeModel caliper)
+        if (node is MeasureVisionCaliperNodeModel { Shape: EVisionCaliperShape.Arc } arc)
+        {
+            double ratio = fromScale / toScale;
+            double fromRotation = from is null ? 0 : from.RotationRadians * 180 / Math.PI, toRotation = to is null ? 0 : to.RotationRadians * 180 / Math.PI;
+            // 在原图表达中校验圆弧采样带，避免换算后才发现参数无效。
+            var imageCenter = from?.LocalToImage.Map(new Coordinate2D(arc.CenterX, arc.CenterY)) ?? new Coordinate2D(arc.CenterX, arc.CenterY);
+            _ = new VisionArcCaliperOptions(new PointD(imageCenter.X, imageCenter.Y), arc.Radius * fromScale, arc.StartAngle + fromRotation, arc.SweepAngle,
+                arc.HalfWidth, arc.MinimumGradient, arc.Polarity, arc.MinimumSeparation * fromScale, arc.BandSampleStep * fromScale);
+            var center = Point(arc.CenterX, arc.CenterY);
+            arc.CenterX = center.X; arc.CenterY = center.Y; arc.Radius *= ratio;
+            arc.StartAngle += fromRotation - toRotation;
+            arc.MinimumSeparation *= ratio; arc.BandSampleStep *= ratio;
+        }
+        else if (node is MeasureVisionCaliperNodeModel caliper)
         {
             var start = Point(caliper.StartX, caliper.StartY); var end = Point(caliper.EndX, caliper.EndY);
             double ratio = fromScale / toScale;

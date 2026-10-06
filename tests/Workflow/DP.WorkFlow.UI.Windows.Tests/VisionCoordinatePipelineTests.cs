@@ -62,7 +62,7 @@ public sealed class VisionCoordinatePipelineTests
         Assert.Equal(8, Assert.Single(b.Blobs).Area); Assert.Equal(255, Output<ColorAnalysisResult>(host, "color").Red);
         Assert.Equal(Math.PI / 2, b.CoordinateSystem.RotationRadians, 8);
         Assert.InRange(Output<RobustLineResult>(host, "fit").LocatedA!.LocalPosition.X, 5.3, 5.7);
-        Assert.All(Output<CaliperResult>(host, "c0").LocatedEdges!, p => Assert.Equal(b.FrameId, p.FrameId));
+        Assert.All(Output<VisionCaliperMeasurement>(host, "c0").LocatedEdges!, p => Assert.Equal(b.FrameId, p.FrameId));
         Assert.Equal(configuration, store.Serialize(document));
         // 第三帧定位失败，不能复用第二帧矩阵或保留第二帧消费者输出。
         data.WriteScene(absent: true);
@@ -404,7 +404,7 @@ public sealed class VisionCoordinatePipelineTests
             for (int i = 0; i < 3; i++) nodes.Add(new MeasureVisionCaliperNodeModel { Id = "c" + i, Frame = Input<ImageFrame>("scene"),
                 Coordinates = Binding(), StartX = 1.5, EndX = 12.5, StartY = i - 1, EndY = i - 1, HalfWidth = 0, Polarity = ECaliperPolarity.Rising });
             nodes.Add(new FitVisionRobustLineNodeModel { Id = "fit", Frame = Input<ImageFrame>("scene"), Coordinates = Binding(),
-                Samples = Enumerable.Range(0, 3).Select(i => Input<CaliperResult>("c" + i)).ToList() });
+                Samples = Enumerable.Range(0, 3).Select(i => Input<VisionCaliperMeasurement>("c" + i)).ToList() });
             var document = new WorkflowDocument { EntryNodeId = nodes[0].Id };
             foreach (var node in nodes) document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
             for (int i = 1; i < nodes.Count; i++) document.CanvasProjection.Connections.Add(new WorkflowConnectionModel

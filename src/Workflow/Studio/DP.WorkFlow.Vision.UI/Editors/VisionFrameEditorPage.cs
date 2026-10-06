@@ -317,10 +317,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             var canvas = new CanvasFrame(frame.FrameId, ++_sequence, frame.Image, overlay);
             _visuals = visuals; _lastKey = key;
             Status = Describe(facts, frame) + maskStatus;
-            if (Caliper is not null)
-                Status += Caliper.IsEditable
-                    ? " 拖动起点/终点调整扫描方向与长度，拖动两侧方块调整带宽，拖动采样带内部整体平移。"
-                    : " 卡尺已绑定坐标系，参数为局部单位，请在参数页编辑。";
+            if (Caliper is not null) Status += " " + Caliper.Hint;
             if (_node is AnalyzeVisionFrameNodeModel { Coordinates: { } binding })
                 Status += CoordinateEditingReady ? $" {(SupportsRegions ? "ROI" : "几何表达")}绑定坐标系 {binding.CoordinateSystemId}，按本帧坐标系显示。" : " 当前视图只读，不使用其他帧的定位。";
             return canvas;
@@ -370,6 +367,14 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             for (int i = 0; i < caliper.Count; i++)
                 yield return new Visual($"edge-{i}", new EllipseGeometry(caliper.Edges[i].Position, 1, 1), 0xFFFFCC00,
                     $"边缘 ({caliper.Edges[i].Position.X:F4},{caliper.Edges[i].Position.Y:F4})；梯度 {caliper.Edges[i].Gradient:F3}");
+        }
+        if (facts is VisionCaliperMeasurement measurement)
+        {
+            yield return new Visual("profile", new ContourGeometry(measurement.Path), 0xFF33BBFF,
+                measurement.Shape == EVisionCaliperShape.Arc ? "圆弧卡尺扫描方向" : "卡尺采样方向");
+            for (int i = 0; i < measurement.Count; i++)
+                yield return new Visual($"edge-{i}", new EllipseGeometry(measurement.Edges[i].Position, 1, 1), 0xFFFFCC00,
+                    $"边缘 ({measurement.Edges[i].Position.X:F4},{measurement.Edges[i].Position.Y:F4})；梯度 {measurement.Edges[i].Gradient:F3}");
         }
         if (facts is RobustLineResult line)
             yield return new Visual("robust-line", new ContourGeometry(new[] { line.A, line.B }), 0xFFFFCC00, $"内点 {line.InlierCount}；RMS {line.RmsError:F4}");
