@@ -121,7 +121,7 @@ public static class WorkflowDesignerGeometry
         if (index < 0)
             index = sameSide.ToList().FindIndex(item => item.Key == port.Key && item.Direction == port.Direction);
         var ratio = (Math.Max(0, index) + 1d) / (Math.Max(1, sameSide.Length) + 1d);
-        var (verticalTop, verticalHeight) = GetSideTrack(rect, session.Zoom);
+        var (verticalTop, verticalHeight) = GetSideTrack(rect, session.Zoom, node.ExposedOutputMembers.Count);
         var raw = actualSide switch
         {
             WorkflowPortSide.Left => new WorkflowPoint(rect.X, verticalTop + verticalHeight * ratio),
@@ -140,16 +140,46 @@ public static class WorkflowDesignerGeometry
             : new WorkflowPoint(screenSnapped.X, raw.Y);
     }
 
+    /// <summary>数据端口行的设计间距。</summary>
+    public const double DataPortSpacing = 20;
+
+    /// <summary>节点底部数据端口区的高度；没有数据端口时为 0。</summary>
+    /// <param name="count">数据端口数量。</param>
+    /// <param name="zoom">当前缩放。</param>
+    public static double GetDataBandHeight(int count, double zoom) =>
+        count <= 0 ? 0 : (count * DataPortSpacing + 6) * Math.Max(0.05, zoom);
+
     /// <summary>
-    /// 左右两边端口的排列区间：标题栏下方的正文区。无论该边有一个还是多个端口都在此区间等分排列，
-    /// 端口不会落到标题栏上。
+    /// 左右两边流程端口的排列区间：标题栏下方、数据端口区上方的正文区。无论该边有一个还是多个端口都在此区间等分排列，
+    /// 端口不会落到标题栏上，也不会与数据端口重叠。
     /// </summary>
     /// <param name="rect">节点屏幕矩形。</param>
     /// <param name="zoom">当前缩放。</param>
-    public static (double Top, double Height) GetSideTrack(WorkflowDesignerRect rect, double zoom)
+    /// <param name="dataPortCount">节点底部数据端口数量。</param>
+    public static (double Top, double Height) GetSideTrack(WorkflowDesignerRect rect, double zoom, int dataPortCount = 0)
     {
         var header = Math.Min(rect.Height * 0.45, HeaderHeight * Math.Max(0.05, zoom));
-        return (rect.Y + header, Math.Max(1, rect.Height - header));
+        var band = Math.Min(Math.Max(0, rect.Height - header - 1), GetDataBandHeight(dataPortCount, zoom));
+        return (rect.Y + header, Math.Max(1, rect.Height - header - band));
+    }
+
+    /// <summary>
+    /// 计算节点右边缘各数据端口的屏幕坐标，按成员顺序自上而下排列在节点底部的数据端口区。
+    /// </summary>
+    /// <param name="session">设计器会话。</param>
+    /// <param name="node">目标画布节点。</param>
+    public static IReadOnlyList<(WorkflowOutputMember Member, WorkflowPoint Point)> GetDataPortPoints(
+        WorkflowDesignerSession session,
+        WorkflowCanvasNode node)
+    {
+        var members = session.GetExposedOutputMembers(node);
+        if (members.Count == 0) return Array.Empty<(WorkflowOutputMember, WorkflowPoint)>();
+        var rect = GetNodeScreenRect(session, node);
+        var zoom = Math.Max(0.05, session.Zoom);
+        var top = rect.Y + rect.Height - GetDataBandHeight(members.Count, zoom);
+        return members
+            .Select((member, index) => (member, new WorkflowPoint(rect.X + rect.Width, top + (3 + (index + 0.5) * DataPortSpacing) * zoom)))
+            .ToArray();
     }
 
     /// <summary>使用默认上输入、下输出的简化几何调用。</summary>

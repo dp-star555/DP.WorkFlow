@@ -50,6 +50,9 @@ public sealed class WorkflowCanvasNode
     /// <summary>获取在设计器中隐藏且禁止连线的输出端口键。</summary>
     public ISet<string> HiddenOutputPorts { get; } = new HashSet<string>(StringComparer.Ordinal);
 
+    /// <summary>获取在节点上显示为数据端口的标准输出成员名；从数据端口拖线可直接建立下游参数绑定。</summary>
+    public ISet<string> ExposedOutputMembers { get; } = new HashSet<string>(StringComparer.Ordinal);
+
     /// <summary>获取端口在该节点实例上的实际显示边。</summary>
     /// <param name="port">节点类型声明的静态或动态端口描述。</param>
     /// <returns>实例覆盖配置中的边；未覆盖时返回端口描述的默认边。</returns>

@@ -59,7 +59,7 @@ public sealed record WorkflowToolboxItem(
 /// <summary>
 /// 画布编辑状态、节点操作和 Undo/Redo 行为。
 /// </summary>
-public sealed class WorkflowDesignerSession
+public sealed partial class WorkflowDesignerSession
 {
     private static readonly object ClipboardSync = new();
     private static string? s_clipboardJson;
@@ -913,10 +913,12 @@ public sealed class WorkflowDesignerSession
     /// <param name="nodeId">要修改的节点 ID。</param>
     /// <param name="change">针对现有节点实例执行的配置修改。</param>
     /// <param name="hiddenOutputPorts">可选的设计器隐藏端口集合；为空时保持现状。</param>
+    /// <param name="exposedOutputMembers">可选的数据端口成员集合；为空时保持现状。</param>
     public void ExecuteNodeConfigurationChange(
         string nodeId,
         Action<IWorkflowNodeModel> change,
-        IReadOnlyCollection<string>? hiddenOutputPorts = null)
+        IReadOnlyCollection<string>? hiddenOutputPorts = null,
+        IReadOnlyCollection<string>? exposedOutputMembers = null)
     {
         ArgumentNullException.ThrowIfNull(change);
         var canvasNode = GetCanvasNodeOrThrow(nodeId);
@@ -930,6 +932,12 @@ public sealed class WorkflowDesignerSession
                 canvasNode.HiddenOutputPorts.Clear();
                 foreach (var portKey in hiddenOutputPorts)
                     canvasNode.HiddenOutputPorts.Add(portKey);
+            }
+            if (exposedOutputMembers is not null)
+            {
+                canvasNode.ExposedOutputMembers.Clear();
+                foreach (var member in exposedOutputMembers)
+                    canvasNode.ExposedOutputMembers.Add(member);
             }
             EnsureNodeDisplaySize(canvasNode);
             RefreshConnectionStates();
@@ -1188,6 +1196,7 @@ public sealed class WorkflowDesignerSession
         WorkflowNodeConfigurationSnapshotter.Capture(node.Node),
         new NodeLayoutState(node.X, node.Y, node.Width, node.Height),
         node.HiddenOutputPorts.OrderBy(key => key, StringComparer.Ordinal).ToArray(),
+        node.ExposedOutputMembers.OrderBy(key => key, StringComparer.Ordinal).ToArray(),
         Canvas.Connections.ToDictionary(
             connection => connection,
             connection => new ConnectionContractState(connection.State, connection.Diagnostic)));
@@ -1202,6 +1211,9 @@ public sealed class WorkflowDesignerSession
         node.HiddenOutputPorts.Clear();
         foreach (var portKey in state.HiddenOutputPorts)
             node.HiddenOutputPorts.Add(portKey);
+        node.ExposedOutputMembers.Clear();
+        foreach (var member in state.ExposedOutputMembers)
+            node.ExposedOutputMembers.Add(member);
         foreach (var pair in state.ConnectionStates)
         {
             pair.Key.State = pair.Value.State;
@@ -1373,8 +1385,13 @@ public sealed class WorkflowDesignerSession
             .Select(group => group.Value.Length)
             .DefaultIfEmpty(0)
             .Max();
-        var requiredWidth = Math.Max(180, Math.Max(titleWidth + 100, Math.Max(horizontalPortWidth + 20, titleWidth + sideLabelWidth * 2 + 72)));
-        var requiredHeight = CalculateRequiredNodeHeight(verticalPortCount);
+        var dataLabelWidth = node.ExposedOutputMembers.Count == 0
+            ? 0
+            : GetExposedOutputMembers(node).Select(member => TextWidth(member.DisplayName)).DefaultIfEmpty(0).Max() + 40;
+        var requiredWidth = Math.Max(Math.Max(180, dataLabelWidth + sideLabelWidth + 24),
+            Math.Max(titleWidth + 100, Math.Max(horizontalPortWidth + 20, titleWidth + sideLabelWidth * 2 + 72)));
+        var requiredHeight = CalculateRequiredNodeHeight(verticalPortCount)
+            + WorkflowDesignerGeometry.GetDataBandHeight(node.ExposedOutputMembers.Count, 1);
         if (Math.Abs(node.Width - requiredWidth) < 0.01 && Math.Abs(node.Height - requiredHeight) < 0.01)
             return;
         var centerX = node.X + node.Width / 2;
@@ -1416,13 +1433,17 @@ public sealed class WorkflowDesignerSession
 
     /// <summary>发布指定类型的设计器变更事件。</summary>
     /// <param name="kind">节点、页面或变更类型。</param>
-    private void RaiseChanged(WorkflowDesignerChangeKind kind) =>
+    private void RaiseChanged(WorkflowDesignerChangeKind kind)
+    {
+        if (kind == WorkflowDesignerChangeKind.Document) _dataLinks = null;
         Changed?.Invoke(this, new WorkflowDesignerChangedEventArgs(kind));
+    }
 
     private sealed record ConfigurationState(
         IWorkflowNodeModel NodeSnapshot,
         NodeLayoutState Layout,
         IReadOnlyList<string> HiddenOutputPorts,
+        IReadOnlyList<string> ExposedOutputMembers,
         IReadOnlyDictionary<WorkflowConnectionModel, ConnectionContractState> ConnectionStates);
 
     private readonly record struct NodeLayoutState(double X, double Y, double Width, double Height);

@@ -352,10 +352,12 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
         var editedSnapshot = WorkflowNodeConfigurationSnapshotter.Capture(EditingNode);
         var sourceCanvasNode = EditingSession.Canvas.Nodes.First(item => item.Node.Id == EditingNode.Id);
         var newHiddenPorts = sourceCanvasNode.HiddenOutputPorts.ToArray();
+        var newExposedMembers = sourceCanvasNode.ExposedOutputMembers.ToArray();
         Session.ExecuteNodeConfigurationChange(
             Node.Id,
             target => WorkflowNodeConfigurationSnapshotter.Restore(target, editedSnapshot),
-            newHiddenPorts);
+            newHiddenPorts,
+            newExposedMembers);
         _parent?.ApplyChanges();
     }
 
@@ -384,6 +386,7 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
             };
             foreach (var pair in item.PortSides) copy.PortSides[pair.Key] = pair.Value;
             foreach (var key in item.HiddenOutputPorts) copy.HiddenOutputPorts.Add(key);
+            foreach (var member in item.ExposedOutputMembers) copy.ExposedOutputMembers.Add(member);
             canvas.Nodes.Add(copy);
         }
         foreach (var connection in source.Canvas.Connections) canvas.Connections.Add(connection);

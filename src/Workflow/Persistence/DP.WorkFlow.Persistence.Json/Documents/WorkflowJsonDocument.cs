@@ -38,6 +38,8 @@ internal sealed class WorkflowJsonNode
 
     public List<string> HiddenOutputPorts { get; set; } = new();
 
+    public List<string> ExposedOutputMembers { get; set; } = new();
+
     public JsonElement Config { get; set; }
 
     public WorkflowJsonDocument? SubDocument { get; set; }

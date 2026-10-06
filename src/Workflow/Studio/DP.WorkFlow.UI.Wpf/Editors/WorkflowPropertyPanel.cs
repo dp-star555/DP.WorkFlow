@@ -201,6 +201,7 @@ public sealed class WorkflowPropertyPanel : UserControl
                 mappingButton.Click += (_, _) => BlockMappingEditRequested?.Invoke(this, block);
                 _content.Children.Add(mappingButton);
             }
+            AddOutputPortVisibilityEditors();
             foreach (var category in visibleEntries.GroupBy(entry => entry.Category, StringComparer.Ordinal))
             {
                 _content.Children.Add(CreateCategory(category.Key));
@@ -302,6 +303,41 @@ public sealed class WorkflowPropertyPanel : UserControl
     /// <summary>显示Details。</summary>
     private void ShowDetails(WorkflowPropertyEntry entry) =>
         _details.Text = $"{entry.DisplayName}\n{entry.Description}\n属性：{entry.Name}    类型：{entry.ValueType.Name}";
+
+    /// <summary>添加Output Port Visibility Editors。</summary>
+    private void AddOutputPortVisibilityEditors()
+    {
+        if (Session is null || _model?.SelectedNode is null) return;
+        var outputs = Session.GetDeclaredPorts(_model.SelectedNode.Id, WorkflowPortDirection.Output);
+        if (outputs.Count <= 1) return;
+        _content.Children.Add(new TextBlock
+        {
+            Text = "输出端口",
+            Foreground = Brush(56, 189, 248),
+            Margin = new Thickness(4, 10, 4, 5),
+            FontWeight = FontWeights.SemiBold
+        });
+        var canvasNode = Session.Canvas.Nodes.First(item => item.Node.Id == _model.SelectedNode.Id);
+        foreach (var port in outputs)
+        {
+            var check = new CheckBox
+            {
+                Content = $"显示并启用 {port.Key}",
+                IsChecked = !canvasNode.HiddenOutputPorts.Contains(port.Key),
+                Foreground = Foreground,
+                Margin = new Thickness(7, 5, 7, 5)
+            };
+            check.Checked += (_, _) =>
+            {
+                if (!_building) Session.SetOutputPortVisible(canvasNode.Node.Id, port.Key, true);
+            };
+            check.Unchecked += (_, _) =>
+            {
+                if (!_building) Session.SetOutputPortVisible(canvasNode.Node.Id, port.Key, false);
+            };
+            _content.Children.Add(check);
+        }
+    }
 
     /// <summary>创建Column Header。</summary>
     private FrameworkElement CreateColumnHeader()

@@ -20,7 +20,7 @@ public sealed class NodeEditorTabsTests
             Assert.Equal(0, tabs.SelectedIndex);
             Assert.DoesNotContain(Descendants(dialog), control => control.Name is "nodeIdTextBox" or "titleTextBox" or "headerLayout");
             var results = tabs.TabPages[1];
-            Assert.Contains(Descendants(results), control => control is ModernPropertyGrid.WinForms.ModernPropertyGrid);
+            Assert.Contains(Descendants(results), control => control is ModernUI.WinForms.ModernDataGridView);
         });
     }
 
