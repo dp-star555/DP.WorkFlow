@@ -15,19 +15,35 @@ public enum EVisionCaliperShape
     Arc
 }
 
+/// <summary>圆弧卡尺的搜索方向。</summary>
+public enum EVisionArcScanDirection
+{
+    /// <summary>沿圆弧从起始角扫到终止角，采样带沿半径方向求平均。</summary>
+    [Description("沿圆弧")]
+    AlongArc,
+    /// <summary>沿半径从内圈搜到外圈；圆弧上均匀分布多个径向卡尺，每个沿圆弧方向求平均。</summary>
+    [Description("由内到外")]
+    InnerToOuter,
+    /// <summary>沿半径从外圈搜到内圈。</summary>
+    [Description("由外到内")]
+    OuterToInner
+}
+
 /// <summary>卡尺边缘：亚像素位置、沿扫描路径的距离（圆弧为弧长）和有符号梯度。</summary>
 public sealed class VisionCaliperEdge
 {
-    internal VisionCaliperEdge(PointD position, double distance, double gradient, double? angleDegrees)
-    { Position = position; Distance = distance; Gradient = gradient; AngleDegrees = angleDegrees; }
+    internal VisionCaliperEdge(PointD position, double distance, double gradient, double? angleDegrees, int caliperIndex = 0)
+    { Position = position; Distance = distance; Gradient = gradient; AngleDegrees = angleDegrees; CaliperIndex = caliperIndex; }
     /// <summary>原图像素边界坐标。</summary>
     public PointD Position { get; }
-    /// <summary>沿扫描路径距离；圆弧卡尺为从起始角开始的弧长，原图像素。</summary>
+    /// <summary>沿扫描路径距离；沿圆弧扫描时为从起始角开始的弧长，径向搜索时为从搜索起点（内圈或外圈）开始的径向距离，原图像素。</summary>
     public double Distance { get; }
     /// <summary>有符号梯度，灰度/像素，沿扫描方向。</summary>
     public double Gradient { get; }
     /// <summary>圆弧卡尺边缘所在的原图角度（度，X轴起顺时针）；直线卡尺为空。</summary>
     public double? AngleDegrees { get; }
+    /// <summary>径向搜索时边缘所属卡尺的序号（从起始角起 0 开始）；其它情况为 0。</summary>
+    public int CaliperIndex { get; }
 }
 
 /// <summary>
@@ -55,14 +71,15 @@ public sealed class VisionCaliperMeasurement : IWorkflowVisionFrameFact
     }
 
     internal static VisionCaliperMeasurement FromArc(string frameId, VisionArcCaliperOptions options, double step, double[] profile,
-        IReadOnlyList<VisionCaliperEdge> edges)
+        IReadOnlyList<VisionCaliperEdge> edges, IReadOnlyList<IReadOnlyList<double>>? profiles = null)
     {
         var path = new PointD[Math.Clamp((int)Math.Ceiling(Math.Abs(options.SweepDegrees) / 3), 8, 120) + 1];
         for (var i = 0; i < path.Length; i++) path[i] = options.PointAt(options.Radius, (double)i / (path.Length - 1));
         return new VisionCaliperMeasurement(frameId, EVisionCaliperShape.Arc, options.PointAt(options.Radius, 0), options.PointAt(options.Radius, 1),
             step, Array.AsReadOnly((double[])profile.Clone()), edges, path, null)
         {
-            Center = options.Center, Radius = options.Radius, StartAngleDegrees = options.StartAngleDegrees, SweepDegrees = options.SweepDegrees
+            Center = options.Center, Radius = options.Radius, StartAngleDegrees = options.StartAngleDegrees, SweepDegrees = options.SweepDegrees,
+            ArcDirection = options.Direction, Profiles = profiles ?? Array.AsReadOnly(new IReadOnlyList<double>[] { Array.AsReadOnly((double[])profile.Clone()) })
         };
     }
 
@@ -82,6 +99,10 @@ public sealed class VisionCaliperMeasurement : IWorkflowVisionFrameFact
     public double? StartAngleDegrees { get; private init; }
     /// <summary>扫描角度范围（度），正为顺时针；直线卡尺为空。</summary>
     public double? SweepDegrees { get; private init; }
+    /// <summary>圆弧卡尺的搜索方向；直线卡尺为空。</summary>
+    public EVisionArcScanDirection? ArcDirection { get; private init; }
+    /// <summary>每个卡尺各自的灰度剖面；径向搜索时每个径向卡尺一条，其它情况只有一条（同 <see cref="Profile"/>）。</summary>
+    public IReadOnlyList<IReadOnlyList<double>> Profiles { get; private init; } = Array.Empty<IReadOnlyList<double>>();
     /// <summary>沿扫描路径的均匀采样步长，原图像素。</summary>
     public double SampleStep { get; }
     /// <summary>一维灰度均值剖面。</summary>
@@ -108,7 +129,9 @@ public sealed class VisionCaliperMeasurement : IWorkflowVisionFrameFact
 
     /// <inheritdoc/>
     public string Summary => Shape == EVisionCaliperShape.Arc
-        ? FormattableString.Invariant($"圆弧卡尺边缘 {Count}；半径 {Radius:0.##}px；剖面采样 {Profile.Count}。")
+        ? ArcDirection is EVisionArcScanDirection.InnerToOuter or EVisionArcScanDirection.OuterToInner
+            ? FormattableString.Invariant($"圆弧卡尺（{(ArcDirection == EVisionArcScanDirection.InnerToOuter ? "由内到外" : "由外到内")}）{Profiles.Count} 个径向卡尺，边缘 {Count}；半径 {Radius:0.##}px。")
+            : FormattableString.Invariant($"圆弧卡尺边缘 {Count}；半径 {Radius:0.##}px；剖面采样 {Profile.Count}。")
         : $"卡尺边缘 {Count}；剖面采样 {Profile.Count}；梯度峰抛物线插值。";
 
     /// <summary>扫描路径折线（原图像素），供图上显示。</summary>
@@ -137,9 +160,13 @@ public sealed class VisionArcCaliperOptions
     /// <param name="halfWidth">半径方向单侧采样步数 0..63。</param><param name="minimumGradient">最小绝对梯度。</param>
     /// <param name="polarity">沿扫描方向的极性。</param><param name="minimumSeparation">边缘最小弧长间距。</param>
     /// <param name="bandSampleStep">半径方向采样间隔 0.1..10。</param>
+    /// <param name="direction">搜索方向：沿圆弧，或沿半径由内到外/由外到内。</param>
+    /// <param name="caliperCount">径向搜索时沿圆弧均匀分布的卡尺数 1..128；沿圆弧扫描时忽略。</param>
     public VisionArcCaliperOptions(PointD center, double radius, double startAngleDegrees, double sweepDegrees, int halfWidth = 2,
-        double minimumGradient = 5, ECaliperPolarity polarity = ECaliperPolarity.Any, double minimumSeparation = 2, double bandSampleStep = 1)
+        double minimumGradient = 5, ECaliperPolarity polarity = ECaliperPolarity.Any, double minimumSeparation = 2, double bandSampleStep = 1,
+        EVisionArcScanDirection direction = EVisionArcScanDirection.AlongArc, int caliperCount = 1)
     {
+        if (!Enum.IsDefined(direction)) throw new ArgumentException("未知圆弧卡尺搜索方向。");
         if (!double.IsFinite(center.X) || !double.IsFinite(center.Y) || !double.IsFinite(radius) || radius <= 0 || radius > 65535)
             throw new ArgumentException("圆弧卡尺圆心或半径无效。");
         if (!double.IsFinite(startAngleDegrees) || !double.IsFinite(sweepDegrees) || Math.Abs(sweepDegrees) < 1e-9 || Math.Abs(sweepDegrees) > 360)
@@ -151,6 +178,12 @@ public sealed class VisionArcCaliperOptions
         if (length < 4 || length > 65535) throw new ArgumentException("圆弧卡尺弧长须为 4..65535 像素。");
         if (!double.IsFinite(minimumGradient) || minimumGradient <= 0 || !double.IsFinite(minimumSeparation) || minimumSeparation <= 0
             || !Enum.IsDefined(polarity)) throw new ArgumentException("圆弧卡尺边缘参数无效。");
+        if (direction != EVisionArcScanDirection.AlongArc)
+        {
+            if (caliperCount < 1 || caliperCount > 128) throw new ArgumentException("径向卡尺数量须为 1..128。");
+            if (halfWidth * bandSampleStep < 2) throw new ArgumentException("径向搜索范围（带宽）至少 ±2px。");
+        }
+        Direction = direction; CaliperCount = direction == EVisionArcScanDirection.AlongArc ? 1 : caliperCount;
         Center = center; Radius = radius; StartAngleDegrees = startAngleDegrees; SweepDegrees = sweepDegrees; HalfWidth = halfWidth;
         MinimumGradient = minimumGradient; Polarity = polarity; MinimumSeparation = minimumSeparation; BandSampleStep = bandSampleStep;
     }
@@ -173,6 +206,12 @@ public sealed class VisionArcCaliperOptions
     public double MinimumSeparation { get; }
     /// <summary>半径方向采样间隔。</summary>
     public double BandSampleStep { get; }
+    /// <summary>搜索方向。</summary>
+    public EVisionArcScanDirection Direction { get; }
+    /// <summary>径向卡尺数；沿圆弧扫描时为 1。</summary>
+    public int CaliperCount { get; }
+    /// <summary>单侧带宽（径向搜索时为搜索范围半长），原图像素。</summary>
+    public double HalfBand => HalfWidth * BandSampleStep;
     /// <summary>扫描弧长。</summary>
     public double Length => Math.Abs(SweepDegrees) * Math.PI / 180 * Radius;
 
@@ -186,8 +225,10 @@ public sealed class VisionArcCaliperOptions
 }
 
 /// <summary>
-/// 圆弧卡尺：沿扫描圆弧按 1px 弧长均匀取点，每点沿半径方向取 2×半宽+1 个双线性采样求平均得到剖面，
-/// 中心差分求梯度，梯度极大值抛物线插值得到亚像素边缘，按梯度强度做弧长间距抑制。与直线卡尺同一套剖面/峰值规则。
+/// 圆弧卡尺。沿圆弧扫描：沿扫描圆弧按 1px 弧长均匀取点，每点沿半径方向取 2×半宽+1 个双线性采样求平均得到剖面。
+/// 径向搜索：圆弧均分为 N 段，每段一个径向卡尺，沿半径在 [半径−带宽, 半径+带宽] 内按 1px 取点（由内到外或由外到内），
+/// 每点沿该段圆弧按约 1px 弧长求平均。两种方式都用中心差分求梯度、梯度极大值抛物线插值得到亚像素边缘、按梯度强度做间距抑制，
+/// 与直线卡尺同一套剖面/峰值规则。
 /// </summary>
 public static class VisionArcCaliper
 {
@@ -199,28 +240,88 @@ public static class VisionArcCaliper
         var info = frame.Image.Info;
         if (info.Layout != EPixelLayout.Gray8) throw new NotSupportedException("圆弧卡尺需要显式预处理为 Gray8。");
         if ((long)info.Width * info.Height > 16777216) throw new ArgumentException("Caliper image budget exceeded.");
+        var pixels = new byte[info.ByteLength]; frame.Image.CopyTo(0, pixels, 0, pixels.Length);
+        double inner = options.Radius - options.HalfBand, outer = options.Radius + options.HalfBand;
+        void Check(PointD p)
+        {
+            if (p.X < .5 || p.Y < .5 || p.X > info.Width - .5 || p.Y > info.Height - .5)
+                throw new ArgumentException("Caliper band extends outside sampleable pixel centers.");
+        }
+        double Pixel(PointD p) => Sample(pixels, info.Width, info.Height, p.X, p.Y);
+        return options.Direction == EVisionArcScanDirection.AlongArc
+            ? MeasureAlongArc(frame.FrameId, options, inner, outer, Check, Pixel, token)
+            : MeasureRadial(frame.FrameId, options, inner, outer, Check, Pixel, token);
+    }
+
+    private static VisionCaliperMeasurement MeasureAlongArc(string frameId, VisionArcCaliperOptions options, double inner, double outer,
+        Action<PointD> check, Func<PointD, double> pixel, CancellationToken token)
+    {
         var length = options.Length;
         int count = (int)Math.Ceiling(length) + 1;
         double step = length / (count - 1);
-        double inner = options.Radius - options.HalfWidth * options.BandSampleStep, outer = options.Radius + options.HalfWidth * options.BandSampleStep;
-        var pixels = new byte[info.ByteLength]; frame.Image.CopyTo(0, pixels, 0, pixels.Length);
-        var profile = new double[count]; var gradient = new double[count];
+        var profile = new double[count];
         for (int i = 0; i < count; i++)
         {
             token.ThrowIfCancellationRequested();
             double t = (double)i / (count - 1);
-            foreach (var p in new[] { options.PointAt(inner, t), options.PointAt(outer, t) })
-                if (p.X < .5 || p.Y < .5 || p.X > info.Width - .5 || p.Y > info.Height - .5)
-                    throw new ArgumentException("Caliper band extends outside sampleable pixel centers.");
+            check(options.PointAt(inner, t)); check(options.PointAt(outer, t));
             for (int b = -options.HalfWidth; b <= options.HalfWidth; b++)
-            {
-                var p = options.PointAt(options.Radius + b * options.BandSampleStep, t);
-                profile[i] += Sample(pixels, info.Width, info.Height, p.X, p.Y);
-            }
+                profile[i] += pixel(options.PointAt(options.Radius + b * options.BandSampleStep, t));
             profile[i] /= options.HalfWidth * 2 + 1;
         }
+        var edges = FindEdges(profile, step, options, token).Select(e =>
+        {
+            var t = e.Distance / length;
+            return new VisionCaliperEdge(options.PointAt(options.Radius, t), e.Distance, e.Gradient, options.StartAngleDegrees + options.SweepDegrees * t);
+        }).ToArray();
+        return VisionCaliperMeasurement.FromArc(frameId, options, step, profile, Array.AsReadOnly(edges));
+    }
+
+    private static VisionCaliperMeasurement MeasureRadial(string frameId, VisionArcCaliperOptions options, double inner, double outer,
+        Action<PointD> check, Func<PointD, double> pixel, CancellationToken token)
+    {
+        bool outward = options.Direction == EVisionArcScanDirection.InnerToOuter;
+        double length = outer - inner;
+        int count = (int)Math.Ceiling(length) + 1;
+        double step = length / (count - 1);
+        // 每段圆弧在扫描半径处约 1px 取一个投影点，最多 127 个。
+        var segmentLength = options.Length / options.CaliperCount;
+        int projection = Math.Clamp((int)Math.Ceiling(segmentLength), 1, 127);
+        var edges = new List<VisionCaliperEdge>(); var profiles = new List<IReadOnlyList<double>>();
+        var mean = new double[count];
+        for (int c = 0; c < options.CaliperCount; c++)
+        {
+            token.ThrowIfCancellationRequested();
+            var ts = Enumerable.Range(0, projection).Select(j => (c + (j + .5) / projection) / options.CaliperCount).ToArray();
+            foreach (var t in ts) { check(options.PointAt(inner, t)); check(options.PointAt(outer, t)); }
+            var profile = new double[count];
+            for (int i = 0; i < count; i++)
+            {
+                var radius = outward ? inner + i * step : outer - i * step;
+                foreach (var t in ts) profile[i] += pixel(options.PointAt(radius, t));
+                profile[i] /= projection;
+                mean[i] += profile[i] / options.CaliperCount;
+            }
+            var middle = (c + .5) / options.CaliperCount;
+            var angle = options.StartAngleDegrees + options.SweepDegrees * middle;
+            foreach (var e in FindEdges(profile, step, options, token))
+            {
+                if (edges.Count >= 4096) throw new InvalidOperationException("Caliper evidence budget exceeded.");
+                var radius = outward ? inner + e.Distance : outer - e.Distance;
+                edges.Add(new VisionCaliperEdge(options.PointAt(radius, middle), e.Distance, e.Gradient, angle, c));
+            }
+            profiles.Add(Array.AsReadOnly(profile));
+        }
+        return VisionCaliperMeasurement.FromArc(frameId, options, step, mean, Array.AsReadOnly(edges.ToArray()), profiles.AsReadOnly());
+    }
+
+    // 中心差分梯度 → 极大值抛物线插值 → 按梯度强度的间距抑制；返回按距离排序的 (距离, 梯度)。
+    private static IEnumerable<(double Distance, double Gradient)> FindEdges(double[] profile, double step, VisionArcCaliperOptions options, CancellationToken token)
+    {
+        int count = profile.Length;
+        var gradient = new double[count];
         for (int i = 1; i < count - 1; i++) gradient[i] = (profile[i + 1] - profile[i - 1]) / (2 * step);
-        var candidates = new List<VisionCaliperEdge>();
+        var candidates = new List<(double Distance, double Gradient)>();
         for (int i = 2; i < count - 2; i++)
         {
             token.ThrowIfCancellationRequested();
@@ -229,10 +330,9 @@ public static class VisionArcCaliper
                 || options.Polarity == ECaliperPolarity.Rising && g <= 0 || options.Polarity == ECaliperPolarity.Falling && g >= 0) continue;
             double denominator = left - 2 * strength + right;
             double delta = Math.Abs(denominator) < 1e-12 ? 0 : Math.Max(-.5, Math.Min(.5, .5 * (left - right) / denominator));
-            double distance = (i + delta) * step, t = distance / length;
-            candidates.Add(new VisionCaliperEdge(options.PointAt(options.Radius, t), distance, g, options.StartAngleDegrees + options.SweepDegrees * t));
+            candidates.Add(((i + delta) * step, g));
         }
-        var selected = new SortedSet<double>(); var edges = new List<VisionCaliperEdge>();
+        var selected = new SortedSet<double>(); var edges = new List<(double Distance, double Gradient)>();
         foreach (var edge in candidates.OrderByDescending(e => Math.Abs(e.Gradient)).ThenBy(e => e.Distance))
         {
             token.ThrowIfCancellationRequested();
@@ -241,7 +341,7 @@ public static class VisionArcCaliper
             if (edges.Count >= 4096) throw new InvalidOperationException("Caliper evidence budget exceeded.");
             selected.Add(edge.Distance); edges.Add(edge);
         }
-        return VisionCaliperMeasurement.FromArc(frame.FrameId, options, step, profile, Array.AsReadOnly(edges.OrderBy(e => e.Distance).ToArray()));
+        return edges.OrderBy(e => e.Distance);
     }
 
     private static double Sample(byte[] pixels, int width, int height, double x, double y)

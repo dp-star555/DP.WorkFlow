@@ -57,6 +57,15 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
     [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Arc))]
     [WorkflowProperty("扫描角度", "度，绝对值 (0, 360]；正为顺时针、负为逆时针，决定扫描方向与极性方向。", Category = "采样带", Unit = "°")]
     public double SweepAngle { get; set; } = 90;
+    /// <summary>圆弧卡尺的搜索方向。</summary>
+    [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Arc))]
+    [WorkflowProperty("搜索方向", "由内到外/由外到内：沿半径搜索边缘（常用于找圆），带宽为半径方向的搜索范围；沿圆弧：从起始角扫到终止角。极性均相对搜索方向。", Category = "采样带")]
+    public EVisionArcScanDirection ArcDirection { get; set; } = EVisionArcScanDirection.InnerToOuter;
+    /// <summary>径向搜索时沿圆弧均匀分布的卡尺数。</summary>
+    [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Arc))]
+    [WorkflowPropertyVisibleWhen(nameof(ArcDirection), nameof(EVisionArcScanDirection.InnerToOuter), nameof(EVisionArcScanDirection.OuterToInner))]
+    [WorkflowProperty("卡尺数量", "1..128；圆弧按扫描角度均分，每段一个径向卡尺，各自沿该段圆弧求平均。", Category = "采样带")]
+    public int CaliperCount { get; set; } = 8;
     /// <summary>垂直采样半宽。</summary>
     [WorkflowProperty("采样半宽", "单侧垂直采样步数0..63（圆弧为半径方向），与垂直采样间隔共同决定实际带宽。", Category = "采样带")]
     public int HalfWidth { get; set; } = 2;
@@ -89,7 +98,7 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
         if (coordinates is not null) center = coordinates.LocalToImage.Map(center);
         double scale = coordinates?.SimilarityScale ?? 1, rotation = coordinates is null ? 0 : coordinates.RotationRadians * 180 / Math.PI;
         return new VisionArcCaliperOptions(new PointD(center.X, center.Y), Radius * scale, StartAngle + rotation, SweepAngle, HalfWidth,
-            MinimumGradient, Polarity, MinimumSeparation * scale, BandSampleStep * scale);
+            MinimumGradient, Polarity, MinimumSeparation * scale, BandSampleStep * scale, ArcDirection, CaliperCount);
     }
     /// <inheritdoc/>
     public override IReadOnlyList<string> ValidateConfiguration()
@@ -106,7 +115,8 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
                 else if (!double.IsFinite(CenterX) || !double.IsFinite(CenterY) || !double.IsFinite(Radius) || Radius <= 0
                     || !double.IsFinite(StartAngle) || !double.IsFinite(SweepAngle) || Math.Abs(SweepAngle) < 1e-9 || Math.Abs(SweepAngle) > 360
                     || HalfWidth < 0 || HalfWidth > 63 || !double.IsFinite(BandSampleStep) || BandSampleStep < .01 || BandSampleStep > 100
-                    || Radius - HalfWidth * BandSampleStep < 0)
+                    || Radius - HalfWidth * BandSampleStep < 0 || !Enum.IsDefined(ArcDirection)
+                    || ArcDirection != EVisionArcScanDirection.AlongArc && (CaliperCount < 1 || CaliperCount > 128 || HalfWidth < 1))
                     throw new ArgumentException("局部圆弧采样带配置无效。");
                 if (Coordinates is not null) _ = new CaliperOptions(new PointD(0, 0), new PointD(4, 0), HalfWidth, MinimumGradient, Polarity, MinimumSeparation);
             }

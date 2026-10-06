@@ -39,6 +39,46 @@ public sealed class VisionArcCaliperTests
         Assert.InRange(Assert.Single(reverse.Edges).Position.Y, 79, 81);
     }
 
+    // 暗背景(20)上半径 20 的亮圆盘(220)，圆心 (50,50)。
+    private static ImageFrame BrightDisc()
+    {
+        var pixels = new byte[100 * 100];
+        for (var y = 0; y < 100; y++)
+            for (var x = 0; x < 100; x++)
+                pixels[y * 100 + x] = (byte)((x + .5 - 50) * (x + .5 - 50) + (y + .5 - 50) * (y + .5 - 50) <= 400 ? 220 : 20);
+        using var image = VisionImage.CopyFrom(new ImageInfo(100, 100, EPixelLayout.Gray8), pixels);
+        return new ImageFrame("disc-frame", image);
+    }
+
+    [Theory]
+    [InlineData(EVisionArcScanDirection.InnerToOuter, ECaliperPolarity.Falling)]
+    [InlineData(EVisionArcScanDirection.OuterToInner, ECaliperPolarity.Rising)]
+    public void RadialArcCaliper_FindsCircleEdgeOnEveryCaliper(EVisionArcScanDirection direction, ECaliperPolarity polarity)
+    {
+        using var frame = BrightDisc();
+        var result = VisionArcCaliper.Measure(frame, new VisionArcCaliperOptions(new PointD(50, 50), 20, 0, 360, halfWidth: 8,
+            polarity: polarity, direction: direction, caliperCount: 6));
+
+        Assert.Equal(direction, result.ArcDirection);
+        Assert.Equal(6, result.Profiles.Count);
+        Assert.Equal(6, result.Count);
+        Assert.Equal(Enumerable.Range(0, 6), result.Edges.Select(e => e.CaliperIndex));
+        foreach (var edge in result.Edges)
+        {
+            var radius = Math.Sqrt(Math.Pow(edge.Position.X - 50, 2) + Math.Pow(edge.Position.Y - 50, 2));
+            Assert.InRange(radius, 19, 21);
+            // 距离从搜索起点算：由内到外从半径 12 起，由外到内从半径 28 起，都约 8px。
+            Assert.InRange(edge.Distance, 7, 9);
+        }
+        Assert.Equal(30, result.Edges[0].AngleDegrees!.Value, 6);
+        Assert.Contains(direction == EVisionArcScanDirection.InnerToOuter ? "由内到外" : "由外到内", result.Summary);
+
+        // 极性相对搜索方向：方向反了就找不到。
+        var wrong = VisionArcCaliper.Measure(frame, new VisionArcCaliperOptions(new PointD(50, 50), 20, 0, 360, halfWidth: 8,
+            polarity: polarity == ECaliperPolarity.Rising ? ECaliperPolarity.Falling : ECaliperPolarity.Rising, direction: direction, caliperCount: 6));
+        Assert.Empty(wrong.Edges);
+    }
+
     [Fact]
     public void ArcCaliperOptions_RejectInvalidBands()
     {
@@ -46,6 +86,8 @@ public sealed class VisionArcCaliperTests
         Assert.Throws<ArgumentException>(() => new VisionArcCaliperOptions(new PointD(50, 50), 30, 0, 0));
         Assert.Throws<ArgumentException>(() => new VisionArcCaliperOptions(new PointD(50, 50), 30, 0, 400));
         Assert.Throws<ArgumentException>(() => new VisionArcCaliperOptions(new PointD(50, 50), 5, 0, 90, halfWidth: 10));
+        Assert.Throws<ArgumentException>(() => new VisionArcCaliperOptions(new PointD(50, 50), 30, 0, 90, halfWidth: 1, direction: EVisionArcScanDirection.InnerToOuter));
+        Assert.Throws<ArgumentException>(() => new VisionArcCaliperOptions(new PointD(50, 50), 30, 0, 90, halfWidth: 4, direction: EVisionArcScanDirection.InnerToOuter, caliperCount: 0));
         using var frame = HalfBright();
         Assert.Throws<ArgumentException>(() => VisionArcCaliper.Measure(frame, new VisionArcCaliperOptions(new PointD(50, 50), 60, 0, 90)));
     }

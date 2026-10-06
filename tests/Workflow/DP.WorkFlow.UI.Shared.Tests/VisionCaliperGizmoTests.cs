@@ -92,7 +92,8 @@ public sealed class VisionCaliperGizmoTests
     {
         var gizmo = new VisionCaliperGizmo(new MeasureVisionCaliperNodeModel
         {
-            Shape = EVisionCaliperShape.Arc, CenterX = 100, CenterY = 100, Radius = 50, StartAngle = 0, SweepAngle = 90, HalfWidth = 5, BandSampleStep = 1
+            Shape = EVisionCaliperShape.Arc, CenterX = 100, CenterY = 100, Radius = 50, StartAngle = 0, SweepAngle = 90, HalfWidth = 5, BandSampleStep = 1,
+            ArcDirection = EVisionArcScanDirection.AlongArc
         });
 
         var visuals = gizmo.Visuals(1);
@@ -101,7 +102,7 @@ public sealed class VisionCaliperGizmoTests
         Assert.True(band.Closed);
         Assert.Contains(band.Points, p => Math.Abs(p.X - 155) < 1e-6 && Math.Abs(p.Y - 100) < 1e-6);
         Assert.Contains(band.Points, p => Math.Abs(p.X - 100) < 1e-6 && Math.Abs(p.Y - 145) < 1e-6);
-        Assert.Contains("圆弧卡尺 半径 50px", Assert.Single(visuals, v => v.Caption is not null).Caption);
+        Assert.Contains("圆弧卡尺 沿圆弧 · 半径 50px", Assert.Single(visuals, v => v.Caption is not null).Caption);
         // 投影线沿半径方向：两端到圆心的距离分别是内外半径。
         var sample = Assert.IsType<ContourGeometry>(visuals.First(v => v.Id.StartsWith("caliper-sample", StringComparison.Ordinal)).Geometry).Points;
         Assert.Equal(45, Distance(sample[0], new PointD(100, 100)), 6);
@@ -263,6 +264,46 @@ public sealed class VisionCaliperGizmoTests
         Assert.True(gizmo.EndDrag());
         Assert.Equal((.25, 63), (node.BandSampleStep, node.HalfWidth));
         Assert.Contains("127 点 × 间隔 0.25px", gizmo.Caption);
+    }
+
+    [Fact]
+    public void RadialArc_ShowsSearchArrowPerCaliperInChosenDirection()
+    {
+        var node = new MeasureVisionCaliperNodeModel
+        {
+            Shape = EVisionCaliperShape.Arc, CenterX = 100, CenterY = 100, Radius = 50, StartAngle = 0, SweepAngle = 90,
+            HalfWidth = 10, BandSampleStep = 1, ArcDirection = EVisionArcScanDirection.InnerToOuter, CaliperCount = 3
+        };
+        var gizmo = new VisionCaliperGizmo(node);
+        var visuals = gizmo.Visuals(1);
+
+        Assert.Equal(3, visuals.Count(v => v.Id.StartsWith("caliper-ray", StringComparison.Ordinal)));
+        Assert.Equal(2, visuals.Count(v => v.Id.StartsWith("caliper-segment", StringComparison.Ordinal)));
+        Assert.DoesNotContain(visuals, v => v.Id.StartsWith("caliper-step", StringComparison.Ordinal));
+        Assert.Contains("由内到外 · 3 个卡尺", gizmo.Caption);
+        // 第一个卡尺在 15°：由内(40)到外(60)，箭头尖在外圈。
+        var ray = Assert.IsType<ContourGeometry>(Assert.Single(visuals, v => v.Id == "caliper-ray0").Geometry).Points;
+        Assert.Equal(40, Distance(ray[0], new PointD(100, 100)), 6);
+        Assert.Equal(60, Distance(ray[1], new PointD(100, 100)), 6);
+        var tip = Assert.IsType<ContourGeometry>(Assert.Single(visuals, v => v.Id == "caliper-arrow0").Geometry).Points[1];
+        Assert.Equal(60, Distance(tip, new PointD(100, 100)), 6);
+
+        node.ArcDirection = EVisionArcScanDirection.OuterToInner;
+        tip = Assert.IsType<ContourGeometry>(Assert.Single(gizmo.Visuals(1), v => v.Id == "caliper-arrow0").Geometry).Points[1];
+        Assert.Equal(40, Distance(tip, new PointD(100, 100)), 6);
+        Assert.Contains("由外到内", gizmo.Caption);
+    }
+
+    [Fact]
+    public void LineCaliper_ShowsDirectionMarksAlongScan()
+    {
+        var gizmo = new VisionCaliperGizmo(new MeasureVisionCaliperNodeModel { StartX = 0, StartY = 50, EndX = 400, EndY = 50, HalfWidth = 2 });
+        var visuals = gizmo.Visuals(1);
+        // 400px 长、每 80px 一个，两端留空：80/160/240/320 共 4 个。
+        Assert.Equal(4, visuals.Count(v => v.Id.StartsWith("caliper-dir", StringComparison.Ordinal)));
+        var mark = Assert.IsType<ContourGeometry>(Assert.Single(visuals, v => v.Id == "caliper-dir1").Geometry).Points;
+        Assert.Equal((80d, 50d), (mark[1].X, mark[1].Y));
+        Assert.True(mark[0].X < mark[1].X); // 尖朝终点方向。
     }
 
     private static double Distance(PointD a, PointD b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
