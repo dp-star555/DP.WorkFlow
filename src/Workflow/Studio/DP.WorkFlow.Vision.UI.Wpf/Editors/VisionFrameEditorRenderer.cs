@@ -242,7 +242,8 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
                 _tool.ItemsSource = _tools.Select(ToolItem).ToArray();
             }
             bool regions = templateMaking || _model.SupportsRegions;
-            _tool.IsEnabled = editor != null;
+            // 卡尺不是面积ROI：扫描线与采样带直接在图上拖动，不显示区域类型。
+            _tool.Visibility = _model.Caliper is null ? Visibility.Visible : Visibility.Collapsed; _tool.IsEnabled = editor != null;
             _purpose.Visibility = regions ? Visibility.Visible : Visibility.Collapsed; _purpose.IsEnabled = editor != null;
             _radius.Visibility = editor?.Tool is ERoiTool.Brush or ERoiTool.Eraser ? Visibility.Visible : Visibility.Collapsed;
             if (editor == null) return;
