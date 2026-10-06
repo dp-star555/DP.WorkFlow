@@ -22,13 +22,8 @@ public sealed class VisionFrameEditorPageProvider(IWorkflowVisionPreviewSource? 
     {
         if (!CanProvide(context)) yield break;
         yield return new WorkflowNodeEditorPageDescriptor("Image", "图像与测量范围",
-            WorkflowNodeEditorPageKind.Custom, 450, new VisionFrameEditorPageModel(context.Node, frames, reader,
-                scope
-                    .Where(n => n.Id != context.Node.Id && nodes.TryGetValue(n.NodeType, out var descriptor)
-                        && descriptor.OutputType is { } type && typeof(IVisionCoordinateResult).IsAssignableFrom(type))
-                    .Select(n => new VisionCoordinateSource(n.Id, SourceLabel(n))).ToArray(), templates, enableTemplateEditing: false,
+            WorkflowNodeEditorPageKind.Custom, 450, new VisionFrameEditorPageModel(context.Node, frames, reader, templates, enableTemplateEditing: false,
                 configurationChanged: context.Session.NotifyNodeConfigurationChanged),
-            WorkflowNodeEditorPageKind.Custom, 450, new VisionFrameEditorPageModel(context.Node, frames, reader, templates, enableTemplateEditing: false),
             IconKey: "Image", RendererKey: RendererKey, Priority: 100);
         if (context.Node is IWorkflowVisionTemplateNode && context.RequestedPropertyEditor == WorkflowPropertyEditorKeys.VisionTemplateEditor)
             yield return new WorkflowNodeEditorPageDescriptor("Template", "模板制作/选择", WorkflowNodeEditorPageKind.Custom, 460,
@@ -82,10 +77,8 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     /// <param name="templateEditorOnly">是否只编辑模板，保留匹配节点搜索范围。</param>
     /// <param name="configurationChanged">图上编辑修改了节点参数后的通知（例如刷新参数页）。</param>
     public VisionFrameEditorPageModel(IWorkflowNodeModel node, IWorkflowVisionPreviewSource? frames = null, IImageFileReader? reader = null,
-        IReadOnlyList<VisionCoordinateSource>? coordinateSources = null, VisionTemplateEditingRuntime? templates = null,
-        bool enableTemplateEditing = true, bool templateEditorOnly = false, Action? configurationChanged = null)
         VisionTemplateEditingRuntime? templates = null,
-        bool enableTemplateEditing = true, bool templateEditorOnly = false)
+        bool enableTemplateEditing = true, bool templateEditorOnly = false, Action? configurationChanged = null)
     {
         IsTemplateEditor = templateEditorOnly;
         _configurationChanged = configurationChanged;
