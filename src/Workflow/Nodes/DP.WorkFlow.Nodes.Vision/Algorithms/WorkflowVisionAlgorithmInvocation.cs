@@ -8,9 +8,14 @@ internal static class WorkflowVisionAlgorithmInvocation
 {
     public static TResult Invoke<T, TResult>(IWorkflowNodeExecutionContext context, VisionAlgorithmSelection selection,
         string legacyImplementation, Func<T, TResult> invoke, CancellationToken token) where T : class
+        => Invoke(context, "algorithm", selection, legacyImplementation, invoke, token);
+
+    /// <summary>调用节点声明的指定槽位；一个节点组合多个算法时按槽名区分。</summary>
+    public static TResult Invoke<T, TResult>(IWorkflowNodeExecutionContext context, string slot, VisionAlgorithmSelection selection,
+        string legacyImplementation, Func<T, TResult> invoke, CancellationToken token) where T : class
     {
         if (context.Services.GetService(typeof(IWorkflowVisionAlgorithmBindings)) is IWorkflowVisionAlgorithmBindings bindings)
-            return bindings.Invoke(context, "algorithm", invoke, token);
+            return bindings.Invoke(context, slot, invoke, token);
         RequireLegacySelection(selection, legacyImplementation);
         return invoke(context.GetRequiredCapability<T>());
     }

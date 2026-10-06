@@ -11,7 +11,7 @@ public sealed class VisionModuleTests
     {
         var nodes = new WorkflowNodeCatalog(); var handlers = new WorkflowNodeHandlerCatalog();
         new WorkflowRuntimePluginCatalog(nodes, handlers).Register(new WorkflowImageRuntimePluginModule()).Freeze();
-        Assert.Equal(13, nodes.Snapshot().Count);
+        Assert.Equal(15, nodes.Snapshot().Count);
         Assert.Equal(typeof(DP.Vision.Algorithms.RegionAnalysisResult), nodes.GetOrThrow("Vision.CreateRegion").OutputType);
         Assert.Equal(typeof(ImageFrame), nodes.GetOrThrow("Vision.AcquireFrame").OutputType);
         Assert.Equal(WorkflowVisionCategories.Acquisition, nodes.GetOrThrow("Vision.AcquireFrame").Category);
@@ -39,7 +39,7 @@ public sealed class VisionModuleTests
             var nodes = new WorkflowNodeCatalog(); var handlers = new WorkflowNodeHandlerCatalog();
             var composition = new WorkflowRuntimePluginCatalog(nodes, handlers);
             Assert.Equal(1, composition.LoadPlugins(root)); composition.Freeze();
-            Assert.Equal(13, nodes.Snapshot().Count);
+            Assert.Equal(15, nodes.Snapshot().Count);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -71,7 +71,7 @@ public sealed class VisionModuleTests
             var nodes = new WorkflowNodeCatalog(); var handlers = new WorkflowNodeHandlerCatalog();
             var composition = new WorkflowRuntimePluginCatalog(nodes, handlers).Register(new WorkflowImageRuntimePluginModule());
             Assert.Equal(0, composition.LoadPlugins(root)); composition.Freeze();
-            Assert.Equal(13, nodes.Snapshot().Count);
+            Assert.Equal(15, nodes.Snapshot().Count);
         }
         finally { Directory.Delete(root, true); }
     }

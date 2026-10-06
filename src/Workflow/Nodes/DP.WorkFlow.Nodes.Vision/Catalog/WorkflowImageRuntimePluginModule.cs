@@ -41,6 +41,8 @@ public static class WorkflowImageNodes
             .Register(WorkflowNodeDescriptor.Create<SelectVisionBlobsNodeModel, BlobAnalysisResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<MeasureVisionCaliperNodeModel, VisionCaliperMeasurement>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<FitVisionRobustLineNodeModel, RobustLineResult>(ports: ports))
+            .Register(WorkflowNodeDescriptor.Create<FindVisionLineNodeModel, VisionFindLineResult>(ports: ports))
+            .Register(WorkflowNodeDescriptor.Create<FindVisionCircleNodeModel, VisionFindCircleResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<LocateVisionTemplatePoseNodeModel, TemplatePoseResult>(ports: ports));
     }
 
@@ -74,6 +76,8 @@ public static class WorkflowImageNodes
             .Register(new SelectVisionBlobsNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IBlobSelector>())
             .Register(new MeasureVisionCaliperNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<ICaliperMeasurer>())
             .Register(new FitVisionRobustLineNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IRobustLineFitter>())
+            .Register(new FindVisionLineNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<ICaliperMeasurer>(), WorkflowRuntimeCapabilityRequirement.Require<IRobustLineFitter>())
+            .Register(new FindVisionCircleNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<ICaliperMeasurer>(), WorkflowRuntimeCapabilityRequirement.Require<IRobustCircleFitter>())
             .Register(new LocateVisionTemplatePoseNodeHandler(), node => new[] { ((LocateVisionTemplatePoseNodeModel)node).TemplateSource == EWorkflowVisionTemplateSource.Resource
                 ? WorkflowRuntimeCapabilityRequirement.Require<IPreparedVisionTemplateMatcher>() : WorkflowRuntimeCapabilityRequirement.Require<ITemplatePoseLocator>() });
     }

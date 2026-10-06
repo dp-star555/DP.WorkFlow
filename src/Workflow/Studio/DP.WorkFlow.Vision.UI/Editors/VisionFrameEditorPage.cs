@@ -85,8 +85,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         Editor = new RoiEditor();
         if (node is AnalyzeVisionFrameNodeModel { Coordinates: not null }) { /* 等待同帧定位后显示局部ROI，不在原图上误画局部数值。 */ }
         else if (node is AnalyzeVisionFrameNodeModel { Regions.Count: > 0 } regionNode)
-            Editor.Load(new RoiDocument(regionNode.Regions.Select(r => new RoiDefinition(r.Id, r.ToGeometry(),
-                r.Exclude ? ERoiPurpose.Exclude : ERoiPurpose.Include, r.Enabled))));
+            Editor.Load(new RoiDocument(regionNode.Regions.Select(r => EditableRoi(regionNode, r, r.ToGeometry()))));
         else if (node is AnalyzeVisionFrameNodeModel { FullImage: false } analysis && analysis.Width > 0 && analysis.Height > 0)
             Editor.Load(new RoiDocument(new[] { new RoiDefinition("bounds",
                 new RectangleGeometry(new PointD(analysis.X + analysis.Width / 2d, analysis.Y + analysis.Height / 2d), analysis.Width, analysis.Height), ERoiConstraint.AxisAligned) }));
@@ -97,6 +96,15 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     }
     /// <summary>模板节点的制作草稿，其他节点为空。</summary>
     public VisionTemplateEditorModel? Template { get; }
+
+    /// <summary>节点ROI转为编辑定义；找圆的期望圆保持正圆约束，拖动时不会变成椭圆。</summary>
+    private static RoiDefinition EditableRoi(AnalyzeVisionFrameNodeModel node, WorkflowVisionRoi roi, Geometry shape)
+    {
+        var purpose = roi.Exclude ? ERoiPurpose.Exclude : ERoiPurpose.Include;
+        return node is FindVisionCircleNodeModel && shape is EllipseGeometry e && Math.Abs(e.RadiusX - e.RadiusY) <= 1e-6 * Math.Max(e.RadiusX, e.RadiusY)
+            ? new RoiDefinition(roi.Id, shape, purpose, roi.Enabled, ERoiConstraint.Circle)
+            : new RoiDefinition(roi.Id, shape, purpose, roi.Enabled);
+    }
 
     /// <summary>卡尺节点的图上编辑器；其他节点为空。</summary>
     public VisionCaliperGizmo? Caliper { get; }

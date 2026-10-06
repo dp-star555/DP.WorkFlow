@@ -65,8 +65,7 @@ public sealed partial class VisionFrameEditorPageModel
     {
         _lastKey = null;
         // 图像切换时取消未完成手势；完成的修改已经写入隔离副本的局部配置。
-        var rois = node.Regions.Select(r => new RoiDefinition(r.Id, system.ToImageGeometry(r.ToGeometry()),
-            r.Exclude ? ERoiPurpose.Exclude : ERoiPurpose.Include, r.Enabled)).ToArray();
+        var rois = node.Regions.Select(r => EditableRoi(node, r, system.ToImageGeometry(r.ToGeometry()))).ToArray();
         _loading = true;
         try { Editor.Cancel(); Editor.Load(new RoiDocument(rois)); }
         finally { _loading = false; }

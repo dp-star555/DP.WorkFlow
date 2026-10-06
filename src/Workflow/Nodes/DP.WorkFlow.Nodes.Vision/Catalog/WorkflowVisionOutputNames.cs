@@ -97,6 +97,13 @@ public static class WorkflowVisionOutputNames
         ["MajorAxisLength"] = "长轴长度",
         ["MinorAxisLength"] = "短轴长度",
         ["OrientationRadians"] = "方向(弧度)",
+        ["Fit"] = "拟合结果",
+        ["EdgePoints"] = "边缘点",
+        ["CaliperCount"] = "卡尺数量",
+        ["FoundCount"] = "找到边缘数",
+        ["MeasuredCenter"] = "圆心(带来源)",
+        ["LocatedCenter"] = "圆心(双坐标)",
+        ["Diameter"] = "直径",
         ["Mode"] = "距离模式",
         ["Kind"] = "测量对象",
         ["Distance"] = "距离",
@@ -115,7 +122,7 @@ public static class WorkflowVisionOutputNames
         {
             typeof(ImageFrame), typeof(BlobAnalysisResult), typeof(BlobObservation), typeof(BlobShapeFeatures), typeof(ColorAnalysisResult),
             typeof(TemplatePoseResult), typeof(AffineCalibration), typeof(Coordinate2D),
-            typeof(RegionAnalysisResult), typeof(CaliperResult), typeof(VisionCaliperMeasurement), typeof(VisionCaliperEdge), typeof(RobustLineResult), typeof(VisionPoint), typeof(VisionLine),
+            typeof(RegionAnalysisResult), typeof(CaliperResult), typeof(VisionCaliperMeasurement), typeof(VisionCaliperEdge), typeof(RobustLineResult), typeof(RobustCircleResult), typeof(VisionFindLineResult), typeof(VisionFindCircleResult), typeof(VisionPoint), typeof(VisionLine),
             typeof(GeometricDistanceResult), typeof(VisionCoordinateSystemResult), typeof(VisionCoordinateDefinition)
         })
             WorkflowOutputDisplayNames.Register(type, Names);
