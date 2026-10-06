@@ -177,10 +177,10 @@ public sealed class AcquireVisionImageNodeHandler : WorkflowNodeHandler<AcquireV
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(AcquireVisionImageNodeModel node,
         IWorkflowNodeExecutionContext context, CancellationToken cancellationToken) => node.SourceMode switch
     {
-        EWorkflowVisionImageSource.File => LoadVisionFileNodeHandler.ReadAsync(node.FilePath, node.Algorithm, context, cancellationToken, node.PixelFormat),
-        EWorkflowVisionImageSource.Folder => LoadVisionFolderNodeHandler.ReadAsync(node.Id, node.Algorithm, context, cancellationToken, node.PixelFormat),
+        EWorkflowVisionImageSource.File => VisionFrameAcquisition.ReadFileAsync(node.FilePath, node.Algorithm, context, node.PixelFormat, cancellationToken),
+        EWorkflowVisionImageSource.Folder => VisionFrameAcquisition.ReadFolderAsync(node.Id, node.Algorithm, context, node.PixelFormat, cancellationToken),
         EWorkflowVisionImageSource.AreaCamera or EWorkflowVisionImageSource.LineCamera =>
-            VisionCaptureNodeExecution.ExecuteAsync(context, node.Id, node.Source, node.CreateRequest(), cancellationToken, node.PixelFormat),
+            VisionCaptureNodeExecution.ExecuteAsync(context, node.Id, node.Source, node.CreateRequest(), node.PixelFormat, cancellationToken),
         _ => throw new InvalidOperationException("图像来源类型未定义。")
     };
 }

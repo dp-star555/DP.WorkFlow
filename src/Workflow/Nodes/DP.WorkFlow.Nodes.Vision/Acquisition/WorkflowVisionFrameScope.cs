@@ -101,7 +101,6 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
             DP.Vision.Algorithms.RobustLineResult result => result.FrameId,
             DP.Vision.Algorithms.BlobAnalysisResult result => result.FrameId,
             DP.Vision.Algorithms.ColorAnalysisResult result => result.FrameId,
-            DP.Vision.Algorithms.EdgeMeasurementResult result => result.FrameId,
             _ => null
         };
         if (identity is not null && !string.Equals(identity, frame.FrameId, StringComparison.Ordinal))
@@ -153,8 +152,7 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
-        var duplicate = context.Nodes.Where(n => n is AnalyzeVisionFrameNodeModel or LoadVisionFileNodeModel
-                or LoadVisionFolderNodeModel or CaptureAreaFrameNodeModel or CaptureLineScanFrameNodeModel or AcquireVisionImageNodeModel)
+        var duplicate = context.Nodes.Where(n => n is AnalyzeVisionFrameNodeModel or AcquireVisionImageNodeModel)
             .GroupBy(n => n.Id, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1);
         if (duplicate is not null)
             throw new InvalidOperationException($"新版视觉预览节点ID跨子文档重复：{duplicate.Key}；不能把不同节点的图像合并到同一预览槽。");
@@ -258,7 +256,7 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
                 + "没有它就不会在首节点之前布防并建立采集代次，回调帧永远无法领取。");
     }
 
-    /// <summary>按节点类型收集采集校验输入；面阵与线扫各自声明自己要求的源形态。</summary>
+    /// <summary>收集相机来源的“图像获取”节点；面阵与线扫各自要求对应的源形态。</summary>
     private static IEnumerable<CaptureCandidate> CaptureCandidates(IReadOnlyList<IWorkflowNodeModel> nodes)
     {
         foreach (var node in nodes)
@@ -267,12 +265,6 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
             {
                 case AcquireVisionImageNodeModel { IsCamera: true } input:
                     yield return new CaptureCandidate(input.Id, input.Source, input.GetCameraKind(), input.CreateRequest);
-                    break;
-                case CaptureAreaFrameNodeModel area:
-                    yield return new CaptureCandidate(area.Id, area.Source, EVisionAcquisitionKind.AreaScan, area.CreateRequest);
-                    break;
-                case CaptureLineScanFrameNodeModel line:
-                    yield return new CaptureCandidate(line.Id, line.Source, EVisionAcquisitionKind.LineScan, line.CreateRequest);
                     break;
             }
         }

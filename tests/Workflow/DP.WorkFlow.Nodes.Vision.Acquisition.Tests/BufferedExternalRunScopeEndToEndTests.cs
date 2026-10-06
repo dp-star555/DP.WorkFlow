@@ -24,17 +24,15 @@ public sealed class BufferedExternalRunScopeEndToEndTests
     /// 采集节点随后只会超时，因此本用例同时锁住"布防早于首节点"。
     /// </para>
     /// </summary>
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task 回调早于采集节点到达时采集节点直接领取(bool unified)
+    [Fact]
+    public async Task 回调早于采集节点到达时采集节点直接领取()
     {
         FakeStreamingDevice? device = null;
         var trigger = new TriggerHandler(() => Device(device), ("f11", 11));
         var sink = new SinkHandler();
 
         await using var runtime = new FakeStreamingRuntime(created => device = created);
-        using var rig = new HostRig(runtime, Linear(trigger.Id, "capture", sink.Id, unified), trigger, sink);
+        using var rig = new HostRig(runtime, Linear(trigger.Id, "capture", sink.Id), trigger, sink);
 
         var result = await rig.Host.RunAsync();
 
@@ -81,17 +79,15 @@ public sealed class BufferedExternalRunScopeEndToEndTests
     /// 第二根必须拿到新代次的帧，而不是第一根遗留的那一帧。
     /// </para>
     /// </summary>
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task 上一根运行未领取的帧不会进入下一根运行(bool unified)
+    [Fact]
+    public async Task 上一根运行未领取的帧不会进入下一根运行()
     {
         FakeStreamingDevice? device = null;
         await using var runtime = new FakeStreamingRuntime(created => device = created);
 
         var firstTrigger = new TriggerHandler(() => Device(device), ("r1-f1", 1), ("r1-f2", 2));
         var firstSink = new SinkHandler();
-        using (var first = new HostRig(runtime, Linear(firstTrigger.Id, "capture", firstSink.Id, unified), firstTrigger, firstSink))
+        using (var first = new HostRig(runtime, Linear(firstTrigger.Id, "capture", firstSink.Id), firstTrigger, firstSink))
         {
             var firstResult = await first.Host.RunAsync();
 
@@ -105,7 +101,7 @@ public sealed class BufferedExternalRunScopeEndToEndTests
 
         var secondTrigger = new TriggerHandler(() => Device(device), ("r2-f1", 3));
         var secondSink = new SinkHandler();
-        using (var second = new HostRig(runtime, Linear(secondTrigger.Id, "capture", secondSink.Id, unified), secondTrigger, secondSink))
+        using (var second = new HostRig(runtime, Linear(secondTrigger.Id, "capture", secondSink.Id), secondTrigger, secondSink))
         {
             var secondResult = await second.Host.RunAsync();
 
@@ -209,8 +205,8 @@ public sealed class BufferedExternalRunScopeEndToEndTests
             .Register(sink);
 
         var document = new WorkflowDocument { Name = "主流程" };
-        var firstCapture = new CaptureAreaFrameNodeModel { Id = "capture1", Source = new VisionSourceReference(SourceId) };
-        var secondCapture = new CaptureAreaFrameNodeModel { Id = "capture2", Source = new VisionSourceReference(SourceId) };
+        var firstCapture = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.AreaCamera, Id = "capture1", Source = new VisionSourceReference(SourceId) };
+        var secondCapture = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.AreaCamera, Id = "capture2", Source = new VisionSourceReference(SourceId) };
         document.EntryNodeId = trigger.Node.Id;
         foreach (var node in new IWorkflowNodeModel[] { trigger.Node, firstCapture, faultNode, secondCapture, sink.Node })
             document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
@@ -261,13 +257,11 @@ public sealed class BufferedExternalRunScopeEndToEndTests
     private static FakeStreamingDevice Device(FakeStreamingDevice? device) =>
         device ?? throw new InvalidOperationException("设备尚未打开：宿主没有在首节点之前布防。");
 
-    private static WorkflowDocument Linear(string triggerId, string captureId, string sinkId, bool unified = false)
+    private static WorkflowDocument Linear(string triggerId, string captureId, string sinkId)
     {
         var document = new WorkflowDocument { Name = "缓冲采集流程" };
         var trigger = new TriggerNode { Id = triggerId };
-        IWorkflowNodeModel capture = unified
-            ? new AcquireVisionImageNodeModel { Id = captureId, SourceMode = EWorkflowVisionImageSource.AreaCamera, Source = new(SourceId) }
-            : new CaptureAreaFrameNodeModel { Id = captureId, Source = new(SourceId) };
+        var capture = new AcquireVisionImageNodeModel { Id = captureId, SourceMode = EWorkflowVisionImageSource.AreaCamera, Source = new(SourceId) };
         var sink = new SinkNode { Id = sinkId };
         document.EntryNodeId = trigger.Id;
         foreach (var node in new IWorkflowNodeModel[] { trigger, capture, sink })
@@ -340,7 +334,7 @@ public sealed class BufferedExternalRunScopeEndToEndTests
             if (exposureMicroseconds is not null)
             {
                 foreach (var node in document.CanvasProjection.Nodes
-                    .Select(item => item.Node).OfType<CaptureAreaFrameNodeModel>())
+                    .Select(item => item.Node).OfType<AcquireVisionImageNodeModel>())
                     node.ExposureMicroseconds = exposureMicroseconds;
             }
 

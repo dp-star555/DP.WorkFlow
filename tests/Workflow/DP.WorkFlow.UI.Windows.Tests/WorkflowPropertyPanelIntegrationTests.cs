@@ -85,7 +85,7 @@ public sealed class WorkflowPropertyPanelIntegrationTests
         RunSta(() =>
         {
             using var host = new Form { ClientSize = new Size(width * 2, 640), ShowInTaskbar = false };
-            WorkflowNodeModel[] models = [new LoadVisionFileNodeModel { Id = "file" }, new InputLayoutNode { Id = "input" }];
+            WorkflowNodeModel[] models = [new AcquireVisionImageNodeModel { Id = "file" }, new InputLayoutNode { Id = "input" }];
             foreach (var node in models)
             {
                 var document = new WorkflowDocument { EntryNodeId = node.Id };
@@ -99,7 +99,7 @@ public sealed class WorkflowPropertyPanelIntegrationTests
             host.Show(); Application.DoEvents();
             foreach (var panel in host.Controls.OfType<DP.WorkFlow.UI.WinForms.WorkflowPropertyPanel>())
             {
-                string property = panel.Session!.SelectedNodeId == "file" ? nameof(LoadVisionFileNodeModel.FilePath) : nameof(InputLayoutNode.Literal);
+                string property = panel.Session!.SelectedNodeId == "file" ? nameof(AcquireVisionImageNodeModel.FilePath) : nameof(InputLayoutNode.Literal);
                 var row = Descendants(panel).Single(c => c.Tag is System.ComponentModel.PropertyDescriptor d && d.Name == property);
                 var input = Assert.Single(Descendants(row).OfType<ModernUI.WinForms.ModernInput>());
                 Assert.Equal(BorderStyle.None, input.InnerTextBox.BorderStyle);
@@ -162,8 +162,8 @@ public sealed class WorkflowPropertyPanelIntegrationTests
                 var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
                 var document = new WorkflowDocument();
                 WorkflowNodeModel node = index == 0
-                    ? new LoadVisionFileNodeModel { Id = "file", FilePath = @"C:\Data\PiProgects\WorkFlow\VisionData\demo.pgm" }
-                    : new LoadVisionFolderNodeModel { Id = "folder", FolderPath = @"C:\Data\PiProgects\WorkFlow\VisionData" };
+                    ? new AcquireVisionImageNodeModel { Id = "file", FilePath = @"C:\Data\PiProgects\WorkFlow\VisionData\demo.pgm" }
+                    : new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.Folder, RestartFolderEachRun = true, Id = "folder", FolderPath = @"C:\Data\PiProgects\WorkFlow\VisionData" };
                 document.CanvasProjection.Nodes.Add(new() { Node = node }); document.EntryNodeId = node.Id;
                 var session = new WorkflowDesignerSession(document, nodes) { SelectedNodeId = node.Id };
                 var panel = new DP.WorkFlow.UI.WinForms.WorkflowPropertyPanel { Session = session, EntryNodeId = node.Id,

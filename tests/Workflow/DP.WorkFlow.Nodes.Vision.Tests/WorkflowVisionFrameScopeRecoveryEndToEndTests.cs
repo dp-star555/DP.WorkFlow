@@ -41,7 +41,7 @@ public sealed class WorkflowVisionFrameScopeRecoveryEndToEndTests
 
             // 采图 → 故障 → 消费原图。消费节点绑定的是采图节点的输出。
             var document = new WorkflowDocument { Name = "主流程" };
-            var file = new LoadVisionFileNodeModel { Id = "file", FilePath = path };
+            var file = new AcquireVisionImageNodeModel { Id = "file", FilePath = path };
             var fault = new FaultNode { Id = "fault" };
             var consume = new ConsumeFrameNode { Id = "consume", Frame = Input<ImageFrame>("file") };
             document.EntryNodeId = file.Id;

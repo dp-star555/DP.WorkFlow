@@ -221,11 +221,11 @@ public sealed class WorkflowPropertyInspectorTests
     [Fact]
     public void Inspector_UsesKindSpecificChoiceEditorsForCaptureNodes()
     {
-        // 面阵与线扫是两个强类型节点，属性面板必须靠节点自己的编辑器键区分候选来源，
-        // 不能共用同一个键让操作员在两个节点上看到同一份（可能不匹配的）源列表。
+        // 面阵与线扫来源使用各自的编辑器键区分候选来源，
+        // 不能共用同一个键让操作员在两种来源上看到同一份（可能不匹配的）源列表。
         var catalog = new WorkflowNodeCatalog().RegisterImageNodes();
-        var area = new CaptureAreaFrameNodeModel { Id = "Area", Title = "面阵采集" };
-        var line = new CaptureLineScanFrameNodeModel { Id = "Line", Title = "线扫采集" };
+        var area = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.AreaCamera, Id = "Area", Title = "面阵采集" };
+        var line = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.LineCamera, Id = "Line", Title = "线扫采集" };
         var document = new WorkflowDocument { EntryNodeId = area.Id };
         document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = area });
         document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = line });
@@ -242,21 +242,21 @@ public sealed class WorkflowPropertyInspectorTests
         };
 
         using var areaInspector = new WorkflowPropertyInspectorModel(session, area.Id, provider);
-        var areaSource = areaInspector.Entries.Single(entry => entry.Name == nameof(CaptureAreaFrameNodeModel.Source));
+        var areaSource = areaInspector.Entries.Single(entry => entry.Name == nameof(AcquireVisionImageNodeModel.AreaSource));
         Assert.Equal(WorkflowPropertyEditorKeys.VisionAreaSource, areaSource.EditorKey);
         Assert.Equal(WorkflowPropertyEditorKind.Choice, areaSource.EditorKind);
         Assert.Equal("Camera.Top", Assert.Single(areaSource.Choices).Label);
         Assert.Equal("逻辑图像源", areaSource.DisplayName);
-        Assert.Contains(areaInspector.Entries, entry => entry.Name == nameof(CaptureAreaFrameNodeModel.TriggerMode));
+        Assert.Contains(areaInspector.Entries, entry => entry.Name == nameof(AcquireVisionImageNodeModel.TriggerMode));
 
         // 属性面板跟随会话的当前选中节点解析目标，切换选中后才能拿到线扫节点的属性。
         session.SelectedNodeId = line.Id;
         using var lineInspector = new WorkflowPropertyInspectorModel(session, line.Id, provider);
-        var lineSource = lineInspector.Entries.Single(entry => entry.Name == nameof(CaptureLineScanFrameNodeModel.Source));
+        var lineSource = lineInspector.Entries.Single(entry => entry.Name == nameof(AcquireVisionImageNodeModel.LineSource));
         Assert.Equal(WorkflowPropertyEditorKeys.VisionLineScanSource, lineSource.EditorKey);
         Assert.Equal(WorkflowPropertyEditorKind.Choice, lineSource.EditorKind);
         // 线扫不预设触发模式：在确定设备需求之前加字段只会被当成可用的工艺参数。
-        Assert.DoesNotContain(lineInspector.Entries, entry => entry.Name == nameof(CaptureAreaFrameNodeModel.TriggerMode));
+        Assert.DoesNotContain(lineInspector.Entries, entry => entry.Name == nameof(AcquireVisionImageNodeModel.TriggerMode));
         Assert.Contains(WorkflowPropertyEditorKeys.VisionAreaSource, requested);
         Assert.Contains(WorkflowPropertyEditorKeys.VisionLineScanSource, requested);
     }

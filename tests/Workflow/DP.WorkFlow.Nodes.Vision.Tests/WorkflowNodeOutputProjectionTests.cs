@@ -113,7 +113,7 @@ public sealed class WorkflowNodeOutputProjectionTests
             // 因此"从命名入口重跑"必然要撤销这张预览——正是AR-29的现场。
             var document = new WorkflowDocument { Name = "恢复失效流程" };
             var entry = new RecoveryEntryTestNode { Id = "entry" };
-            var file = new LoadVisionFileNodeModel { Id = "file", FilePath = path };
+            var file = new AcquireVisionImageNodeModel { Id = "file", FilePath = path };
             var fault = new FaultOnceNode { Id = "fault" };
             document.EntryNodeId = entry.Id;
             foreach (var node in new IWorkflowNodeModel[] { entry, file, fault })
@@ -179,7 +179,7 @@ public sealed class WorkflowNodeOutputProjectionTests
             var handlers = new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers();
 
             var document = new WorkflowDocument { Name = "采图流程" };
-            var file = new LoadVisionFileNodeModel { Id = "file", FilePath = path };
+            var file = new AcquireVisionImageNodeModel { Id = "file", FilePath = path };
             document.EntryNodeId = file.Id;
             document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = file });
 

@@ -110,10 +110,10 @@ public sealed class VisionOperatorPipelineTests
             { Id = "caliper" + i, Frame = Input<ImageFrame>("file"), StartX = .5, EndX = 63.5, StartY = y, EndY = y, HalfWidth = 0, Polarity = ECaliperPolarity.Rising }).ToArray();
             var fit = new FitVisionRobustLineNodeModel { Id = "fit", Frame = Input<ImageFrame>("file"), DistanceThreshold = .2,
                 Samples = calipers.Select(c => Input<VisionCaliperMeasurement>(c.Id)).ToList() };
-            var sequence = new List<IWorkflowNodeModel> { new LoadVisionFileNodeModel { Id = "file", FilePath = path } };
+            var sequence = new List<IWorkflowNodeModel> { new AcquireVisionImageNodeModel { Id = "file", FilePath = path } };
             if (mixFrames)
             {
-                sequence.Add(new LoadVisionFileNodeModel { Id = "other", FilePath = path });
+                sequence.Add(new AcquireVisionImageNodeModel { Id = "other", FilePath = path });
                 calipers[1].Frame = Input<ImageFrame>("other");
             }
             sequence.AddRange(calipers); sequence.Add(fit);
@@ -144,20 +144,17 @@ public sealed class VisionOperatorPipelineTests
     [InlineData(true, false)]
     [InlineData(false, true)]
     [InlineData(true, true)]
-    public async Task Pose_BindsTransformAndRejectsMappingWhenNotFound(bool absent, bool usePlugins)
+    public async Task Pose_ReportsTransform_OrNotFoundWithoutFakePose(bool absent, bool usePlugins)
     {
         var pixels = new byte[] { 30,200,70,100,180,90,255,10,130,50,160,40,230,80,210 };
         string template = Image(5, 3, (x, y) => pixels[y * 5 + x]);
         string scene = Image(32, 32, (x, y) => !absent && x >= 12 && x < 17 && y >= 10 && y < 13 ? pixels[(y - 10) * 5 + x - 12] : (byte)5);
         try
         {
-            var document = Document(new LoadVisionFileNodeModel { Id = "scene", FilePath = scene },
-                new LoadVisionFileNodeModel { Id = "template", FilePath = template },
+            var document = Document(new AcquireVisionImageNodeModel { Id = "scene", FilePath = scene },
+                new AcquireVisionImageNodeModel { Id = "template", FilePath = template },
                 new LocateVisionTemplatePoseNodeModel { Id = "pose", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"), MinimumScore = .999,
-                    MinimumAngleRadians = 0, MaximumAngleRadians = Math.PI / 2, AngleStepRadians = Math.PI / 2 },
-                new MapVisionPoseCoordinateNodeModel { Id = "map", Pose = Input<TemplatePoseResult>("pose") },
-                new MapVisionPoseCoordinateNodeModel { Id = "inverse", Pose = Input<TemplatePoseResult>("pose"), Inverse = true,
-                    X = WorkflowInput<double>.FromBinding(new WorkflowBindingKey("map", "X")), Y = WorkflowInput<double>.FromBinding(new WorkflowBindingKey("map", "Y")) });
+                    MinimumAngleRadians = 0, MaximumAngleRadians = Math.PI / 2, AngleStepRadians = Math.PI / 2 });
             var nodes = new WorkflowNodeCatalog().RegisterImageNodes(); var store = new WorkflowDocumentJsonStore(nodes);
             document = store.Deserialize(store.Serialize(document)).Document;
             using var scope = new WorkflowVisionFrameScope();
@@ -166,16 +163,16 @@ public sealed class VisionOperatorPipelineTests
             using var host = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
             host.Configure(document, new WorkflowContext(usePlugins ? PluginServices(scope, bindings) : Services(scope)));
             var run = await host.RunAsync();
-            Assert.Equal(!absent, Output<TemplatePoseResult>(host, "pose").Found);
+            Assert.True(run.Success, run.Message);
+            var pose = Output<TemplatePoseResult>(host, "pose");
+            Assert.Equal(!absent, pose.Found);
             if (absent)
-            { Assert.False(run.Success); Assert.DoesNotContain(host.Engine!.RunState.NodeOutputs, o => o.NodeId is "map" or "inverse"); }
+            { Assert.True(double.IsNaN(pose.CenterX)); Assert.Null(pose.ReferenceToImage); }
             else
             {
-                Assert.True(run.Success, run.Message);
-                // 参考坐标原点在模板参考点；图像模板的参考点是模板中心。
-                var pose = Output<TemplatePoseResult>(host, "pose"); Assert.Equal(14.5, pose.CenterX, 8); Assert.Equal(0, pose.AngleDegrees, 8);
-                var mapped = Output<Coordinate2D>(host, "map"); Assert.Equal(14.5, mapped.X, 8); Assert.Equal(11.5, mapped.Y, 8);
-                var inverse = Output<Coordinate2D>(host, "inverse"); Assert.Equal(0, inverse.X, 8); Assert.Equal(0, inverse.Y, 8);
+                // 参考点即图像模板中心；参考映射把参考原点映射到参考点。
+                Assert.Equal(14.5, pose.CenterX, 8); Assert.Equal(0, pose.AngleDegrees, 8);
+                var origin = pose.ReferenceToImage!.Map(new Coordinate2D(0, 0)); Assert.Equal(14.5, origin.X, 8); Assert.Equal(11.5, origin.Y, 8);
                 // 匹配框和参考轴共用一条摘要标注，不在参考点处重复叠加；拾取参考轴仍得到同一说明。
                 using var page = new VisionFrameEditorPageModel(document.CanvasProjection.Nodes.Single(n => n.Node.Id == "pose").Node, scope);
                 using var canvas = page.Capture(1);
@@ -203,7 +200,7 @@ public sealed class VisionOperatorPipelineTests
     }
 
     private static WorkflowDocument RegionPipeline(string path) => Document(
-        new LoadVisionFileNodeModel { Id = "file", FilePath = path },
+        new AcquireVisionImageNodeModel { Id = "file", FilePath = path },
         new PreprocessVisionImageNodeModel { Id = "process", Frame = Input<ImageFrame>("file"), Operation = EImagePreprocessing.GainOffset },
         new ThresholdVisionRegionNodeModel { Id = "threshold", Frame = Input<ImageFrame>("process"), MinimumGray = 255, MaximumGray = 255 },
         new MorphVisionRegionNodeModel { Id = "morph", Frame = Input<ImageFrame>("process"), InputRegion = Input<RegionAnalysisResult>("threshold"), Operation = ERegionMorphology.FillHoles },

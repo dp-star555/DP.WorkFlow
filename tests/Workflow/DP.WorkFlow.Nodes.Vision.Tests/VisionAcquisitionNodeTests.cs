@@ -220,23 +220,23 @@ public sealed class VisionAcquisitionNodeTests
         EVisionAcquisitionKind? kind = null) =>
         new(sourceId, providerId, policy, isAvailable, diagnostic, mode, kind);
 
-    /// <summary>面阵源：形态已声明，面阵节点可绑定、线扫节点必须拒绝。</summary>
+    /// <summary>面阵源：形态已声明，面阵来源可绑定、线扫来源必须拒绝。</summary>
     private static WorkflowVisionSourceInfo AreaSource(string sourceId, string providerId) =>
         Source(sourceId, providerId, kind: EVisionAcquisitionKind.AreaScan);
 
-    /// <summary>线扫源：形态已声明，线扫节点可绑定、面阵节点必须拒绝。</summary>
+    /// <summary>线扫源：形态已声明，线扫来源可绑定、面阵来源必须拒绝。</summary>
     private static WorkflowVisionSourceInfo LineSource(string sourceId, string providerId) =>
         Source(sourceId, providerId, kind: EVisionAcquisitionKind.LineScan);
 
     [Fact]
-    public async Task 线扫节点输出与面阵节点相同的中立ImageFrame()
+    public async Task 线扫来源输出与面阵来源相同的中立ImageFrame()
     {
-        // 两个节点只在参数绑定和候选过滤上分开；执行主干和输出必须完全一致，
+        // 两种来源只在参数绑定和候选过滤上分开；执行主干和输出必须完全一致，
         // 否则同一条流程会因为"选了面阵还是线扫"而产生不同的下游语义。
         using var rig = new Rig(
             sources: new[] { LineSource("Camera.Line", "dp.vision.halcon") },
-            captureNode: new CaptureLineScanFrameNodeModel
-            { Id = "capture", Source = new VisionSourceReference("Camera.Line") });
+            captureNode: new AcquireVisionImageNodeModel
+            { SourceMode = EWorkflowVisionImageSource.LineCamera, Id = "capture", Source = new VisionSourceReference("Camera.Line") });
 
         var result = await rig.Host.RunAsync();
 
@@ -249,12 +249,12 @@ public sealed class VisionAcquisitionNodeTests
     }
 
     [Fact]
-    public async Task 面阵节点绑定线扫源时在首节点前拒绝()
+    public async Task 面阵来源绑定线扫源时在首节点前拒绝()
     {
         using var rig = new Rig(
             sources: new[] { LineSource("Camera.Line", "dp.vision.halcon") },
-            captureNode: new CaptureAreaFrameNodeModel
-            { Id = "capture", Source = new VisionSourceReference("Camera.Line") });
+            captureNode: new AcquireVisionImageNodeModel
+            { SourceMode = EWorkflowVisionImageSource.AreaCamera, Id = "capture", Source = new VisionSourceReference("Camera.Line") });
 
         var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => rig.Host.RunAsync());
 
@@ -267,12 +267,12 @@ public sealed class VisionAcquisitionNodeTests
     }
 
     [Fact]
-    public async Task 线扫节点绑定面阵源时在首节点前拒绝()
+    public async Task 线扫来源绑定面阵源时在首节点前拒绝()
     {
         using var rig = new Rig(
             sources: new[] { AreaSource("Camera.Top", "dp.vision.halcon") },
-            captureNode: new CaptureLineScanFrameNodeModel
-            { Id = "capture", Source = new VisionSourceReference("Camera.Top") });
+            captureNode: new AcquireVisionImageNodeModel
+            { SourceMode = EWorkflowVisionImageSource.LineCamera, Id = "capture", Source = new VisionSourceReference("Camera.Top") });
 
         var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => rig.Host.RunAsync());
 
@@ -284,7 +284,7 @@ public sealed class VisionAcquisitionNodeTests
     [Fact]
     public async Task 形态未声明的源不做类型拒绝()
     {
-        // 宿主没有发布可判定的形态时不猜测：面阵节点仍然可以绑定，
+        // 宿主没有发布可判定的形态时不猜测：面阵来源仍然可以绑定，
         // 否则V1组合或对应Type未安装的机器会连既有流程都跑不起来。
         using var rig = new Rig(sources: new[] { Source("Camera.Top", "dp.vision.halcon") });
 
@@ -342,7 +342,7 @@ public sealed class VisionAcquisitionNodeTests
             bool registerRunScopeOwner = false,
             double? exposureMicroseconds = null,
             double? gainDecibels = null,
-            IWorkflowNodeModel? captureNode = null)
+            AcquireVisionImageNodeModel? captureNode = null)
         {
             Acquisition = new FakeVisionAcquisition(providerId);
             Sink = new SinkHandler();
@@ -356,9 +356,9 @@ public sealed class VisionAcquisitionNodeTests
                 .Register(Sink);
 
             var document = new WorkflowDocument { Name = "采集流程" };
-            // 默认用面阵节点；线扫场景由调用方传入已经绑定好线扫源的节点。
-            var capture = captureNode ?? new CaptureAreaFrameNodeModel
-            { Id = "capture", Source = new VisionSourceReference("Camera.Top") };
+            // 默认用面阵来源；线扫场景由调用方传入已经绑定好线扫源的节点。
+            var capture = captureNode ?? new AcquireVisionImageNodeModel
+            { SourceMode = EWorkflowVisionImageSource.AreaCamera, Id = "capture", Source = new VisionSourceReference("Camera.Top") };
             ApplyPhysicalOverrides(capture, exposureMicroseconds, gainDecibels);
             var sink = new SinkNode { Id = "sink" };
             document.EntryNodeId = capture.Id;
@@ -394,22 +394,13 @@ public sealed class VisionAcquisitionNodeTests
 
         public WorkflowRuntimeHost Host { get; }
 
-        /// <summary>两个节点模型不共享基类，因此这里按实际类型写参数；不覆盖时保持留空语义。</summary>
-        private static void ApplyPhysicalOverrides(IWorkflowNodeModel capture, double? exposureMicroseconds, double? gainDecibels)
+        /// <summary>写入物理量覆盖；不覆盖时保持留空语义。</summary>
+        private static void ApplyPhysicalOverrides(AcquireVisionImageNodeModel capture, double? exposureMicroseconds, double? gainDecibels)
         {
             if (exposureMicroseconds is null && gainDecibels is null)
                 return;
-            switch (capture)
-            {
-                case CaptureAreaFrameNodeModel area:
-                    area.ExposureMicroseconds = exposureMicroseconds;
-                    area.GainDecibels = gainDecibels;
-                    break;
-                case CaptureLineScanFrameNodeModel line:
-                    line.ExposureMicroseconds = exposureMicroseconds;
-                    line.GainDecibels = gainDecibels;
-                    break;
-            }
+            capture.ExposureMicroseconds = exposureMicroseconds;
+            capture.GainDecibels = gainDecibels;
         }
 
         public void Dispose()

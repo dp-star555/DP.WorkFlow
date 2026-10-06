@@ -11,15 +11,14 @@ public sealed class VisionModuleTests
     {
         var nodes = new WorkflowNodeCatalog(); var handlers = new WorkflowNodeHandlerCatalog();
         new WorkflowRuntimePluginCatalog(nodes, handlers).Register(new WorkflowImageRuntimePluginModule()).Freeze();
-        // V2-5：旧的 Vision.CaptureFrame 被面阵/线扫两个强类型节点取代，净增一个节点。
-        Assert.Equal(21, nodes.Snapshot().Count);
+        Assert.Equal(13, nodes.Snapshot().Count);
         Assert.Equal(typeof(DP.Vision.Algorithms.RegionAnalysisResult), nodes.GetOrThrow("Vision.CreateRegion").OutputType);
-        Assert.Equal(typeof(ImageFrame), nodes.GetOrThrow("Vision.LoadFile").OutputType);
-        Assert.Equal(typeof(ImageFrame), nodes.GetOrThrow("Vision.CaptureAreaFrame").OutputType);
-        Assert.Equal(typeof(ImageFrame), nodes.GetOrThrow("Vision.CaptureLineScanFrame").OutputType);
-        foreach (var type in new[] { "Vision.LoadFile", "Vision.LoadFolder", "Vision.CaptureAreaFrame", "Vision.CaptureLineScanFrame" })
-            Assert.Equal("5.Vision/Acquisition", nodes.GetOrThrow(type).Category);
-        Assert.DoesNotContain(nodes.Snapshot().Keys, type => type is "Vision.AcquireImage" or "Vision.RunTool" or "Vision.Blob" or "Vision.Ocr" or "Vision.PaddleOcr");
+        Assert.Equal(typeof(ImageFrame), nodes.GetOrThrow("Vision.AcquireFrame").OutputType);
+        Assert.Equal("5.Vision/Acquisition", nodes.GetOrThrow("Vision.AcquireFrame").Category);
+        // 已合并或删除的节点类型不再注册：取图统一为“图像获取”，模板定位统一为一个节点。
+        Assert.DoesNotContain(nodes.Snapshot().Keys, type => type is "Vision.AcquireImage" or "Vision.RunTool" or "Vision.Blob" or "Vision.Ocr" or "Vision.PaddleOcr"
+            or "Vision.LoadFile" or "Vision.LoadFolder" or "Vision.CaptureAreaFrame" or "Vision.CaptureLineScanFrame"
+            or "Vision.LocateTemplate" or "Vision.MeasureEdges" or "Vision.MeasureDistance" or "Vision.MapPoseCoordinate");
         Assert.DoesNotContain(typeof(WorkflowImageRuntimePluginModule).Assembly.GetReferencedAssemblies(), a => a.Name!.StartsWith("MachineVision", StringComparison.Ordinal));
     }
 
@@ -40,7 +39,7 @@ public sealed class VisionModuleTests
             var nodes = new WorkflowNodeCatalog(); var handlers = new WorkflowNodeHandlerCatalog();
             var composition = new WorkflowRuntimePluginCatalog(nodes, handlers);
             Assert.Equal(1, composition.LoadPlugins(root)); composition.Freeze();
-            Assert.Equal(21, nodes.Snapshot().Count);
+            Assert.Equal(13, nodes.Snapshot().Count);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -72,7 +71,7 @@ public sealed class VisionModuleTests
             var nodes = new WorkflowNodeCatalog(); var handlers = new WorkflowNodeHandlerCatalog();
             var composition = new WorkflowRuntimePluginCatalog(nodes, handlers).Register(new WorkflowImageRuntimePluginModule());
             Assert.Equal(0, composition.LoadPlugins(root)); composition.Freeze();
-            Assert.Equal(21, nodes.Snapshot().Count);
+            Assert.Equal(13, nodes.Snapshot().Count);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -83,8 +82,8 @@ public sealed class VisionModuleTests
         var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
         var store = new WorkflowDocumentJsonStore(nodes);
         var document = new WorkflowDocument { EntryNodeId = "file" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new LoadVisionFileNodeModel { Id = "file" } });
-        var json = store.Serialize(document).Replace("Vision.LoadFile", "Vision.AcquireImage", StringComparison.Ordinal);
+        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AcquireVisionImageNodeModel { Id = "file" } });
+        var json = store.Serialize(document).Replace("Vision.AcquireFrame", "Vision.AcquireImage", StringComparison.Ordinal);
         var loaded = store.Deserialize(json).Document;
         Assert.Equal("Vision.AcquireImage", loaded.CanvasProjection.Nodes[0].Node.NodeType);
         Assert.IsType<UnknownWorkflowNodeModel>(loaded.CanvasProjection.Nodes[0].Node);

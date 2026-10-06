@@ -151,7 +151,7 @@ public sealed class NewVisionFilePipelineTests
         {
             Id = "Blobs", Frame = WorkflowInput<ImageFrame>.FromBinding(new WorkflowBindingKey("File", "$")), MaximumGray = 0
         } });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new LoadVisionFileNodeModel { Id = "Original", FilePath = path } });
+        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AcquireVisionImageNodeModel { Id = "Original", FilePath = path } });
         document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AnalyzeVisionColorNodeModel
         {
             Id = "Color", Frame = WorkflowInput<ImageFrame>.FromBinding(new WorkflowBindingKey("Original", "$"))

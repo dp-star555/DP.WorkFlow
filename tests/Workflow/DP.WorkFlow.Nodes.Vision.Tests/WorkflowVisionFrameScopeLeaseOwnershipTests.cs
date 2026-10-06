@@ -94,7 +94,7 @@ public sealed class WorkflowVisionFrameScopeLeaseOwnershipTests
     /// <summary>跑一次真实采图：节点会 Retain 进帧仓，并 Publish 一份预览。</summary>
     private static async Task RunLoadFileAsync(string path, FrameBufferPool pool, WorkflowVisionFrameScope scope)
     {
-        var file = new LoadVisionFileNodeModel { Id = "file", FilePath = path };
+        var file = new AcquireVisionImageNodeModel { Id = "file", FilePath = path };
         var document = new WorkflowDocument { Name = "采图", EntryNodeId = file.Id };
         document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = file });
 

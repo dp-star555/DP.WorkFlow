@@ -14,9 +14,7 @@ public sealed class VisionFrameEditorPageProvider(IWorkflowVisionPreviewSource? 
     /// <inheritdoc/>
     public string ExtensionId => RendererKey;
     /// <inheritdoc/>
-    public bool CanProvide(WorkflowNodeEditorContext context) => context.Node is AnalyzeVisionFrameNodeModel
-        or LoadVisionFileNodeModel or LoadVisionFolderNodeModel
-        or CaptureAreaFrameNodeModel or CaptureLineScanFrameNodeModel or AcquireVisionImageNodeModel;
+    public bool CanProvide(WorkflowNodeEditorContext context) => context.Node is AnalyzeVisionFrameNodeModel or AcquireVisionImageNodeModel;
     /// <inheritdoc/>
     public IEnumerable<WorkflowNodeEditorPageDescriptor> CreatePages(WorkflowNodeEditorContext context)
     {
@@ -130,8 +128,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             var parent = node.Coordinates == null ? null : CaptureCoordinates(node.Coordinates, frame);
             using var mask = node.Mask.Binding is { IsPublicData: false } binding ? _frames?.Capture(binding.NodeId) : null;
             var range = node.ResolvePreviewRange(frame, parent, mask?.Facts as RegionAnalysisResult);
-            var options = _node is LocateVisionTemplatePoseNodeModel pose ? pose.OptionsForPreview(parent)
-                : new TemplatePoseOptions(parent?.RotationRadians ?? 0, parent?.RotationRadians ?? 0, parent?.SimilarityScale ?? 1, parent?.SimilarityScale ?? 1, ((LocateVisionTemplateNodeModel)_node).MinimumScore);
+            var options = ((LocateVisionTemplatePoseNodeModel)_node).OptionsForPreview(parent);
             return Template?.SearchIssue(range.Bounds, options) ?? "";
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return ex.Message; }
@@ -160,9 +157,8 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         var definition = Template!.BuiltDefinition ?? throw new InvalidOperationException("请先生成模型。");
         var bounds = roiSelfTest ? new PixelBounds(definition.X, definition.Y, definition.Width, definition.Height)
             : new PixelBounds(0, 0, frame.Image.Info.Width, frame.Image.Info.Height);
-        var pose = _node as LocateVisionTemplatePoseNodeModel;
-        var options = roiSelfTest ? new TemplatePoseOptions(0d, 0d, 1d, 1d, pose?.MinimumScore ?? ((LocateVisionTemplateNodeModel)_node).MinimumScore, pose?.MaximumWork ?? 200000000)
-            : pose?.OptionsForPreview() ?? new TemplatePoseOptions(0d, 0d, 1d, 1d, ((LocateVisionTemplateNodeModel)_node).MinimumScore);
+        var pose = (LocateVisionTemplatePoseNodeModel)_node;
+        var options = roiSelfTest ? new TemplatePoseOptions(0d, 0d, 1d, 1d, pose.MinimumScore, pose.MaximumWork) : pose.OptionsForPreview();
         return (bounds, options);
     }
     /// <summary>隔离节点当前保存的模板清单引用。</summary>
@@ -179,8 +175,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         var parent = node.Coordinates == null ? null : CaptureCoordinates(node.Coordinates, frame);
         using var maskPreview = node.Mask.Binding is { IsPublicData: false } maskBinding ? _frames?.Capture(maskBinding.NodeId) : null;
         var range = node.ResolvePreviewRange(frame, parent, maskPreview?.Facts as RegionAnalysisResult);
-        var options = _node is LocateVisionTemplatePoseNodeModel pose ? pose.OptionsForPreview(parent)
-            : new TemplatePoseOptions(parent?.RotationRadians ?? 0, parent?.RotationRadians ?? 0, parent?.SimilarityScale ?? 1, parent?.SimilarityScale ?? 1, ((LocateVisionTemplateNodeModel)_node).MinimumScore);
+        var options = ((LocateVisionTemplatePoseNodeModel)_node).OptionsForPreview(parent);
         await template.TryMatchAsync(frame, range.Bounds, options, range.Region);
     }
     /// <summary>共享ROI编辑器，原图坐标。</summary>
@@ -278,7 +273,6 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             }
             string id = _node.Id;
             if (view == 0 && _node is AnalyzeVisionFrameNodeModel a && a.Frame.Binding is { IsPublicData: false } input) id = input.NodeId;
-            if (view == 2 && _node is LocateVisionTemplateNodeModel t && t.Template.Binding is { IsPublicData: false } template) id = template.NodeId;
             if (view == 2 && _node is LocateVisionTemplatePoseNodeModel p && p.Template.Binding is { IsPublicData: false } poseTemplate) id = poseTemplate.NodeId;
             using var current = view == 3 ? null : _frames?.Capture(id);
             var frame = view == 3 ? _manual : current?.Frame;
@@ -347,7 +341,6 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         RobustLineResult r => $"鲁棒直线内点 {r.InlierCount}；RMS {r.RmsError:F4}px。",
         BlobAnalysisResult b => $"帧 {frame.FrameId}；连通域 {b.Count}；完成≠产品合格。点击Region查看面积/质心。",
         ColorAnalysisResult c => $"RGB=({c.Red:F3},{c.Green:F3},{c.Blue:F3})；像素 {c.PixelCount}；Alpha不加权。",
-        EdgeMeasurementResult e => $"{e.Model}；边缘 {e.PointCount}；RMS {e.RmsError:F4}px；半径 {e.Radius:F4}px。",
         _ => $"帧 {frame.FrameId}；{frame.Image.Info.Width}×{frame.Image.Info.Height}；{frame.Image.Info.Layout}"
     };
 
@@ -386,10 +379,6 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
                 var b = blobs.Blobs[i];
                 yield return new Visual($"blob-{i}", b.Region, 0xFF22DD88, $"#{i + 1} 面积 {b.Area}；质心 ({b.Centroid.X:F3},{b.Centroid.Y:F3})；栅格周长 {b.Features.GridPerimeter}；圆度 {b.Features.Circularity:F4}；轴比 {b.Features.Elongation:F4}");
             }
-        if (facts is EdgeMeasurementResult e)
-            yield return new Visual("measurement", e.Model == EEdgeModel.Line
-                ? new ContourGeometry(new[] { e.A, e.B }) : new EllipseGeometry(e.A, e.Radius, e.Radius),
-                0xFFFFCC00, $"{e.Model} RMS={e.RmsError:F4}px");
     }
 
     /// <inheritdoc/>

@@ -104,7 +104,7 @@ public static class WorkflowVisionOutputNames
     {
         foreach (var type in new[]
         {
-            typeof(ImageFrame), typeof(BlobAnalysisResult), typeof(ColorAnalysisResult), typeof(EdgeMeasurementResult),
+            typeof(ImageFrame), typeof(BlobAnalysisResult), typeof(ColorAnalysisResult),
             typeof(TemplatePoseResult), typeof(AffineCalibration), typeof(Coordinate2D),
             typeof(RegionAnalysisResult), typeof(CaliperResult), typeof(VisionCaliperMeasurement), typeof(VisionCaliperEdge), typeof(RobustLineResult), typeof(VisionPoint), typeof(VisionLine),
             typeof(GeometricDistanceResult), typeof(VisionCoordinateSystemResult), typeof(VisionCoordinateDefinition)

@@ -10,7 +10,7 @@ namespace DP.WorkFlow.Tests;
 public sealed class UnifiedVisionAcquisitionEditingTests
 {
     [Fact]
-    public void ToolboxOffersOneAcquisitionEntry_AndLegacyRecipesStillDeserialize()
+    public void ToolboxOffersOneAcquisitionEntry_AndEachSourceModeRoundTrips()
     {
         var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
         var session = new WorkflowDesignerSession(new WorkflowDocument(), nodes);
@@ -18,16 +18,17 @@ public sealed class UnifiedVisionAcquisitionEditingTests
         Assert.Equal("Vision.AcquireFrame", Assert.Single(acquisition).NodeType);
         Assert.Equal("图像获取", acquisition[0].DisplayName);
         var document = new WorkflowDocument { EntryNodeId = "file" };
-        document.CanvasProjection.Nodes.Add(new() { Node = new LoadVisionFileNodeModel { Id = "file", FilePath = "preserve.png" } });
-        document.CanvasProjection.Nodes.Add(new() { Node = new LoadVisionFolderNodeModel { Id = "folder", FolderPath = "preserve-folder", Loop = true } });
-        document.CanvasProjection.Nodes.Add(new() { Node = new CaptureAreaFrameNodeModel { Id = "area", Source = new("Area") } });
-        document.CanvasProjection.Nodes.Add(new() { Node = new CaptureLineScanFrameNodeModel { Id = "line", Source = new("Line") } });
+        document.CanvasProjection.Nodes.Add(new() { Node = new AcquireVisionImageNodeModel { Id = "file", FilePath = "preserve.png" } });
+        document.CanvasProjection.Nodes.Add(new() { Node = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.Folder, Id = "folder", FolderPath = "preserve-folder", Loop = true } });
+        document.CanvasProjection.Nodes.Add(new() { Node = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.AreaCamera, Id = "area", Source = new("Area") } });
+        document.CanvasProjection.Nodes.Add(new() { Node = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.LineCamera, Id = "line", Source = new("Line") } });
         var store = new WorkflowDocumentJsonStore(nodes);
-        var restored = store.Deserialize(store.Serialize(document)).Document.CanvasProjection.Nodes.Select(item => item.Node).ToArray();
-        Assert.Equal("preserve.png", Assert.IsType<LoadVisionFileNodeModel>(restored[0]).FilePath);
-        Assert.True(Assert.IsType<LoadVisionFolderNodeModel>(restored[1]).Loop);
-        Assert.Equal("Area", Assert.IsType<CaptureAreaFrameNodeModel>(restored[2]).Source!.SourceId);
-        Assert.Equal("Line", Assert.IsType<CaptureLineScanFrameNodeModel>(restored[3]).Source!.SourceId);
+        var restored = store.Deserialize(store.Serialize(document)).Document.CanvasProjection.Nodes
+            .Select(item => Assert.IsType<AcquireVisionImageNodeModel>(item.Node)).ToArray();
+        Assert.Equal("preserve.png", restored[0].FilePath);
+        Assert.True(restored[1].Loop); Assert.Equal(EWorkflowVisionImageSource.Folder, restored[1].SourceMode);
+        Assert.Equal("Area", restored[2].Source!.SourceId); Assert.Equal(EWorkflowVisionImageSource.AreaCamera, restored[2].SourceMode);
+        Assert.Equal("Line", restored[3].Source!.SourceId); Assert.Equal(EWorkflowVisionImageSource.LineCamera, restored[3].SourceMode);
     }
 
     [Fact]

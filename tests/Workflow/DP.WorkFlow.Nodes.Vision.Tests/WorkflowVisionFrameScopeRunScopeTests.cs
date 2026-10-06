@@ -79,8 +79,8 @@ public sealed class WorkflowVisionFrameScopeRunScopeTests
         using var scope = new WorkflowVisionFrameScope();
         var nodes = new IWorkflowNodeModel[]
         {
-            new LoadVisionFileNodeModel { Id = "same" },
-            new LoadVisionFileNodeModel { Id = "same" }
+            new AcquireVisionImageNodeModel { Id = "same" },
+            new AcquireVisionImageNodeModel { Id = "same" }
         };
 
         // 嵌套作用域只是"不清资源"，不是"跳过准备"：校验必须照常执行。

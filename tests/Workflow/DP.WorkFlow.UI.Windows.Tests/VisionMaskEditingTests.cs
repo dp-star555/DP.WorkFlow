@@ -78,7 +78,7 @@ public sealed class VisionMaskEditingTests
     public async Task InputPreview_ShowsBoundMaskAndRefreshesAfterRoiExclusionOnSameImage()
     {
         using var file = new TemporaryFile();
-        var source = new LoadVisionFileNodeModel { Id = "image", FilePath = file.Path };
+        var source = new AcquireVisionImageNodeModel { Id = "image", FilePath = file.Path };
         var mask = new ThresholdVisionRegionNodeModel { Id = "mask", Frame = Input<ImageFrame>("image"), MinimumGray = 255, MaximumGray = 255 };
         var consumer = new AnalyzeVisionColorNodeModel { Id = "color", Frame = Input<ImageFrame>("image"), Mask = Input<RegionAnalysisResult>("mask") };
         using var frames = new WorkflowVisionFrameScope();
@@ -109,7 +109,7 @@ public sealed class VisionMaskEditingTests
     public async Task DrawnMaskNode_RoundTripsAndRunsWithoutVendorEngine_AndCanBindThroughPropertyGrid()
     {
         using var file = new TemporaryFile();
-        var source = new LoadVisionFileNodeModel { Id = "image", FilePath = file.Path };
+        var source = new AcquireVisionImageNodeModel { Id = "image", FilePath = file.Path };
         var mask = new CreateVisionRegionNodeModel { Id = "mask", Frame = Input<ImageFrame>("image"), Regions = new()
         {
             new() { Id = "include", CenterX = 1, CenterY = 2, Width = 2, Height = 4 },
@@ -141,7 +141,7 @@ public sealed class VisionMaskEditingTests
     public async Task UnrelatedPreviewImage_RejectsBoundMaskAndDoesNotKeepOldOverlay()
     {
         using var file = new TemporaryFile();
-        var source = new LoadVisionFileNodeModel { Id = "image", FilePath = file.Path };
+        var source = new AcquireVisionImageNodeModel { Id = "image", FilePath = file.Path };
         var mask = new CreateVisionRegionNodeModel { Id = "mask", Frame = Input<ImageFrame>("image") };
         using var frames = new WorkflowVisionFrameScope();
         using var host = new WorkflowRuntimeHost(new WorkflowNodeCatalog().RegisterImageNodes(), new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());

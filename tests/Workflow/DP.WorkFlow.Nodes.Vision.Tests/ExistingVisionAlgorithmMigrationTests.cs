@@ -8,11 +8,9 @@ namespace DP.WorkFlow.Tests;
 public sealed class ExistingVisionAlgorithmMigrationTests
 {
     [Theory]
-    [InlineData("Vision.LoadFile", "opencv.image-read")]
-    [InlineData("Vision.LoadFolder", "opencv.image-read")]
+    [InlineData("Vision.AcquireFrame", "opencv.image-read")]
     [InlineData("Vision.AnalyzeBlobs", "opencv.blob")]
     [InlineData("Vision.AnalyzeColor", "managed.color")]
-    [InlineData("Vision.MeasureEdges", "opencv.edges")]
     [InlineData("Vision.PreprocessImage", "opencv.preprocess")]
     [InlineData("Vision.ThresholdRegion", "opencv.region")]
     [InlineData("Vision.MorphRegion", "opencv.region")]
@@ -48,7 +46,7 @@ public sealed class ExistingVisionAlgorithmMigrationTests
         using var runtime = Runtime(reader);
         using var frames = new WorkflowVisionFrameScope();
         using var bindings = new WorkflowVisionAlgorithmBindings(runtime, frames);
-        var source = new LoadVisionFileNodeModel { Id = "source", FilePath = folder.File, Algorithm = Selection("test.read") };
+        var source = new AcquireVisionImageNodeModel { Id = "source", FilePath = folder.File, Algorithm = Selection("test.read") };
         var first = new AnalyzeVisionColorNodeModel { Id = "first", Frame = Input<ImageFrame>(source.Id), Algorithm = Selection("test.color.first") };
         var second = new AnalyzeVisionColorNodeModel { Id = "second", Frame = Input<ImageFrame>(source.Id), Algorithm = Selection("test.color.second") };
         var document = Document(source, first, second);
@@ -74,7 +72,7 @@ public sealed class ExistingVisionAlgorithmMigrationTests
         using var runtime = Runtime(reader);
         using var frames = new WorkflowVisionFrameScope();
         using var bindings = new WorkflowVisionAlgorithmBindings(runtime, frames);
-        var source = new LoadVisionFileNodeModel { Id = "source", FilePath = folder.File, Algorithm = Selection("test.read") };
+        var source = new AcquireVisionImageNodeModel { Id = "source", FilePath = folder.File, Algorithm = Selection("test.read") };
         var color = new AnalyzeVisionColorNodeModel { Id = "color", Frame = Input<ImageFrame>(source.Id), Algorithm = new() { ImplementationId = implementation, SettingsVersion = version } };
         using var host = new WorkflowRuntimeHost(new WorkflowNodeCatalog().RegisterImageNodes(), new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
         host.Configure(Document(source, color), new WorkflowContext(Services(frames, bindings)));
@@ -93,7 +91,7 @@ public sealed class ExistingVisionAlgorithmMigrationTests
         using var runtime = Runtime(selected);
         using var frames = new WorkflowVisionFrameScope(session);
         using var bindings = new WorkflowVisionAlgorithmBindings(runtime, frames);
-        var node = new LoadVisionFolderNodeModel { Id = "folder", FolderPath = folder.Path, Algorithm = Selection("test.read"), Extensions = ".png" };
+        var node = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.Folder, RestartFolderEachRun = true, Id = "folder", FolderPath = folder.Path, Algorithm = Selection("test.read"), Extensions = ".png" };
         var services = Services(frames, bindings).Add<IWorkflowVisionFolderSource>(session);
         using var host = new WorkflowRuntimeHost(new WorkflowNodeCatalog().RegisterImageNodes(), new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
         host.Configure(Document(node), new WorkflowContext(services));
@@ -109,7 +107,7 @@ public sealed class ExistingVisionAlgorithmMigrationTests
     {
         using var folder = new TemporaryFolder();
         var session = new WorkflowVisionAcquisitionSession(new CountingReader());
-        var node = new LoadVisionFolderNodeModel { Id = "folder", FolderPath = folder.Path };
+        var node = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.Folder, RestartFolderEachRun = true, Id = "folder", FolderPath = folder.Path };
         await session.PrepareAsync(new WorkflowRunPreparationContext(new[] { node }, WorkflowRunScopeKind.Root), default);
         await session.ReleasePreviousRunAsync(default);
         var attempted = new List<string>();
@@ -144,7 +142,7 @@ public sealed class ExistingVisionAlgorithmMigrationTests
     {
         using var folder = new TemporaryFolder();
         using var frames = new WorkflowVisionFrameScope();
-        var source = new LoadVisionFileNodeModel { Id = "source", FilePath = folder.File };
+        var source = new AcquireVisionImageNodeModel { Id = "source", FilePath = folder.File };
         var color = new AnalyzeVisionColorNodeModel { Id = "color", Frame = Input<ImageFrame>(source.Id), Algorithm = Selection("test.color.second") };
         var services = new WorkflowServiceProvider().Add<IImageFileReader>(new CountingReader()).Add<IColorAnalyzer>(new FixedColor(11))
             .Add<IWorkflowVisionFrameScope>(frames).Add<IWorkflowRunPreparationService>(frames).Add<IWorkflowRunResourceOwner>(frames);

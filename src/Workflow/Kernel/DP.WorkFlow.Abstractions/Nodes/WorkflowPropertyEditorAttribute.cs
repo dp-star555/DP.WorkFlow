@@ -20,9 +20,6 @@ public static class WorkflowPropertyEditorKeys
     /// <summary>通用算法候选键前缀，后接能力Id；新增能力无需修改共享UI。</summary>
     public const string VisionAlgorithmPrefix = "VisionAlgorithm/";
 
-    /// <summary>选择已安装的模板定位算法实现。</summary>
-    public const string VisionTemplateAlgorithm = VisionAlgorithmPrefix + "location.template";
-
     /// <summary>打开匹配节点挂载的模板制作及资源选择编辑器。</summary>
     public const string VisionTemplateEditor = "VisionTemplateEditor";
 

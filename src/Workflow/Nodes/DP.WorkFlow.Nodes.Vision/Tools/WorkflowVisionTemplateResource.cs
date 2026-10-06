@@ -21,7 +21,7 @@ public interface IWorkflowVisionTemplateNode
     VisionAlgorithmSelection ModelAlgorithm { get; set; }
     /// <summary>模板稳定资源身份。</summary>
     string TemplateResourceId { get; set; }
-    /// <summary>是否要求旋转尺度搜索。</summary>
+    /// <summary>是否要求旋转或尺度搜索；只做平移时可用只支持平移的模型。</summary>
     bool RequiresPoseSearch { get; }
     /// <summary>节点应用时确认的参考定义，独立于资源路径和引擎配置。</summary>
     VisionTemplateDefinition? TemplateReferenceDefinition { get; set; }
@@ -32,11 +32,9 @@ public interface IWorkflowVisionTemplateNode
 /// <summary>共同模型调用，运行前已捕获资源和租约。</summary>
 internal static class WorkflowVisionTemplateResource
 {
-    internal static WorkflowVisionAlgorithmSlot Slot(IWorkflowVisionTemplateNode node) => new("model", typeof(IPreparedVisionTemplateMatcher), node.ModelAlgorithm,
-        node.RequiresPoseSearch
-            ? node is LocateVisionTemplatePoseNodeModel pose && (Math.Abs(pose.MinimumScale - 1) > 1e-9 || Math.Abs(pose.MaximumScale - 1) > 1e-9)
-                ? new[] { "translation", "rotation", "scale" } : new[] { "translation", "rotation" }
-            : new[] { "translation" });
+    internal static WorkflowVisionAlgorithmSlot Slot(LocateVisionTemplatePoseNodeModel node) => new("model", typeof(IPreparedVisionTemplateMatcher), node.ModelAlgorithm,
+        new[] { "translation" }.Concat(node.RequiresRotation ? ["rotation"] : Array.Empty<string>())
+            .Concat(node.RequiresScale ? ["scale"] : Array.Empty<string>()).ToArray());
     internal static IReadOnlyList<string> Validate(IWorkflowVisionTemplateNode node)
     {
         var errors = new List<string>();

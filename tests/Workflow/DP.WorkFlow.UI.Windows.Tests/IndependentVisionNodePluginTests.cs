@@ -185,7 +185,7 @@ public sealed class IndependentVisionNodePluginTests
         }
         public WorkflowDocument Document(AnalyzeVisionFrameNodeModel node)
         {
-            var source = new LoadVisionFileNodeModel { Id = "source", FilePath = Path.Combine(AppContext.BaseDirectory, "VisionData", "barcode.pgm") };
+            var source = new AcquireVisionImageNodeModel { Id = "source", FilePath = Path.Combine(AppContext.BaseDirectory, "VisionData", "barcode.pgm") };
             node.Frame = WorkflowInput<ImageFrame>.FromBinding(new WorkflowBindingKey(source.Id, "$"));
             var document = new WorkflowDocument { EntryNodeId = source.Id };
             document.CanvasProjection.Nodes.Add(new() { Node = source }); document.CanvasProjection.Nodes.Add(new() { Node = node });

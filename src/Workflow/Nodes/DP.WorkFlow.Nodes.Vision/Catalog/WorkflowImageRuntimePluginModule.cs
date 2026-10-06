@@ -30,17 +30,10 @@ public static class WorkflowImageNodes
         var ports = new[] { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success) };
         return catalog
             .Register(WorkflowNodeDescriptor.Create<AcquireVisionImageNodeModel, ImageFrame>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<LoadVisionFileNodeModel, ImageFrame>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<LoadVisionFolderNodeModel, ImageFrame>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<CaptureAreaFrameNodeModel, ImageFrame>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<CaptureLineScanFrameNodeModel, ImageFrame>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<AnalyzeVisionBlobsNodeModel, BlobAnalysisResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<AnalyzeVisionColorNodeModel, ColorAnalysisResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<MeasureVisionEdgesNodeModel, EdgeMeasurementResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<LocateVisionTemplateNodeModel, TemplatePoseResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<SolveVisionCalibrationNodeModel, AffineCalibration>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<MapVisionCoordinateNodeModel, Coordinate2D>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<MeasureVisionDistanceNodeModel, VisionDistanceResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<PreprocessVisionImageNodeModel, ImageFrame>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<ThresholdVisionRegionNodeModel, RegionAnalysisResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<CreateVisionRegionNodeModel, RegionAnalysisResult>(ports: ports))
@@ -48,8 +41,7 @@ public static class WorkflowImageNodes
             .Register(WorkflowNodeDescriptor.Create<SelectVisionBlobsNodeModel, BlobAnalysisResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<MeasureVisionCaliperNodeModel, VisionCaliperMeasurement>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<FitVisionRobustLineNodeModel, RobustLineResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<LocateVisionTemplatePoseNodeModel, TemplatePoseResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<MapVisionPoseCoordinateNodeModel, Coordinate2D>(ports: ports));
+            .Register(WorkflowNodeDescriptor.Create<LocateVisionTemplatePoseNodeModel, TemplatePoseResult>(ports: ports));
     }
 
     /// <summary>成组注册处理器及启动前能力要求。</summary>
@@ -72,18 +64,9 @@ public static class WorkflowImageNodes
                 };
                 return new[] { source, frames };
             })
-            .Register(new LoadVisionFileNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IImageFileReader>(), frames)
-            .Register(new LoadVisionFolderNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFolderSource>(), frames)
-            // 采集节点只声明中立采集入口：Provider选择、连接复用、互斥和来源元数据都由采集运行时隐藏。
-            // 面阵与线扫只在参数绑定和候选过滤上分开，能力要求与输出完全一致。
-            .Register(new CaptureAreaFrameNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IVisionAcquisition>(), frames)
-            .Register(new CaptureLineScanFrameNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IVisionAcquisition>(), frames)
             .Register(new AnalyzeVisionBlobsNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IBlobAnalyzer>())
             .Register(new AnalyzeVisionColorNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IColorAnalyzer>())
-            .Register(new MeasureVisionEdgesNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IEdgeMeasurer>())
-            .Register(new LocateVisionTemplateNodeHandler(), node => new[] { ((LocateVisionTemplateNodeModel)node).TemplateSource == EWorkflowVisionTemplateSource.Resource
-                ? WorkflowRuntimeCapabilityRequirement.Require<IPreparedVisionTemplateMatcher>() : WorkflowRuntimeCapabilityRequirement.Require<ITemplateLocator>() })
-            .Register(new SolveVisionCalibrationNodeHandler()).Register(new MapVisionCoordinateNodeHandler()).Register(new MeasureVisionDistanceNodeHandler())
+            .Register(new SolveVisionCalibrationNodeHandler()).Register(new MapVisionCoordinateNodeHandler())
             .Register(new PreprocessVisionImageNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IImagePreprocessor>(), frames)
             .Register(new ThresholdVisionRegionNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IRegionProcessor>())
             .Register(new CreateVisionRegionNodeHandler(), frames)
@@ -92,7 +75,6 @@ public static class WorkflowImageNodes
             .Register(new MeasureVisionCaliperNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<ICaliperMeasurer>())
             .Register(new FitVisionRobustLineNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IRobustLineFitter>())
             .Register(new LocateVisionTemplatePoseNodeHandler(), node => new[] { ((LocateVisionTemplatePoseNodeModel)node).TemplateSource == EWorkflowVisionTemplateSource.Resource
-                ? WorkflowRuntimeCapabilityRequirement.Require<IPreparedVisionTemplateMatcher>() : WorkflowRuntimeCapabilityRequirement.Require<ITemplatePoseLocator>() })
-            .Register(new MapVisionPoseCoordinateNodeHandler());
+                ? WorkflowRuntimeCapabilityRequirement.Require<IPreparedVisionTemplateMatcher>() : WorkflowRuntimeCapabilityRequirement.Require<ITemplatePoseLocator>() });
     }
 }

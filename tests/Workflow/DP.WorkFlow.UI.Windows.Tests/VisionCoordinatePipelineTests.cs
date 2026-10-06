@@ -81,14 +81,12 @@ public sealed class VisionCoordinatePipelineTests
         var child = new LocateVisionTemplatePoseNodeModel { Id = "child", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"),
             Coordinates = parent, Regions = Search(), MinimumScore = .9999 };
         var childPart = GeometryPluginTestCatalog.BuildFromTemplate(data.Nodes, "child-part", "scene", "child-definition", "child");
-        var translation = new LocateVisionTemplateNodeModel { Id = "translation", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"),
+        var translation = new LocateVisionTemplatePoseNodeModel { Id = "translation", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"),
             Coordinates = parent, Regions = Search(), MinimumScore = .9999 };
-        var edges = new MeasureVisionEdgesNodeModel { Id = "edges", Frame = Input<ImageFrame>("scene"), Coordinates = parent,
-            Regions = new() { new() { Id = "line", CenterX = 17, CenterY = 6, Width = 3, Height = 10 } } };
         var consumer = new AnalyzeVisionBlobsNodeModel { Id = "child-blob", Frame = Input<ImageFrame>("scene"), MinimumGray = 255, MaximumGray = 255,
             Regions = original.Regions, Coordinates = data.Binding("child-part", "child-definition") };
         string previous = "fit";
-        foreach (var node in new IWorkflowNodeModel[] { edges, translation, child, childPart, consumer })
+        foreach (var node in new IWorkflowNodeModel[] { translation, child, childPart, consumer })
         {
             document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
             document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = previous, FromPort = WorkflowPorts.Success, ToNodeId = node.Id, ToPort = WorkflowPorts.Input });
@@ -112,7 +110,6 @@ public sealed class VisionCoordinatePipelineTests
             var result = Output<BlobAnalysisResult>(host, "child-blob");
             Assert.Equal(rotated ? 38.5 : 19.5, Assert.Single(result.Blobs).Centroid.X, 6);
             Assert.Equal(7, Assert.Single(result.LocatedCentroids!).LocalPosition.X, 6);
-            Assert.InRange(Output<EdgeMeasurementResult>(host, "edges").LocatedA!.LocalPosition.X, 16.5, 18.5);
         }
         child.Coordinates = data.Binding("child", "child-definition");
         Assert.Contains(child.ValidateConfiguration(), e => e.Contains("自身", StringComparison.Ordinal));
@@ -235,7 +232,7 @@ public sealed class VisionCoordinatePipelineTests
     [Fact]
     public void AreaCapabilityEnablesCoordinates_WholeImageOperatorsStillRejectThem()
     {
-        var node = new MeasureVisionEdgesNodeModel { Frame = Input<ImageFrame>("scene"), Coordinates = new WorkflowVisionCoordinateBinding
+        var node = new AnalyzeVisionBlobsNodeModel { Frame = Input<ImageFrame>("scene"), Coordinates = new WorkflowVisionCoordinateBinding
         { System = WorkflowInput<VisionCoordinateSystem>.FromBinding(new("part", "CoordinateSystem")), CoordinateSystemId = "id", DefinitionSignature = "sig" } };
         node.Regions.Add(new WorkflowVisionRoi { Width = 5, Height = 5, CenterX = 10, CenterY = 10 });
         Assert.Empty(node.ValidateConfiguration());
@@ -333,7 +330,6 @@ public sealed class VisionCoordinatePipelineTests
 
     private static WorkflowServiceProvider Services(WorkflowVisionFrameScope scope) => new WorkflowServiceProvider()
         .Add<IImageFileReader>(new OpenCvImageFileReader()).Add<ITemplatePoseLocator>(new OpenCvTemplatePoseLocator())
-        .Add<IEdgeMeasurer>(new OpenCvEdgeMeasurer()).Add<ITemplateLocator>(new OpenCvTemplateLocator())
         .Add<IBlobAnalyzer>(new OpenCvBlobAnalyzer()).Add<IColorAnalyzer>(new RgbColorAnalyzer()).Add<IRegionProcessor>(new OpenCvRegionProcessor())
         .Add<IBlobSelector>(new BlobSelector()).Add<ICaliperMeasurer>(new CaliperMeasurer()).Add<IRobustLineFitter>(new RobustLineFitter())
         .Add<IWorkflowVisionFrameScope>(scope).Add<IWorkflowRunPreparationService>(scope)
@@ -391,7 +387,7 @@ public sealed class VisionCoordinatePipelineTests
         {
             var nodes = new List<IWorkflowNodeModel>
             {
-                new LoadVisionFileNodeModel { Id = "scene", FilePath = Scene }, new LoadVisionFileNodeModel { Id = "template", FilePath = Template },
+                new AcquireVisionImageNodeModel { Id = "scene", FilePath = Scene }, new AcquireVisionImageNodeModel { Id = "template", FilePath = Template },
                 new LocateVisionTemplatePoseNodeModel { Id = "pose", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"),
                     MinimumAngleRadians = 0, MaximumAngleRadians = Math.PI / 2, AngleStepRadians = Math.PI / 2, MinimumScore = .9999 },
                 GeometryPluginTestCatalog.BuildFromTemplate(Nodes, "part", "scene", "part-definition", "pose"),
