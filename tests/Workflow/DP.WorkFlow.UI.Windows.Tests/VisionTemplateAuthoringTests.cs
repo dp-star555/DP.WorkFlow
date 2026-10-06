@@ -1403,21 +1403,20 @@ public sealed class VisionTemplateAuthoringTests
         using var image = VisionTemplateSource.Decode(first.Read("source/image.bin")); using var frame = new ImageFrame("frame", image);
         // 下游经“构建本帧坐标系”的模板方式随动：坐标定义并入模板参考签名。
         var (catalog, _) = GeometryPluginTestCatalog.Create(Path.Combine(fixture.Root, "plugins"));
-        var definitionNode = GeometryPluginTestCatalog.Definition(catalog, "definition", "part");
-        var build = GeometryPluginTestCatalog.BuildFromTemplate(catalog, "part", "frame", "definition", "locate");
-        var business = ((IWorkflowVisionCoordinateDefinitionNode)definitionNode).GetCoordinateDefinition();
+        var build = GeometryPluginTestCatalog.BuildFromTemplate(catalog, "part", "frame", "part", "locate");
+        var business = GeometryPluginTestCatalog.Definition(build);
         VisionCoordinateSystem Located(VisionTemplateDefinition definition) =>
             VisionCoordinateBuilder.FromMatrix(definition.Reference().Bind(business), frame, CoordinateMatrix2D.Identity);
         var binding = WorkflowVisionCoordinateBinding.Capture("part", Located(first.Manifest.Definition));
         node.Id = "locate";
         var downstream = new AnalyzeVisionColorNodeModel { Coordinates = binding };
         binding.Validate(Located(second.Manifest.Definition), frame);
-        Assert.Empty(downstream.ValidateDocumentConfiguration(new IWorkflowNodeModel[] { node, definitionNode, build, downstream }));
+        Assert.Empty(downstream.ValidateDocumentConfiguration(new IWorkflowNodeModel[] { node, build, downstream }));
         editor.OriginX += .5; await editor.BuildAsync(); editor.PrepareCommit();
         var third = VisionTemplateStore.Capture(Path.Combine(fixture.Root, node.ModelAlgorithm.Settings["templatePath"]));
         Assert.Equal(2, third.Manifest.Definition.ReferenceVersion);
         Assert.Throws<InvalidOperationException>(() => binding.Validate(Located(third.Manifest.Definition), frame));
-        Assert.Single(downstream.ValidateDocumentConfiguration(new IWorkflowNodeModel[] { node, definitionNode, build, downstream }));
+        Assert.Single(downstream.ValidateDocumentConfiguration(new IWorkflowNodeModel[] { node, build, downstream }));
     }
 
     [Fact]

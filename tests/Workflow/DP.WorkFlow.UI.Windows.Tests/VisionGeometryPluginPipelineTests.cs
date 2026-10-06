@@ -51,12 +51,12 @@ public sealed class VisionGeometryPluginPipelineTests
     [Fact]
     public async Task PoseAndTwoPointSourcesWorkWithoutAnyTemplateNode()
     {
-        using var rig = new Rig(); var definition = rig.Definition(); var pose = rig.Build("pose", "Pose");
+        using var rig = new Rig(); var pose = rig.Build("pose", "Pose");
         Set(pose, "OriginX", WorkflowInput<double>.FromLiteral(10)); Set(pose, "OriginY", WorkflowInput<double>.FromLiteral(20));
         Set(pose, "Scale", WorkflowInput<double>.FromLiteral(2));
         var points = rig.Build("points", "TwoPoints"); Set(points, "OriginPoint", Input<VisionPoint>("origin")); Set(points, "DirectionPoint", Input<VisionPoint>("direction"));
         Set(points, "ReferenceLength", WorkflowInput<double>.FromLiteral(5));
-        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, definition, pose,
+        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, pose,
             rig.Point("origin", 10, 20), rig.Point("direction", 20, 20), points);
         using var host = rig.Host(document); var run = await host.RunAsync(); Assert.True(run.Success, run.Message);
         var a = Output<VisionCoordinateSystemResult>(host, "pose"); var b = Output<VisionCoordinateSystemResult>(host, "points");
@@ -70,23 +70,45 @@ public sealed class VisionGeometryPluginPipelineTests
     }
 
     [Theory]
-    [InlineData("duplicate")]
-    [InlineData("missing")]
+    [InlineData("inconsistent")]
     [InlineData("version")]
     [InlineData("unit")]
-    [InlineData("origin")]
+    [InlineData("name")]
     public void CoordinateDefinitionErrorsFailCompilationBeforeReadingImages(string fault)
     {
         using var rig = new Rig(); var document = rig.PoseDocument();
-        var definition = document.Graph.Nodes.Single(n => n.Id == "definition");
-        if (fault == "duplicate") document = rig.Document([.. document.Graph.Nodes, rig.Definition("duplicate")]);
-        if (fault == "missing") Set(document.Graph.Nodes.Single(n => n.Id == "business-source"), "Definition", Input<VisionCoordinateDefinition>("missing"));
-        if (fault == "version") Set(definition, "DefinitionVersion", 2);
-        if (fault == "unit") Set(definition, "Unit", EVisionCoordinateUnit.Millimeter);
-        if (fault == "origin") Set(definition, "OriginDescription", "新基准");
+        var source = document.Graph.Nodes.Single(n => n.Id == "business-source");
+        if (fault == "inconsistent") { var other = rig.Build("other", "Pose"); Set(other, "DefinitionVersion", 2); document = rig.Document([.. document.Graph.Nodes, other]); }
+        if (fault == "version") Set(source, "DefinitionVersion", 2);
+        if (fault == "unit") Set(source, "Unit", EVisionCoordinateUnit.Millimeter);
+        // 名称不进入签名，只是共用同一坐标系的节点之间必须一致。
+        if (fault == "name") { var other = rig.Build("other", "Pose"); Set(other, "CoordinateName", "夹具"); document = rig.Document([.. document.Graph.Nodes, other]); }
         var error = Assert.Throws<WorkflowCompilationException>(() => new WorkflowCompiler(rig.Nodes).Compile(document));
         Assert.Contains(error.Errors, e => e.Code == "WF030");
         Assert.Null(rig.Frames.Capture("source"));
+    }
+
+    [Fact]
+    public void CoordinateSystemDropdown_ListsDocumentCoordinates_AdoptsExistingOrCreatesNew()
+    {
+        using var rig = new Rig();
+        var first = rig.Build("first", "Pose"); Set(first, "CoordinateName", "工件"); Set(first, "DefinitionVersion", 2);
+        var second = rig.Build("second", "Pose"); Set(second, "CoordinateId", "fixture"); Set(second, "CoordinateName", "夹具");
+        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, first, second);
+        var session = new WorkflowDesignerSession(document, rig.Nodes) { SelectedNodeId = "second" };
+        using var inspector = new WorkflowPropertyInspectorModel(session, "source");
+        WorkflowPropertyEntry Entry() => inspector.Entries.Single(e => e.Name == "CoordinateSystem");
+        Assert.Equal(WorkflowPropertyEditorKind.Choice, Entry().EditorKind);
+        Assert.Equal(new[] { "夹具（v1，reference-px）", "工件（v2，reference-px）", "新建坐标系" }, Entry().Choices.Select(c => c.Label));
+        Assert.Equal(Entry().Choices[0].Value, Entry().Value);
+        // 选择已有坐标系：采用其身份、名称、版本和单位，成为它的又一个来源。
+        inspector.SetValue(Entry(), Entry().Choices[1].Value);
+        Assert.Equal("business", Get(second, "CoordinateId")); Assert.Equal("工件", Get(second, "CoordinateName")); Assert.Equal(2, Get(second, "DefinitionVersion"));
+        Assert.Empty(((IWorkflowNodeDocumentConfigurationValidator)second).ValidateDocumentConfiguration(document.Graph.Nodes.ToArray()));
+        Assert.Equal(new[] { "工件（v2，reference-px）", "新建坐标系" }, Entry().Choices.Select(c => c.Label));
+        // 新建：新的身份，默认名称按已有坐标系数量编号。
+        inspector.SetValue(Entry(), Entry().Choices[^1].Value);
+        Assert.NotEqual("business", Get(second, "CoordinateId")); Assert.Equal("坐标系2", Get(second, "CoordinateName")); Assert.Equal(1, Get(second, "DefinitionVersion"));
     }
 
     [Fact]
@@ -111,7 +133,7 @@ public sealed class VisionGeometryPluginPipelineTests
     public async Task AffineCoordinateBindingRejectsCaliperWithoutPartiallyChangingConfiguration()
     {
         using var rig = new Rig(); var build = rig.Build("affine", "Matrix"); Set(build, "M12", WorkflowInput<double>.FromLiteral(1));
-        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, rig.Definition(), build);
+        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, build);
         using var host = rig.Host(document); Assert.True((await host.RunAsync()).Success);
         var caliper = new MeasureVisionCaliperNodeModel { Id = "caliper", Frame = Input<ImageFrame>("source"), StartX = 4, StartY = 10, EndX = 24, EndY = 10 };
         using var page = new VisionFrameEditorPageModel(caliper, rig.Frames); using var preview = page.Capture(0);
@@ -139,7 +161,7 @@ public sealed class VisionGeometryPluginPipelineTests
     {
         using var rig = new Rig(); var build = rig.Build("calibrated", "Correspondences");
         Set(build, "CalibrationImageWidth", wrongSize ? 64 : 32); Set(build, "CalibrationImageHeight", 32);
-        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, rig.Definition(), build);
+        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, build);
         var session = new WorkflowDesignerSession(document, rig.Nodes) { SelectedNodeId = build.Id };
         using (var inspector = new WorkflowPropertyInspectorModel(session, build.Id))
         {
@@ -157,7 +179,7 @@ public sealed class VisionGeometryPluginPipelineTests
     public void SingularMatrixFailsCompilationRatherThanFailingDuringImageExecution()
     {
         using var rig = new Rig(); var build = rig.Build("singular", "Matrix"); Set(build, "M22", WorkflowInput<double>.FromLiteral(0));
-        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, rig.Definition(), build);
+        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, build);
         var error = Assert.Throws<WorkflowCompilationException>(() => new WorkflowCompiler(rig.Nodes).Compile(document));
         Assert.Contains(error.Errors, e => e.Code == "WF030" && e.NodeId == build.Id);
     }
@@ -168,7 +190,7 @@ public sealed class VisionGeometryPluginPipelineTests
         using var rig = new Rig(); var build = rig.Build("intersect", "LineIntersection");
         Set(build, "AxisLine", Input<VisionLine>("x-axis")); Set(build, "CrossLine", Input<VisionLine>("cross"));
         var crossB = rig.Point("q1", 10, 30);
-        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, rig.Definition(),
+        var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath },
             rig.Point("p0", 0, 20), rig.Point("p1", 20, 20), rig.Point("q0", 10, 0), crossB, rig.Line("x-axis", "p0", "p1"), rig.Line("cross", "q0", "q1"), build);
         using var host = rig.Host(document); Assert.True((await host.RunAsync()).Success);
         var system = Output<VisionCoordinateSystemResult>(host, "intersect").CoordinateSystem;
@@ -230,7 +252,7 @@ public sealed class VisionGeometryPluginPipelineTests
     {
         using var rig = new Rig();
         Assert.DoesNotContain(GetType().Assembly.GetReferencedAssemblies(), a => a.Name == "DP.WorkFlow.Nodes.Vision.Geometry");
-        Assert.Equal(31, rig.Nodes.Snapshot().Count);
+        Assert.Equal(30, rig.Nodes.Snapshot().Count);
         var document = rig.BasicDocument();
         var store = new WorkflowDocumentJsonStore(rig.Nodes); document = store.Deserialize(store.Serialize(document)).Document;
         var json = store.Serialize(document);
@@ -307,7 +329,7 @@ public sealed class VisionGeometryPluginPipelineTests
         { nodes.Register(WorkflowNodeDescriptor.Create<ScaledPoseNode, TemplatePoseResult>(ports: Rig.Ports)); handlers.Register(new ScaledPoseHandler()); });
         var document = rig.TemplateDocument();
         document = rig.Document([.. document.Graph.Nodes, new ScaledPoseNode { Id = "scaled-location" },
-            GeometryPluginTestCatalog.BuildFromTemplate(rig.Nodes, "scaled-part", "source", "definition", "scaled-location")]);
+            GeometryPluginTestCatalog.BuildFromTemplate(rig.Nodes, "scaled-part", "source", "business", "scaled-location")]);
         using var host = rig.Host(document); Assert.True((await host.RunAsync()).Success);
         // 制作界面读取中立定位契约；无需维护旋转/平移节点白名单。
         var caliper = new MeasureVisionCaliperNodeModel { Id = "caliper", Frame = Input<ImageFrame>("source"),
@@ -332,6 +354,7 @@ public sealed class VisionGeometryPluginPipelineTests
     private static T Output<T>(WorkflowRuntimeHost host, string id) => Assert.IsType<T>(host.Engine!.RunState.NodeOutputs.Single(o => o.NodeId == id).Value);
     private static WorkflowInput<T> Input<T>(string id, string member = "$") => WorkflowInput<T>.FromBinding(new WorkflowBindingKey(id, member));
     private static void Set(IWorkflowNodeModel node, string property, object? value) => node.GetType().GetProperty(property)!.SetValue(node, value);
+    private static object? Get(IWorkflowNodeModel node, string property) => node.GetType().GetProperty(property)!.GetValue(node);
     private sealed class ForeignPointNode : WorkflowNodeModel { public override string NodeType => "Test.ForeignPoint"; }
     private sealed class ForeignLocationResult : IVisionCoordinateResult
     {
@@ -408,40 +431,35 @@ public sealed class VisionGeometryPluginPipelineTests
         {
             var node = (AnalyzeVisionFrameNodeModel)Nodes.GetOrThrow(type).Factory(); node.Id = id; node.Frame = Input<ImageFrame>("source"); return node;
         }
-        public IWorkflowNodeModel Definition(string id = "definition")
-        {
-            var node = Nodes.GetOrThrow("Vision.DefineCoordinateSystem").Factory(); node.Id = id; Set(node, "CoordinateId", "business"); return node;
-        }
         public AnalyzeVisionFrameNodeModel Build(string id, string mode)
         {
-            var node = Node("Vision.BuildCoordinateSystem", id); Set(node, "Definition", Input<VisionCoordinateDefinition>("definition"));
+            var node = Node("Vision.BuildCoordinateSystem", id); Set(node, "CoordinateId", "business");
             var property = node.GetType().GetProperty("Mode")!; property.SetValue(node, Enum.Parse(property.PropertyType, mode)); return node;
         }
-        /// <summary>平移模板→定义→模板方式构建，点和ROI按模板中心的业务坐标随动。</summary>
+        /// <summary>平移模板→模板方式构建，点和ROI按模板中心的业务坐标随动。</summary>
         public WorkflowDocument TemplateDocument()
         {
-            var definition = Definition();
-            var build = GeometryPluginTestCatalog.BuildFromTemplate(Nodes, "business-source", "source", "definition", "location");
+            var build = GeometryPluginTestCatalog.BuildFromTemplate(Nodes, "business-source", "source", "business", "location");
             using var image = VisionImage.CopyFrom(new ImageInfo(4, 3, EPixelLayout.Gray8), _patch);
             var coordinates = GeometryPluginTestCatalog.Follow(build.Id, TemplateReference.FromImage(image, new PixelBounds(0, 0, 4, 3))
-                .Bind(((IWorkflowVisionCoordinateDefinitionNode)definition).GetCoordinateDefinition()));
+                .Bind(GeometryPluginTestCatalog.Definition(build)));
             var distance = Node("Vision.MeasurePointLineDistance", "distance"); Set(distance, "Point", Input<VisionPoint>("q0")); Set(distance, "Line", Input<VisionLine>("line"));
             Set(distance, "Space", EVisionCoordinateSpace.Local);
             var roi = new AnalyzeVisionBlobsNodeModel { Id = "business-roi", Frame = Input<ImageFrame>("source"), MaximumGray = 255, Coordinates = coordinates,
                 Regions = [new() { Id = "roi", CenterX = 0, CenterY = 0, Width = 4, Height = 3 }] };
             return Document(new LoadVisionFileNodeModel { Id = "source", FilePath = ScenePath }, new LoadVisionFileNodeModel { Id = "template", FilePath = TemplatePath },
                 new LocateVisionTemplateNodeModel { Id = "location", Frame = Input<ImageFrame>("source"), Template = Input<ImageFrame>("template"), MinimumScore = .9999 },
-                definition, build, Point("p0", 0, 0, coordinates), Point("p1", 3, 0, coordinates), Point("q0", 0, 2, coordinates), Line("line", "p0", "p1"), distance, roi);
+                build, Point("p0", 0, 0, coordinates), Point("p1", 3, 0, coordinates), Point("q0", 0, 2, coordinates), Line("line", "p0", "p1"), distance, roi);
         }
         /// <summary>参数姿态构建的业务坐标及随动ROI，定义可静态解析。</summary>
         public WorkflowDocument PoseDocument()
         {
-            var definition = Definition(); var build = Build("business-source", "Pose");
+            var build = Build("business-source", "Pose");
             Set(build, "OriginX", WorkflowInput<double>.FromLiteral(12)); Set(build, "OriginY", WorkflowInput<double>.FromLiteral(21.5));
             var roi = new AnalyzeVisionBlobsNodeModel { Id = "business-roi", Frame = Input<ImageFrame>("source"), MaximumGray = 255,
-                Coordinates = GeometryPluginTestCatalog.Follow(build.Id, ((IWorkflowVisionCoordinateDefinitionNode)definition).GetCoordinateDefinition()),
+                Coordinates = GeometryPluginTestCatalog.Follow(build.Id, GeometryPluginTestCatalog.Definition(build)),
                 Regions = [new() { Id = "roi", CenterX = 0, CenterY = 0, Width = 4, Height = 3 }] };
-            return Document(new LoadVisionFileNodeModel { Id = "source", FilePath = ScenePath }, definition, build, roi);
+            return Document(new LoadVisionFileNodeModel { Id = "source", FilePath = ScenePath }, build, roi);
         }
         public AnalyzeVisionFrameNodeModel Point(string id, double x, double y, WorkflowVisionCoordinateBinding? coordinates = null)
         {

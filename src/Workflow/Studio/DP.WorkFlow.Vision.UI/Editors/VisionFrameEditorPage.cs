@@ -27,7 +27,7 @@ public sealed class VisionFrameEditorPageProvider(IWorkflowVisionPreviewSource? 
         {
             var label = string.IsNullOrWhiteSpace(node.Title) ? node.Id : $"{node.Title} [{node.Id}]";
             if (node is IWorkflowVisionCoordinateProducerNode producer)
-                try { var definition = WorkflowVisionCoordinateCatalog.ResolveDefinition(scope, producer.Definition); return $"{definition.Name}（v{definition.Version}，{definition.UnitName}）— {label}"; }
+                try { var definition = producer.GetCoordinateDefinition(); return $"{definition.Name}（v{definition.Version}，{definition.UnitName}）— {label}"; }
                 catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { }
             return label;
         }

@@ -1,6 +1,6 @@
 # 业务坐标定义、本帧变换与ROI随动
 
-更新于2026-10-02。坐标系可以独立于模板构建。内置19种视觉节点，独立几何包10种，条码/OCR各1种，共31种部署节点。
+更新于2026-10-02。坐标系可以独立于模板构建。内置19种视觉节点，独立几何包9种，条码/OCR各1种，共30种部署节点。
 
 2026-10-03新增[节点内模板制作](vision-template-authoring.md)：资源模型采用明确参考原点/方向，模型内容和坐标定义分开。
 
@@ -14,16 +14,13 @@
 | VisionCoordinateSystem | 定义、本帧FrameId/尺寸、LocalToImage、ImageToLocal、来源信息 | 本帧不可变映射，不保存到配方 |
 | WorkflowVisionCoordinateBinding | 来源数据绑定＋制作时定义ID/版本/语义签名 | 下游节点显式选择坐标，持久化在配方 |
 
-同文档定义由WorkflowVisionCoordinateCatalog统筹。定义节点保存配置，构建节点引用它；一个定义可有多个来源。目录只读取配置元数据，运行矩阵通过工作流绑定传递，没有进程级“当前矩阵”或上一帧回退。
+坐标系直接在“构建本帧坐标系”节点里定义（名称、版本、单位，ID自动生成）。文档里所有构建节点的坐标系组成一个集合：节点的“坐标系”下拉列出本文档已有的坐标系，选中已有的即采用它的名称、版本和单位，本节点成为它的又一个来源；选“新建坐标系”则新增一个。共用同一坐标系的节点之间名称、版本、单位必须一致，否则编译报错，在下拉中重新选择即可同步。运行矩阵通过工作流绑定传递，没有进程级“当前矩阵”或上一帧回退。
 
-修改名称不会使ROI失效；修改原点含义、轴约定、单位或版本会改变语义签名。改变基准关系、标定、固定父坐标偏移的业务含义时，应主动递增定义版本；程序不能从描述文字或任意数值变化推断物理基准是否改变。
+修改名称不会使ROI失效；修改单位或版本会改变语义签名，模板方式还会并入模板参考签名。改变基准关系、标定、固定父坐标偏移的业务含义时，应主动递增定义版本；程序不能从描述文字或任意数值变化推断物理基准是否改变。
 
 ## 节点和构建参数
 
-现有plugins/workflow.vision.geometry包新增两个节点，不增加DLL数量：
-
-- Vision.DefineCoordinateSystem：保存独立业务定义，输出VisionCoordinateDefinition；同文档ID唯一。
-- Vision.BuildCoordinateSystem：绑定图像和定义，输出VisionCoordinateSystemResult；通过CoordinateSystem成员供下游选择，同时预览本帧原点和轴方向。
+现有plugins/workflow.vision.geometry包中的Vision.BuildCoordinateSystem：自带坐标系定义，绑定图像和构建来源，输出VisionCoordinateSystemResult；通过CoordinateSystem成员供下游选择，同时预览本帧原点和轴方向。
 
 | Mode | 关键参数 | 规则 |
 |---|---|---|
@@ -35,7 +32,7 @@
 | Matrix | M11/M12/Tx/M21/M22/Ty | 明确局部→原图的可逆仿射矩阵，系数可绑定上游；支持剪切及非等比 |
 | Correspondences | Samples、CalibrationImageWidth/Height、MaximumRms | 3..1024个不共线局部/原图点对求仿射；固定标定限定图像尺寸，检查拟合RMS |
 
-点对通过两平台已有集合表格编辑，列为LocalX、LocalY、ImageX、ImageY，也可编辑结构化配置。界面按构建方式显示参数。定义必须直接绑定本文档定义节点根输出`$`，不接受运行对象Literal或公共数据伪装成稳定定义。
+点对通过两平台已有集合表格编辑，列为LocalX、LocalY、ImageX、ImageY，也可编辑结构化配置。界面按构建方式显示参数。
 
 Parent采用列向量：`T业务→原图 = T父→原图 × T业务→父`，不重复乘定位矩阵。原点可在图像外，实际ROI/采样足迹仍受边界检查。
 
@@ -102,6 +99,6 @@ Template方式的参考点：资源模板取模板制作时设置的参考原点
 
 ## 复核入口
 
-两套示例支持`--coordinate-demo`：平移模板匹配→工件中心定义→模板方式构建本帧坐标→点线测量→业务ROI的Blob分析。两项距离为2 reference-px，ROI覆盖4×3模板，总面积12。`--geometry-demo`为同一坐标链路上的点线测量，不含ROI。
+两套示例支持`--coordinate-demo`：平移模板匹配→模板方式构建本帧坐标（工件中心坐标）→点线测量→业务ROI的Blob分析。两项距离为2 reference-px，ROI覆盖4×3模板，总面积12。`--geometry-demo`为同一坐标链路上的点线测量，不含ROI。
 
 GeneralCoordinateSystemTests覆盖独立定义、参考ROI、双点/交线、父子组合、仿射几何及局部距离；VisionGeometryPluginPipelineTests覆盖真实插件、编译错误、构建方式、JSON、随动/失败、来源更换、表格标定及示例。VisionCoordinateSystemTests和VisionCoordinatePipelineTests验证模板方式构建后的ROI、卡尺、拟合随动及换模板拒绝。实际结果见[插件复核记录](../plugins/vision-plugin-review.md)。

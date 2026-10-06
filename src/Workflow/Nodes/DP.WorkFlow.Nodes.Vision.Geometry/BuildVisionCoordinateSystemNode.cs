@@ -35,18 +35,62 @@ public sealed class WorkflowVisionCoordinateSample
     public double ImageY { get; set; }
 }
 
-/// <summary>将独立业务定义与本帧来源组合；不持久化运行矩阵。</summary>
+/// <summary>坐标系下拉的一项：坐标系身份及名称、版本、单位。</summary>
+/// <param name="Id">坐标系稳定ID。</param><param name="Name">显示名称。</param><param name="Version">版本。</param><param name="Unit">单位。</param>
+public sealed record WorkflowVisionCoordinateChoice(string Id, string Name, int Version, EVisionCoordinateUnit Unit);
+
+/// <summary>定义坐标系（名称、版本、单位）并用本帧来源构建它；不持久化运行矩阵。</summary>
 [WorkflowNode("Vision.BuildCoordinateSystem", DisplayName = "构建本帧坐标系", Category = "5.Vision/Coordinates")]
 public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometryNodeModel, IWorkflowNodeDocumentConfigurationValidator,
-    IWorkflowVisionCoordinateProducerNode
+    IWorkflowVisionCoordinateProducerNode, IWorkflowDocumentPropertyChoices
 {
     /// <inheritdoc/>
     public override string NodeType => "Vision.BuildCoordinateSystem";
     /// <inheritdoc/>
     public override EWorkflowVisionRange RangeCapability => Mode == EVisionCoordinateBuildMode.Parent ? EWorkflowVisionRange.GeometryFacts : EWorkflowVisionRange.None;
-    /// <summary>稳定定义的直接输出。</summary>
-    [WorkflowProperty("坐标定义", "绑定同文档的定义坐标系节点。", Category = "坐标")]
-    public WorkflowInput<VisionCoordinateDefinition> Definition { get; set; } = WorkflowInput<VisionCoordinateDefinition>.FromLiteral(null);
+    /// <summary>坐标系稳定ID；多个构建节点使用同一ID表示同一坐标系的不同来源。</summary>
+    [System.ComponentModel.Browsable(false)]
+    public string CoordinateId { get; set; } = Guid.NewGuid().ToString("N");
+    /// <summary>显示名称。</summary>
+    [WorkflowProperty("坐标系名称", "显示用，可随时修改，不影响已绑定的ROI。", Category = "坐标系")]
+    public string CoordinateName { get; set; } = "工件坐标";
+    /// <summary>坐标系版本。</summary>
+    [WorkflowProperty("版本", "改变基准、单位或标定时递增；已绑定的下游ROI需要重新确认。", Category = "坐标系")]
+    public int DefinitionVersion { get; set; } = 1;
+    /// <summary>局部长度单位。</summary>
+    [WorkflowProperty("单位", "毫米需要已知物理长度或有效标定，单位本身不产生标定。", Category = "坐标系")]
+    public EVisionCoordinateUnit Unit { get; set; }
+    /// <summary>从本文档已有坐标系中选择，或新建。</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    [WorkflowProperty("坐标系", "选择本文档已有的坐标系：采用它的名称、版本和单位，本节点成为它的又一个来源；选择“新建坐标系”：新增一个坐标系。", Category = "坐标系")]
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.DocumentChoice)]
+    public WorkflowVisionCoordinateChoice CoordinateSystem
+    {
+        get => new(CoordinateId, CoordinateName, DefinitionVersion, Unit);
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            CoordinateId = value.Id; CoordinateName = value.Name; DefinitionVersion = value.Version; Unit = value.Unit;
+        }
+    }
+    /// <inheritdoc/>
+    public VisionCoordinateDefinition GetCoordinateDefinition() => new(CoordinateId, CoordinateName, DefinitionVersion, Unit);
+    /// <inheritdoc/>
+    public IReadOnlyList<KeyValuePair<string, object?>> GetPropertyChoices(string propertyName, IReadOnlyList<IWorkflowNodeModel> documentNodes)
+    {
+        if (propertyName != nameof(CoordinateSystem)) return [];
+        var existing = documentNodes.OfType<BuildVisionCoordinateSystemNodeModel>().Where(n => n.Id != Id).Select(n => n.CoordinateSystem)
+            .Prepend(CoordinateSystem).Distinct().ToArray();
+        string Label(WorkflowVisionCoordinateChoice c)
+        {
+            var label = $"{c.Name}（v{c.Version}，{(c.Unit == EVisionCoordinateUnit.Millimeter ? "mm" : "reference-px")}）";
+            // 同名的不同坐标系附上ID前缀以便区分。
+            return existing.Any(o => o.Name == c.Name && o.Id != c.Id) ? $"{label} [{c.Id[..Math.Min(6, c.Id.Length)]}]" : label;
+        }
+        var fresh = new WorkflowVisionCoordinateChoice(Guid.NewGuid().ToString("N"), "坐标系" + (existing.Select(c => c.Id).Distinct().Count() + 1), 1, EVisionCoordinateUnit.ReferencePixel);
+        return existing.Select(c => new KeyValuePair<string, object?>(Label(c), c))
+            .Append(new KeyValuePair<string, object?>("新建坐标系", fresh)).ToArray();
+    }
     /// <summary>构建来源。</summary>
     [WorkflowProperty("构建方式", "Template使用模板匹配结果，Parent使用上游坐标绑定，其余方式直接构建局部到原图。", Category = "坐标")]
     public EVisionCoordinateBuildMode Mode { get; set; }
@@ -127,7 +171,8 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
     public override IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = base.ValidateConfiguration().ToList();
-        if (!IsBound(Definition) || Definition.Binding is not { IsPublicData: false } definitionBinding || definitionBinding.MemberPath is not ("" or "$")) errors.Add("坐标定义必须直接绑定本文档的定义节点。");
+        if (string.IsNullOrWhiteSpace(CoordinateId) || string.IsNullOrWhiteSpace(CoordinateName) || DefinitionVersion < 1 || !Enum.IsDefined(Unit))
+            errors.Add("坐标系名称不能为空，版本必须为正，单位必须有效。");
         if (!Enum.IsDefined(Mode)) errors.Add("坐标构建方式无效。");
         if (Mode == EVisionCoordinateBuildMode.Parent && Coordinates is null) errors.Add("Parent构建必须绑定本帧父坐标。");
         if (Mode != EVisionCoordinateBuildMode.Parent && Coordinates is not null) errors.Add("当前构建方式不使用父坐标，请解除多余坐标绑定。");
@@ -168,14 +213,14 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
     public override IReadOnlyList<string> ValidateDocumentConfiguration(IReadOnlyList<IWorkflowNodeModel> nodes)
     {
         var errors = base.ValidateDocumentConfiguration(nodes).ToList();
-        try { _ = ResolveDefinition(nodes); }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { errors.Add(ex.Message); }
+        if (nodes.OfType<BuildVisionCoordinateSystemNodeModel>().Any(n => n.Id != Id && n.CoordinateId == CoordinateId && n.CoordinateSystem != CoordinateSystem))
+            errors.Add($"坐标系“{CoordinateName}”在其它构建节点中的名称、版本或单位不同，请在“坐标系”下拉中重新选择以保持一致。");
         return errors;
     }
     /// <inheritdoc/>
     public VisionCoordinateDefinition? ResolveDefinition(IReadOnlyList<IWorkflowNodeModel> nodes)
     {
-        var definition = WorkflowVisionCoordinateCatalog.ResolveDefinition(nodes, Definition);
+        var definition = GetCoordinateDefinition();
         if (Mode != EVisionCoordinateBuildMode.Template) return definition;
         // 已确认的资源模板可静态得到参考签名；动态模板图像的签名只有运行时才知道。
         return Template.Binding is { IsPublicData: false } source && nodes.FirstOrDefault(n => n.Id == source.NodeId) is IWorkflowVisionTemplateNode
@@ -192,7 +237,7 @@ public sealed class BuildVisionCoordinateSystemNodeHandler : WorkflowNodeHandler
     {
         cancellationToken.ThrowIfCancellationRequested();
         var (frame, parent) = WorkflowVisionGeometryExecution.Resolve(node, context);
-        var definition = context.ResolveInput(node.Definition) ?? throw new InvalidOperationException("坐标定义不存在。");
+        var definition = node.GetCoordinateDefinition();
         double Value(WorkflowInput<double> input) => context.ResolveInput(input);
         PointD Origin() => new(Value(node.OriginX), Value(node.OriginY));
         double Radians() => Value(node.Angle) * Math.PI / 180;

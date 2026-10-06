@@ -562,7 +562,7 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
         SelectedNode = _session.SelectedNodeId is { } selectedId
             ? _session.Canvas.Nodes.FirstOrDefault(item => item.Node.Id == selectedId)?.Node
             : null;
-        _entries = SelectedNode is null ? Array.Empty<WorkflowPropertyEntry>() : BuildEntries(SelectedNode, _choiceProvider)
+        _entries = SelectedNode is null ? Array.Empty<WorkflowPropertyEntry>() : BuildEntries(SelectedNode, _choiceProvider, _session.Canvas.Nodes.Select(item => item.Node).ToArray())
             .Concat(_additionalProperties?.Invoke(SelectedNode) ?? Array.Empty<WorkflowPropertyEntry>()).ToArray();
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -570,7 +570,9 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     /// <summary>通过反射为节点构建可编辑属性条目。</summary>
     /// <param name="node">目标画布节点或节点模型。</param>
     /// <param name="choiceProvider">可选候选提供者。</param>
-    private static IReadOnlyList<WorkflowPropertyEntry> BuildEntries(IWorkflowNodeModel node, WorkflowPropertyChoiceProvider? choiceProvider)
+    /// <param name="documentNodes">同文档节点，供节点自己提供的文档候选使用。</param>
+    private static IReadOnlyList<WorkflowPropertyEntry> BuildEntries(IWorkflowNodeModel node, WorkflowPropertyChoiceProvider? choiceProvider,
+        IReadOnlyList<IWorkflowNodeModel> documentNodes)
     {
         var entries = new List<WorkflowPropertyEntry>();
         foreach (var property in node.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public)
@@ -582,7 +584,9 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
                 continue;
             var propertyType = property.PropertyType;
             var propertyEditor = property.GetCustomAttribute<WorkflowPropertyEditorAttribute>();
-            var candidates = ResolveChoices(propertyEditor, property.Name, choiceProvider);
+            var candidates = propertyEditor?.EditorKey == WorkflowPropertyEditorKeys.DocumentChoice
+                ? ResolveDocumentChoices(node, property.Name, documentNodes)
+                : ResolveChoices(propertyEditor, property.Name, choiceProvider);
             Type? inputType = null;
             WorkflowPropertyEditorKind kind;
             if (propertyEditor?.IsAction == true)
@@ -654,6 +658,7 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
         propertyEditor?.EditorKey is WorkflowPropertyEditorKeys.VisionAreaSource
             or WorkflowPropertyEditorKeys.VisionLineScanSource
             or WorkflowPropertyEditorKeys.VisionImageSourceMode
+            or WorkflowPropertyEditorKeys.DocumentChoice
         || propertyEditor?.EditorKey.StartsWith(WorkflowPropertyEditorKeys.VisionAlgorithmPrefix, StringComparison.Ordinal) == true;
 
     /// <summary>
@@ -675,6 +680,15 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
         {
             return Array.Empty<WorkflowPropertyChoice>();
         }
+    }
+
+    /// <summary>由节点按同文档内容提供候选；节点未实现或出错时退回无候选。</summary>
+    private static IReadOnlyList<WorkflowPropertyChoice> ResolveDocumentChoices(IWorkflowNodeModel node, string propertyName,
+        IReadOnlyList<IWorkflowNodeModel> documentNodes)
+    {
+        if (node is not IWorkflowDocumentPropertyChoices source) return Array.Empty<WorkflowPropertyChoice>();
+        try { return source.GetPropertyChoices(propertyName, documentNodes).Select(item => new WorkflowPropertyChoice(item.Key, item.Value)).ToArray(); }
+        catch (Exception) { return Array.Empty<WorkflowPropertyChoice>(); }
     }
 
     /// <summary>根据属性元数据和节点状态判断属性是否显示。</summary>

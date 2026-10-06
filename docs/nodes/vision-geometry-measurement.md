@@ -1,6 +1,6 @@
 # 视觉节点盘点与带来源几何测量
 
-更新于2026-10-02。按实际注册入口和部署包盘点：20种内置节点，条码1种、水平单行OCR1种、几何及坐标10种，共32种注册类型。四种旧取图类型保留配方兼容且从工具箱隐藏，因此工具箱展示28种视觉节点。算法实现与节点模板分别部署；几何计算加入现有托管模块managed.geometry，没有增加功能×引擎组合DLL。独立业务坐标的完整构建、ROI绑定和兼容规则见[坐标系统](vision-coordinate-systems.md)。
+更新于2026-10-02。按实际注册入口和部署包盘点：20种内置节点，条码1种、水平单行OCR1种、几何及坐标9种，共31种注册类型。四种旧取图类型保留配方兼容且从工具箱隐藏，因此工具箱展示27种视觉节点。算法实现与节点模板分别部署；几何计算加入现有托管模块managed.geometry，没有增加功能×引擎组合DLL。独立业务坐标的完整构建、ROI绑定和兼容规则见[坐标系统](vision-coordinate-systems.md)。
 
 ## 当前能力和缺口
 
@@ -23,8 +23,7 @@
 
 | NodeType | 输入与输出 | 明确语义 |
 |---|---|---|
-| Vision.DefineCoordinateSystem | 稳定业务配置 → VisionCoordinateDefinition | ID/版本/单位/原点与轴，不依赖模板 |
-| Vision.BuildCoordinateSystem | 图像＋定义＋构建参数 → VisionCoordinateSystemResult | 姿态、双点、交线、父坐标、矩阵或标定点对构建本帧映射 |
+| Vision.BuildCoordinateSystem | 图像＋坐标系（名称/版本/单位，可选已有）＋构建参数 → VisionCoordinateSystemResult | 姿态、双点、交线、父坐标、矩阵或标定点对构建本帧映射 |
 | Vision.CreatePoint | 显式空间X/Y → VisionPoint | 原图像素或所选业务局部单位；局部输入必须绑定本帧坐标 |
 | Vision.SelectPoint | IReadOnlyList<VisionPoint>＋Index → VisionPoint | 从卡尺MeasuredEdges或Blob的MeasuredCentroids选择；越界失败 |
 | Vision.TransformPoint | VisionPoint＋可选目标定位 → VisionPoint | 保持原图位置，换目标局部表达；无目标时显式清除局部来源 |
@@ -91,11 +90,11 @@ dotnet run --project samples/DP.WorkFlow.WinForms.Sample/WinFormsApp_test.csproj
 dotnet run --project samples/Legacy/WpfApptest/WpfApptest.csproj -- --geometry-demo
 ```
 
-流程是场景文件→模板文件→平移模板匹配→定义坐标系→构建本帧坐标系（模板方式）→4个局部点→2条直线→点线距离→线线距离。文件为VisionData/geometry-scene.pgm、geometry-template.pgm，不依赖相机和外部模型。两项距离均为2 reference-px，局部原点为模板中心，对应场景(7,7.5)。
+流程是场景文件→模板文件→平移模板匹配→构建本帧坐标系（模板方式）→4个局部点→2条直线→点线距离→线线距离。文件为VisionData/geometry-scene.pgm、geometry-template.pgm，不依赖相机和外部模型。两项距离均为2 reference-px，局部原点为模板中心，对应场景(7,7.5)。
 
 人工复核：运行后检查点/直线/距离页面；移动场景中的模板后重跑，局部距离保持2，原图点随模板移动。删除目标后，模板未找到，构建节点及后续停止，不复用历史结果。保存重开，确认绑定、Space、Mode和算法选择保留。
 
-两套命令将参数改为`--coordinate-demo`可复核独立工件中心定义：模板提供父姿态，构建节点将原点设在父坐标(2,1.5)，下游选择业务坐标，距离2 reference-px、业务ROI的Blob面积12。样图当前业务原点为(7,7.5)，不再是模板左上角。
+两套命令将参数改为`--coordinate-demo`可复核ROI随动：同一工件中心坐标系下增加业务ROI的Blob分析，距离2 reference-px、Blob面积12。样图当前业务原点为(7,7.5)，即模板中心。
 
 ## 尚需后续落地
 

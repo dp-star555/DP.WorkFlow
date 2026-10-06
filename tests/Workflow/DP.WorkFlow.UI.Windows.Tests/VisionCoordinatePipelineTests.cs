@@ -80,7 +80,6 @@ public sealed class VisionCoordinatePipelineTests
         List<WorkflowVisionRoi> Search() => new() { new() { Id = "search", CenterX = 0, CenterY = 0, Width = 5, Height = 3 } };
         var child = new LocateVisionTemplatePoseNodeModel { Id = "child", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"),
             Coordinates = parent, Regions = Search(), MinimumScore = .9999 };
-        var childDefinition = GeometryPluginTestCatalog.Definition(data.Nodes, "child-definition", "child-definition");
         var childPart = GeometryPluginTestCatalog.BuildFromTemplate(data.Nodes, "child-part", "scene", "child-definition", "child");
         var translation = new LocateVisionTemplateNodeModel { Id = "translation", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"),
             Coordinates = parent, Regions = Search(), MinimumScore = .9999 };
@@ -89,7 +88,7 @@ public sealed class VisionCoordinatePipelineTests
         var consumer = new AnalyzeVisionBlobsNodeModel { Id = "child-blob", Frame = Input<ImageFrame>("scene"), MinimumGray = 255, MaximumGray = 255,
             Regions = original.Regions, Coordinates = data.Binding("child-part", "child-definition") };
         string previous = "fit";
-        foreach (var node in new IWorkflowNodeModel[] { edges, translation, child, childDefinition, childPart, consumer })
+        foreach (var node in new IWorkflowNodeModel[] { edges, translation, child, childPart, consumer })
         {
             document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
             document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = previous, FromPort = WorkflowPorts.Success, ToNodeId = node.Id, ToPort = WorkflowPorts.Input });
@@ -365,10 +364,10 @@ public sealed class VisionCoordinatePipelineTests
         }
         public void ChangeTemplateOnePixel() { _template[0]++; WriteTemplate(); }
         /// <summary>随动绑定：坐标定义并入当前模板像素的参考签名，局部原点在模板中心。</summary>
-        public WorkflowVisionCoordinateBinding Binding(string source = "part", string definitionId = "part-definition")
+        public WorkflowVisionCoordinateBinding Binding(string source = "part", string coordinateId = "part-definition")
         {
             using var image = VisionImage.CopyFrom(new ImageInfo(5, 3, EPixelLayout.Gray8), _template);
-            var definition = ((IWorkflowVisionCoordinateDefinitionNode)GeometryPluginTestCatalog.Definition(Nodes, definitionId, definitionId)).GetCoordinateDefinition();
+            var definition = new VisionCoordinateDefinition(coordinateId, "工件坐标");
             return GeometryPluginTestCatalog.Follow(source, TemplateReference.FromImage(image, new PixelBounds(0, 0, 5, 3)).Bind(definition));
         }
         private static List<WorkflowVisionRoi> Regions() => new()
@@ -383,8 +382,7 @@ public sealed class VisionCoordinatePipelineTests
                 new LoadVisionFileNodeModel { Id = "scene", FilePath = Scene }, new LoadVisionFileNodeModel { Id = "template", FilePath = Template },
                 new LocateVisionTemplatePoseNodeModel { Id = "pose", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"),
                     MinimumAngleRadians = 0, MaximumAngleRadians = Math.PI / 2, AngleStepRadians = Math.PI / 2, MinimumScore = .9999 },
-                GeometryPluginTestCatalog.Definition(Nodes, "definition", "part-definition"),
-                GeometryPluginTestCatalog.BuildFromTemplate(Nodes, "part", "scene", "definition", "pose"),
+                GeometryPluginTestCatalog.BuildFromTemplate(Nodes, "part", "scene", "part-definition", "pose"),
                 new AnalyzeVisionBlobsNodeModel { Id = "blob", Frame = Input<ImageFrame>("scene"), MinimumGray = 255, MaximumGray = 255, Coordinates = Binding(), Regions = Regions() },
                 new AnalyzeVisionColorNodeModel { Id = "color", Frame = Input<ImageFrame>("scene"), Coordinates = Binding(), Regions = Regions() },
                 new ThresholdVisionRegionNodeModel { Id = "threshold", Frame = Input<ImageFrame>("scene"), MinimumGray = 255, MaximumGray = 255, Coordinates = Binding(), Regions = Regions() },
