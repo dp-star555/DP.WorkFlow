@@ -36,7 +36,8 @@ public sealed class VisionFrameEditorPageProvider(IWorkflowVisionPreviewSource? 
                 scope
                     .Where(n => n.Id != context.Node.Id && nodes.TryGetValue(n.NodeType, out var descriptor)
                         && descriptor.OutputType is { } type && typeof(IVisionCoordinateResult).IsAssignableFrom(type))
-                    .Select(n => new VisionCoordinateSource(n.Id, SourceLabel(n))).ToArray(), templates, enableTemplateEditing: false),
+                    .Select(n => new VisionCoordinateSource(n.Id, SourceLabel(n))).ToArray(), templates, enableTemplateEditing: false,
+                configurationChanged: context.Session.NotifyNodeConfigurationChanged),
             IconKey: "Image", RendererKey: RendererKey, Priority: 100);
         if (context.Node is IWorkflowVisionTemplateNode && context.RequestedPropertyEditor == WorkflowPropertyEditorKeys.VisionTemplateEditor)
             yield return new WorkflowNodeEditorPageDescriptor("Template", "模板制作/选择", WorkflowNodeEditorPageKind.Custom, 460,
@@ -66,6 +67,8 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     private bool _disposed, _loading;
     private long _sequence;
     private string? _lastKey;
+    private readonly Action? _configurationChanged;
+    private double _imagePixelsPerScreenPixel = 1;
     private IReadOnlyList<Visual> _visuals = Array.Empty<Visual>();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly List<Action> _releaseViews = new();
@@ -87,11 +90,14 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     /// <param name="templates">宿主模板制作运行时，可为空。</param>
     /// <param name="enableTemplateEditing">是否创建模板制作草稿。</param>
     /// <param name="templateEditorOnly">是否只编辑模板，保留匹配节点搜索范围。</param>
+    /// <param name="configurationChanged">图上编辑修改了节点参数后的通知（例如刷新参数页）。</param>
     public VisionFrameEditorPageModel(IWorkflowNodeModel node, IWorkflowVisionPreviewSource? frames = null, IImageFileReader? reader = null,
         IReadOnlyList<VisionCoordinateSource>? coordinateSources = null, VisionTemplateEditingRuntime? templates = null,
-        bool enableTemplateEditing = true, bool templateEditorOnly = false)
+        bool enableTemplateEditing = true, bool templateEditorOnly = false, Action? configurationChanged = null)
     {
         IsTemplateEditor = templateEditorOnly;
+        _configurationChanged = configurationChanged;
+        if (!templateEditorOnly && node is MeasureVisionCaliperNodeModel caliper) Caliper = new VisionCaliperGizmo(caliper);
         _node = node ?? throw new ArgumentNullException(nameof(node)); _frames = frames; _reader = reader;
         CoordinateSources = coordinateSources ?? Array.Empty<VisionCoordinateSource>();
         Editor = new RoiEditor();
@@ -109,6 +115,22 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     }
     /// <summary>模板节点的制作草稿，其他节点为空。</summary>
     public VisionTemplateEditorModel? Template { get; }
+
+    /// <summary>卡尺节点的图上编辑器；其他节点为空。</summary>
+    public VisionCaliperGizmo? Caliper { get; }
+
+    /// <summary>当前缩放下 1 个屏幕像素对应的原图像素；由画布在缩放变化时设置，用于固定控制点的屏幕大小。</summary>
+    public double ImagePixelsPerScreenPixel
+    {
+        get => _imagePixelsPerScreenPixel;
+        set { if (value > 0 && Math.Abs(value - _imagePixelsPerScreenPixel) > _imagePixelsPerScreenPixel * 0.05) { _imagePixelsPerScreenPixel = value; InvalidatePreview(); } }
+    }
+
+    /// <summary>强制下一次 <see cref="Capture"/> 重新生成叠加图形（例如图上拖动修改参数后）。</summary>
+    public void InvalidatePreview() { lock (_gate) _lastKey = null; }
+
+    /// <summary>图上编辑结束后通知宿主节点参数已变化。</summary>
+    public void NotifyConfigurationChanged() => _configurationChanged?.Invoke();
     /// <summary>独立模板编辑画布，不修改匹配节点的搜索ROI和坐标绑定。</summary>
     public bool IsTemplateEditor { get; }
     internal IWorkflowNodeModel EditingNode => _node;
@@ -299,7 +321,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             _displayedFrameId = frame.FrameId;
             var analysis = _node as AnalyzeVisionFrameNodeModel;
             using var maskPreview = analysis?.Mask.Binding is { IsPublicData: false } maskBinding ? _frames?.Capture(maskBinding.NodeId) : null;
-            string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}";
+            string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}:{Caliper?.Key}:{_imagePixelsPerScreenPixel:0.###}";
             if (_lastKey == key) return null;
             var facts = view == 1 ? current?.Facts : null;
             _lastKey = key; // 失败的显示包不在定时器中反复分配；切换来源或新帧才重试。
@@ -324,10 +346,16 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
                 { maskStatus = " 无法预览掩膜：" + error.Message; }
             }
             layers.Add(new CanvasLayer("facts", ELayerKind.Annotation, visuals));
+            if (Caliper is { IsEditable: true } && view is 0 or 1 or 3)
+                layers.Add(new CanvasLayer("caliper", ELayerKind.Annotation, Caliper.Visuals(_imagePixelsPerScreenPixel), 10, name: "卡尺"));
             var overlay = new GeometryOverlay(frame.FrameId, layers);
             var canvas = new CanvasFrame(frame.FrameId, ++_sequence, frame.Image, overlay);
             _visuals = visuals; _lastKey = key;
             Status = Describe(facts, frame) + maskStatus;
+            if (Caliper is not null)
+                Status += Caliper.IsEditable
+                    ? " 拖动起点/终点调整扫描方向与长度，拖动两侧方块调整带宽，拖动采样带内部整体平移。"
+                    : " 卡尺已绑定坐标系，参数为局部单位，请在参数页编辑。";
             if (_node is AnalyzeVisionFrameNodeModel { Coordinates: { } binding })
                 Status += CoordinateEditingReady ? $" {(SupportsRegions ? "ROI" : "几何表达")}绑定坐标系 {binding.CoordinateSystemId}，按本帧坐标系显示。" : " 当前视图只读，不使用其他帧的定位。";
             return canvas;

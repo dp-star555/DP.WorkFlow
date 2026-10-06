@@ -126,6 +126,7 @@ internal sealed class VisionFrameEditorControl : UserControl
             var caption = model.Pick(_canvas.Viewport.ToImage(new PointD(e.X, e.Y)), 5 / _canvas.Viewport.Scale);
             if (caption is not null) _status.Text = caption;
         };
+        if (model.Caliper is { } caliper) AttachCaliper(caliper);
         _source.SelectedIndexChanged += (_, _) => RefreshPreview();
         _timer.Tick += (_, _) => RefreshPreview();
         VisibleChanged += (_, _) => { if (Visible) _timer.Start(); else _timer.Stop(); };
@@ -239,12 +240,46 @@ internal sealed class VisionFrameEditorControl : UserControl
         };
     }
 
+    /// <summary>卡尺图上编辑：拖动起点/终点/带宽方块/采样带内部，松开后通知参数页刷新。</summary>
+    private void AttachCaliper(VisionCaliperGizmo caliper)
+    {
+        double Unit() => 1 / Math.Max(1e-9, _canvas.Viewport.Scale);
+        PointD ToImage(MouseEventArgs e) => _canvas.Viewport.ToImage(new PointD(e.X, e.Y));
+        _canvas.MouseDown += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left || View is 4 or 5) return;
+            var point = ToImage(e);
+            if (caliper.Hit(point, Unit()) is { } handle) { caliper.BeginDrag(handle, point); _canvas.Capture = true; }
+        };
+        _canvas.MouseMove += (_, e) =>
+        {
+            var point = ToImage(e);
+            if (caliper.IsDragging)
+            {
+                if (caliper.Drag(point)) { _model.InvalidatePreview(); RefreshPreview(); }
+                return;
+            }
+            _canvas.Cursor = View is 4 or 5 ? Cursors.Default : caliper.Hit(point, Unit()) switch
+            {
+                EVisionCaliperHandle.Body => Cursors.SizeAll,
+                EVisionCaliperHandle.Width => Cursors.SizeNS,
+                EVisionCaliperHandle.Start or EVisionCaliperHandle.End => Cursors.Cross,
+                _ => Cursors.Default
+            };
+        };
+        _canvas.MouseUp += (_, _) =>
+        {
+            if (caliper.EndDrag()) { _model.NotifyConfigurationChanged(); _model.InvalidatePreview(); RefreshPreview(); }
+        };
+    }
+
     internal void RefreshPreview()
     {
         if (IsDisposed) return;
         try
         {
             int view = View;
+            _model.ImagePixelsPerScreenPixel = 1 / Math.Max(1e-9, _canvas.Viewport.Scale);
             using var frame = _model.Capture(view);
             _canvas.Editor = view == 4 ? (_picking?.Invoke() == true || _template is { PickOrigin: true } or { PickDirection: true }) ? null : _model.Template?.Editor
                 : view == 5 ? null : !_model.IsTemplateEditor && _model.CanEdit && _model.CoordinateEditingReady ? _model.Editor : null;

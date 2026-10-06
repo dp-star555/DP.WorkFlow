@@ -119,6 +119,7 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
             var caption = model.Pick(_canvas.Viewport.ToImage(new PointD(p.X, p.Y)), 5 / _canvas.Viewport.Scale);
             if (caption is not null) _status.Text = caption;
         };
+        if (model.Caliper is { } caliper) AttachCaliper(caliper);
         _source.SelectionChanged += (_, _) => RefreshPreview();
         _timer.Tick += OnTick;
         Loaded += (_, _) => { if (!_disposed) { _timer.Start(); RefreshPreview(); } };
@@ -180,12 +181,53 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
     }
 
     private void OnTick(object? sender, EventArgs e) => RefreshPreview();
+    /// <summary>卡尺图上编辑：拖动起点/终点/带宽方块/采样带内部，松开后通知参数页刷新。</summary>
+    private void AttachCaliper(VisionCaliperGizmo caliper)
+    {
+        double Unit() => 1 / Math.Max(1e-9, _canvas.Viewport.Scale);
+        PointD ToImage(System.Windows.Input.MouseEventArgs e)
+        {
+            var p = e.GetPosition(_canvas);
+            return _canvas.Viewport.ToImage(new PointD(p.X, p.Y));
+        }
+        _canvas.PreviewMouseLeftButtonDown += (_, e) =>
+        {
+            if (View is 4 or 5) return;
+            var point = ToImage(e);
+            if (caliper.Hit(point, Unit()) is { } handle) { caliper.BeginDrag(handle, point); _canvas.CaptureMouse(); }
+        };
+        _canvas.PreviewMouseMove += (_, e) =>
+        {
+            var point = ToImage(e);
+            if (caliper.IsDragging)
+            {
+                if (caliper.Drag(point)) { _model.InvalidatePreview(); RefreshPreview(); }
+                return;
+            }
+            _canvas.Cursor = View is 4 or 5 ? null : caliper.Hit(point, Unit()) switch
+            {
+                EVisionCaliperHandle.Body => System.Windows.Input.Cursors.SizeAll,
+                EVisionCaliperHandle.Width => System.Windows.Input.Cursors.SizeNS,
+                EVisionCaliperHandle.Start or EVisionCaliperHandle.End => System.Windows.Input.Cursors.Cross,
+                _ => null
+            };
+        };
+        _canvas.PreviewMouseLeftButtonUp += (_, _) =>
+        {
+            if (!caliper.IsDragging) return;
+            var changed = caliper.EndDrag();
+            _canvas.ReleaseMouseCapture();
+            if (changed) { _model.NotifyConfigurationChanged(); _model.InvalidatePreview(); RefreshPreview(); }
+        };
+    }
+
     internal void RefreshPreview()
     {
         if (_disposed) return;
         try
         {
             int view = View;
+            _model.ImagePixelsPerScreenPixel = 1 / Math.Max(1e-9, _canvas.Viewport.Scale);
             using var frame = _model.Capture(view);
             _canvas.Editor = view == 4 ? (_picking?.Invoke() == true || _template is { PickOrigin: true } or { PickDirection: true }) ? null : _model.Template?.Editor
                 : view == 5 ? null : !_model.IsTemplateEditor && _model.CanEdit && _model.CoordinateEditingReady ? _model.Editor : null;

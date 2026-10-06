@@ -19,5 +19,6 @@
     <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Composite\DP.WorkFlow.Nodes.Composite.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Persistence\DP.WorkFlow.Persistence.Json\DP.WorkFlow.Persistence.Json.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision\DP.WorkFlow.Nodes.Vision.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Vision.UI\DP.WorkFlow.Vision.UI.csproj" />
   </ItemGroup>
 </Project>
