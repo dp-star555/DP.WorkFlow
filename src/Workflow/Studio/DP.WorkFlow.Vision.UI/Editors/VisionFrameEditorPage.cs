@@ -291,7 +291,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             if (Caliper is not null) Caliper.Coordinates = CoordinateEditingReady ? _displayCoordinates : null;
             var analysis = _node as AnalyzeVisionFrameNodeModel;
             using var maskPreview = analysis?.Mask.Binding is { IsPublicData: false } maskBinding ? _frames?.Capture(maskBinding.NodeId) : null;
-            string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}:{Caliper?.Key}:{_imagePixelsPerScreenPixel:0.###}";
+            string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}:{Caliper?.Key}:{_imagePixelsPerScreenPixel:0.###}:{(_node is FindVisionShapeNodeModel findKey ? FindPreviewKey(findKey) : null)}";
             if (_lastKey == key) return null;
             var facts = view == 1 ? current?.Facts : null;
             _lastKey = key; // 失败的显示包不在定时器中反复分配；切换来源或新帧才重试。
@@ -316,6 +316,15 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
                 { maskStatus = " 无法预览掩膜：" + error.Message; }
             }
             layers.Add(new CanvasLayer("facts", ELayerKind.Annotation, visuals));
+            if (_node is FindVisionShapeNodeModel find && view is 0 or 1 or 3 && (find.Coordinates is null || CoordinateEditingReady && _displayCoordinates is not null))
+            {
+                try
+                {
+                    layers.Add(new CanvasLayer("find-calipers", ELayerKind.Annotation,
+                        CaliperPreview(find.CaliperScans(find.Coordinates is null ? null : _displayCoordinates), _imagePixelsPerScreenPixel), 5, name: "卡尺"));
+                }
+                catch (Exception error) when (error is InvalidOperationException or ArgumentException or NotSupportedException) { /* 还没有有效搜索ROI时不预览。 */ }
+            }
             if (Caliper is { IsEditable: true } && view is 0 or 1 or 3)
                 layers.Add(new CanvasLayer("caliper", ELayerKind.Annotation, Caliper.Visuals(_imagePixelsPerScreenPixel), 10, name: "卡尺"));
             var overlay = new GeometryOverlay(frame.FrameId, layers);
@@ -343,14 +352,65 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             ? _visuals.FirstOrDefault(v => v.Id == "geometry-0")?.Caption : hit?.Caption;
     }
 
+    private static IEnumerable<Visual> FoundPoints(IReadOnlyList<VisionPoint> points, IReadOnlyList<bool> inliers, IReadOnlyList<VisionFoundEdgePair> pairs)
+    {
+        for (int i = 0; i < pairs.Count; i++)
+            yield return new Visual($"find-pair-{i}", new ContourGeometry(new[] { pairs[i].First, pairs[i].Second }), 0xFF22D3EE);
+        for (int i = 0; i < points.Count; i++)
+            yield return new Visual($"find-point-{i}", new EllipseGeometry(points[i].ImagePosition, 2.5, 2.5), inliers[i] ? 0xFF22C55E : 0xFFEF4444);
+    }
+
+    // 找线/找圆的卡尺预览：按当前搜索ROI与参数画出每把卡尺的采样带和扫描方向箭头，随参数修改即时更新。
+    private static IReadOnlyList<Visual> CaliperPreview(IReadOnlyList<VisionCaliperScan> scans, double unit)
+    {
+        var visuals = new List<Visual>();
+        for (int i = 0; i < scans.Count; i++)
+        {
+            var (start, end, half) = (scans[i].Start, scans[i].End, Math.Max(scans[i].HalfBand, unit));
+            double dx = end.X - start.X, dy = end.Y - start.Y, length = Math.Sqrt(dx * dx + dy * dy);
+            if (length < 1e-9) continue;
+            double ux = dx / length, uy = dy / length, nx = -uy * half, ny = ux * half, head = Math.Min(length / 3, 8 * unit);
+            visuals.Add(new Visual($"find-caliper-{i}", new ContourGeometry(new[]
+            {
+                new PointD(start.X + nx, start.Y + ny), new PointD(end.X + nx, end.Y + ny), new PointD(end.X - nx, end.Y - ny), new PointD(start.X - nx, start.Y - ny)
+            }, closed: true), 0xB022D3EE));
+            visuals.Add(new Visual($"find-caliper-axis-{i}", new ContourGeometry(new[] { start, end }), 0x7022D3EE));
+            visuals.Add(new Visual($"find-caliper-arrow-{i}", new ContourGeometry(new[]
+            {
+                new PointD(end.X - ux * head - uy * head * .6, end.Y - uy * head + ux * head * .6), end,
+                new PointD(end.X - ux * head + uy * head * .6, end.Y - uy * head - ux * head * .6)
+            }), 0xFFFACC15));
+        }
+        return visuals;
+    }
+
+    private static string FindPreviewKey(FindVisionShapeNodeModel node) => FormattableString.Invariant(
+        $"{node.CaliperCount}:{node.HalfWidth}:{node.BandSampleStep}:{(node as FindVisionLineNodeModel)?.ReverseScan}:{(node as FindVisionCircleNodeModel)?.SearchLength}:{(node as FindVisionCircleNodeModel)?.Direction}:{(node as FindVisionCircleNodeModel)?.StartAngle}:{(node as FindVisionCircleNodeModel)?.SweepAngle}:")
+        + string.Join(";", node.Regions.Select(r => FormattableString.Invariant($"{r.Id},{r.Enabled},{r.Exclude},{r.Shape},{r.CenterX},{r.CenterY},{r.Width},{r.Height},{r.Angle}")));
+
     // 不画标签的图形在点击时给出的说明。
     private static string? PickText(object? facts, string id)
     {
+        if (facts is VisionFindLineResult or VisionFindCircleResult)
+        {
+            var circle = facts as VisionFindCircleResult;
+            var (summary, points, inliers, pairs) = facts is VisionFindLineResult l ? (l.Summary, l.EdgePoints, l.Inliers, l.EdgePairs)
+                : (circle!.Summary, circle.EdgePoints, circle.Inliers, circle.EdgePairs);
+            if (id == "find-fit") return summary;
+            if (id.StartsWith("find-point-", StringComparison.Ordinal) && int.TryParse(id.AsSpan(11), out var found) && found < points.Count)
+                return $"{(inliers[found] ? "计算点" : "忽略点")} ({points[found].ImagePosition.X:F4},{points[found].ImagePosition.Y:F4})"
+                    + (found < pairs.Count ? $"；宽度 {pairs[found].Width:F4}px" : "");
+            if (id.StartsWith("find-pair-", StringComparison.Ordinal) && int.TryParse(id.AsSpan(10), out var foundPair) && foundPair < pairs.Count)
+                return $"边缘对宽度 {pairs[foundPair].Width:F4}px";
+            return null;
+        }
         if (facts is not VisionCaliperMeasurement measurement) return null;
-        if (id is "profile" or "fit-line" or "fit-circle") return measurement.Summary;
-        if (id.StartsWith("fit-point-", StringComparison.Ordinal) && measurement.Fit is { } fit
-            && int.TryParse(id.AsSpan(10), out var pointIndex) && pointIndex < fit.Points.Count)
-            return $"{(fit.Inliers[pointIndex] ? "计算点" : "忽略点")} #{fit.CaliperIndices[pointIndex]}：({fit.Points[pointIndex].X:F4},{fit.Points[pointIndex].Y:F4})";
+        if (id == "profile") return measurement.Summary;
+        if (id.StartsWith("pair-", StringComparison.Ordinal) && int.TryParse(id.AsSpan(id.LastIndexOf('-') + 1), out var pairIndex) && pairIndex < measurement.PairCount)
+        {
+            var pair = measurement.Pairs[pairIndex];
+            return $"边缘对 #{pairIndex + 1}：宽度 {pair.Width:F4}px；中点 ({pair.Midpoint.X:F4},{pair.Midpoint.Y:F4})";
+        }
         if (!id.StartsWith("edge-", StringComparison.Ordinal) || !int.TryParse(id.AsSpan(5), out var index) || index >= measurement.Count) return null;
         var edge = measurement.Edges[index];
         return $"边缘 ({edge.Position.X:F4},{edge.Position.Y:F4})；梯度 {edge.Gradient:F3}" + (edge.AngleDegrees is { } angle ? $"；角度 {angle:F2}°" : "");
@@ -375,6 +435,19 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
 
     private static IEnumerable<Visual> Visuals(object? facts)
     {
+        // 找线/找圆：绿色计算点、红色忽略点、黄色拟合线/圆，边缘对模式另画青色宽度线；卡尺位置由预览层按当前参数绘制，不画文字标签。
+        if (facts is VisionFindLineResult foundLine)
+        {
+            yield return new Visual("find-fit", new ContourGeometry(new[] { foundLine.Fit.A, foundLine.Fit.B }), 0xFFFFCC00);
+            foreach (var visual in FoundPoints(foundLine.EdgePoints, foundLine.Inliers, foundLine.EdgePairs)) yield return visual;
+            yield break;
+        }
+        if (facts is VisionFindCircleResult foundCircle)
+        {
+            yield return new Visual("find-fit", new EllipseGeometry(foundCircle.Fit.Center, foundCircle.Radius, foundCircle.Radius), 0xFFFFCC00);
+            foreach (var visual in FoundPoints(foundCircle.EdgePoints, foundCircle.Inliers, foundCircle.EdgePairs)) yield return visual;
+            yield break;
+        }
         if (facts is IVisionGeometryFact geometry)
             for (var index = 0; index < geometry.DisplayGeometry.Count; index++)
                 yield return new Visual("geometry-" + index, geometry.DisplayGeometry[index], 0xFFFFCC00, index == 0 ? Caption(geometry) : null);
@@ -391,18 +464,17 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         if (facts is VisionCaliperMeasurement measurement)
         {
             yield return new Visual("profile", new ContourGeometry(measurement.Path), 0xFF33BBFF);
-            // 有拟合时：全部边缘为小灰点，拟合点绿色＝计算点、红色＝忽略点，黄色为拟合线段/圆；无拟合时边缘为黄点。
-            var fit = measurement.Fit;
+            // 边缘对模式：全部边缘为小灰点，每对的两个边缘为青色点并用宽度线连起来，中点为黄色；单边缘模式边缘为黄点。
+            var pairs = measurement.EdgeMode == EVisionCaliperEdgeMode.Pair;
             for (int i = 0; i < measurement.Count; i++)
-                yield return new Visual($"edge-{i}", new EllipseGeometry(measurement.Edges[i].Position, 1, 1), fit is null ? 0xFFFFCC00 : 0xFF94A3B8);
-            if (fit is not null)
+                yield return new Visual($"edge-{i}", new EllipseGeometry(measurement.Edges[i].Position, 1, 1), pairs ? 0xFF94A3B8 : 0xFFFFCC00);
+            for (int i = 0; i < measurement.PairCount; i++)
             {
-                if (fit.Kind == EVisionCaliperFitKind.Line && fit.A is { } a && fit.B is { } b)
-                    yield return new Visual("fit-line", new ContourGeometry(new[] { a, b }), 0xFFFFCC00);
-                if (fit.Kind == EVisionCaliperFitKind.Circle && fit.Center is { } center && fit.Radius is { } radius)
-                    yield return new Visual("fit-circle", new EllipseGeometry(center, radius, radius), 0xFFFFCC00);
-                for (int i = 0; i < fit.Points.Count; i++)
-                    yield return new Visual($"fit-point-{i}", new EllipseGeometry(fit.Points[i], 2.5, 2.5), fit.Inliers[i] ? 0xFF22C55E : 0xFFEF4444);
+                var pair = measurement.Pairs[i];
+                yield return new Visual($"pair-{i}", new ContourGeometry(new[] { pair.First.Position, pair.Second.Position }), 0xFF22D3EE);
+                yield return new Visual($"pair-first-{i}", new EllipseGeometry(pair.First.Position, 1.8, 1.8), 0xFF22D3EE);
+                yield return new Visual($"pair-second-{i}", new EllipseGeometry(pair.Second.Position, 1.8, 1.8), 0xFF22D3EE);
+                yield return new Visual($"pair-mid-{i}", new EllipseGeometry(pair.Midpoint, 2.2, 2.2), 0xFFFFCC00);
             }
         }
         if (facts is RobustLineResult line)

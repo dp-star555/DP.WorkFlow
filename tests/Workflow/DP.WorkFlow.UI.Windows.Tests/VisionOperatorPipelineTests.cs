@@ -151,7 +151,7 @@ public sealed class VisionOperatorPipelineTests
         {
             var find = new FindVisionLineNodeModel { Id = "line", Frame = Input<ImageFrame>("file"), CaliperCount = 8, Polarity = ECaliperPolarity.Rising,
                 DistanceThreshold = .3, Regions = new() { new() { Id = "box", CenterX = 26, CenterY = 20, Width = 28, Height = 40, Angle = -Math.PI / 2 } } };
-            Assert.Empty(find.ValidateConfiguration().Where(e => !e.Contains("输入图像", StringComparison.Ordinal)));
+            Assert.DoesNotContain(find.ValidateConfiguration(), e => !e.Contains("输入图像", StringComparison.Ordinal));
             var nodes = new WorkflowNodeCatalog().RegisterImageNodes(); var store = new WorkflowDocumentJsonStore(nodes);
             var document = store.Deserialize(store.Serialize(Document(new AcquireVisionImageNodeModel { Id = "file", FilePath = path }, find))).Document;
             using var scope = new WorkflowVisionFrameScope();
@@ -167,6 +167,11 @@ public sealed class VisionOperatorPipelineTests
             Assert.Equal(Output<ImageFrame>(host, "file").FrameId, result.MeasuredLine.A.FrameId);
             Assert.Equal(1 + 8 + 8, result.DisplayGeometry.Count);
             Assert.Contains("8/8", result.Summary);
+            Assert.All(result.Inliers, Assert.True);
+            Assert.Empty(result.OutlierPoints);
+            Assert.Equal(8, result.CaliperScans.Count);
+            Assert.Empty(result.EdgePairs);
+            Assert.Null(result.MeanWidth);
         }
         finally { File.Delete(path); }
     }

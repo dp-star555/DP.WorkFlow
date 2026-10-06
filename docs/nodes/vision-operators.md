@@ -87,28 +87,23 @@ var fit = new FitVisionRobustLineNodeModel {
 - 卡尺仅接受Gray8。起终点是原图像素边界坐标；像素中心为`.5`。整个采样带必须处于可采样像素中心范围，不裁剪越界带。
 - 沿带约1px均匀采样，垂直方向使用BandSampleStep（默认1px）平均；绑定定位后间隔乘尺度，不暗中滤波。端部各约两个采样步长不输出梯度峰，那里没有足够插值邻域。
 - `Profile`保存灰度剖面；`Edges`按扫描距离排序，含Position、Distance、带符号Gradient。Rising/Falling均相对于起点→终点，反向扫描会反转极性。
-- 可用两条已选边缘坐标绑定现有距离节点计算宽度；当前不自动选择业务意义上的边缘对。
-- 输出`VisionCaliperMeasurement`保留直线卡尺原有成员名（Start/End/Profile/Edges/Count/MeasuredEdges/LocatedEdges），已有绑定路径不变；直线形状的原始`CaliperResult`在`Line`成员中。
+- 输出`VisionCaliperMeasurement`保留直线卡尺原有成员名（Start/End/Profile/Edges/Count/MeasuredEdges/LocatedEdges），已有绑定路径不变；直线形状、1px采样间隔时原始`CaliperResult`在`Line`成员中。
+- 卡尺节点是**单个卡尺**（对应HALCON `gen_measure_rectangle2`/`gen_measure_arc`），用于测位置、宽度、间距、个数；它只给出扫描线上的点，不拟合直线/圆。要用多把卡尺找直线或圆，请用“找线”“找圆”。
+- `ScanStep`（采样间隔，默认1，原图0.1..10px）：沿扫描方向每隔多少像素取一个剖面点。直线卡尺为1px时调用可替换的直线卡尺算法实现，其它间隔使用同一规则的托管采样。
 
-### 搜索间隔、卡尺数量与卡尺内拟合
+### 边缘对（测宽度）
 
-- `ScanStep`（搜索间隔，默认1，原图0.1..10px）：沿搜索方向每隔多少像素取一个剖面点，对直线、沿圆弧、径向三种方式都生效。直线卡尺为1px时调用可替换的直线卡尺算法实现，其它间隔使用同一规则的托管采样。
-- `CaliperCount`（卡尺数量，默认1）：
-  - 直线：采样带沿宽度均分为N个并排子卡尺（1..64，不超过`2×HalfWidth+1`），每个都沿起点→终点搜索。
-  - 圆弧径向搜索：圆弧均分为N段，每段一个径向卡尺（1..128）。沿圆弧扫描时忽略。
-- N ≥ 3 时在节点内拟合：每个卡尺按`FitPoint`（最强边缘/第一个/最后一个）取一个点。直线用RANSAC＋正交TLS（DP.Vision `RobustLineFitter`），圆用确定性RANSAC＋Kåsa最小二乘精修；`FitDistanceThreshold`以内为计算点，其余为忽略点。
-- 输出`Fit`含拟合点、是否计算点、RMS、直线端点A/B或圆心/半径；`MeasuredFitLine`为带来源的拟合直线。不足3个卡尺找到边或拟合失败时`Fit`为空，原因写在`FitMessage`。
-- 结果图上：全部边缘为小灰点，计算点绿色、忽略点红色，拟合线段或圆为黄色。不画文字标签，点击后在状态栏显示说明。
+- `EdgeMode = 边缘对`时（对应HALCON `measure_pairs`）：边缘按扫描距离排序，从近到远找第一个极性符合“边缘极性”的边缘，再向后找第一个极性相反、宽度在`[MinimumPairWidth, MaximumPairWidth]`内的边缘配成一对；配对后从第二个边缘之后继续，不重叠。“边缘极性”为任意时第一个边缘可为任一极性。
+- 边缘对模式下卡尺先取两种极性的全部边缘，再配对；`Edges`为全部边缘，`Pairs`为边缘对（`First`/`Second`/`Midpoint`/`Width`），另有`PairCount`、`Width`（第一对）、`Widths`、`MeanWidth`/`MinimumWidth`/`MaximumWidth`、`MeasuredPairCenters`。
+- 宽度为两边缘沿扫描路径的距离差：直线为长度，圆弧为弧长；绑定坐标系时宽度范围为业务单位，按尺度换算。
+- 结果图：全部边缘为小灰点，每对的两个边缘为青色点并用宽度线连接，中点为黄色；不画文字，点击后状态栏显示宽度。
 
 ### 圆弧卡尺
 
 `Shape = Arc`时沿圆弧扫描：圆心`CenterX/CenterY`、半径`Radius`、起始角`StartAngle`与扫描角度`SweepAngle`（度，X轴正向起顺时针，图像Y向下；正为顺时针，绝对值(0,360]）。
 
-- `ArcDirection`（搜索方向，默认由内到外）：
-  - **由内到外 / 由外到内**：沿半径搜索边缘（常用于找圆）。圆弧按扫描角度均分为`CaliperCount`段（默认8，1..128），每段一个径向卡尺，在`[Radius−带宽, Radius+带宽]`内按约1px取点（带宽至少±2px），每点沿该段圆弧按约1px弧长求平均。`Edges[i].Distance`为从搜索起点（内圈或外圈）算起的径向距离，`AngleDegrees`为该卡尺中心角，`CaliperIndex`为卡尺序号；`Profiles`保存每个卡尺的剖面，`Profile`为平均剖面。图上每个卡尺画一个指向搜索方向的箭头。
-  - **沿圆弧**：以下规则。
-- 沿圆弧扫描时，沿扫描圆弧按约1px弧长均匀取点，每点沿**半径方向**取`2×HalfWidth+1`个点（间隔BandSampleStep）求平均；剖面、梯度、峰值插值和间距抑制与直线卡尺相同。
-- 沿圆弧扫描时`Edges[i].Distance`为从起始角开始的弧长，`AngleDegrees`为边缘所在角度。Rising/Falling相对搜索方向：沿圆弧为起始角→终止角，径向为由内到外或由外到内。
+- 沿扫描圆弧按采样间隔均匀取点，每点沿**半径方向**取`2×HalfWidth+1`个点（间隔BandSampleStep）求平均；剖面、梯度、峰值插值和间距抑制与直线卡尺相同。
+- `Edges[i].Distance`为从起始角开始的弧长，`AngleDegrees`为边缘所在角度；Rising/Falling相对起始角→终止角。
 - 采样带内侧不能越过圆心（`Radius ≥ HalfWidth×BandSampleStep`），整条环形采样带必须在图像内。
 - 绑定坐标系时圆心、半径、起始角为局部表达，运行时按相似变换换算到原图（角度加坐标系旋转，半径与间隔乘尺度）。
 - 圆弧卡尺是工作流内置的托管实现，不经过可替换的`ICaliperMeasurer`算法实现选择。
@@ -145,6 +140,9 @@ OpenCV搜索采样最多4096组，默认保守工作量预算2亿（位置数×�
 - 拟合使用固定种子的RANSAC：直线为正交TLS重拟合，圆为代数拟合后几何细化。“内点距离阈值”是点到拟合结果的距离。
 - 绑定坐标系后搜索ROI随工件移动旋转，长度参数为业务单位；属性面板换绑坐标系时ROI、长度参数和找圆起始角一并换算。
 - 结果`MeasuredLine`（拟合直线）和`MeasuredCenter`（圆心）带帧和坐标来源，可直接接距离节点。
+- 图像页按当前搜索ROI与参数实时预览每把卡尺（青色采样带＋黄色扫描方向箭头），修改卡尺数量、采样半宽、反向扫描、搜索长度等即时更新。
+- 结果图：绿色为参与拟合的计算点，红色为被忽略的点，黄色为拟合直线/圆；不画文字，点击后状态栏显示说明。结果另有`Inliers`（与`EdgePoints`同序）、`InlierPoints`、`OutlierPoints`、`OutlierCount`、`CaliperScans`。
+- “边缘模式”为边缘对时，每把卡尺按同一配对规则找边缘对（“边缘选择”的最强为两边梯度绝对值之和最大），用中点拟合中心线/中心圆，`EdgePairs`给出各卡尺的边缘对，`MeanWidth`/`MinimumWidth`/`MaximumWidth`为计算点的宽度统计；图上另画青色宽度线。
 
 ## 掩膜创建、绑定与显示
 
