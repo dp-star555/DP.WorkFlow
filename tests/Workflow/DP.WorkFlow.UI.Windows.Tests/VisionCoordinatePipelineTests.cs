@@ -158,10 +158,20 @@ public sealed class VisionCoordinatePipelineTests
         try
         {
             var page = Assert.IsType<VisionFrameEditorPageModel>(editor.Pages.Single(p => p.RendererKey == VisionFrameEditorPageProvider.RendererKey).Model);
-            Assert.Contains(page.CoordinateSources, s => s.NodeId == "part");
-            Assert.DoesNotContain(page.CoordinateSources, s => s.NodeId == "pose");
+            // 坐标系在属性面板以下拉选择：选中坐标来源即按本帧换算并绑定。
+            editor.EditingSession.SelectedNodeId = "blob";
+            using var inspector = new WorkflowPropertyInspectorModel(editor.EditingSession, "scene", null,
+                WorkflowVisionCoordinateProperties.CreateProvider(scope, () => editor.EditingSession.Canvas.Nodes.Select(n => n.Node).ToArray()));
+            WorkflowPropertyEntry Coordinate() => inspector.Entries.Single(e => e.Name == WorkflowVisionCoordinateProperties.EntryName);
+            Assert.Equal(WorkflowPropertyEditorKind.Choice, Coordinate().EditorKind);
+            Assert.Equal("", Coordinate().Value);
+            Assert.Contains(Coordinate().Choices, c => Equals(c.Value, "part"));
+            Assert.DoesNotContain(Coordinate().Choices, c => Equals(c.Value, "pose"));
+            Assert.DoesNotContain(inspector.Entries, e => e.Name == "Coordinates");
             using (var canvas = page.Capture(0)) Assert.NotNull(canvas);
-            page.BindCoordinates("part");
+            inspector.SetValue(Coordinate(), "part");
+            using (var canvas = page.Capture(0)) Assert.NotNull(canvas);
+            Assert.Equal("part", Coordinate().Value);
             var editing = (AnalyzeVisionBlobsNodeModel)editor.EditingNode;
             Assert.Null(source.Coordinates); Assert.Equal(19.5, source.Regions[0].CenterX);
             Assert.Equal(7, editing.Regions[0].CenterX, 8); Assert.Equal(0, editing.Regions[0].CenterY, 8);
@@ -184,8 +194,10 @@ public sealed class VisionCoordinatePipelineTests
             Assert.Equal(38.5, displayed.Center.X, 6); Assert.Equal(29.5, displayed.Center.Y, 6);
             Assert.Equal(editingBefore, editing.Regions.Select(r => (r.CenterX, r.CenterY, r.Angle)).ToArray());
             Assert.Equal(saved, store.Serialize(document));
-            page.UnbindCoordinates(); Assert.Null(editing.Coordinates);
+            inspector.SetValue(Coordinate(), ""); Assert.Null(editing.Coordinates);
             Assert.Equal(38.5, editing.Regions[0].CenterX, 6);
+            using (var canvas = page.Capture(0)) Assert.NotNull(canvas);
+            Assert.Equal(38.5, Assert.IsType<RectangleGeometry>(page.Editor.Document.Rois[0].Shape).Center.X, 6); // 解除后按原图表达重新显示。
             Assert.Equal(saved, store.Serialize(document)); // 未确认解除，不改正式文档。
         }
         finally { await editor.DisposeAsync(); }
@@ -210,7 +222,7 @@ public sealed class VisionCoordinatePipelineTests
         page.Editor.Tool = ERoiTool.Rectangle;
         page.Editor.PointerDown(new PointD(1, 1), .1); page.Editor.PointerUp(new PointD(4, 4));
         Assert.Equal(saved, node.Regions.Select(r => (r.Id, r.CenterX, r.CenterY)).ToArray());
-        Assert.Throws<InvalidOperationException>(page.UnbindCoordinates);
+        Assert.Throws<InvalidOperationException>(() => VisionCoordinateRebinding.Unbind(node, scope));
         if (!changedTemplate)
         {
             data.WriteScene(rotated: true); Assert.True((await host.RunAsync()).Success);
