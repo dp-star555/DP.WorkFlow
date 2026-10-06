@@ -16,6 +16,8 @@ public sealed class PreprocessVisionImageNodeModel : AnalyzeVisionFrameNodeModel
 
     /// <inheritdoc/>
     public override string NodeType => "Vision.PreprocessImage";
+    /// <summary>可画ROI：只处理ROI内的像素，ROI外保持原图。</summary>
+    public override EWorkflowVisionRange RangeCapability => EWorkflowVisionRange.Region;
     /// <summary>显式操作，非灰度转换操作拒绝彩色输入。</summary>
     [WorkflowProperty("预处理操作", "16位灰度图像须选择“16位转8位”并设置增益，不自动归一化；“彩色转灰度”把彩色按亮度转为8位灰度。", Category = "预处理")]
     public EImagePreprocessing Operation { get; set; }
@@ -36,7 +38,8 @@ public sealed class PreprocessVisionImageNodeModel : AnalyzeVisionFrameNodeModel
     public override IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = base.ValidateConfiguration().ToList();
-        if (!FullImage) errors.Add("预处理仅支持整图，不忽略矩形配置。");
+        if (HasConfiguredRange && Operation is EImagePreprocessing.Grayscale or EImagePreprocessing.Gray16ToGray8)
+            errors.Add("“彩色转灰度”“16位转8位”会改变图像格式，只能整图处理；请删除ROI，或在其后的灰度预处理节点上画ROI。");
         try { _ = Options(); } catch (ArgumentException ex) { errors.Add(ex.Message); }
         return errors;
     }
@@ -54,11 +57,30 @@ public sealed class PreprocessVisionImageNodeHandler : WorkflowNodeHandler<Prepr
             ?? throw new InvalidOperationException("预处理返回空图像。");
         if (pixels.Info.Width != input.Image.Info.Width || pixels.Info.Height != input.Image.Info.Height || pixels.Info.Layout != EPixelLayout.Gray8)
             throw new InvalidOperationException("预处理返回了错误尺寸或格式。");
-        using var frame = new ImageFrame(Guid.NewGuid().ToString("N"), pixels);
+        // 画了ROI时只替换ROI内的像素，ROI外保持原图（滤波仍按整图计算，ROI边缘不出现截断伪影）。
+        var restriction = node.ResolveRestriction(input, context, cancellationToken);
+        using var composed = restriction is null ? pixels.Retain() : Compose(input.Image, pixels, restriction, cancellationToken);
+        using var frame = new ImageFrame(Guid.NewGuid().ToString("N"), composed);
         cancellationToken.ThrowIfCancellationRequested();
         var output = context.GetRequiredCapability<IWorkflowVisionFrameScope>().Retain(frame);
         var projection = WorkflowVisionFrameScope.Stage(context, output);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: output, projection: projection));
+    }
+
+    private static IImageSource Compose(IImageSource original, IImageSource processed, RegionGeometry restriction, CancellationToken token)
+    {
+        var info = original.Info;
+        if (info.Layout != EPixelLayout.Gray8) throw new InvalidOperationException("ROI预处理只支持8位灰度输入。");
+        var result = new byte[info.ByteLength]; original.CopyTo(0, result, 0, result.Length);
+        var source = new byte[info.ByteLength]; processed.CopyTo(0, source, 0, source.Length);
+        foreach (var run in restriction.Runs)
+        {
+            token.ThrowIfCancellationRequested();
+            if (run.Row < 0 || run.Row >= info.Height) continue;
+            int start = Math.Max(0, run.Start), end = Math.Min(info.Width, run.EndExclusive);
+            if (end > start) Array.Copy(source, run.Row * info.Width + start, result, run.Row * info.Width + start, end - start);
+        }
+        return VisionImage.CopyFrom(info, result);
     }
 }
 
@@ -123,6 +145,8 @@ public sealed class MorphVisionRegionNodeModel : AnalyzeVisionFrameNodeModel, IW
 
     /// <inheritdoc/>
     public override string NodeType => "Vision.MorphRegion";
+    /// <summary>可画ROI：只对ROI内的输入区域做形态学，结果也限定在ROI内。</summary>
+    public override EWorkflowVisionRange RangeCapability => EWorkflowVisionRange.Region;
     /// <summary>上游Region绑定。</summary>
     [WorkflowProperty("输入区域", "同帧RegionAnalysisResult绑定。", Category = "输入")]
     public WorkflowInput<RegionAnalysisResult> InputRegion { get; set; } = WorkflowInput<RegionAnalysisResult>.FromLiteral(null);
@@ -141,7 +165,7 @@ public sealed class MorphVisionRegionNodeModel : AnalyzeVisionFrameNodeModel, IW
         var errors = base.ValidateConfiguration().ToList();
         if (InputRegion is null || InputRegion.Source != WorkflowValueSource.Binding || InputRegion.Binding is null || InputRegion.LiteralValue is not null)
             errors.Add("区域输入必须为绑定。");
-        if (!FullImage || Radius < 0 || Radius > 31 || !Enum.IsDefined(Operation) || !Enum.IsDefined(Kernel)) errors.Add("无效形态学参数；操作作用于完整输入Region。");
+        if (Radius < 0 || Radius > 31 || !Enum.IsDefined(Operation) || !Enum.IsDefined(Kernel)) errors.Add("无效形态学参数。");
         return errors;
     }
 }
@@ -154,14 +178,21 @@ public sealed class MorphVisionRegionNodeHandler : WorkflowNodeHandler<MorphVisi
     {
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
         var input = context.ResolveInput(node.InputRegion) ?? throw new InvalidOperationException("输入区域为空。"); input.ValidateFrame(frame);
+        var restriction = node.ResolveRestriction(frame, context, cancellationToken);
+        var source = restriction is null ? input : Clip(input, restriction, cancellationToken);
         var result = WorkflowVisionAlgorithmInvocation.Invoke(context, node.Algorithm, "opencv.region",
-            (IRegionProcessor algorithm) => algorithm.Morphology(input, node.Operation, node.Radius, node.Kernel, cancellationToken), cancellationToken)
+            (IRegionProcessor algorithm) => algorithm.Morphology(source, node.Operation, node.Radius, node.Kernel, cancellationToken), cancellationToken)
             ?? throw new InvalidOperationException("形态学返回空结果。");
         result.ValidateFrame(frame);
+        // 膨胀等操作可能长出ROI，结果再裁回ROI内。
+        if (restriction is not null) result = Clip(result, restriction, cancellationToken);
         if (input.CoordinateSystem is not null) result = result.InCoordinates(input.CoordinateSystem);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
+
+    private static RegionAnalysisResult Clip(RegionAnalysisResult region, RegionGeometry restriction, CancellationToken token) =>
+        new(region.FrameId, region.Width, region.Height, RegionAnalysisResult.Intersect(region.Region, restriction, token));
 }
 
 /// <summary>按明确特征范围筛选连通域，空结果成功。</summary>
@@ -177,6 +208,8 @@ public sealed class SelectVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel, IW
 
     /// <inheritdoc/>
     public override string NodeType => "Vision.SelectBlobs";
+    /// <summary>可画ROI：只保留质心落在ROI内的连通域。</summary>
+    public override EWorkflowVisionRange RangeCapability => EWorkflowVisionRange.Region;
     /// <summary>上游Blob事实绑定。</summary>
     [WorkflowProperty("连通域输入", "上游BlobAnalysisResult绑定，必须同帧。", Category = "输入")]
     public WorkflowInput<BlobAnalysisResult> Blobs { get; set; } = WorkflowInput<BlobAnalysisResult>.FromLiteral(null);
@@ -204,7 +237,6 @@ public sealed class SelectVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel, IW
     {
         var errors = base.ValidateConfiguration().ToList();
         if (Blobs is null || Blobs.Source != WorkflowValueSource.Binding || Blobs.Binding is null || Blobs.LiteralValue is not null) errors.Add("Blob输入必须为绑定。");
-        if (!FullImage) errors.Add("筛选作用于输入事实，不接受忽略的矩形配置。");
         try { _ = Options(); } catch (ArgumentException ex) { errors.Add(ex.Message); }
         return errors;
     }
@@ -221,6 +253,9 @@ public sealed class SelectVisionBlobsNodeHandler : WorkflowNodeHandler<SelectVis
         if (input.FrameId != frame.FrameId) throw new InvalidOperationException("Blob与预览帧不一致。");
         var result = WorkflowVisionAlgorithmInvocation.Invoke(context, node.Algorithm, "managed.blob-select",
             (IBlobSelector algorithm) => algorithm.Select(input, node.Options(), cancellationToken), cancellationToken);
+        // 画了ROI时只保留质心落在ROI内的连通域（保持筛选后的排序）。
+        if (node.ResolveRestriction(frame, context, cancellationToken) is { } restriction)
+            result = new BlobAnalysisResult(result.FrameId, result.Blobs.Where(b => restriction.Contains(b.Centroid)));
         if (input.CoordinateSystem is not null) result = result.InCoordinates(input.CoordinateSystem);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));

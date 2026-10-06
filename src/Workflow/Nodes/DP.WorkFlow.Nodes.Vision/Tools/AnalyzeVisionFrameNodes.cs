@@ -73,6 +73,16 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
         return new WorkflowVisionResolvedRange(Bounds(frame), Region(frame, token, context, coordinates), coordinates);
     }
 
+    /// <summary>是否配置了范围（ROI、矩形或区域掩码）；未配置时算子按原规则处理整个输入。</summary>
+    internal bool HasConfiguredRange => !FullImage || Regions.Count > 0 || !(Mask.Source == WorkflowValueSource.Literal && Mask.LiteralValue is null);
+
+    /// <summary>
+    /// 后处理类算子（预处理、形态学、筛选）的限定范围：未配置范围时为空（不限定），否则为原图上实际参与计算的区域。
+    /// </summary>
+    /// <param name="frame">本次输入帧。</param><param name="context">执行上下文。</param><param name="token">取消。</param>
+    internal RegionGeometry? ResolveRestriction(ImageFrame frame, IWorkflowNodeExecutionContext context, CancellationToken token) =>
+        HasConfiguredRange ? ResolveRange(frame, context, token).ToRegion(token) : null;
+
     private RegionGeometry? Region(ImageFrame frame, CancellationToken token, IWorkflowNodeExecutionContext context, VisionCoordinateSystem? coordinates = null)
     {
         var configured = coordinates is null

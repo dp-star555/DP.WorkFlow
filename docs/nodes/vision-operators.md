@@ -72,6 +72,10 @@ var blob = new AnalyzeVisionBlobsNodeModel {
 - 预处理保持尺寸和坐标系，但无论像素恰巧相同与否，输出均使用**新FrameId**。默认16位增益是1，不会偷偷自动归一化；常见满量程映射须显式设置1/257。
 - 除Grayscale外，操作只接受明确灰度位深。Gaussian边界Reflect101，中值Replicate，增益/偏置饱和到0..255。
 - Region不拥有图像，保存FrameId、宽高和精确游程。形态学不改变图像，因此保持FrameId。
+- 图像预处理、区域形态学、筛选连通域都可以画ROI（也可绑定区域掩膜或定位随动）；不画时与以前一样处理整个输入。
+  - 图像预处理：滤波仍按整图计算（ROI边缘不出现截断伪影），只把ROI内的像素替换为处理结果，ROI外保持原图。“彩色转灰度”“16位转8位”会改变格式，只能整图处理。
+  - 区域形态学：先把输入区域裁到ROI内再做形态学，结果再裁回ROI内（膨胀不会长出ROI）。
+  - 筛选连通域：按条件筛选后，只保留质心落在ROI内的连通域，排序不变。
 - Blob、颜色、阈值节点新增`Mask`绑定；默认空Literal表示未启用，不能保存运行Region事实Literal。掩码与配置ROI求交，跨帧或尺寸不一致拒绝，不因尺寸相同就认为同帧。
 - 形态学半径0..31，0为恒等。画布外恒为零背景，每一步都在有限画布上运算；贴边闭运算可能收缩边缘，不会隐式扩展画布。FillHoles填补不与画布边界四连通的背景，忽略核和半径。
 - 所有Blob观测新增`Features`：GridPerimeter、Circularity、MajorAxisLength、MinorAxisLength、OrientationRadians、Elongation。周长包含孔洞边界，是**栅格单元边界长度**，不是亚像素轮廓周长；单像素圆度为π/4。
