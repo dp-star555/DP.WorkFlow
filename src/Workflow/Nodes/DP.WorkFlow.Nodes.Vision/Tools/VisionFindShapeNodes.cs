@@ -126,6 +126,7 @@ public sealed class FindVisionLineNodeModel : FindVisionShapeNodeModel
     /// <inheritdoc/>
     public override string NodeType => "Vision.FindLine";
     /// <inheritdoc/>
+    [Browsable(false)]
     public override VisionAlgorithmSelection FitterAlgorithm { get; set; } = new() { ImplementationId = "managed.robust-line" };
     /// <inheritdoc/>
     protected override Type FitterContract => typeof(IRobustLineFitter);
@@ -169,6 +170,7 @@ public sealed class FindVisionCircleNodeModel : FindVisionShapeNodeModel
     /// <inheritdoc/>
     public override string NodeType => "Vision.FindCircle";
     /// <inheritdoc/>
+    [Browsable(false)]
     public override VisionAlgorithmSelection FitterAlgorithm { get; set; } = new() { ImplementationId = "managed.robust-circle" };
     /// <inheritdoc/>
     protected override Type FitterContract => typeof(IRobustCircleFitter);
