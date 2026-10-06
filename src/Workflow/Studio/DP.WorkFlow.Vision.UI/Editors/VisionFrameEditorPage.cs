@@ -246,13 +246,14 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         if (CanEdit) Editor.Load(new RoiDocument(Array.Empty<RoiDefinition>()));
     }
 
-    /// <summary>只读文件预览，不执行算法、不更改节点文件路径。</summary>
+    /// <summary>只读文件预览，不执行算法、不更改节点文件路径；模板节点用于试匹配，彩色文件按亮度转换为8位灰度。</summary>
     /// <param name="path">用户显式选择的预览文件。</param>
     public async Task ReadPreviewAsync(string path)
     {
         var token = _lifetime.Token;
         if (_reader is null) throw new InvalidOperationException("宿主未配置文件预览读取器。");
-        using var image = await _reader.ReadAsync(path, token).ConfigureAwait(false);
+        using var read = await _reader.ReadAsync(path, token).ConfigureAwait(false);
+        using var image = _node is IWorkflowVisionTemplateNode ? VisionImage.ToGray8(read, token) : read.Retain();
         lock (_gate)
         {
             if (_disposed) return;

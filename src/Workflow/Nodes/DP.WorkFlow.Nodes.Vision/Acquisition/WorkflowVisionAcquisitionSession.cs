@@ -157,7 +157,7 @@ public sealed class LoadVisionFolderNodeHandler : WorkflowNodeHandler<LoadVision
         => ReadAsync(node.Id, node.Algorithm, context, cancellationToken);
 
     internal static async ValueTask<NodeExecutionResult> ReadAsync(string nodeId, VisionAlgorithmSelection algorithm,
-        IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+        IWorkflowNodeExecutionContext context, CancellationToken cancellationToken, EWorkflowVisionPixelFormat format = EWorkflowVisionPixelFormat.Original)
     {
         var source = context.GetRequiredCapability<IWorkflowVisionFolderSource>();
         Task<IImageSource> Read(string path, CancellationToken token) => WorkflowVisionAlgorithmInvocation.InvokeAsync(context, algorithm, "opencv.image-read",
@@ -175,6 +175,6 @@ public sealed class LoadVisionFolderNodeHandler : WorkflowNodeHandler<LoadVision
             next = source.NextAsync(nodeId, cancellationToken);
         }
         using var image = await next.ConfigureAwait(false);
-        return LoadVisionFileNodeHandler.Output(image, context, cancellationToken);
+        return LoadVisionFileNodeHandler.Output(image, context, cancellationToken, format);
     }
 }

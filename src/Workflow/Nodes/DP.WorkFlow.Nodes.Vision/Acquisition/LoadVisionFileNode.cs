@@ -35,23 +35,32 @@ public sealed class LoadVisionFileNodeHandler : WorkflowNodeHandler<LoadVisionFi
         IWorkflowNodeExecutionContext context, CancellationToken cancellationToken) => ReadAsync(node.FilePath, node.Algorithm, context, cancellationToken);
 
     internal static async ValueTask<NodeExecutionResult> ReadAsync(string path, VisionAlgorithmSelection algorithm,
-        IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+        IWorkflowNodeExecutionContext context, CancellationToken cancellationToken, EWorkflowVisionPixelFormat format = EWorkflowVisionPixelFormat.Original)
     {
         using var image = await WorkflowVisionAlgorithmInvocation.InvokeAsync(context, algorithm, "opencv.image-read",
             (IImageFileReader reader, CancellationToken token) => reader.ReadAsync(path, token), cancellationToken).ConfigureAwait(false);
-        return Output(image, context, cancellationToken);
+        return Output(image, context, cancellationToken, format);
     }
 
-    internal static NodeExecutionResult Output(IImageSource image, IWorkflowNodeExecutionContext context, CancellationToken token)
+    internal static NodeExecutionResult Output(IImageSource image, IWorkflowNodeExecutionContext context, CancellationToken token,
+        EWorkflowVisionPixelFormat format = EWorkflowVisionPixelFormat.Original)
     {
         using var frame = new ImageFrame(Guid.NewGuid().ToString("N"), image);
-        return Output(frame, context, token);
+        return Output(frame, context, token, format);
     }
 
     /// <summary>把已有帧身份交给运行帧作用域；采集帧必须保留CaptureId作为FrameId，不能重新编号。</summary>
-    internal static NodeExecutionResult Output(ImageFrame frame, IWorkflowNodeExecutionContext context, CancellationToken token)
+    internal static NodeExecutionResult Output(ImageFrame frame, IWorkflowNodeExecutionContext context, CancellationToken token,
+        EWorkflowVisionPixelFormat format = EWorkflowVisionPixelFormat.Original)
     {
         token.ThrowIfCancellationRequested();
+        if (format == EWorkflowVisionPixelFormat.Gray8 && frame.Image.Info.Layout != EPixelLayout.Gray8)
+        {
+            // 同一次读取或采集，转换后沿用原帧身份。
+            using var gray = VisionImage.ToGray8(frame.Image, token);
+            using var converted = new ImageFrame(frame.FrameId, gray);
+            return Output(converted, context, token);
+        }
         var retained = context.GetRequiredCapability<IWorkflowVisionFrameScope>().Retain(frame);
         var projection = WorkflowVisionFrameScope.Stage(context, retained);
         return NodeExecutionResult.Continue(output: retained, projection: projection);

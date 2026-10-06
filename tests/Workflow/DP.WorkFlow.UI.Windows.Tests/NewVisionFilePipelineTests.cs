@@ -30,14 +30,18 @@ public sealed class NewVisionFilePipelineTests
             var run = await engine.RunAsync();
             Assert.True(run.Success, run.Message);
             var outputs = engine.RunState.NodeOutputs;
+            // 连通域分析只支持8位灰度：取图节点按“8位灰度”输出；颜色分析读取原样彩色帧。
             var frame = Assert.IsType<ImageFrame>(outputs.Single(o => o.NodeId == "File").Value);
+            var original = Assert.IsType<ImageFrame>(outputs.Single(o => o.NodeId == "Original").Value);
+            Assert.Equal(EPixelLayout.Gray8, frame.Image.Info.Layout);
+            Assert.Equal(EPixelLayout.Bgr24, original.Image.Info.Layout);
             var blobs = Assert.IsType<BlobAnalysisResult>(outputs.Single(o => o.NodeId == "Blobs").Value);
             var color = Assert.IsType<ColorAnalysisResult>(outputs.Single(o => o.NodeId == "Color").Value);
             Assert.Equal(1, blobs.Count);
             Assert.Equal(1, blobs.Blobs[0].Area);
             Assert.Equal(1.5, blobs.Blobs[0].Centroid.X);
             Assert.Equal(frame.FrameId, blobs.FrameId);
-            Assert.Equal(frame.FrameId, color.FrameId);
+            Assert.Equal(original.FrameId, color.FrameId);
             Assert.Equal(8 * 255d / 9, color.Red, 8);
             Assert.Equal(0d, color.Blue);
             Assert.False(context.TryGetVariable<object>("VisionImage", out _));
@@ -45,10 +49,39 @@ public sealed class NewVisionFilePipelineTests
             frames.Dispose();
             Assert.Throws<ObjectDisposedException>(() => frame.Retain());
             Assert.Equal(3, displayLease.Image.Info.Width);
-            var pixels = new byte[27]; displayLease.Image.CopyTo(0, pixels, 0, pixels.Length);
-            Assert.Equal(255, pixels[2]);
+            var pixels = new byte[9]; displayLease.Image.CopyTo(0, pixels, 0, pixels.Length);
+            Assert.Equal(76, pixels[0]); Assert.Equal(0, pixels[4]);
         }
         finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task OriginalColorFrame_IsRejectedByBlobAnalysis()
+    {
+        string path = CreateImage();
+        try
+        {
+            var document = CreateDocument(path);
+            var acquire = (AcquireVisionImageNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "File").Node;
+            acquire.PixelFormat = EWorkflowVisionPixelFormat.Original;
+            using var frames = new WorkflowVisionFrameScope();
+            var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
+            var engine = new WorkflowEngine(new WorkflowCompiler(nodes).Compile(document),
+                new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers(), new WorkflowContext(Services(frames)));
+            var run = await engine.RunAsync();
+            Assert.False(run.Success);
+            Assert.Contains("只支持8位灰度图像", run.Message);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void PixelFormat_OffersLabeledChoices()
+    {
+        var choices = new AcquireVisionImageNodeModel().GetPropertyChoices(nameof(AcquireVisionImageNodeModel.PixelFormat), []);
+        Assert.Equal(["保持原样", "8位灰度"], choices.Select(c => c.Key));
+        Assert.Equal([EWorkflowVisionPixelFormat.Original, EWorkflowVisionPixelFormat.Gray8], choices.Select(c => (EWorkflowVisionPixelFormat)c.Value!));
+        Assert.Equal(EWorkflowVisionPixelFormat.Original, new AcquireVisionImageNodeModel().PixelFormat);
     }
 
     [Fact]
@@ -110,12 +143,22 @@ public sealed class NewVisionFilePipelineTests
     private static WorkflowDocument CreateDocument(string path)
     {
         var document = new WorkflowDocument { EntryNodeId = "File" };
-        var input = WorkflowInput<ImageFrame>.FromBinding(new WorkflowBindingKey("File", "$"));
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new LoadVisionFileNodeModel { Id = "File", FilePath = path } });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AnalyzeVisionBlobsNodeModel { Id = "Blobs", Frame = input, MaximumGray = 0 } });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AnalyzeVisionColorNodeModel { Id = "Color", Frame = input } });
+        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AcquireVisionImageNodeModel
+        {
+            Id = "File", SourceMode = EWorkflowVisionImageSource.File, FilePath = path, PixelFormat = EWorkflowVisionPixelFormat.Gray8
+        } });
+        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AnalyzeVisionBlobsNodeModel
+        {
+            Id = "Blobs", Frame = WorkflowInput<ImageFrame>.FromBinding(new WorkflowBindingKey("File", "$")), MaximumGray = 0
+        } });
+        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new LoadVisionFileNodeModel { Id = "Original", FilePath = path } });
+        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AnalyzeVisionColorNodeModel
+        {
+            Id = "Color", Frame = WorkflowInput<ImageFrame>.FromBinding(new WorkflowBindingKey("Original", "$"))
+        } });
         document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = "File", FromPort = WorkflowPorts.Success, ToNodeId = "Blobs", ToPort = WorkflowPorts.Input });
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = "Blobs", FromPort = WorkflowPorts.Success, ToNodeId = "Color", ToPort = WorkflowPorts.Input });
+        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = "Blobs", FromPort = WorkflowPorts.Success, ToNodeId = "Original", ToPort = WorkflowPorts.Input });
+        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = "Original", FromPort = WorkflowPorts.Success, ToNodeId = "Color", ToPort = WorkflowPorts.Input });
         return document;
     }
 

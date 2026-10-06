@@ -123,14 +123,16 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
     {
         ThrowIfDisposed(); EnsureBaseline(); using var input = _input(); using var copy = VisionTemplateSource.Decode(VisionTemplateSource.Encode(input.Image)); SetSource(copy);
     }
-    /// <summary>读取制作样图，不修改采集或搜索配置。</summary>
+    /// <summary>读取制作样图，不修改采集或搜索配置；模板匹配只支持8位灰度，彩色文件按亮度转换为8位灰度。</summary>
     public async Task ReadSourceAsync(string path)
     {
         ThrowIfDisposed(); EnsureBaseline(); if (_reader == null) throw new InvalidOperationException("宿主未提供图像解码能力。");
         long generation = ++_generation;
         using var image = await _reader.ReadAsync(path, _token);
         if (_disposed || generation != _generation) return;
-        SetSource(image);
+        using var gray = VisionImage.ToGray8(image, _token);
+        SetSource(gray);
+        if (image.Info.Layout != EPixelLayout.Gray8) Status = "样图为彩色，已按8位灰度读取（模板匹配只支持8位灰度）。";
     }
     private void SetSource(IImageSource image)
     {
