@@ -32,7 +32,8 @@ public sealed class VisionOperatorPipelineTests
             Assert.Equal(26, Output<RegionAnalysisResult>(host, "morph").Area);
             Assert.Equal(2, Output<BlobAnalysisResult>(host, "blob").Count);
             var selected = Output<BlobAnalysisResult>(host, "select");
-            Assert.Equal(25, Assert.Single(selected.Blobs).Area); Assert.Equal(20, selected.Blobs[0].Features.GridPerimeter);
+            // 按面积降序：首个为环形连通域（填孔后25像素），孤立像素排在后面。
+            Assert.Equal(new long[] { 25, 1 }, selected.Blobs.Select(b => b.Area)); Assert.Equal(20, selected.First!.Features.GridPerimeter);
             Assert.Equal(processed.FrameId, selected.FrameId);
             Assert.Equal(26, Output<ColorAnalysisResult>(host, "color").PixelCount);
             using var ui = processed.Retain();
@@ -205,7 +206,8 @@ public sealed class VisionOperatorPipelineTests
         new ThresholdVisionRegionNodeModel { Id = "threshold", Frame = Input<ImageFrame>("process"), MinimumGray = 255, MaximumGray = 255 },
         new MorphVisionRegionNodeModel { Id = "morph", Frame = Input<ImageFrame>("process"), InputRegion = Input<RegionAnalysisResult>("threshold"), Operation = ERegionMorphology.FillHoles },
         new AnalyzeVisionBlobsNodeModel { Id = "blob", Frame = Input<ImageFrame>("process"), Mask = Input<RegionAnalysisResult>("morph"), MaximumGray = 255 },
-        new SelectVisionBlobsNodeModel { Id = "select", Frame = Input<ImageFrame>("process"), Blobs = Input<BlobAnalysisResult>("blob"), MinimumArea = 5 },
+        new SelectVisionBlobsNodeModel { Id = "select", Frame = Input<ImageFrame>("process"), Blobs = Input<BlobAnalysisResult>("blob"),
+            SortKey = EBlobSortKey.Area, Descending = true },
         new AnalyzeVisionColorNodeModel { Id = "color", Frame = Input<ImageFrame>("process"), Mask = Input<RegionAnalysisResult>("morph") });
 
     private static VisionAlgorithmRuntime PluginRuntime() => new(VisionAlgorithmCatalog.Compose(new IVisionAlgorithmModule[]

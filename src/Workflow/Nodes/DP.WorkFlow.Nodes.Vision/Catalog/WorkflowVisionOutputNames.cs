@@ -88,6 +88,15 @@ public static class WorkflowVisionOutputNames
         ["LocalPosition"] = "局部坐标",
         ["ImageLength"] = "原图长度",
         ["Space"] = "坐标空间",
+        ["First"] = "首个",
+        ["Centroid"] = "质心",
+        ["Features"] = "形状特征",
+        ["Circularity"] = "圆度",
+        ["Elongation"] = "轴比",
+        ["GridPerimeter"] = "栅格周长",
+        ["MajorAxisLength"] = "长轴长度",
+        ["MinorAxisLength"] = "短轴长度",
+        ["OrientationRadians"] = "方向(弧度)",
         ["Mode"] = "距离模式",
         ["Kind"] = "测量对象",
         ["Distance"] = "距离",
@@ -104,7 +113,7 @@ public static class WorkflowVisionOutputNames
     {
         foreach (var type in new[]
         {
-            typeof(ImageFrame), typeof(BlobAnalysisResult), typeof(ColorAnalysisResult),
+            typeof(ImageFrame), typeof(BlobAnalysisResult), typeof(BlobObservation), typeof(BlobShapeFeatures), typeof(ColorAnalysisResult),
             typeof(TemplatePoseResult), typeof(AffineCalibration), typeof(Coordinate2D),
             typeof(RegionAnalysisResult), typeof(CaliperResult), typeof(VisionCaliperMeasurement), typeof(VisionCaliperEdge), typeof(RobustLineResult), typeof(VisionPoint), typeof(VisionLine),
             typeof(GeometricDistanceResult), typeof(VisionCoordinateSystemResult), typeof(VisionCoordinateDefinition)

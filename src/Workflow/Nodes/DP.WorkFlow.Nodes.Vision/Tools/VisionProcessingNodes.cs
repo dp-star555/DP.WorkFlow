@@ -192,7 +192,13 @@ public sealed class SelectVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel, IW
     /// <summary>最大长短轴比。</summary>
     [WorkflowProperty("最大轴比", "面积矩等效椭圆长短轴比。", Category = "筛选")]
     public double MaximumElongation { get; set; } = 1000000000;
-    internal BlobSelectionOptions Options() => new(MinimumArea, MaximumArea, MinimumCircularity, MaximumElongation);
+    /// <summary>选中结果的排序依据。</summary>
+    [WorkflowProperty("排序依据", "筛选后按此排序，“首个”即排序第一个；质心按输入结果的业务坐标排序，未定位时按原图坐标。", Category = "排序")]
+    public EBlobSortKey SortKey { get; set; }
+    /// <summary>是否降序。</summary>
+    [WorkflowProperty("降序", "开启后从大到小排序，例如面积降序时“首个”为面积最大的连通域。", Category = "排序")]
+    public bool Descending { get; set; }
+    internal BlobSelectionOptions Options() => new(MinimumArea, MaximumArea, MinimumCircularity, MaximumElongation, SortKey, Descending);
     /// <inheritdoc/>
     public override IReadOnlyList<string> ValidateConfiguration()
     {
