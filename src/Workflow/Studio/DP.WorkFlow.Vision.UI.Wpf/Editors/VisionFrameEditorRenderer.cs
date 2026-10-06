@@ -200,7 +200,7 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
         {
             if (View is 4 or 5) return;
             var point = ToImage(e);
-            if (caliper.Hit(point, Unit()) is { } handle) { caliper.BeginDrag(handle, point); _canvas.CaptureMouse(); }
+            if (caliper.Hit(point, Unit()) is { } handle) { caliper.BeginDrag(handle, point, Unit()); _canvas.CaptureMouse(); }
         };
         _canvas.PreviewMouseMove += (_, e) =>
         {
@@ -213,7 +213,7 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
             _canvas.Cursor = View is 4 or 5 ? null : caliper.Hit(point, Unit()) switch
             {
                 EVisionCaliperHandle.Body or EVisionCaliperHandle.Center => System.Windows.Input.Cursors.SizeAll,
-                EVisionCaliperHandle.Radius => System.Windows.Input.Cursors.Hand,
+                EVisionCaliperHandle.Radius or EVisionCaliperHandle.Step => System.Windows.Input.Cursors.Hand,
                 EVisionCaliperHandle.Width => System.Windows.Input.Cursors.SizeNS,
                 EVisionCaliperHandle.Start or EVisionCaliperHandle.End => System.Windows.Input.Cursors.Cross,
                 _ => null

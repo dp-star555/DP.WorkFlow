@@ -114,6 +114,8 @@ public sealed partial class ModernPropertyGrid
                 Maximum = Convert.ToDecimal(range?.Maximum ?? 1_000_000_000d, CultureInfo.InvariantCulture),
                 Increment = Convert.ToDecimal(range?.Increment ?? (IsIntegral(type) ? 1d : 0.1d), CultureInfo.InvariantCulture),
                 ShowStepButtons = ShowNumericStepButtons,
+                // 属性值随输入即时生效，画布等预览不必等回车或失去焦点。
+                CommitWhileTyping = true,
                 AccessibleName = Presentation(property).DisplayName
             };
             numeric.Value = ModernCompatibility.Clamp(Convert.ToDecimal(value ?? 0, CultureInfo.InvariantCulture), numeric.Minimum, numeric.Maximum);

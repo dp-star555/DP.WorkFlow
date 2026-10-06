@@ -280,7 +280,7 @@ internal sealed class VisionFrameEditorControl : UserControl
         {
             if (e.Button != MouseButtons.Left || View is 4 or 5) return;
             var point = ToImage(e);
-            if (caliper.Hit(point, Unit()) is { } handle) { caliper.BeginDrag(handle, point); _canvas.Capture = true; }
+            if (caliper.Hit(point, Unit()) is { } handle) { caliper.BeginDrag(handle, point, Unit()); _canvas.Capture = true; }
         };
         _canvas.MouseMove += (_, e) =>
         {
@@ -293,7 +293,7 @@ internal sealed class VisionFrameEditorControl : UserControl
             _canvas.Cursor = View is 4 or 5 ? Cursors.Default : caliper.Hit(point, Unit()) switch
             {
                 EVisionCaliperHandle.Body or EVisionCaliperHandle.Center => Cursors.SizeAll,
-                EVisionCaliperHandle.Radius => Cursors.Hand,
+                EVisionCaliperHandle.Radius or EVisionCaliperHandle.Step => Cursors.Hand,
                 EVisionCaliperHandle.Width => Cursors.SizeNS,
                 EVisionCaliperHandle.Start or EVisionCaliperHandle.End => Cursors.Cross,
                 _ => Cursors.Default
