@@ -754,12 +754,12 @@ public sealed class WorkflowDesignerControl : FrameworkElement
                 && ports.Count > 1;
             if (!connected && !semanticHandle) continue;
             var point = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports);
-            var radius = connected
-                ? Math.Max(2, WorkflowDesignerGeometry.PortRadius * _session.Zoom * 0.72)
-                : 2.5;
+            // 多出口节点的每个出口都画成正常大小的连接点：已连线为实心，未连线为空心圈；失败出口用红色。
+            var radius = Math.Max(2.5, WorkflowDesignerGeometry.PortRadius * _session.Zoom * 0.72);
+            var portBrush = direction == WorkflowPortDirection.Output && port.Key == WorkflowPorts.Failed ? Brush(239, 68, 68) : brush;
             context.DrawEllipse(
-                semanticHandle ? Brush(71, 85, 105) : brush,
-                new Pen(CanvasBrush, 1.25),
+                semanticHandle ? Brush(30, 41, 59) : portBrush,
+                semanticHandle ? new Pen(portBrush, 1.8) : new Pen(CanvasBrush, 1.25),
                 new Point(point.X, point.Y),
                 radius,
                 radius);
@@ -911,7 +911,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         var size = Math.Max(3, WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
         var brush = direction == WorkflowPortDirection.Input
             ? Brush(196, 181, 253)
-            : Brush(110, 231, 183);
+            : port.Key == WorkflowPorts.Failed ? Brush(252, 165, 165) : Brush(110, 231, 183);
         var estimatedWidth = WorkflowPorts.GetDisplayName(port.Key).Length * size * 0.58;
         var side = sideOverride ?? node.GetPortSide(port);
         var x = side switch

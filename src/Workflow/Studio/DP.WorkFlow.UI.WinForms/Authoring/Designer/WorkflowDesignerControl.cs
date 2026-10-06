@@ -812,21 +812,27 @@ public sealed partial class WorkflowDesignerControl : Control
                 && ports.Count > 1;
             if (!connected && !semanticHandle) continue;
             var point = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports);
-            var radius = connected
-                ? (float)Math.Max(2, WorkflowDesignerGeometry.PortRadius * _session.Zoom * 0.72)
-                : 2.5f;
+            // 多出口节点的每个出口都画成正常大小的连接点：已连线为实心，未连线为空心圈；失败出口用红色。
+            var radius = (float)Math.Max(2.5, WorkflowDesignerGeometry.PortRadius * _session.Zoom * 0.72);
+            var failed = direction == WorkflowPortDirection.Output && port.Key == WorkflowPorts.Failed;
+            using var portFill = new SolidBrush(failed ? Color.FromArgb(239, 68, 68) : fill.Color);
             if (semanticHandle)
             {
-                using var neutralFill = new SolidBrush(Color.FromArgb(71, 85, 105));
-                graphics.FillEllipse(neutralFill, (float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
+                using var hollow = new SolidBrush(Color.FromArgb(30, 41, 59));
+                using var ring = new Pen(portFill.Color, 1.8f);
+                graphics.FillEllipse(hollow, (float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
+                graphics.DrawEllipse(ring, (float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
             }
             else
             {
-                graphics.FillEllipse(fill, (float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
+                graphics.FillEllipse(portFill, (float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
+                graphics.DrawEllipse(border, (float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
             }
-            graphics.DrawEllipse(border, (float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
             if ((connected || semanticHandle) && WorkflowDesignerInteraction.ShouldDrawPortLabel(_session, node, direction))
-                DrawPortLabel(graphics, labelFont, labelBrush, node, port, point, radius);
+            {
+                using var failedLabel = new SolidBrush(Color.FromArgb(252, 165, 165));
+                DrawPortLabel(graphics, labelFont, failed ? failedLabel : labelBrush, node, port, point, radius);
+            }
         }
     }
 
