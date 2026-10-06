@@ -121,12 +121,13 @@ public sealed class VisionGeometryPluginPipelineTests
         var blob = new AnalyzeVisionBlobsNodeModel { Id = "editing", Frame = Input<ImageFrame>("source"),
             Regions = [new() { Id = "roi", CenterX = 12, CenterY = 21.5, Width = 4, Height = 3 }] };
         using var page = new VisionFrameEditorPageModel(blob, rig.Frames); using var preview = page.Capture(0);
-        page.BindCoordinates("business-source"); Assert.Equal(0, blob.Regions[0].CenterX, 9); Assert.Equal(0, blob.Regions[0].CenterY, 9);
-        page.BindCoordinates("alternate"); Assert.Equal(0, blob.Regions[0].CenterX, 9); Assert.Equal(0, blob.Regions[0].CenterY, 9);
+        VisionCoordinateRebinding.Bind(blob, "business-source", rig.Frames); Assert.Equal(0, blob.Regions[0].CenterX, 9); Assert.Equal(0, blob.Regions[0].CenterY, 9);
+        VisionCoordinateRebinding.Bind(blob, "alternate", rig.Frames); Assert.Equal(0, blob.Regions[0].CenterX, 9); Assert.Equal(0, blob.Regions[0].CenterY, 9);
         Assert.Equal("alternate", blob.Coordinates!.System.Binding!.Value.NodeId);
+        using (page.Capture(0)) { }
         var displayed = Assert.IsType<RectangleGeometry>(page.Editor.Document.Rois[0].Shape);
         Assert.Equal(8, displayed.Center.X, 9); Assert.Equal(9, displayed.Center.Y, 9);
-        page.UnbindCoordinates(); Assert.Equal(8, blob.Regions[0].CenterX, 9); Assert.Equal(9, blob.Regions[0].CenterY, 9);
+        VisionCoordinateRebinding.Unbind(blob, rig.Frames); Assert.Equal(8, blob.Regions[0].CenterX, 9); Assert.Equal(9, blob.Regions[0].CenterY, 9);
     }
 
     [Fact]
@@ -136,8 +137,7 @@ public sealed class VisionGeometryPluginPipelineTests
         var document = rig.Document(new LoadVisionFileNodeModel { Id = "source", FilePath = rig.ScenePath }, build);
         using var host = rig.Host(document); Assert.True((await host.RunAsync()).Success);
         var caliper = new MeasureVisionCaliperNodeModel { Id = "caliper", Frame = Input<ImageFrame>("source"), StartX = 4, StartY = 10, EndX = 24, EndY = 10 };
-        using var page = new VisionFrameEditorPageModel(caliper, rig.Frames); using var preview = page.Capture(0);
-        Assert.Throws<NotSupportedException>(() => page.BindCoordinates("affine"));
+        Assert.Throws<NotSupportedException>(() => VisionCoordinateRebinding.Bind(caliper, "affine", rig.Frames));
         Assert.Null(caliper.Coordinates); Assert.Equal(4, caliper.StartX); Assert.Equal(24, caliper.EndX);
     }
 
@@ -334,17 +334,17 @@ public sealed class VisionGeometryPluginPipelineTests
         // 制作界面读取中立定位契约；无需维护旋转/平移节点白名单。
         var caliper = new MeasureVisionCaliperNodeModel { Id = "caliper", Frame = Input<ImageFrame>("source"),
             StartX = 4, StartY = 10, EndX = 24, EndY = 10, MinimumSeparation = 3, BandSampleStep = 1 };
-        var session = new WorkflowDesignerSession(rig.Document(document.Graph.Nodes.ToArray().Append(caliper).ToArray()), rig.Nodes);
-        var provider = new VisionFrameEditorPageProvider(rig.Frames);
-        var descriptor = Assert.Single(provider.CreatePages(new WorkflowNodeEditorContext(session, "source", caliper)));
-        using var page = Assert.IsType<VisionFrameEditorPageModel>(descriptor.Model);
-        Assert.Contains(page.CoordinateSources, s => s.NodeId == "business-source");
-        Assert.DoesNotContain(page.CoordinateSources, s => s.NodeId is "location" or "scaled-location");
-        using var canvas = page.Capture(0); Assert.NotNull(canvas); Assert.True(page.CanBindCoordinates);
-        page.BindCoordinates("scaled-part");
+        var session = new WorkflowDesignerSession(rig.Document(document.Graph.Nodes.ToArray().Append(caliper).ToArray()), rig.Nodes) { SelectedNodeId = "caliper" };
+        using var inspector = new WorkflowPropertyInspectorModel(session, "source", null,
+            WorkflowVisionCoordinateProperties.CreateProvider(rig.Frames, () => session.Canvas.Nodes.Select(n => n.Node).ToArray()));
+        WorkflowPropertyEntry Coordinate() => inspector.Entries.Single(e => e.Name == WorkflowVisionCoordinateProperties.EntryName);
+        // 只列出构建坐标系的节点，模板匹配本身不是坐标来源。
+        Assert.Equal(new object?[] { "", "business-source", "scaled-part" }, Coordinate().Choices.Select(c => c.Value));
+        Assert.StartsWith("工件坐标（v1，reference-px）— ", Coordinate().Choices[1].Label);
+        inspector.SetValue(Coordinate(), "scaled-part");
         Assert.Equal(.5, caliper.BandSampleStep, 10); Assert.Equal(1.5, caliper.MinimumSeparation, 10);
         Assert.Empty(caliper.ValidateConfiguration());
-        page.UnbindCoordinates();
+        inspector.SetValue(Coordinate(), "");
         Assert.Null(caliper.Coordinates);
         Assert.Equal(4, caliper.StartX, 9); Assert.Equal(24, caliper.EndX, 9);
         Assert.Equal(10, caliper.StartY, 9); Assert.Equal(10, caliper.EndY, 9);
