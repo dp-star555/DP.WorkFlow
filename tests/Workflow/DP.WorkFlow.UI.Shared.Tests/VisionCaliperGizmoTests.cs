@@ -321,5 +321,29 @@ public sealed class VisionCaliperGizmoTests
         Assert.True(mark[0].X < mark[1].X); // 尖朝终点方向。
     }
 
+    [Fact]
+    public void LineSubCalipers_AndScanStep_AreVisible()
+    {
+        var node = new MeasureVisionCaliperNodeModel { StartX = 0, StartY = 50, EndX = 200, EndY = 50, HalfWidth = 10, BandSampleStep = 1, CaliperCount = 3, ScanStep = 4 };
+        var gizmo = new VisionCaliperGizmo(node);
+        var visuals = gizmo.Visuals(1);
+        // 21 个垂直采样点分 3 段：分界在 −3.5 与 +3.5。
+        var subs = visuals.Where(v => v.Id.StartsWith("caliper-sub", StringComparison.Ordinal))
+            .Select(v => Assert.IsType<ContourGeometry>(v.Geometry).Points[0].Y).OrderBy(y => y).ToArray();
+        Assert.Equal(new[] { 46.5, 53.5 }, subs.Select(y => Math.Round(y, 6)));
+        // 投影横线间距为搜索间隔的整数倍：4px ≥ 8px 屏幕间距的最小倍数为 8px。
+        var stations = visuals.Where(v => v.Id.StartsWith("caliper-sample", StringComparison.Ordinal))
+            .Select(v => Assert.IsType<ContourGeometry>(v.Geometry).Points[0].X).OrderBy(x => x).ToArray();
+        Assert.Equal(8, stations[1] - stations[0], 6);
+        Assert.Contains("3 个子卡尺", gizmo.Caption);
+        Assert.Contains("搜索间隔 4px", gizmo.Caption);
+
+        Assert.True(gizmo.SetShape(EVisionCaliperShape.Arc));
+        Assert.Equal(3, node.CaliperCount);
+        node.CaliperCount = 100;
+        Assert.True(gizmo.SetShape(EVisionCaliperShape.Line));
+        Assert.Equal(21, node.CaliperCount);
+    }
+
     private static double Distance(PointD a, PointD b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
 }

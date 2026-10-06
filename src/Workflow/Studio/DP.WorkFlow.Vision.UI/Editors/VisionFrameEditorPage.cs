@@ -345,7 +345,10 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     private static string? PickText(object? facts, string id)
     {
         if (facts is not VisionCaliperMeasurement measurement) return null;
-        if (id == "profile") return measurement.Summary;
+        if (id is "profile" or "fit-line" or "fit-circle") return measurement.Summary;
+        if (id.StartsWith("fit-point-", StringComparison.Ordinal) && measurement.Fit is { } fit
+            && int.TryParse(id.AsSpan(10), out var pointIndex) && pointIndex < fit.Points.Count)
+            return $"{(fit.Inliers[pointIndex] ? "计算点" : "忽略点")} #{fit.CaliperIndices[pointIndex]}：({fit.Points[pointIndex].X:F4},{fit.Points[pointIndex].Y:F4})";
         if (!id.StartsWith("edge-", StringComparison.Ordinal) || !int.TryParse(id.AsSpan(5), out var index) || index >= measurement.Count) return null;
         var edge = measurement.Edges[index];
         return $"边缘 ({edge.Position.X:F4},{edge.Position.Y:F4})；梯度 {edge.Gradient:F3}" + (edge.AngleDegrees is { } angle ? $"；角度 {angle:F2}°" : "");
@@ -387,8 +390,19 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         if (facts is VisionCaliperMeasurement measurement)
         {
             yield return new Visual("profile", new ContourGeometry(measurement.Path), 0xFF33BBFF);
+            // 有拟合时：全部边缘为小灰点，拟合点绿色＝计算点、红色＝忽略点，黄色为拟合线段/圆；无拟合时边缘为黄点。
+            var fit = measurement.Fit;
             for (int i = 0; i < measurement.Count; i++)
-                yield return new Visual($"edge-{i}", new EllipseGeometry(measurement.Edges[i].Position, 1, 1), 0xFFFFCC00);
+                yield return new Visual($"edge-{i}", new EllipseGeometry(measurement.Edges[i].Position, 1, 1), fit is null ? 0xFFFFCC00 : 0xFF94A3B8);
+            if (fit is not null)
+            {
+                if (fit.Kind == EVisionCaliperFitKind.Line && fit.A is { } a && fit.B is { } b)
+                    yield return new Visual("fit-line", new ContourGeometry(new[] { a, b }), 0xFFFFCC00);
+                if (fit.Kind == EVisionCaliperFitKind.Circle && fit.Center is { } center && fit.Radius is { } radius)
+                    yield return new Visual("fit-circle", new EllipseGeometry(center, radius, radius), 0xFFFFCC00);
+                for (int i = 0; i < fit.Points.Count; i++)
+                    yield return new Visual($"fit-point-{i}", new EllipseGeometry(fit.Points[i], 2.5, 2.5), fit.Inliers[i] ? 0xFF22C55E : 0xFFEF4444);
+            }
         }
         if (facts is RobustLineResult line)
             yield return new Visual("robust-line", new ContourGeometry(new[] { line.A, line.B }), 0xFFFFCC00, $"内点 {line.InlierCount}；RMS {line.RmsError:F4}");

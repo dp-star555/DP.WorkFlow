@@ -79,6 +79,68 @@ public sealed class VisionArcCaliperTests
         Assert.Empty(wrong.Edges);
     }
 
+    // 左暗(20)右亮(220)，边界 x = 50 + 0.1×(y−50) 稍倾斜；第 30..37 行在 x∈[35, 边界) 额外有更亮(255)的条带，制造一个更强的干扰边。
+    private static ImageFrame TiltedEdgeWithOutlier()
+    {
+        var pixels = new byte[100 * 100];
+        for (var y = 0; y < 100; y++)
+        {
+            var edge = 50 + .1 * (y + .5 - 50);
+            for (var x = 0; x < 100; x++)
+                pixels[y * 100 + x] = (byte)(x + .5 >= edge ? 220 : y is >= 30 and <= 37 && x >= 35 ? 255 : 20);
+        }
+        using var image = VisionImage.CopyFrom(new ImageInfo(100, 100, EPixelLayout.Gray8), pixels);
+        return new ImageFrame("tilt-frame", image);
+    }
+
+    [Fact]
+    public void LineCaliper_SubCalipersFitLine_AndMarkIgnoredPoint()
+    {
+        using var frame = TiltedEdgeWithOutlier();
+        var result = VisionLineCaliper.Measure(frame, new VisionLineCaliperOptions(new PointD(20, 50.5), new PointD(80, 50.5), halfWidth: 20,
+            polarity: ECaliperPolarity.Rising, caliperCount: 5, fitDistanceThreshold: 1), measurer: options => new CaliperMeasurer().Measure(frame, options));
+
+        Assert.Equal(5, result.Profiles.Count);
+        var fit = Assert.IsType<VisionCaliperFit>(result.Fit);
+        Assert.Equal(EVisionCaliperFitKind.Line, fit.Kind);
+        Assert.Equal(5, fit.Points.Count);
+        Assert.Equal((4, 1), (fit.InlierCount, fit.OutlierCount));
+        Assert.False(fit.Inliers[0]);                 // 子卡尺 0 取到的是 x≈35 的干扰边。
+        Assert.InRange(fit.Points[0].X, 34, 36);
+        foreach (var end in new[] { fit.A!.Value, fit.B!.Value })
+            Assert.InRange(end.X - (50 + .1 * (end.Y - 50)), -1, 1);
+        Assert.NotNull(result.MeasuredFitLine);
+        Assert.Contains("计算点 4，忽略点 1", result.Summary);
+    }
+
+    [Fact]
+    public void LineCaliper_ScanStepChangesProfileSampling()
+    {
+        using var frame = TiltedEdgeWithOutlier();
+        var result = VisionLineCaliper.Measure(frame, new VisionLineCaliperOptions(new PointD(20, 70.5), new PointD(80, 70.5), halfWidth: 2,
+            polarity: ECaliperPolarity.Rising, scanStep: 2), measurer: options => new CaliperMeasurer().Measure(frame, options));
+
+        Assert.Equal(31, result.Profile.Count);       // 60px ÷ 2px + 1。
+        Assert.Equal(2, result.SampleStep, 9);
+        Assert.Null(result.Line);                     // 非 1px 间隔走托管采样。
+        Assert.InRange(Assert.Single(result.Edges).Position.X, 50 + .1 * 20.5 - 1, 50 + .1 * 20.5 + 1);
+        Assert.Null(result.Fit);
+    }
+
+    [Fact]
+    public void RadialArcCaliper_FitsCircle()
+    {
+        using var frame = BrightDisc();
+        var result = VisionArcCaliper.Measure(frame, new VisionArcCaliperOptions(new PointD(52, 49), 18, 0, 360, halfWidth: 8,
+            polarity: ECaliperPolarity.Falling, direction: EVisionArcScanDirection.InnerToOuter, caliperCount: 12));
+        var fit = Assert.IsType<VisionCaliperFit>(result.Fit);
+        Assert.Equal(EVisionCaliperFitKind.Circle, fit.Kind);
+        Assert.Equal(12, fit.InlierCount);
+        Assert.InRange(fit.Center!.Value.X, 49.5, 50.5);
+        Assert.InRange(fit.Center!.Value.Y, 49.5, 50.5);
+        Assert.InRange(fit.Radius!.Value, 19.5, 20.5);
+    }
+
     [Fact]
     public void ArcCaliperOptions_RejectInvalidBands()
     {

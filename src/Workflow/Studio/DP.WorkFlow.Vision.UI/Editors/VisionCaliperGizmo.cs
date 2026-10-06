@@ -72,7 +72,7 @@ public sealed class VisionCaliperGizmo
 
     /// <summary>参数签名；任一几何参数变化时预览需要重绘。</summary>
     public string Key => FormattableString.Invariant(
-        $"caliper:{_node.Shape}:{_node.StartX}:{_node.StartY}:{_node.EndX}:{_node.EndY}:{_node.CenterX}:{_node.CenterY}:{_node.Radius}:{_node.StartAngle}:{_node.SweepAngle}:{_node.HalfWidth}:{_node.BandSampleStep}:{_node.ArcDirection}:{_node.CaliperCount}:{_node.Polarity}:{_node.Coordinates is null}:{(Bound ? _coordinates?.FrameId : null)}");
+        $"caliper:{_node.Shape}:{_node.StartX}:{_node.StartY}:{_node.EndX}:{_node.EndY}:{_node.CenterX}:{_node.CenterY}:{_node.Radius}:{_node.StartAngle}:{_node.SweepAngle}:{_node.HalfWidth}:{_node.BandSampleStep}:{_node.ArcDirection}:{_node.CaliperCount}:{_node.ScanStep}:{_node.Polarity}:{_node.Coordinates is null}:{(Bound ? _coordinates?.FrameId : null)}");
 
     /// <summary>扫描起点（原图像素）；圆弧卡尺为起始角处的弧上点。</summary>
     public PointD Start => IsArc ? ArcPoint(ImageRadius, 0) : ToImage(_node.StartX, _node.StartY);
@@ -100,13 +100,13 @@ public sealed class VisionCaliperGizmo
                 ECaliperPolarity.Falling => "亮→暗",
                 _ => "任意"
             };
-            var band = FormattableString.Invariant($"带宽 ±{HalfBand:0.##}px（{_node.HalfWidth * 2 + 1} 点 × 间隔 {ImageStep:0.##}px）· 极性 {polarity}");
+            var band = FormattableString.Invariant($"搜索间隔 {ImageScanStep:0.##}px · 带宽 ±{HalfBand:0.##}px（{_node.HalfWidth * 2 + 1} 点 × 间隔 {ImageStep:0.##}px）· 极性 {polarity}");
             if (IsRadial)
                 return FormattableString.Invariant(
-                    $"圆弧卡尺 {(_node.ArcDirection == EVisionArcScanDirection.InnerToOuter ? "由内到外" : "由外到内")} · {_node.CaliperCount} 个卡尺 · 半径 {ImageRadius:0.#}px · 搜索范围 ±{HalfBand:0.##}px · 极性 {polarity}");
+                    $"圆弧卡尺 {(_node.ArcDirection == EVisionArcScanDirection.InnerToOuter ? "由内到外" : "由外到内")} · {_node.CaliperCount} 个卡尺 · 半径 {ImageRadius:0.#}px · 搜索范围 ±{HalfBand:0.##}px · 搜索间隔 {ImageScanStep:0.##}px · 极性 {polarity}");
             return IsArc
                 ? FormattableString.Invariant($"圆弧卡尺 沿圆弧 · 半径 {ImageRadius:0.#}px · 起始 {Normalize(ImageStartAngle):0.#}° 扫描 {_node.SweepAngle:0.#}° · {band}")
-                : FormattableString.Invariant($"卡尺 长度 {Length:0.#}px · {band}");
+                : FormattableString.Invariant($"卡尺 长度 {Length:0.#}px{(_node.CaliperCount > 1 ? $" · {_node.CaliperCount} 个子卡尺" : "")} · {band}");
         }
     }
 
@@ -136,6 +136,7 @@ public sealed class VisionCaliperGizmo
     private double ImageRadius => _node.Radius * Scale;
     private double ImageStartAngle => _node.StartAngle + RotationDegrees;
     private double ImageStep => _node.BandSampleStep * Scale;
+    private double ImageScanStep => Math.Max(1e-3, _node.ScanStep * Scale);
 
     private PointD ToImage(double x, double y)
     {
@@ -192,6 +193,9 @@ public sealed class VisionCaliperGizmo
             var end = Math.Abs(Math.Abs(_node.SweepAngle) - 360) < 1e-6 ? Local(.5) : Local(1);
             _node.StartX = Round(start.X); _node.StartY = Round(start.Y); _node.EndX = Round(end.X); _node.EndY = Round(end.Y);
         }
+        // 卡尺数量含义随形状变化：圆弧径向默认分 8 段；回到直线时不超过垂直采样点数。
+        if (shape == EVisionCaliperShape.Arc && _node.CaliperCount <= 1) _node.CaliperCount = 8;
+        if (shape == EVisionCaliperShape.Line) _node.CaliperCount = Math.Clamp(_node.CaliperCount, 1, Math.Min(64, _node.HalfWidth * 2 + 1));
         _node.Shape = shape;
         return true;
     }
@@ -227,6 +231,16 @@ public sealed class VisionCaliperGizmo
                 {
                     At(Start, along, -HalfBand), At(Start, along, HalfBand)
                 }), SampleColor));
+        // 并排子卡尺的分界线（平行于扫描线）。
+        if (_node.CaliperCount > 1)
+        {
+            var samples = _node.HalfWidth * 2 + 1;
+            for (var c = 1; c < _node.CaliperCount; c++)
+            {
+                var offset = (-_node.HalfWidth + (double)c * samples / _node.CaliperCount - .5) * ImageStep;
+                visuals.Add(new Visual($"caliper-sub{c}", new ContourGeometry(new[] { At(Start, 0, offset), At(End, 0, offset) }), BandColor));
+            }
+        }
         // 扫描方向：中心线 + 终点箭头。
         visuals.Add(new Visual("caliper-axis", new ContourGeometry(new[] { Start, End }), AxisColor));
         visuals.Add(Arrow("caliper-arrow", End, direction, normal, Math.Min(Length / 3, 18 * unit)));
@@ -375,7 +389,8 @@ public sealed class VisionCaliperGizmo
     // 投影线位置（栅格横线）：算法沿扫描路径每 1px 一条；屏幕上过密时按整数倍抽稀，不画两端（与外框重合）。
     private IEnumerable<(int Index, double Along)> ProjectionStations(double unit)
     {
-        var spacing = Math.Max(1, Math.Ceiling(ProjectionScreenSpacing * unit));
+        // 间距为搜索间隔的整数倍，屏幕上不密于约 8px。
+        var spacing = ImageScanStep * Math.Max(1, Math.Ceiling(ProjectionScreenSpacing * unit / ImageScanStep));
         var count = (int)Math.Floor(Length / spacing);
         for (var k = 1; k < count; k++) yield return (k, k * spacing);
     }

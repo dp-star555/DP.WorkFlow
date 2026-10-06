@@ -80,6 +80,16 @@ var fit = new FitVisionRobustLineNodeModel {
 - 可用两条已选边缘坐标绑定现有距离节点计算宽度；当前不自动选择业务意义上的边缘对。
 - 输出`VisionCaliperMeasurement`保留直线卡尺原有成员名（Start/End/Profile/Edges/Count/MeasuredEdges/LocatedEdges），已有绑定路径不变；直线形状的原始`CaliperResult`在`Line`成员中。
 
+### 搜索间隔、卡尺数量与卡尺内拟合
+
+- `ScanStep`（搜索间隔，默认1，原图0.1..10px）：沿搜索方向每隔多少像素取一个剖面点，对直线、沿圆弧、径向三种方式都生效。直线卡尺为1px时调用可替换的直线卡尺算法实现，其它间隔使用同一规则的托管采样。
+- `CaliperCount`（卡尺数量，默认1）：
+  - 直线：采样带沿宽度均分为N个并排子卡尺（1..64，不超过`2×HalfWidth+1`），每个都沿起点→终点搜索。
+  - 圆弧径向搜索：圆弧均分为N段，每段一个径向卡尺（1..128）。沿圆弧扫描时忽略。
+- N ≥ 3 时在节点内拟合：每个卡尺按`FitPoint`（最强边缘/第一个/最后一个）取一个点。直线用RANSAC＋正交TLS（DP.Vision `RobustLineFitter`），圆用确定性RANSAC＋Kåsa最小二乘精修；`FitDistanceThreshold`以内为计算点，其余为忽略点。
+- 输出`Fit`含拟合点、是否计算点、RMS、直线端点A/B或圆心/半径；`MeasuredFitLine`为带来源的拟合直线。不足3个卡尺找到边或拟合失败时`Fit`为空，原因写在`FitMessage`。
+- 结果图上：全部边缘为小灰点，计算点绿色、忽略点红色，拟合线段或圆为黄色。不画文字标签，点击后在状态栏显示说明。
+
 ### 圆弧卡尺
 
 `Shape = Arc`时沿圆弧扫描：圆心`CenterX/CenterY`、半径`Radius`、起始角`StartAngle`与扫描角度`SweepAngle`（度，X轴正向起顺时针，图像Y向下；正为顺时针，绝对值(0,360]）。

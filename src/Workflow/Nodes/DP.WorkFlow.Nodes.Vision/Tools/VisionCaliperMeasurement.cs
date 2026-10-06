@@ -29,6 +29,64 @@ public enum EVisionArcScanDirection
     OuterToInner
 }
 
+/// <summary>多个卡尺拟合时，每个卡尺取哪个边缘作为拟合点。</summary>
+public enum EVisionCaliperFitPoint
+{
+    /// <summary>梯度绝对值最大的边缘。</summary>
+    [Description("最强边缘")]
+    Strongest,
+    /// <summary>沿搜索方向的第一个边缘。</summary>
+    [Description("第一个边缘")]
+    First,
+    /// <summary>沿搜索方向的最后一个边缘。</summary>
+    [Description("最后一个边缘")]
+    Last
+}
+
+/// <summary>卡尺内拟合的几何类型。</summary>
+public enum EVisionCaliperFitKind
+{
+    /// <summary>直线（直线卡尺的多个子卡尺）。</summary>
+    Line,
+    /// <summary>圆（圆弧卡尺径向搜索的多个卡尺）。</summary>
+    Circle
+}
+
+/// <summary>
+/// 卡尺内拟合结果：每个卡尺取一个拟合点（<see cref="Points"/>，与 <see cref="CaliperIndices"/> 同序），
+/// 鲁棒拟合后标出参与拟合的计算点（<see cref="Inliers"/> 为真）与被忽略的点。坐标为原图像素。
+/// </summary>
+public sealed class VisionCaliperFit
+{
+    internal VisionCaliperFit(EVisionCaliperFitKind kind, IReadOnlyList<PointD> points, IReadOnlyList<int> calipers, IReadOnlyList<bool> inliers,
+        double rmsError, PointD? a = null, PointD? b = null, PointD? center = null, double? radius = null)
+    {
+        Kind = kind; Points = points; CaliperIndices = calipers; Inliers = inliers; RmsError = rmsError; A = a; B = b; Center = center; Radius = radius;
+    }
+    /// <summary>拟合类型。</summary>
+    public EVisionCaliperFitKind Kind { get; }
+    /// <summary>每个找到边缘的卡尺取出的拟合点。</summary>
+    public IReadOnlyList<PointD> Points { get; }
+    /// <summary>拟合点所属卡尺序号。</summary>
+    public IReadOnlyList<int> CaliperIndices { get; }
+    /// <summary>与拟合点同序：真为参与拟合的计算点，假为被忽略的点。</summary>
+    public IReadOnlyList<bool> Inliers { get; }
+    /// <summary>参与拟合的点数。</summary>
+    public int InlierCount => Inliers.Count(i => i);
+    /// <summary>被忽略的点数。</summary>
+    public int OutlierCount => Inliers.Count - InlierCount;
+    /// <summary>参与拟合点到拟合几何的均方根距离，原图像素。</summary>
+    public double RmsError { get; }
+    /// <summary>拟合线段端点 A（直线）。</summary>
+    public PointD? A { get; }
+    /// <summary>拟合线段端点 B（直线）。</summary>
+    public PointD? B { get; }
+    /// <summary>拟合圆心（圆）。</summary>
+    public PointD? Center { get; }
+    /// <summary>拟合半径（圆），原图像素。</summary>
+    public double? Radius { get; }
+}
+
 /// <summary>卡尺边缘：亚像素位置、沿扫描路径的距离（圆弧为弧长）和有符号梯度。</summary>
 public sealed class VisionCaliperEdge
 {
@@ -68,6 +126,25 @@ public sealed class VisionCaliperMeasurement : IWorkflowVisionFrameFact
             Array.AsReadOnly(result.Edges.Select(e => new VisionCaliperEdge(e.Position, e.Distance, e.Gradient, null)).ToArray()),
             new[] { result.Start, result.End }, result);
         return result.CoordinateSystem is { } system ? measurement.InCoordinates(system) : measurement;
+    }
+
+    internal static VisionCaliperMeasurement FromLineCalipers(string frameId, PointD start, PointD end, double step,
+        IReadOnlyList<IReadOnlyList<double>> profiles, IReadOnlyList<VisionCaliperEdge> edges, CaliperResult? line)
+    {
+        var mean = new double[profiles.Count == 0 ? 0 : profiles.Min(p => p.Count)];
+        foreach (var profile in profiles)
+            for (var i = 0; i < mean.Length; i++) mean[i] += profile[i] / profiles.Count;
+        return new VisionCaliperMeasurement(frameId, EVisionCaliperShape.Line, start, end, step, Array.AsReadOnly(mean), edges, new[] { start, end }, line)
+        {
+            Profiles = profiles
+        };
+    }
+
+    internal VisionCaliperMeasurement WithFit(VisionCaliperFit? fit, string? message)
+    {
+        var copy = (VisionCaliperMeasurement)MemberwiseClone();
+        copy.Fit = fit; copy.FitMessage = message;
+        return copy;
     }
 
     internal static VisionCaliperMeasurement FromArc(string frameId, VisionArcCaliperOptions options, double step, double[] profile,
@@ -111,7 +188,14 @@ public sealed class VisionCaliperMeasurement : IWorkflowVisionFrameFact
     public IReadOnlyList<VisionCaliperEdge> Edges { get; }
     /// <summary>边缘数。</summary>
     public int Count => Edges.Count;
-    /// <summary>直线卡尺的算法原始结果；圆弧卡尺为空。</summary>
+    /// <summary>卡尺内拟合结果（直线卡尺多个子卡尺拟合直线、圆弧径向搜索拟合圆）；卡尺数量少于 3 或拟合失败时为空。</summary>
+    public VisionCaliperFit? Fit { get; private set; }
+    /// <summary>未拟合或拟合失败的原因；成功或不需要拟合时为空。</summary>
+    public string? FitMessage { get; private set; }
+    /// <summary>拟合直线（带来源帧与坐标系）；没有直线拟合时为空。</summary>
+    public VisionLine? MeasuredFitLine => Fit is { Kind: EVisionCaliperFitKind.Line, A: { } a, B: { } b }
+        ? new VisionLine(new VisionPoint(FrameId, a, CoordinateSystem), new VisionPoint(FrameId, b, CoordinateSystem)) : null;
+    /// <summary>直线卡尺单个卡尺、1px 搜索间隔时的算法原始结果；其它情况为空。</summary>
     [Browsable(false)]
     public CaliperResult? Line { get; }
     /// <summary>可选本帧定位来源；位置、距离均保持原图像素。</summary>
@@ -128,11 +212,20 @@ public sealed class VisionCaliperMeasurement : IWorkflowVisionFrameFact
     public EAlgorithmStatus Status => EAlgorithmStatus.Completed;
 
     /// <inheritdoc/>
-    public string Summary => Shape == EVisionCaliperShape.Arc
+    public string Summary => FitSummary.Length == 0 ? ShapeSummary : ShapeSummary + " " + FitSummary + "。";
+
+    private string ShapeSummary => Shape == EVisionCaliperShape.Arc
         ? ArcDirection is EVisionArcScanDirection.InnerToOuter or EVisionArcScanDirection.OuterToInner
             ? FormattableString.Invariant($"圆弧卡尺（{(ArcDirection == EVisionArcScanDirection.InnerToOuter ? "由内到外" : "由外到内")}）{Profiles.Count} 个径向卡尺，边缘 {Count}；半径 {Radius:0.##}px。")
             : FormattableString.Invariant($"圆弧卡尺边缘 {Count}；半径 {Radius:0.##}px；剖面采样 {Profile.Count}。")
-        : $"卡尺边缘 {Count}；剖面采样 {Profile.Count}；梯度峰抛物线插值。";
+        : Profiles.Count > 1
+            ? $"直线卡尺 {Profiles.Count} 个子卡尺，边缘 {Count}；剖面采样 {Profile.Count}。"
+            : $"卡尺边缘 {Count}；剖面采样 {Profile.Count}；梯度峰抛物线插值。";
+
+    /// <summary>拟合说明：计算点/忽略点与误差，或未拟合原因。</summary>
+    public string FitSummary => Fit is { } fit
+        ? FormattableString.Invariant($"{(fit.Kind == EVisionCaliperFitKind.Line ? "拟合直线" : $"拟合圆 半径 {fit.Radius:0.###}px")}：计算点 {fit.InlierCount}，忽略点 {fit.OutlierCount}，RMS {fit.RmsError:0.####}px")
+        : FitMessage ?? string.Empty;
 
     /// <summary>扫描路径折线（原图像素），供图上显示。</summary>
     [Browsable(false)]
@@ -162,10 +255,18 @@ public sealed class VisionArcCaliperOptions
     /// <param name="bandSampleStep">半径方向采样间隔 0.1..10。</param>
     /// <param name="direction">搜索方向：沿圆弧，或沿半径由内到外/由外到内。</param>
     /// <param name="caliperCount">径向搜索时沿圆弧均匀分布的卡尺数 1..128；沿圆弧扫描时忽略。</param>
+    /// <param name="scanStep">沿搜索方向的采样间隔 0.1..10 像素。</param>
+    /// <param name="fitPoint">径向搜索拟合圆时每个卡尺取哪个边缘。</param>
+    /// <param name="fitDistanceThreshold">拟合内点距离阈值，像素。</param>
     public VisionArcCaliperOptions(PointD center, double radius, double startAngleDegrees, double sweepDegrees, int halfWidth = 2,
         double minimumGradient = 5, ECaliperPolarity polarity = ECaliperPolarity.Any, double minimumSeparation = 2, double bandSampleStep = 1,
-        EVisionArcScanDirection direction = EVisionArcScanDirection.AlongArc, int caliperCount = 1)
+        EVisionArcScanDirection direction = EVisionArcScanDirection.AlongArc, int caliperCount = 1, double scanStep = 1,
+        EVisionCaliperFitPoint fitPoint = EVisionCaliperFitPoint.Strongest, double fitDistanceThreshold = 1)
     {
+        if (!double.IsFinite(scanStep) || scanStep < .1 || scanStep > 10) throw new ArgumentException("搜索间隔须为 0.1..10 像素。");
+        if (!Enum.IsDefined(fitPoint) || !double.IsFinite(fitDistanceThreshold) || fitDistanceThreshold <= 0 || fitDistanceThreshold > 1000)
+            throw new ArgumentException("拟合参数无效。");
+        ScanStep = scanStep; FitPoint = fitPoint; FitDistanceThreshold = fitDistanceThreshold;
         if (!Enum.IsDefined(direction)) throw new ArgumentException("未知圆弧卡尺搜索方向。");
         if (!double.IsFinite(center.X) || !double.IsFinite(center.Y) || !double.IsFinite(radius) || radius <= 0 || radius > 65535)
             throw new ArgumentException("圆弧卡尺圆心或半径无效。");
@@ -208,6 +309,12 @@ public sealed class VisionArcCaliperOptions
     public double BandSampleStep { get; }
     /// <summary>搜索方向。</summary>
     public EVisionArcScanDirection Direction { get; }
+    /// <summary>沿搜索方向的采样间隔，像素。</summary>
+    public double ScanStep { get; }
+    /// <summary>拟合时每个卡尺取的边缘。</summary>
+    public EVisionCaliperFitPoint FitPoint { get; }
+    /// <summary>拟合内点距离阈值，像素。</summary>
+    public double FitDistanceThreshold { get; }
     /// <summary>径向卡尺数；沿圆弧扫描时为 1。</summary>
     public int CaliperCount { get; }
     /// <summary>单侧带宽（径向搜索时为搜索范围半长），原图像素。</summary>
@@ -257,7 +364,7 @@ public static class VisionArcCaliper
         Action<PointD> check, Func<PointD, double> pixel, CancellationToken token)
     {
         var length = options.Length;
-        int count = (int)Math.Ceiling(length) + 1;
+        int count = (int)Math.Ceiling(length / options.ScanStep) + 1;
         double step = length / (count - 1);
         var profile = new double[count];
         for (int i = 0; i < count; i++)
@@ -269,7 +376,7 @@ public static class VisionArcCaliper
                 profile[i] += pixel(options.PointAt(options.Radius + b * options.BandSampleStep, t));
             profile[i] /= options.HalfWidth * 2 + 1;
         }
-        var edges = FindEdges(profile, step, options, token).Select(e =>
+        var edges = VisionCaliperProfile.FindEdges(profile, step, options.MinimumGradient, options.Polarity, options.MinimumSeparation, token).Select(e =>
         {
             var t = e.Distance / length;
             return new VisionCaliperEdge(options.PointAt(options.Radius, t), e.Distance, e.Gradient, options.StartAngleDegrees + options.SweepDegrees * t);
@@ -282,7 +389,7 @@ public static class VisionArcCaliper
     {
         bool outward = options.Direction == EVisionArcScanDirection.InnerToOuter;
         double length = outer - inner;
-        int count = (int)Math.Ceiling(length) + 1;
+        int count = (int)Math.Ceiling(length / options.ScanStep) + 1;
         double step = length / (count - 1);
         // 每段圆弧在扫描半径处约 1px 取一个投影点，最多 127 个。
         var segmentLength = options.Length / options.CaliperCount;
@@ -304,7 +411,7 @@ public static class VisionArcCaliper
             }
             var middle = (c + .5) / options.CaliperCount;
             var angle = options.StartAngleDegrees + options.SweepDegrees * middle;
-            foreach (var e in FindEdges(profile, step, options, token))
+            foreach (var e in VisionCaliperProfile.FindEdges(profile, step, options.MinimumGradient, options.Polarity, options.MinimumSeparation, token))
             {
                 if (edges.Count >= 4096) throw new InvalidOperationException("Caliper evidence budget exceeded.");
                 var radius = outward ? inner + e.Distance : outer - e.Distance;
@@ -312,11 +419,26 @@ public static class VisionArcCaliper
             }
             profiles.Add(Array.AsReadOnly(profile));
         }
-        return VisionCaliperMeasurement.FromArc(frameId, options, step, mean, Array.AsReadOnly(edges.ToArray()), profiles.AsReadOnly());
+        var measurement = VisionCaliperMeasurement.FromArc(frameId, options, step, mean, Array.AsReadOnly(edges.ToArray()), profiles.AsReadOnly());
+        return VisionCaliperFitting.Apply(measurement, EVisionCaliperFitKind.Circle, options.CaliperCount, options.FitPoint, options.FitDistanceThreshold, token);
     }
 
-    // 中心差分梯度 → 极大值抛物线插值 → 按梯度强度的间距抑制；返回按距离排序的 (距离, 梯度)。
-    private static IEnumerable<(double Distance, double Gradient)> FindEdges(double[] profile, double step, VisionArcCaliperOptions options, CancellationToken token)
+    internal static double Sample(byte[] pixels, int width, int height, double x, double y)
+    {
+        x = Math.Max(0, Math.Min(width - 1, x - .5)); y = Math.Max(0, Math.Min(height - 1, y - .5));
+        int ix = (int)Math.Floor(x), iy = (int)Math.Floor(y), nx = Math.Min(width - 1, ix + 1), ny = Math.Min(height - 1, iy + 1);
+        double fx = x - ix, fy = y - iy;
+        return (pixels[iy * width + ix] * (1 - fx) + pixels[iy * width + nx] * fx) * (1 - fy)
+            + (pixels[ny * width + ix] * (1 - fx) + pixels[ny * width + nx] * fx) * fy;
+    }
+}
+
+/// <summary>卡尺剖面找边：中心差分梯度 → 梯度极大值抛物线插值 → 按梯度强度的间距抑制，与 DP.Vision 直线卡尺规则一致。</summary>
+internal static class VisionCaliperProfile
+{
+    /// <summary>返回按距离排序的 (距离, 梯度)。</summary>
+    internal static IReadOnlyList<(double Distance, double Gradient)> FindEdges(double[] profile, double step, double minimumGradient,
+        ECaliperPolarity polarity, double minimumSeparation, CancellationToken token)
     {
         int count = profile.Length;
         var gradient = new double[count];
@@ -326,8 +448,8 @@ public static class VisionArcCaliper
         {
             token.ThrowIfCancellationRequested();
             double g = gradient[i], strength = Math.Abs(g), left = Math.Abs(gradient[i - 1]), right = Math.Abs(gradient[i + 1]);
-            if (strength < options.MinimumGradient || strength < left || strength <= right
-                || options.Polarity == ECaliperPolarity.Rising && g <= 0 || options.Polarity == ECaliperPolarity.Falling && g >= 0) continue;
+            if (strength < minimumGradient || strength < left || strength <= right
+                || polarity == ECaliperPolarity.Rising && g <= 0 || polarity == ECaliperPolarity.Falling && g >= 0) continue;
             double denominator = left - 2 * strength + right;
             double delta = Math.Abs(denominator) < 1e-12 ? 0 : Math.Max(-.5, Math.Min(.5, .5 * (left - right) / denominator));
             candidates.Add(((i + delta) * step, g));
@@ -336,20 +458,272 @@ public static class VisionArcCaliper
         foreach (var edge in candidates.OrderByDescending(e => Math.Abs(e.Gradient)).ThenBy(e => e.Distance))
         {
             token.ThrowIfCancellationRequested();
-            if (selected.GetViewBetween(edge.Distance - options.MinimumSeparation, edge.Distance + options.MinimumSeparation)
-                .Any(distance => Math.Abs(distance - edge.Distance) < options.MinimumSeparation)) continue;
+            if (selected.GetViewBetween(edge.Distance - minimumSeparation, edge.Distance + minimumSeparation)
+                .Any(distance => Math.Abs(distance - edge.Distance) < minimumSeparation)) continue;
             if (edges.Count >= 4096) throw new InvalidOperationException("Caliper evidence budget exceeded.");
             selected.Add(edge.Distance); edges.Add(edge);
         }
-        return edges.OrderBy(e => e.Distance);
+        return edges.OrderBy(e => e.Distance).ToArray();
+    }
+}
+
+/// <summary>
+/// 直线卡尺配置：采样带沿宽度方向均分为 N 个并排的子卡尺，每个都沿起点→终点搜索；N ≥ 3 时用每个子卡尺取出的边缘点拟合直线。
+/// </summary>
+public sealed class VisionLineCaliperOptions
+{
+    /// <summary>构造直线卡尺。</summary>
+    /// <param name="start">起点，原图像素。</param><param name="end">终点。</param>
+    /// <param name="halfWidth">垂直方向单侧采样步数 0..63。</param><param name="minimumGradient">最小梯度。</param>
+    /// <param name="polarity">极性，沿起点→终点。</param><param name="minimumSeparation">边缘最小间距。</param>
+    /// <param name="bandSampleStep">垂直采样间隔 0.1..10。</param><param name="scanStep">沿起点→终点的搜索间隔 0.1..10。</param>
+    /// <param name="caliperCount">并排子卡尺数 1..64，不超过垂直采样点数。</param>
+    /// <param name="fitPoint">拟合时每个子卡尺取的边缘。</param><param name="fitDistanceThreshold">拟合内点距离阈值。</param>
+    public VisionLineCaliperOptions(PointD start, PointD end, int halfWidth = 2, double minimumGradient = 5, ECaliperPolarity polarity = ECaliperPolarity.Any,
+        double minimumSeparation = 2, double bandSampleStep = 1, double scanStep = 1, int caliperCount = 1,
+        EVisionCaliperFitPoint fitPoint = EVisionCaliperFitPoint.Strongest, double fitDistanceThreshold = 1)
+    {
+        Whole = new CaliperOptions(start, end, halfWidth, minimumGradient, polarity, minimumSeparation, bandSampleStep);
+        if (!double.IsFinite(scanStep) || scanStep < .1 || scanStep > 10) throw new ArgumentException("搜索间隔须为 0.1..10 像素。");
+        if (caliperCount < 1 || caliperCount > 64 || caliperCount > halfWidth * 2 + 1)
+            throw new ArgumentException("卡尺数量须为 1..64，且不超过垂直采样点数（2×采样半宽+1）。");
+        if (!Enum.IsDefined(fitPoint) || !double.IsFinite(fitDistanceThreshold) || fitDistanceThreshold <= 0 || fitDistanceThreshold > 1000)
+            throw new ArgumentException("拟合参数无效。");
+        ScanStep = scanStep; CaliperCount = caliperCount; FitPoint = fitPoint; FitDistanceThreshold = fitDistanceThreshold;
     }
 
-    private static double Sample(byte[] pixels, int width, int height, double x, double y)
+    /// <summary>整条采样带。</summary>
+    public CaliperOptions Whole { get; }
+    /// <summary>搜索间隔。</summary>
+    public double ScanStep { get; }
+    /// <summary>并排子卡尺数。</summary>
+    public int CaliperCount { get; }
+    /// <summary>拟合时每个子卡尺取的边缘。</summary>
+    public EVisionCaliperFitPoint FitPoint { get; }
+    /// <summary>拟合内点距离阈值。</summary>
+    public double FitDistanceThreshold { get; }
+
+    /// <summary>第 <paramref name="index"/> 个子卡尺：沿宽度方向的一段，半宽为其中能对称容纳的采样步数。</summary>
+    /// <param name="index">子卡尺序号，0 在法向负侧。</param>
+    public CaliperOptions SubCaliper(int index)
     {
-        x = Math.Max(0, Math.Min(width - 1, x - .5)); y = Math.Max(0, Math.Min(height - 1, y - .5));
-        int ix = (int)Math.Floor(x), iy = (int)Math.Floor(y), nx = Math.Min(width - 1, ix + 1), ny = Math.Min(height - 1, iy + 1);
-        double fx = x - ix, fy = y - iy;
-        return (pixels[iy * width + ix] * (1 - fx) + pixels[iy * width + nx] * fx) * (1 - fy)
-            + (pixels[ny * width + ix] * (1 - fx) + pixels[ny * width + nx] * fx) * fy;
+        if (CaliperCount == 1) return Whole;
+        var (normalX, normalY) = Normal;
+        int samples = Whole.HalfWidth * 2 + 1;
+        int sub = (samples / CaliperCount - 1) / 2;
+        double offset = (-Whole.HalfWidth + (index + .5) * samples / CaliperCount - .5) * Whole.BandSampleStep;
+        return new CaliperOptions(new PointD(Whole.Start.X + normalX * offset, Whole.Start.Y + normalY * offset),
+            new PointD(Whole.End.X + normalX * offset, Whole.End.Y + normalY * offset), sub, Whole.MinimumGradient, Whole.Polarity,
+            Whole.MinimumSeparation, Whole.BandSampleStep);
     }
+
+    internal (double X, double Y) Normal
+    {
+        get
+        {
+            double dx = Whole.End.X - Whole.Start.X, dy = Whole.End.Y - Whole.Start.Y, length = Math.Sqrt(dx * dx + dy * dy);
+            return (-dy / length, dx / length);
+        }
+    }
+}
+
+/// <summary>
+/// 直线卡尺：每个子卡尺沿起点→终点取剖面找边。搜索间隔为 1px 时调用可替换的直线卡尺算法实现，
+/// 否则使用同一规则的托管采样（双线性、垂直方向求平均、中心差分、抛物线插值、间距抑制）。
+/// </summary>
+public static class VisionLineCaliper
+{
+    /// <summary>测量直线卡尺并在子卡尺数 ≥ 3 时拟合直线。</summary>
+    /// <param name="frame">Gray8 输入帧。</param><param name="options">配置。</param>
+    /// <param name="measurer">1px 搜索间隔时使用的直线卡尺算法；为空时始终用托管采样。</param><param name="token">取消。</param>
+    public static VisionCaliperMeasurement Measure(ImageFrame frame, VisionLineCaliperOptions options, Func<CaliperOptions, CaliperResult>? measurer,
+        CancellationToken token = default)
+    {
+        ArgumentNullException.ThrowIfNull(frame); ArgumentNullException.ThrowIfNull(options);
+        var edges = new List<VisionCaliperEdge>(); var profiles = new List<IReadOnlyList<double>>();
+        CaliperResult? single = null; double step = 1;
+        byte[]? pixels = null;
+        for (int c = 0; c < options.CaliperCount; c++)
+        {
+            token.ThrowIfCancellationRequested();
+            var sub = options.SubCaliper(c);
+            if (measurer is not null && Math.Abs(options.ScanStep - 1) < 1e-12)
+            {
+                var result = measurer(sub);
+                if (options.CaliperCount == 1) single = result;
+                step = result.SampleStep;
+                profiles.Add(result.Profile);
+                edges.AddRange(result.Edges.Select(e => new VisionCaliperEdge(e.Position, e.Distance, e.Gradient, null, c)));
+                continue;
+            }
+            pixels ??= Pixels(frame);
+            var (profile, subStep) = ManagedProfile(frame, pixels, sub, options.ScanStep, token);
+            step = subStep;
+            profiles.Add(Array.AsReadOnly(profile));
+            double dx = (sub.End.X - sub.Start.X), dy = (sub.End.Y - sub.Start.Y), length = Math.Sqrt(dx * dx + dy * dy);
+            foreach (var e in VisionCaliperProfile.FindEdges(profile, subStep, sub.MinimumGradient, sub.Polarity, sub.MinimumSeparation, token))
+                edges.Add(new VisionCaliperEdge(new PointD(sub.Start.X + dx / length * e.Distance, sub.Start.Y + dy / length * e.Distance),
+                    e.Distance, e.Gradient, null, c));
+        }
+        var measurement = VisionCaliperMeasurement.FromLineCalipers(frame.FrameId, options.Whole.Start, options.Whole.End, step,
+            profiles.AsReadOnly(), Array.AsReadOnly(edges.OrderBy(e => e.CaliperIndex).ThenBy(e => e.Distance).ToArray()), single);
+        return VisionCaliperFitting.Apply(measurement, EVisionCaliperFitKind.Line, options.CaliperCount, options.FitPoint, options.FitDistanceThreshold, token);
+    }
+
+    private static byte[] Pixels(ImageFrame frame)
+    {
+        var info = frame.Image.Info;
+        if (info.Layout != EPixelLayout.Gray8) throw new NotSupportedException("Caliper requires explicit Gray8 preprocessing.");
+        if ((long)info.Width * info.Height > 16777216) throw new ArgumentException("Caliper image budget exceeded.");
+        var pixels = new byte[info.ByteLength]; frame.Image.CopyTo(0, pixels, 0, pixels.Length);
+        return pixels;
+    }
+
+    private static (double[] Profile, double Step) ManagedProfile(ImageFrame frame, byte[] pixels, CaliperOptions options, double scanStep, CancellationToken token)
+    {
+        var info = frame.Image.Info;
+        double dx = options.End.X - options.Start.X, dy = options.End.Y - options.Start.Y, length = Math.Sqrt(dx * dx + dy * dy);
+        dx /= length; dy /= length;
+        double half = options.HalfWidth * options.BandSampleStep;
+        foreach (var p in new[] { options.Start, options.End })
+            foreach (int sign in new[] { -1, 1 })
+            {
+                double x = p.X - dy * half * sign, y = p.Y + dx * half * sign;
+                if (x < .5 || y < .5 || x > info.Width - .5 || y > info.Height - .5) throw new ArgumentException("Caliper band extends outside sampleable pixel centers.");
+            }
+        int count = (int)Math.Ceiling(length / scanStep) + 1; double step = length / (count - 1);
+        var profile = new double[count];
+        for (int i = 0; i < count; i++)
+        {
+            token.ThrowIfCancellationRequested();
+            for (int b = -options.HalfWidth; b <= options.HalfWidth; b++)
+                profile[i] += VisionArcCaliper.Sample(pixels, info.Width, info.Height,
+                    options.Start.X + dx * i * step - dy * b * options.BandSampleStep, options.Start.Y + dy * i * step + dx * b * options.BandSampleStep);
+            profile[i] /= options.HalfWidth * 2 + 1;
+        }
+        return (profile, step);
+    }
+}
+
+/// <summary>卡尺内拟合：每个卡尺按规则取一个边缘点，直线用 RANSAC＋正交 TLS，圆用确定性 RANSAC＋代数最小二乘精修。</summary>
+public static class VisionCaliperFitting
+{
+    internal static VisionCaliperMeasurement Apply(VisionCaliperMeasurement measurement, EVisionCaliperFitKind kind, int caliperCount,
+        EVisionCaliperFitPoint rule, double threshold, CancellationToken token)
+    {
+        if (caliperCount < 3) return caliperCount == 1 ? measurement : measurement.WithFit(null, "卡尺数量少于 3，未拟合。");
+        var picks = measurement.Edges.GroupBy(e => e.CaliperIndex).OrderBy(g => g.Key).Select(g => rule switch
+        {
+            EVisionCaliperFitPoint.First => g.OrderBy(e => e.Distance).First(),
+            EVisionCaliperFitPoint.Last => g.OrderByDescending(e => e.Distance).First(),
+            _ => g.OrderByDescending(e => Math.Abs(e.Gradient)).ThenBy(e => e.Distance).First()
+        }).ToArray();
+        if (picks.Length < 3) return measurement.WithFit(null, $"只有 {picks.Length} 个卡尺找到边缘，至少需要 3 个才能拟合。");
+        var points = picks.Select(e => e.Position).ToArray();
+        var calipers = Array.AsReadOnly(picks.Select(e => e.CaliperIndex).ToArray());
+        try
+        {
+            if (kind == EVisionCaliperFitKind.Line)
+            {
+                var line = new RobustLineFitter().Fit(measurement.FrameId, points, threshold, 256, 3, token);
+                var inliers = new bool[points.Length];
+                foreach (var index in line.InlierIndices) inliers[index] = true;
+                return measurement.WithFit(new VisionCaliperFit(kind, Array.AsReadOnly(points), calipers, Array.AsReadOnly(inliers), line.RmsError, line.A, line.B), null);
+            }
+            var circle = FitCircle(points, threshold, token);
+            return measurement.WithFit(new VisionCaliperFit(kind, Array.AsReadOnly(points), calipers, Array.AsReadOnly(circle.Inliers), circle.Rms,
+                center: circle.Center, radius: circle.Radius), null);
+        }
+        catch (Exception error) when (error is InvalidOperationException or ArgumentException)
+        {
+            return measurement.WithFit(null, "拟合失败：" + error.Message);
+        }
+    }
+
+    /// <summary>
+    /// 鲁棒圆拟合：点数 ≤ 20 时枚举全部三点组合，否则用固定种子取 256 组；按内点数（|到圆心距离−半径| ≤ 阈值）最多、
+    /// 其次误差最小选最佳圆，再用内点做代数最小二乘（Kåsa）精修并重新判定内点。
+    /// </summary>
+    /// <param name="points">原图点，3..8192 个。</param><param name="threshold">内点距离阈值，像素。</param><param name="token">取消。</param>
+    public static (PointD Center, double Radius, bool[] Inliers, double Rms) FitCircle(IReadOnlyList<PointD> points, double threshold, CancellationToken token = default)
+    {
+        ArgumentNullException.ThrowIfNull(points);
+        if (points.Count < 3 || points.Count > 8192) throw new ArgumentException("圆拟合需要 3..8192 个点。");
+        if (!double.IsFinite(threshold) || threshold <= 0) throw new ArgumentException("圆拟合距离阈值无效。");
+        IEnumerable<(int, int, int)> Triples()
+        {
+            int n = points.Count;
+            if (n <= 20)
+            {
+                for (int i = 0; i < n; i++) for (int j = i + 1; j < n; j++) for (int k = j + 1; k < n; k++) yield return (i, j, k);
+                yield break;
+            }
+            var random = new Random(0x5EED);
+            for (int t = 0; t < 256; t++)
+            {
+                int i = random.Next(n), j = random.Next(n - 1), k = random.Next(n - 2);
+                if (j >= i) j++;
+                var (a, b) = (Math.Min(i, j), Math.Max(i, j));
+                if (k >= a) k++; if (k >= b) k++;
+                yield return (i, j, k);
+            }
+        }
+        (PointD Center, double Radius)? best = null; int bestCount = 0; double bestError = double.MaxValue;
+        foreach (var (i, j, k) in Triples())
+        {
+            token.ThrowIfCancellationRequested();
+            if (Circumcircle(points[i], points[j], points[k]) is not { } candidate) continue;
+            var (count, error) = Score(points, candidate.Center, candidate.Radius, threshold);
+            if (count > bestCount || count == bestCount && error < bestError) { best = candidate; bestCount = count; bestError = error; }
+        }
+        if (best is not { } chosen || bestCount < 3) throw new InvalidOperationException("没有足够的点落在同一个圆上。");
+        var inliers = points.Select(p => Math.Abs(Distance(p, chosen.Center) - chosen.Radius) <= threshold).ToArray();
+        var refined = LeastSquares(points.Where((_, index) => inliers[index]).ToArray()) ?? chosen;
+        inliers = points.Select(p => Math.Abs(Distance(p, refined.Center) - refined.Radius) <= threshold).ToArray();
+        if (inliers.Count(i => i) < 3) throw new InvalidOperationException("精修后内点不足 3 个。");
+        var residuals = points.Where((_, index) => inliers[index]).Select(p => Distance(p, refined.Center) - refined.Radius).ToArray();
+        return (refined.Center, refined.Radius, inliers, Math.Sqrt(residuals.Average(r => r * r)));
+    }
+
+    private static (int Count, double Error) Score(IReadOnlyList<PointD> points, PointD center, double radius, double threshold)
+    {
+        int count = 0; double error = 0;
+        foreach (var p in points)
+        {
+            var d = Math.Abs(Distance(p, center) - radius);
+            if (d <= threshold) { count++; error += d * d; }
+        }
+        return (count, error);
+    }
+
+    private static (PointD Center, double Radius)? Circumcircle(PointD a, PointD b, PointD c)
+    {
+        double d = 2 * (a.X * (b.Y - c.Y) + b.X * (c.Y - a.Y) + c.X * (a.Y - b.Y));
+        if (Math.Abs(d) < 1e-9) return null;
+        double a2 = a.X * a.X + a.Y * a.Y, b2 = b.X * b.X + b.Y * b.Y, c2 = c.X * c.X + c.Y * c.Y;
+        var center = new PointD((a2 * (b.Y - c.Y) + b2 * (c.Y - a.Y) + c2 * (a.Y - b.Y)) / d, (a2 * (c.X - b.X) + b2 * (a.X - c.X) + c2 * (b.X - a.X)) / d);
+        var radius = Distance(a, center);
+        return double.IsFinite(radius) && radius > 0 ? (center, radius) : null;
+    }
+
+    // Kåsa 代数拟合：最小化 Σ(x²+y²+Dx+Ey+F)²，相对质心计算以保持数值稳定。
+    private static (PointD Center, double Radius)? LeastSquares(IReadOnlyList<PointD> points)
+    {
+        if (points.Count < 3) return null;
+        double mx = points.Average(p => p.X), my = points.Average(p => p.Y);
+        double suu = 0, suv = 0, svv = 0, suuu = 0, svvv = 0, suvv = 0, svuu = 0;
+        foreach (var p in points)
+        {
+            double u = p.X - mx, v = p.Y - my;
+            suu += u * u; suv += u * v; svv += v * v; suuu += u * u * u; svvv += v * v * v; suvv += u * v * v; svuu += v * u * u;
+        }
+        double det = suu * svv - suv * suv;
+        if (Math.Abs(det) < 1e-12) return null;
+        double r1 = .5 * (suuu + suvv), r2 = .5 * (svvv + svuu);
+        double uc = (r1 * svv - r2 * suv) / det, vc = (r2 * suu - r1 * suv) / det;
+        double radius = Math.Sqrt(uc * uc + vc * vc + (suu + svv) / points.Count);
+        return double.IsFinite(radius) && radius > 0 ? (new PointD(uc + mx, vc + my), radius) : null;
+    }
+
+    private static double Distance(PointD a, PointD b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
 }
