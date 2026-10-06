@@ -24,7 +24,7 @@ public enum EVisionCaliperHandle
 /// 卡尺节点在图像上的可视化与拖动编辑，支持直线和圆弧两种形状：显示采样带外框、带箭头的扫描方向、
 /// 与扫描方向垂直的投影线（圆弧为半径方向），以及各控制点。拖动直接写回节点参数；坐标均为原图像素。
 /// 算法在扫描路径上每个位置沿投影线取 2×半宽+1 个点求平均得到灰度剖面，再沿箭头方向找边缘。
-/// 绑定坐标系的节点参数是局部单位，只显示提示，不在原图上直接拖动。
+/// 绑定坐标系的节点参数是局部单位：页面提供本帧坐标系后按它换算到原图显示，拖动结果再换算回局部单位写回。
 /// </summary>
 public sealed class VisionCaliperGizmo
 {
@@ -41,14 +41,22 @@ public sealed class VisionCaliperGizmo
     private EVisionCaliperHandle? _drag;
     private PointD _dragAnchor;
     private string _dragOriginKey = string.Empty;
-    private (double StartX, double StartY, double EndX, double EndY, double CenterX, double CenterY, double BandSampleStep) _dragOrigin;
+    private (PointD Start, PointD End, PointD Center, double Step) _dragOrigin;
+    private VisionCoordinateSystem? _coordinates;
 
     /// <summary>为卡尺节点创建可视化编辑器。</summary>
     /// <param name="node">节点窗口中的隔离编辑副本。</param>
     public VisionCaliperGizmo(MeasureVisionCaliperNodeModel node) => _node = node ?? throw new ArgumentNullException(nameof(node));
 
-    /// <summary>参数为原图像素时可在图上拖动；绑定坐标系后参数为局部单位，不能直接拖动。</summary>
-    public bool IsEditable => _node.Coordinates is null;
+    /// <summary>
+    /// 本帧坐标系（节点绑定坐标系时由页面设置，未绑定时忽略）。为空时绑定坐标系的卡尺无法换算到原图，不显示也不能拖动。
+    /// </summary>
+    public VisionCoordinateSystem? Coordinates { get => _coordinates; set => _coordinates = value; }
+
+    /// <summary>参数为原图像素，或绑定的坐标系在本帧可用（相似变换）时，可在图上显示和拖动。</summary>
+    public bool IsEditable => !Bound || _coordinates is { IsSimilarity: true };
+
+    private bool Bound => _node.Coordinates is not null;
 
     /// <summary>当前是否正在拖动。</summary>
     public bool IsDragging => _drag.HasValue;
@@ -58,19 +66,19 @@ public sealed class VisionCaliperGizmo
 
     /// <summary>参数签名；任一几何参数变化时预览需要重绘。</summary>
     public string Key => FormattableString.Invariant(
-        $"caliper:{_node.Shape}:{_node.StartX}:{_node.StartY}:{_node.EndX}:{_node.EndY}:{_node.CenterX}:{_node.CenterY}:{_node.Radius}:{_node.StartAngle}:{_node.SweepAngle}:{_node.HalfWidth}:{_node.BandSampleStep}:{_node.Polarity}:{_node.Coordinates is null}");
+        $"caliper:{_node.Shape}:{_node.StartX}:{_node.StartY}:{_node.EndX}:{_node.EndY}:{_node.CenterX}:{_node.CenterY}:{_node.Radius}:{_node.StartAngle}:{_node.SweepAngle}:{_node.HalfWidth}:{_node.BandSampleStep}:{_node.Polarity}:{_node.Coordinates is null}:{(Bound ? _coordinates?.FrameId : null)}");
 
     /// <summary>扫描起点（原图像素）；圆弧卡尺为起始角处的弧上点。</summary>
-    public PointD Start => IsArc ? ArcPoint(_node.Radius, 0) : new(_node.StartX, _node.StartY);
+    public PointD Start => IsArc ? ArcPoint(ImageRadius, 0) : ToImage(_node.StartX, _node.StartY);
 
     /// <summary>扫描终点（原图像素）；圆弧卡尺为终止角处的弧上点。</summary>
-    public PointD End => IsArc ? ArcPoint(_node.Radius, 1) : new(_node.EndX, _node.EndY);
+    public PointD End => IsArc ? ArcPoint(ImageRadius, 1) : ToImage(_node.EndX, _node.EndY);
 
     /// <summary>圆弧圆心（原图像素）。</summary>
-    public PointD Center => new(_node.CenterX, _node.CenterY);
+    public PointD Center => ToImage(_node.CenterX, _node.CenterY);
 
     /// <summary>采样带单侧宽度（原图像素）= 采样半宽 × 垂直采样间隔。</summary>
-    public double HalfBand => _node.HalfWidth * _node.BandSampleStep;
+    public double HalfBand => _node.HalfWidth * ImageStep;
 
     /// <summary>可拖出的最大单侧带宽（原图像素）= 63 × 10。</summary>
     public static double MaximumHalfBand => MaximumHalfWidth * MaximumBandStep;
@@ -86,23 +94,51 @@ public sealed class VisionCaliperGizmo
                 ECaliperPolarity.Falling => "亮→暗",
                 _ => "任意"
             };
-            var band = FormattableString.Invariant($"带宽 ±{HalfBand:0.##}px（{_node.HalfWidth * 2 + 1} 点 × 间隔 {_node.BandSampleStep:0.##}px）· 极性 {polarity}");
+            var band = FormattableString.Invariant($"带宽 ±{HalfBand:0.##}px（{_node.HalfWidth * 2 + 1} 点 × 间隔 {ImageStep:0.##}px）· 极性 {polarity}");
             return IsArc
-                ? FormattableString.Invariant($"圆弧卡尺 半径 {_node.Radius:0.#}px · 起始 {_node.StartAngle:0.#}° 扫描 {_node.SweepAngle:0.#}° · {band}")
+                ? FormattableString.Invariant($"圆弧卡尺 半径 {ImageRadius:0.#}px · 起始 {Normalize(ImageStartAngle):0.#}° 扫描 {_node.SweepAngle:0.#}° · {band}")
                 : FormattableString.Invariant($"卡尺 长度 {Length:0.#}px · {band}");
         }
     }
 
     /// <summary>状态栏操作提示。</summary>
     public string Hint => !IsEditable
-        ? "卡尺已绑定坐标系，参数为局部单位，请在参数页编辑。"
-        : IsArc
+        ? _coordinates is null
+            ? "卡尺已绑定坐标系，本帧没有坐标系结果，无法显示；请先运行流程（坐标来源需成功构建）。"
+            : "卡尺绑定的坐标系不是旋转+等比缩放，无法在图上换算带宽，请在参数页编辑。"
+        : (Bound ? "按本帧坐标系显示，拖动结果换算为局部单位写回。" : "") + (IsArc
             ? "拖动起点/终点调整扫描角度，拖动弧中点菱形调整半径，拖动两侧方块调整带宽，拖动圆心或采样带内部整体平移。"
-            : "拖动起点/终点调整扫描方向与长度，拖动两侧方块调整带宽，拖动采样带内部整体平移。";
+            : "拖动起点/终点调整扫描方向与长度，拖动两侧方块调整带宽，拖动采样带内部整体平移。");
 
     private bool IsArc => _node.Shape == EVisionCaliperShape.Arc;
 
-    private double Length => IsArc ? Math.Abs(_node.SweepAngle) * Math.PI / 180 * Math.Max(0, _node.Radius) : Distance(Start, End);
+    private double Length => IsArc ? Math.Abs(_node.SweepAngle) * Math.PI / 180 * Math.Max(0, ImageRadius) : Distance(Start, End);
+
+    // 以下为原图表达：未绑定坐标系时就是节点参数；绑定时经本帧坐标系换算（相似变换：尺度 + 旋转）。
+    private VisionCoordinateSystem? Similarity => Bound && _coordinates is { IsSimilarity: true } system ? system : null;
+    private double Scale => Similarity?.SimilarityScale ?? 1;
+    private double RotationDegrees => Similarity is { } system ? system.RotationRadians * 180 / Math.PI : 0;
+    private double ImageRadius => _node.Radius * Scale;
+    private double ImageStartAngle => _node.StartAngle + RotationDegrees;
+    private double ImageStep => _node.BandSampleStep * Scale;
+
+    private PointD ToImage(double x, double y)
+    {
+        if (Similarity is not { } system) return new PointD(x, y);
+        var point = system.LocalToImage.Map(new Coordinate2D(x, y));
+        return new PointD(point.X, point.Y);
+    }
+
+    private (double X, double Y) ToLocal(PointD point)
+    {
+        if (Similarity is not { } system) return (Round(point.X), Round(point.Y));
+        var local = system.ImageToLocal.Map(new Coordinate2D(point.X, point.Y));
+        return (Round(local.X), Round(local.Y));
+    }
+
+    private void WriteStart(PointD image) => (_node.StartX, _node.StartY) = ToLocal(image);
+    private void WriteEnd(PointD image) => (_node.EndX, _node.EndY) = ToLocal(image);
+    private void WriteCenter(PointD image) => (_node.CenterX, _node.CenterY) = ToLocal(image);
 
     private bool IsDrawable => IsEditable && (IsArc
         ? _node.Radius > 0 && Math.Abs(_node.SweepAngle) > 1e-9 && double.IsFinite(_node.Radius) && double.IsFinite(_node.SweepAngle)
@@ -120,19 +156,25 @@ public sealed class VisionCaliperGizmo
         {
             var (start, end) = (new PointD(_node.StartX, _node.StartY), new PointD(_node.EndX, _node.EndY));
             var length = Distance(start, end);
-            if (length >= 2)
+            if (length >= (Bound ? 1e-6 : 2))
             {
                 _node.CenterX = Round((start.X + end.X) / 2); _node.CenterY = Round((start.Y + end.Y) / 2);
                 _node.Radius = Round(length / 2);
                 _node.StartAngle = Round(Math.Atan2(start.Y - _node.CenterY, start.X - _node.CenterX) * 180 / Math.PI);
                 _node.SweepAngle = 180;
             }
-            if (_node.Radius < HalfBand) SetHalfBand(_node.Radius, _node.BandSampleStep);
+            if (ImageRadius < HalfBand) SetHalfBand(ImageRadius, ImageStep);
         }
         else
         {
-            var start = Start;
-            var end = Math.Abs(Math.Abs(_node.SweepAngle) - 360) < 1e-6 ? ArcPoint(_node.Radius, .5) : End;
+            // 形状换算在局部表达中进行（相似变换下几何关系不变）。
+            PointD Local(double t)
+            {
+                var angle = (_node.StartAngle + _node.SweepAngle * t) * Math.PI / 180;
+                return new PointD(_node.CenterX + _node.Radius * Math.Cos(angle), _node.CenterY + _node.Radius * Math.Sin(angle));
+            }
+            var start = Local(0);
+            var end = Math.Abs(Math.Abs(_node.SweepAngle) - 360) < 1e-6 ? Local(.5) : Local(1);
             _node.StartX = Round(start.X); _node.StartY = Round(start.Y); _node.EndX = Round(end.X); _node.EndY = Round(end.Y);
         }
         _node.Shape = shape;
@@ -187,7 +229,7 @@ public sealed class VisionCaliperGizmo
     private List<Visual> ArcVisuals(double unit)
     {
         var visuals = new List<Visual>();
-        double r = _node.Radius, inner = Math.Max(0, r - HalfBand), outer = r + HalfBand;
+        double r = ImageRadius, inner = Math.Max(0, r - HalfBand), outer = r + HalfBand;
         var segments = Math.Clamp((int)Math.Ceiling(Math.Abs(_node.SweepAngle) / 3), 8, 120);
         IEnumerable<PointD> Arc(double radius) => Enumerable.Range(0, segments + 1).Select(i => ArcPoint(radius, (double)i / segments));
 
@@ -263,12 +305,12 @@ public sealed class VisionCaliperGizmo
         if (IsArc)
         {
             if (Distance(point, Center) <= tolerance) return EVisionCaliperHandle.Center;
-            if (Distance(point, ArcPoint(_node.Radius, .5)) <= tolerance) return EVisionCaliperHandle.Radius;
+            if (Distance(point, ArcPoint(ImageRadius, .5)) <= tolerance) return EVisionCaliperHandle.Radius;
             var offset = WidthHandleOffset(unit);
-            if (Distance(point, ArcPoint(_node.Radius + offset, .5)) <= tolerance || Distance(point, ArcPoint(_node.Radius - offset, .5)) <= tolerance)
+            if (Distance(point, ArcPoint(ImageRadius + offset, .5)) <= tolerance || Distance(point, ArcPoint(ImageRadius - offset, .5)) <= tolerance)
                 return EVisionCaliperHandle.Width;
             var (rho, t) = Polar(point);
-            return t is >= 0 and <= 1 && Math.Abs(rho - _node.Radius) <= Math.Max(HalfBand, tolerance) ? EVisionCaliperHandle.Body : null;
+            return t is >= 0 and <= 1 && Math.Abs(rho - ImageRadius) <= Math.Max(HalfBand, tolerance) ? EVisionCaliperHandle.Body : null;
         }
         var (along, across) = Project(point);
         if (Math.Abs(along - Length / 2) <= tolerance && Math.Abs(Math.Abs(across) - WidthHandleOffset(unit)) <= tolerance)
@@ -286,7 +328,7 @@ public sealed class VisionCaliperGizmo
         _drag = handle;
         _dragAnchor = point;
         _dragOriginKey = Key;
-        _dragOrigin = (_node.StartX, _node.StartY, _node.EndX, _node.EndY, _node.CenterX, _node.CenterY, _node.BandSampleStep);
+        _dragOrigin = (ToImage(_node.StartX, _node.StartY), ToImage(_node.EndX, _node.EndY), Center, ImageStep);
     }
 
     /// <summary>按指针位置更新正在拖动的控制点并写回节点参数。</summary>
@@ -306,19 +348,19 @@ public sealed class VisionCaliperGizmo
         switch (handle)
         {
             case EVisionCaliperHandle.Start:
-                if (Distance(point, End) >= 1) { _node.StartX = Round(point.X); _node.StartY = Round(point.Y); }
+                if (Distance(point, End) >= 1) WriteStart(point);
                 break;
             case EVisionCaliperHandle.End:
-                if (Distance(point, Start) >= 1) { _node.EndX = Round(point.X); _node.EndY = Round(point.Y); }
+                if (Distance(point, Start) >= 1) WriteEnd(point);
                 break;
             case EVisionCaliperHandle.Width:
-                SetHalfBand(Math.Abs(Project(point).Across), _dragOrigin.BandSampleStep);
+                SetHalfBand(Math.Abs(Project(point).Across), _dragOrigin.Step);
                 break;
             case EVisionCaliperHandle.Body:
                 var dx = point.X - _dragAnchor.X;
                 var dy = point.Y - _dragAnchor.Y;
-                _node.StartX = Round(_dragOrigin.StartX + dx); _node.StartY = Round(_dragOrigin.StartY + dy);
-                _node.EndX = Round(_dragOrigin.EndX + dx); _node.EndY = Round(_dragOrigin.EndY + dy);
+                WriteStart(new PointD(_dragOrigin.Start.X + dx, _dragOrigin.Start.Y + dy));
+                WriteEnd(new PointD(_dragOrigin.End.X + dx, _dragOrigin.End.Y + dy));
                 break;
         }
     }
@@ -326,34 +368,34 @@ public sealed class VisionCaliperGizmo
     private void DragArc(EVisionCaliperHandle handle, PointD point)
     {
         var sign = Math.Sign(_node.SweepAngle);
-        var angle = Math.Atan2(point.Y - _node.CenterY, point.X - _node.CenterX) * 180 / Math.PI;
+        var center = Center;
+        var angle = Math.Atan2(point.Y - center.Y, point.X - center.X) * 180 / Math.PI;
         switch (handle)
         {
             case EVisionCaliperHandle.Start:
             {
                 // 终止角保持不动，起始角跟随指针，扫描方向不变。
-                var endAngle = _node.StartAngle + _node.SweepAngle;
+                var endAngle = ImageStartAngle + _node.SweepAngle;
                 var sweep = Positive(sign * (endAngle - angle));
-                if (Distance(point, Center) < 1 || sweep < 1) break;
-                _node.StartAngle = Round(Normalize(angle)); _node.SweepAngle = Round(sign * sweep);
+                if (Distance(point, center) < 1 || sweep < 1) break;
+                _node.StartAngle = Round(Normalize(angle - RotationDegrees)); _node.SweepAngle = Round(sign * sweep);
                 break;
             }
             case EVisionCaliperHandle.End:
             {
-                var sweep = Positive(sign * (angle - _node.StartAngle));
-                if (Distance(point, Center) < 1 || sweep < 1) break;
+                var sweep = Positive(sign * (angle - ImageStartAngle));
+                if (Distance(point, center) < 1 || sweep < 1) break;
                 _node.SweepAngle = Round(sign * sweep);
                 break;
             }
             case EVisionCaliperHandle.Radius:
-                _node.Radius = Round(Math.Max(Math.Max(1, HalfBand), Distance(point, Center)));
+                _node.Radius = Round(Math.Max(Math.Max(1, HalfBand), Distance(point, center)) / Scale);
                 break;
             case EVisionCaliperHandle.Width:
-                SetHalfBand(Math.Min(_node.Radius, Math.Abs(Distance(point, Center) - _node.Radius)), _dragOrigin.BandSampleStep);
+                SetHalfBand(Math.Min(ImageRadius, Math.Abs(Distance(point, center) - ImageRadius)), _dragOrigin.Step);
                 break;
             case EVisionCaliperHandle.Center or EVisionCaliperHandle.Body:
-                _node.CenterX = Round(_dragOrigin.CenterX + point.X - _dragAnchor.X);
-                _node.CenterY = Round(_dragOrigin.CenterY + point.Y - _dragAnchor.Y);
+                WriteCenter(new PointD(_dragOrigin.Center.X + point.X - _dragAnchor.X, _dragOrigin.Center.Y + point.Y - _dragAnchor.Y));
                 break;
         }
     }
@@ -378,22 +420,24 @@ public sealed class VisionCaliperGizmo
         var step = target <= MaximumHalfWidth * baseStep
             ? baseStep
             : Math.Min(MaximumBandStep, Math.Ceiling(target / MaximumHalfWidth * 100) / 100);
-        _node.BandSampleStep = step;
+        // 间隔限制作用于原图有效间隔；绑定坐标系时按尺度换算回局部单位保存。
+        _node.BandSampleStep = Bound ? Round(step / Scale) : step;
         _node.HalfWidth = Math.Clamp((int)Math.Floor(target / step + .5), 0, MaximumHalfWidth);
         // 圆弧内侧不能越过圆心。
-        if (IsArc) while (_node.HalfWidth > 0 && _node.HalfWidth * step > _node.Radius) _node.HalfWidth--;
+        if (IsArc) while (_node.HalfWidth > 0 && _node.HalfWidth * step > ImageRadius) _node.HalfWidth--;
     }
 
     private PointD ArcPoint(double radius, double t)
     {
-        var angle = (_node.StartAngle + _node.SweepAngle * t) * Math.PI / 180;
-        return new PointD(_node.CenterX + radius * Math.Cos(angle), _node.CenterY + radius * Math.Sin(angle));
+        var angle = (ImageStartAngle + _node.SweepAngle * t) * Math.PI / 180;
+        var center = Center;
+        return new PointD(center.X + radius * Math.Cos(angle), center.Y + radius * Math.Sin(angle));
     }
 
     // 扫描进度 t 处的切向（沿扫描方向）与径向（向外）单位向量。
     private ((double X, double Y) Tangent, (double X, double Y) Radial) ArcAxes(double t)
     {
-        var angle = (_node.StartAngle + _node.SweepAngle * t) * Math.PI / 180;
+        var angle = (ImageStartAngle + _node.SweepAngle * t) * Math.PI / 180;
         var sign = Math.Sign(_node.SweepAngle);
         return ((-Math.Sin(angle) * sign, Math.Cos(angle) * sign), (Math.Cos(angle), Math.Sin(angle)));
     }
@@ -401,9 +445,10 @@ public sealed class VisionCaliperGizmo
     // 点相对圆心的距离和扫描进度（0..1 在扫描范围内）。
     private (double Rho, double T) Polar(PointD point)
     {
-        var angle = Math.Atan2(point.Y - _node.CenterY, point.X - _node.CenterX) * 180 / Math.PI;
+        var center = Center;
+        var angle = Math.Atan2(point.Y - center.Y, point.X - center.X) * 180 / Math.PI;
         var sweep = Math.Abs(_node.SweepAngle);
-        var delta = Modulo(Math.Sign(_node.SweepAngle) * (angle - _node.StartAngle), 360);
+        var delta = Modulo(Math.Sign(_node.SweepAngle) * (angle - ImageStartAngle), 360);
         return (Distance(point, Center), sweep >= 360 ? delta / 360 : delta / sweep);
     }
 
@@ -431,7 +476,8 @@ public sealed class VisionCaliperGizmo
 
     private static double Distance(PointD a, PointD b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
 
-    private static double Round(double value) => Math.Round(value, 2);
+    // 原图像素保留 2 位小数；局部单位（可能是毫米）保留 4 位。
+    private double Round(double value) => Math.Round(value, Bound ? 4 : 2);
 }
 
 /// <summary>卡尺节点“区域类型”下拉框的一项：直线卡尺或圆弧卡尺。</summary>
