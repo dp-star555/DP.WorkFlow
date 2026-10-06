@@ -19,7 +19,7 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
     /// <inheritdoc/>
     public override EWorkflowVisionRange RangeCapability => EWorkflowVisionRange.SamplingBand;
     /// <summary>扫描路径形状。</summary>
-    [WorkflowProperty("卡尺形状", "直线卡尺沿起点→终点扫描；圆弧卡尺沿圆弧按起始角→扫描角度扫描，采样带沿半径方向。", Category = "采样带")]
+    [WorkflowProperty("卡尺形状", "单个卡尺：直线卡尺沿起点→终点扫描、垂直方向求平均；圆弧卡尺沿圆弧按起始角→扫描角度扫描、半径方向求平均。找多点拟合直线/圆请用“找线”“找圆”。", Category = "采样带")]
     public EVisionCaliperShape Shape { get; set; }
     /// <summary>起点X。</summary>
     [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Line))]
@@ -57,22 +57,9 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
     [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Arc))]
     [WorkflowProperty("扫描角度", "度，绝对值 (0, 360]；正为顺时针、负为逆时针，决定扫描方向与极性方向。", Category = "采样带", Unit = "°")]
     public double SweepAngle { get; set; } = 90;
-    /// <summary>圆弧卡尺的搜索方向。</summary>
-    [WorkflowPropertyVisibleWhen(nameof(Shape), nameof(EVisionCaliperShape.Arc))]
-    [WorkflowProperty("搜索方向", "由内到外/由外到内：沿半径搜索边缘（常用于找圆），带宽为半径方向的搜索范围；沿圆弧：从起始角扫到终止角。极性均相对搜索方向。", Category = "采样带")]
-    public EVisionArcScanDirection ArcDirection { get; set; } = EVisionArcScanDirection.InnerToOuter;
-    /// <summary>卡尺数量。</summary>
-    [WorkflowProperty("卡尺数量", "直线：采样带沿宽度均分为 N 个并排子卡尺，各自沿起点→终点搜索（1..64，不超过 2×采样半宽+1）；圆弧径向搜索：圆弧均分为 N 段，每段一个径向卡尺（1..128）；沿圆弧扫描时忽略。N ≥ 3 时在节点内拟合直线/圆。", Category = "采样带")]
-    public int CaliperCount { get; set; } = 1;
-    /// <summary>沿搜索方向的采样间隔。</summary>
-    [WorkflowProperty("搜索间隔", "沿搜索方向（直线为起点→终点，圆弧为扫描/径向方向）每隔多少像素取一个剖面点，原图 0.1..10；绑定定位后为局部单位。", Category = "采样带")]
+    /// <summary>沿扫描方向的剖面采样间隔。</summary>
+    [WorkflowProperty("采样间隔", "沿扫描方向（直线为起点→终点，圆弧为起始角→终止角）每隔多少像素取一个剖面点，原图 0.1..10，默认 1；绑定定位后为局部单位。", Category = "采样带")]
     public double ScanStep { get; set; } = 1;
-    /// <summary>拟合时每个卡尺取哪个边缘。</summary>
-    [WorkflowProperty("拟合取点", "卡尺数量 ≥ 3 时，每个卡尺取一个边缘点参与拟合：最强边缘/沿搜索方向第一个/最后一个。", Category = "拟合")]
-    public EVisionCaliperFitPoint FitPoint { get; set; }
-    /// <summary>拟合内点距离阈值。</summary>
-    [WorkflowProperty("拟合距离阈值", "点到拟合直线/圆的距离不超过该值为计算点，否则为忽略点；原图像素，绑定定位后为局部单位。", Category = "拟合")]
-    public double FitDistanceThreshold { get; set; } = 1;
     /// <summary>垂直采样半宽。</summary>
     [WorkflowProperty("采样半宽", "单侧垂直采样步数0..63（圆弧为半径方向），与垂直采样间隔共同决定实际带宽。", Category = "采样带")]
     public int HalfWidth { get; set; } = 2;
@@ -88,13 +75,17 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
     /// <summary>边缘最小间距。</summary>
     [WorkflowProperty("边缘最小间距", "梯度强者优先的非极大抑制；原图像素，绑定定位后为局部单位。", Category = "边缘")]
     public double MinimumSeparation { get; set; } = 2;
-    internal VisionLineCaliperOptions LineOptions(VisionCoordinateSystem? coordinates = null)
-    {
-        var whole = Options(coordinates);
-        double scale = coordinates?.SimilarityScale ?? 1;
-        return new VisionLineCaliperOptions(whole.Start, whole.End, HalfWidth, MinimumGradient, Polarity, whole.MinimumSeparation, whole.BandSampleStep,
-            ScanStep * scale, CaliperCount, FitPoint, FitDistanceThreshold * scale);
-    }
+    /// <summary>边缘模式。</summary>
+    [WorkflowProperty("边缘模式", "单边缘：输出剖面上的各个边缘；边缘对：把相邻、极性相反的两个边缘配成一对，输出中点与宽度（线宽、缝宽、引脚宽等）。边缘对模式下“边缘极性”指第一个边缘。", Category = "边缘")]
+    public EVisionCaliperEdgeMode EdgeMode { get; set; }
+    /// <summary>边缘对最小宽度。</summary>
+    [WorkflowPropertyVisibleWhen(nameof(EdgeMode), nameof(EVisionCaliperEdgeMode.Pair))]
+    [WorkflowProperty("最小宽度", "边缘对宽度下限（含）；原图像素，绑定定位后为局部单位。", Category = "边缘对")]
+    public double MinimumPairWidth { get; set; }
+    /// <summary>边缘对最大宽度。</summary>
+    [WorkflowPropertyVisibleWhen(nameof(EdgeMode), nameof(EVisionCaliperEdgeMode.Pair))]
+    [WorkflowProperty("最大宽度", "边缘对宽度上限（含）；原图像素，绑定定位后为局部单位。", Category = "边缘对")]
+    public double MaximumPairWidth { get; set; } = 1000;
     internal CaliperOptions Options(VisionCoordinateSystem? coordinates = null)
     {
         PointD Map(double x, double y)
@@ -104,7 +95,9 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
             return new PointD(point.X, point.Y);
         }
         double scale = coordinates?.SimilarityScale ?? 1;
-        return new CaliperOptions(Map(StartX, StartY), Map(EndX, EndY), HalfWidth, MinimumGradient, Polarity, MinimumSeparation * scale, BandSampleStep * scale);
+        // 边缘对模式需要两种极性的边缘，配对时再按“边缘极性”判断第一个边缘。
+        return new CaliperOptions(Map(StartX, StartY), Map(EndX, EndY), HalfWidth, MinimumGradient, EdgeMode == EVisionCaliperEdgeMode.Pair ? ECaliperPolarity.Any : Polarity,
+            MinimumSeparation * scale, BandSampleStep * scale);
     }
     internal VisionArcCaliperOptions ArcOptions(VisionCoordinateSystem? coordinates = null)
     {
@@ -112,8 +105,8 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
         if (coordinates is not null) center = coordinates.LocalToImage.Map(center);
         double scale = coordinates?.SimilarityScale ?? 1, rotation = coordinates is null ? 0 : coordinates.RotationRadians * 180 / Math.PI;
         return new VisionArcCaliperOptions(new PointD(center.X, center.Y), Radius * scale, StartAngle + rotation, SweepAngle, HalfWidth,
-            MinimumGradient, Polarity, MinimumSeparation * scale, BandSampleStep * scale, ArcDirection, CaliperCount, ScanStep * scale,
-            FitPoint, FitDistanceThreshold * scale);
+            MinimumGradient, EdgeMode == EVisionCaliperEdgeMode.Pair ? ECaliperPolarity.Any : Polarity, MinimumSeparation * scale, BandSampleStep * scale,
+            ScanStep * scale);
     }
     /// <inheritdoc/>
     public override IReadOnlyList<string> ValidateConfiguration()
@@ -130,12 +123,11 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
                 else if (!double.IsFinite(CenterX) || !double.IsFinite(CenterY) || !double.IsFinite(Radius) || Radius <= 0
                     || !double.IsFinite(StartAngle) || !double.IsFinite(SweepAngle) || Math.Abs(SweepAngle) < 1e-9 || Math.Abs(SweepAngle) > 360
                     || HalfWidth < 0 || HalfWidth > 63 || !double.IsFinite(BandSampleStep) || BandSampleStep < .01 || BandSampleStep > 100
-                    || Radius - HalfWidth * BandSampleStep < 0 || !Enum.IsDefined(ArcDirection)
-                    || ArcDirection != EVisionArcScanDirection.AlongArc && (CaliperCount < 1 || CaliperCount > 128 || HalfWidth < 1))
+                    || Radius - HalfWidth * BandSampleStep < 0)
                     throw new ArgumentException("局部圆弧采样带配置无效。");
                 if (Coordinates is not null) _ = new CaliperOptions(new PointD(0, 0), new PointD(4, 0), HalfWidth, MinimumGradient, Polarity, MinimumSeparation);
             }
-            else if (Coordinates is null) _ = LineOptions();
+            else if (Coordinates is null) _ = Options();
             else
             {
                 _ = new Coordinate2D(StartX, StartY); _ = new Coordinate2D(EndX, EndY);
@@ -144,12 +136,12 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
                     || !double.IsFinite(BandSampleStep) || BandSampleStep < .01 || BandSampleStep > 100)
                     throw new ArgumentException("局部采样带配置无效。");
                 _ = new CaliperOptions(new PointD(0, 0), new PointD(4, 0), HalfWidth, MinimumGradient, Polarity, MinimumSeparation);
-                if (CaliperCount < 1 || CaliperCount > 64 || CaliperCount > HalfWidth * 2 + 1) throw new ArgumentException("卡尺数量须为 1..64，且不超过垂直采样点数（2×采样半宽+1）。");
             }
-            // 局部单位的尺度运行时才知道：搜索间隔与拟合阈值只校验为正的有限值。
-            if (Coordinates is not null && (!double.IsFinite(ScanStep) || ScanStep <= 0 || !double.IsFinite(FitDistanceThreshold) || FitDistanceThreshold <= 0
-                || !Enum.IsDefined(FitPoint)))
-                throw new ArgumentException("搜索间隔、拟合参数无效。");
+            if (Coordinates is null ? ScanStep < .1 || ScanStep > 10 || !double.IsFinite(ScanStep) : !double.IsFinite(ScanStep) || ScanStep <= 0)
+                throw new ArgumentException("采样间隔须为原图 0.1..10 像素。");
+            if (!Enum.IsDefined(EdgeMode) || !double.IsFinite(MinimumPairWidth) || !double.IsFinite(MaximumPairWidth)
+                || MinimumPairWidth < 0 || MaximumPairWidth <= MinimumPairWidth)
+                throw new ArgumentException("边缘对宽度范围无效：最小宽度 ≥ 0 且小于最大宽度。");
         }
         catch (ArgumentException ex) { errors.Add(ex.Message); }
         return errors;
@@ -164,10 +156,12 @@ public sealed class MeasureVisionCaliperNodeHandler : WorkflowNodeHandler<Measur
     {
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
         var coordinates = node.ResolveCoordinates(frame, context);
+        double scale = coordinates?.SimilarityScale ?? 1;
         var result = node.Shape == EVisionCaliperShape.Arc
             ? VisionArcCaliper.Measure(frame, node.ArcOptions(coordinates), cancellationToken)
-            : VisionLineCaliper.Measure(frame, node.LineOptions(coordinates), options => WorkflowVisionAlgorithmInvocation.Invoke(context, node.Algorithm,
+            : VisionLineCaliper.Measure(frame, node.Options(coordinates), node.ScanStep * scale, options => WorkflowVisionAlgorithmInvocation.Invoke(context, node.Algorithm,
                 "managed.caliper", (ICaliperMeasurer algorithm) => algorithm.Measure(frame, options, cancellationToken), cancellationToken), cancellationToken);
+        result = result.WithEdgeMode(node.EdgeMode, node.Polarity, node.MinimumPairWidth * scale, node.MaximumPairWidth * scale);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));

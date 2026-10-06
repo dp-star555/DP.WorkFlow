@@ -72,7 +72,7 @@ public sealed class VisionCaliperGizmo
 
     /// <summary>参数签名；任一几何参数变化时预览需要重绘。</summary>
     public string Key => FormattableString.Invariant(
-        $"caliper:{_node.Shape}:{_node.StartX}:{_node.StartY}:{_node.EndX}:{_node.EndY}:{_node.CenterX}:{_node.CenterY}:{_node.Radius}:{_node.StartAngle}:{_node.SweepAngle}:{_node.HalfWidth}:{_node.BandSampleStep}:{_node.ArcDirection}:{_node.CaliperCount}:{_node.ScanStep}:{_node.Polarity}:{_node.Coordinates is null}:{(Bound ? _coordinates?.FrameId : null)}");
+        $"caliper:{_node.Shape}:{_node.StartX}:{_node.StartY}:{_node.EndX}:{_node.EndY}:{_node.CenterX}:{_node.CenterY}:{_node.Radius}:{_node.StartAngle}:{_node.SweepAngle}:{_node.HalfWidth}:{_node.BandSampleStep}:{_node.ScanStep}:{_node.EdgeMode}:{_node.Polarity}:{_node.Coordinates is null}:{(Bound ? _coordinates?.FrameId : null)}");
 
     /// <summary>扫描起点（原图像素）；圆弧卡尺为起始角处的弧上点。</summary>
     public PointD Start => IsArc ? ArcPoint(ImageRadius, 0) : ToImage(_node.StartX, _node.StartY);
@@ -100,13 +100,10 @@ public sealed class VisionCaliperGizmo
                 ECaliperPolarity.Falling => "亮→暗",
                 _ => "任意"
             };
-            var band = FormattableString.Invariant($"搜索间隔 {ImageScanStep:0.##}px · 带宽 ±{HalfBand:0.##}px（{_node.HalfWidth * 2 + 1} 点 × 间隔 {ImageStep:0.##}px）· 极性 {polarity}");
-            if (IsRadial)
-                return FormattableString.Invariant(
-                    $"圆弧卡尺 {(_node.ArcDirection == EVisionArcScanDirection.InnerToOuter ? "由内到外" : "由外到内")} · {_node.CaliperCount} 个卡尺 · 半径 {ImageRadius:0.#}px · 搜索范围 ±{HalfBand:0.##}px · 搜索间隔 {ImageScanStep:0.##}px · 极性 {polarity}");
+            var band = FormattableString.Invariant($"{(_node.EdgeMode == EVisionCaliperEdgeMode.Pair ? "边缘对 · " : "")}采样间隔 {ImageScanStep:0.##}px · 带宽 ±{HalfBand:0.##}px（{_node.HalfWidth * 2 + 1} 点 × 间隔 {ImageStep:0.##}px）· 极性 {polarity}");
             return IsArc
-                ? FormattableString.Invariant($"圆弧卡尺 沿圆弧 · 半径 {ImageRadius:0.#}px · 起始 {Normalize(ImageStartAngle):0.#}° 扫描 {_node.SweepAngle:0.#}° · {band}")
-                : FormattableString.Invariant($"卡尺 长度 {Length:0.#}px{(_node.CaliperCount > 1 ? $" · {_node.CaliperCount} 个子卡尺" : "")} · {band}");
+                ? FormattableString.Invariant($"圆弧卡尺 半径 {ImageRadius:0.#}px · 起始 {Normalize(ImageStartAngle):0.#}° 扫描 {_node.SweepAngle:0.#}° · {band}")
+                : FormattableString.Invariant($"卡尺 长度 {Length:0.#}px · {band}");
         }
     }
 
@@ -115,17 +112,11 @@ public sealed class VisionCaliperGizmo
         ? _coordinates is null
             ? "卡尺已绑定坐标系，本帧没有坐标系结果，无法显示；请先运行流程（坐标来源需成功构建）。"
             : "卡尺绑定的坐标系不是旋转+等比缩放，无法在图上换算带宽，请在参数页编辑。"
-        : (Bound ? "按本帧坐标系显示，拖动结果换算为局部单位写回。" : "") + (IsRadial
-            ? "黄色箭头为每个径向卡尺的搜索方向。拖动起点/终点调整角度范围，拖动弧中点黄色菱形调整半径，拖动两侧方块调整径向搜索范围，拖动圆心或采样带内部整体平移。"
-            : IsArc
+        : (Bound ? "按本帧坐标系显示，拖动结果换算为局部单位写回。" : "") + (IsArc
             ? "拖动起点/终点调整扫描角度，拖动弧中点黄色菱形调整半径，拖动两侧方块调整带宽，拖动橙色标尺上的菱形调整采样间隔，拖动圆心或采样带内部整体平移。"
             : "拖动起点/终点调整扫描方向与长度，拖动两侧方块调整带宽，拖动橙色标尺上的菱形调整采样间隔，拖动采样带内部整体平移。");
 
     private bool IsArc => _node.Shape == EVisionCaliperShape.Arc;
-
-    // 圆弧卡尺沿半径搜索（由内到外/由外到内）：多个径向卡尺，带宽是半径方向的搜索范围。
-    private bool IsRadial => IsArc && (_node.ArcDirection is EVisionArcScanDirection.InnerToOuter or EVisionArcScanDirection.OuterToInner)
-        && _node.CaliperCount >= 1;
 
     private double Length => IsArc ? Math.Abs(_node.SweepAngle) * Math.PI / 180 * Math.Max(0, ImageRadius) : Distance(Start, End);
 
@@ -193,9 +184,6 @@ public sealed class VisionCaliperGizmo
             var end = Math.Abs(Math.Abs(_node.SweepAngle) - 360) < 1e-6 ? Local(.5) : Local(1);
             _node.StartX = Round(start.X); _node.StartY = Round(start.Y); _node.EndX = Round(end.X); _node.EndY = Round(end.Y);
         }
-        // 卡尺数量含义随形状变化：圆弧径向默认分 8 段；回到直线时不超过垂直采样点数。
-        if (shape == EVisionCaliperShape.Arc && _node.CaliperCount <= 1) _node.CaliperCount = 8;
-        if (shape == EVisionCaliperShape.Line) _node.CaliperCount = Math.Clamp(_node.CaliperCount, 1, Math.Min(64, _node.HalfWidth * 2 + 1));
         _node.Shape = shape;
         return true;
     }
@@ -231,16 +219,6 @@ public sealed class VisionCaliperGizmo
                 {
                     At(Start, along, -HalfBand), At(Start, along, HalfBand)
                 }), SampleColor));
-        // 并排子卡尺的分界线（平行于扫描线）。
-        if (_node.CaliperCount > 1)
-        {
-            var samples = _node.HalfWidth * 2 + 1;
-            for (var c = 1; c < _node.CaliperCount; c++)
-            {
-                var offset = (-_node.HalfWidth + (double)c * samples / _node.CaliperCount - .5) * ImageStep;
-                visuals.Add(new Visual($"caliper-sub{c}", new ContourGeometry(new[] { At(Start, 0, offset), At(End, 0, offset) }), BandColor));
-            }
-        }
         // 扫描方向：中心线 + 终点箭头。
         visuals.Add(new Visual("caliper-axis", new ContourGeometry(new[] { Start, End }), AxisColor));
         visuals.Add(Arrow("caliper-arrow", End, direction, normal, Math.Min(Length / 3, 18 * unit)));
@@ -267,46 +245,21 @@ public sealed class VisionCaliperGizmo
 
         // 采样带外框：外弧 + 内弧（反向）闭合成环形扇区。
         visuals.Add(new Visual("caliper-band", new ContourGeometry(Arc(outer).Concat(Arc(inner).Reverse()), closed: true), BandColor));
-        if (IsRadial)
-        {
-            // 径向搜索：圆弧均分为 N 段（分隔线），每段中间一个沿半径的搜索箭头（由内到外或由外到内）。
-            visuals.Add(new Visual("caliper-axis", new ContourGeometry(Arc(r)), SampleColor));
-            var count = _node.CaliperCount;
-            for (var c = 1; c < count; c++)
-                visuals.Add(new Visual($"caliper-segment{c}", new ContourGeometry(new[]
+        // 投影线：沿半径方向横跨采样带。
+        if (HalfBand > 0)
+            foreach (var (k, along) in ProjectionStations(unit))
+                visuals.Add(new Visual($"caliper-sample{k}", new ContourGeometry(new[]
                 {
-                    ArcPoint(inner, (double)c / count), ArcPoint(outer, (double)c / count)
+                    ArcPoint(inner, along / Length), ArcPoint(outer, along / Length)
                 }), SampleColor));
-            var outward = _node.ArcDirection == EVisionArcScanDirection.InnerToOuter;
-            for (var c = 0; c < count; c++)
-            {
-                var t = (c + .5) / count;
-                var (from, to) = outward ? (ArcPoint(inner, t), ArcPoint(outer, t)) : (ArcPoint(outer, t), ArcPoint(inner, t));
-                var length = Distance(from, to);
-                if (length < 1e-9) continue;
-                var direction = ((to.X - from.X) / length, (to.Y - from.Y) / length);
-                visuals.Add(new Visual($"caliper-ray{c}", new ContourGeometry(new[] { from, to }), AxisColor));
-                visuals.Add(Arrow($"caliper-arrow{c}", to, direction, (-direction.Item2, direction.Item1), Math.Min(length / 2.5, 12 * unit)));
-            }
-        }
-        else
+        // 扫描方向：中心圆弧 + 终点切向箭头 + 沿途方向标记。
+        visuals.Add(new Visual("caliper-axis", new ContourGeometry(Arc(r)), AxisColor));
+        var (tangent, radial) = ArcAxes(1);
+        visuals.Add(Arrow("caliper-arrow", End, tangent, radial, Math.Min(Length / 3, 18 * unit)));
+        foreach (var (k, along) in DirectionMarks(unit))
         {
-            // 投影线：沿半径方向横跨采样带。
-            if (HalfBand > 0)
-                foreach (var (k, along) in ProjectionStations(unit))
-                    visuals.Add(new Visual($"caliper-sample{k}", new ContourGeometry(new[]
-                    {
-                        ArcPoint(inner, along / Length), ArcPoint(outer, along / Length)
-                    }), SampleColor));
-            // 扫描方向：中心圆弧 + 终点切向箭头 + 沿途方向标记。
-            visuals.Add(new Visual("caliper-axis", new ContourGeometry(Arc(r)), AxisColor));
-            var (tangent, radial) = ArcAxes(1);
-            visuals.Add(Arrow("caliper-arrow", End, tangent, radial, Math.Min(Length / 3, 18 * unit)));
-            foreach (var (k, along) in DirectionMarks(unit))
-            {
-                var (markTangent, markRadial) = ArcAxes(along / Length);
-                visuals.Add(Arrow($"caliper-dir{k}", ArcPoint(r, along / Length), markTangent, markRadial, 7 * unit));
-            }
+            var (markTangent, markRadial) = ArcAxes(along / Length);
+            visuals.Add(Arrow($"caliper-dir{k}", ArcPoint(r, along / Length), markTangent, markRadial, 7 * unit));
         }
         // 控制点：圆心（十字 + 圆）、起点、终点、半径（菱形）、两侧宽度把手。
         var handle = HandleScreenRadius * unit;
@@ -326,12 +279,8 @@ public sealed class VisionCaliperGizmo
         foreach (var side in new[] { -1, 1 })
             visuals.Add(new Visual($"caliper-width{side}", new RectangleGeometry(ArcPoint(r + side * WidthHandleOffset(unit), .5),
                 handle * 1.6, handle * 1.6, angle), HandleColor));
-        // 径向搜索时间隔只决定搜索范围单位（剖面按 1px 采样），不显示采样标尺。
-        if (!IsRadial)
-        {
-            var (_, stepRadial) = ArcAxes(StepStation);
-            AddStepRuler(visuals, unit, Math.Atan2(stepRadial.Y, stepRadial.X));
-        }
+        var (_, stepRadial) = ArcAxes(StepStation);
+        AddStepRuler(visuals, unit, Math.Atan2(stepRadial.Y, stepRadial.X));
         return visuals;
     }
 
@@ -408,7 +357,7 @@ public sealed class VisionCaliperGizmo
         var tolerance = (HandleScreenRadius + 4) * unit;
         if (Distance(point, End) <= tolerance) return EVisionCaliperHandle.End;
         if (Distance(point, Start) <= tolerance) return EVisionCaliperHandle.Start;
-        if (!IsRadial && _node.HalfWidth >= 1 && Distance(point, StepHandlePoint(unit)) <= tolerance) return EVisionCaliperHandle.Step;
+        if (_node.HalfWidth >= 1 && Distance(point, StepHandlePoint(unit)) <= tolerance) return EVisionCaliperHandle.Step;
         if (IsArc)
         {
             if (Distance(point, Center) <= tolerance) return EVisionCaliperHandle.Center;
@@ -541,8 +490,6 @@ public sealed class VisionCaliperGizmo
         _node.HalfWidth = Math.Clamp((int)Math.Floor(target / step + .5), 0, MaximumHalfWidth);
         // 圆弧内侧不能越过圆心。
         if (IsArc) while (_node.HalfWidth > 0 && _node.HalfWidth * step > ImageRadius) _node.HalfWidth--;
-        // 径向搜索至少 ±2px（算法要求），不足时取能满足的最小半宽。
-        if (IsRadial && _node.HalfWidth * step < 2) _node.HalfWidth = Math.Min(MaximumHalfWidth, (int)Math.Ceiling(2 / step));
     }
 
     /// <summary>

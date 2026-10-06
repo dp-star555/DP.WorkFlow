@@ -94,8 +94,7 @@ public sealed class VisionCaliperGizmoTests
     {
         var gizmo = new VisionCaliperGizmo(new MeasureVisionCaliperNodeModel
         {
-            Shape = EVisionCaliperShape.Arc, CenterX = 100, CenterY = 100, Radius = 50, StartAngle = 0, SweepAngle = 90, HalfWidth = 5, BandSampleStep = 1,
-            ArcDirection = EVisionArcScanDirection.AlongArc
+            Shape = EVisionCaliperShape.Arc, CenterX = 100, CenterY = 100, Radius = 50, StartAngle = 0, SweepAngle = 90, HalfWidth = 5, BandSampleStep = 1
         });
 
         var visuals = gizmo.Visuals(1);
@@ -104,7 +103,7 @@ public sealed class VisionCaliperGizmoTests
         Assert.True(band.Closed);
         Assert.Contains(band.Points, p => Math.Abs(p.X - 155) < 1e-6 && Math.Abs(p.Y - 100) < 1e-6);
         Assert.Contains(band.Points, p => Math.Abs(p.X - 100) < 1e-6 && Math.Abs(p.Y - 145) < 1e-6);
-        Assert.Contains("圆弧卡尺 沿圆弧 · 半径 50px", gizmo.Caption);
+        Assert.Contains("圆弧卡尺 半径 50px", gizmo.Caption);
         Assert.DoesNotContain(visuals, v => v.Caption is not null);
         // 沿圆弧时采样纵线是同心圆弧：半径 50±k×1。
         var lane = Assert.IsType<ContourGeometry>(Assert.Single(visuals, v => v.Id == "caliper-lane4").Geometry).Points;
@@ -282,34 +281,6 @@ public sealed class VisionCaliperGizmoTests
     }
 
     [Fact]
-    public void RadialArc_ShowsSearchArrowPerCaliperInChosenDirection()
-    {
-        var node = new MeasureVisionCaliperNodeModel
-        {
-            Shape = EVisionCaliperShape.Arc, CenterX = 100, CenterY = 100, Radius = 50, StartAngle = 0, SweepAngle = 90,
-            HalfWidth = 10, BandSampleStep = 1, ArcDirection = EVisionArcScanDirection.InnerToOuter, CaliperCount = 3
-        };
-        var gizmo = new VisionCaliperGizmo(node);
-        var visuals = gizmo.Visuals(1);
-
-        Assert.Equal(3, visuals.Count(v => v.Id.StartsWith("caliper-ray", StringComparison.Ordinal)));
-        Assert.Equal(2, visuals.Count(v => v.Id.StartsWith("caliper-segment", StringComparison.Ordinal)));
-        Assert.DoesNotContain(visuals, v => v.Id.StartsWith("caliper-step", StringComparison.Ordinal));
-        Assert.Contains("由内到外 · 3 个卡尺", gizmo.Caption);
-        // 第一个卡尺在 15°：由内(40)到外(60)，箭头尖在外圈。
-        var ray = Assert.IsType<ContourGeometry>(Assert.Single(visuals, v => v.Id == "caliper-ray0").Geometry).Points;
-        Assert.Equal(40, Distance(ray[0], new PointD(100, 100)), 6);
-        Assert.Equal(60, Distance(ray[1], new PointD(100, 100)), 6);
-        var tip = Assert.IsType<ContourGeometry>(Assert.Single(visuals, v => v.Id == "caliper-arrow0").Geometry).Points[1];
-        Assert.Equal(60, Distance(tip, new PointD(100, 100)), 6);
-
-        node.ArcDirection = EVisionArcScanDirection.OuterToInner;
-        tip = Assert.IsType<ContourGeometry>(Assert.Single(gizmo.Visuals(1), v => v.Id == "caliper-arrow0").Geometry).Points[1];
-        Assert.Equal(40, Distance(tip, new PointD(100, 100)), 6);
-        Assert.Contains("由外到内", gizmo.Caption);
-    }
-
-    [Fact]
     public void LineCaliper_ShowsDirectionMarksAlongScan()
     {
         var gizmo = new VisionCaliperGizmo(new MeasureVisionCaliperNodeModel { StartX = 0, StartY = 50, EndX = 400, EndY = 50, HalfWidth = 2 });
@@ -322,27 +293,17 @@ public sealed class VisionCaliperGizmoTests
     }
 
     [Fact]
-    public void LineSubCalipers_AndScanStep_AreVisible()
+    public void ScanStep_SpacesProjectionLines_AndPairModeShowsInCaption()
     {
-        var node = new MeasureVisionCaliperNodeModel { StartX = 0, StartY = 50, EndX = 200, EndY = 50, HalfWidth = 10, BandSampleStep = 1, CaliperCount = 3, ScanStep = 4 };
+        var node = new MeasureVisionCaliperNodeModel { StartX = 0, StartY = 50, EndX = 200, EndY = 50, HalfWidth = 10, BandSampleStep = 1, ScanStep = 4 };
         var gizmo = new VisionCaliperGizmo(node);
-        var visuals = gizmo.Visuals(1);
-        // 21 个垂直采样点分 3 段：分界在 −3.5 与 +3.5。
-        var subs = visuals.Where(v => v.Id.StartsWith("caliper-sub", StringComparison.Ordinal))
-            .Select(v => Assert.IsType<ContourGeometry>(v.Geometry).Points[0].Y).OrderBy(y => y).ToArray();
-        Assert.Equal(new[] { 46.5, 53.5 }, subs.Select(y => Math.Round(y, 6)));
-        // 投影横线间距为搜索间隔的整数倍：4px ≥ 8px 屏幕间距的最小倍数为 8px。
-        var stations = visuals.Where(v => v.Id.StartsWith("caliper-sample", StringComparison.Ordinal))
+        // 投影横线间距为采样间隔的整数倍：4px ≥ 8px 屏幕间距的最小倍数为 8px。
+        var stations = gizmo.Visuals(1).Where(v => v.Id.StartsWith("caliper-sample", StringComparison.Ordinal))
             .Select(v => Assert.IsType<ContourGeometry>(v.Geometry).Points[0].X).OrderBy(x => x).ToArray();
         Assert.Equal(8, stations[1] - stations[0], 6);
-        Assert.Contains("3 个子卡尺", gizmo.Caption);
-        Assert.Contains("搜索间隔 4px", gizmo.Caption);
-
-        Assert.True(gizmo.SetShape(EVisionCaliperShape.Arc));
-        Assert.Equal(3, node.CaliperCount);
-        node.CaliperCount = 100;
-        Assert.True(gizmo.SetShape(EVisionCaliperShape.Line));
-        Assert.Equal(21, node.CaliperCount);
+        Assert.Contains("采样间隔 4px", gizmo.Caption);
+        node.EdgeMode = EVisionCaliperEdgeMode.Pair;
+        Assert.Contains("边缘对", gizmo.Caption);
     }
 
     private static double Distance(PointD a, PointD b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));

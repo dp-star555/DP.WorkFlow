@@ -73,7 +73,7 @@ public static class VisionCoordinateRebinding
             var center = Point(arc.CenterX, arc.CenterY);
             arc.CenterX = center.X; arc.CenterY = center.Y; arc.Radius *= ratio;
             arc.StartAngle += fromRotation - toRotation;
-            arc.MinimumSeparation *= ratio; arc.BandSampleStep *= ratio; arc.ScanStep *= ratio; arc.FitDistanceThreshold *= ratio;
+            arc.MinimumSeparation *= ratio; arc.BandSampleStep *= ratio; arc.ScanStep *= ratio; arc.MinimumPairWidth *= ratio; arc.MaximumPairWidth *= ratio;
         }
         else if (node is MeasureVisionCaliperNodeModel caliper)
         {
@@ -85,14 +85,14 @@ public static class VisionCoordinateRebinding
             _ = new CaliperOptions(new PointD(imageStart.X, imageStart.Y), new PointD(imageEnd.X, imageEnd.Y), caliper.HalfWidth, caliper.MinimumGradient,
                 caliper.Polarity, caliper.MinimumSeparation * fromScale, caliper.BandSampleStep * fromScale);
             caliper.StartX = start.X; caliper.StartY = start.Y; caliper.EndX = end.X; caliper.EndY = end.Y;
-            caliper.MinimumSeparation *= ratio; caliper.BandSampleStep *= ratio; caliper.ScanStep *= ratio; caliper.FitDistanceThreshold *= ratio;
+            caliper.MinimumSeparation *= ratio; caliper.BandSampleStep *= ratio; caliper.ScanStep *= ratio; caliper.MinimumPairWidth *= ratio; caliper.MaximumPairWidth *= ratio;
         }
         if (node is FitVisionRobustLineNodeModel fit) fit.DistanceThreshold *= fromScale / toScale;
         if (node is FindVisionShapeNodeModel shape)
         {
             // 搜索ROI随 Regions 换算；这里换算卡尺与拟合的长度参数，找圆的起始角随坐标系方向调整。
             double ratio = fromScale / toScale;
-            shape.BandSampleStep *= ratio; shape.MinimumSeparation *= ratio; shape.DistanceThreshold *= ratio;
+            shape.BandSampleStep *= ratio; shape.MinimumSeparation *= ratio; shape.DistanceThreshold *= ratio; shape.MinimumPairWidth *= ratio; shape.MaximumPairWidth *= ratio;
             if (shape is FindVisionCircleNodeModel circle)
             {
                 circle.SearchLength *= ratio;
