@@ -312,7 +312,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             if (_lastKey == key) return null;
             var facts = view == 1 ? current?.Facts : null;
             _lastKey = key; // 失败的显示包不在定时器中反复分配；切换来源或新帧才重试。
-            var visuals = Visuals(facts).Take(10001).ToArray();
+            var visuals = Visuals(facts, _imagePixelsPerScreenPixel).Take(10001).ToArray();
             if (visuals.Length > 10000) throw new InvalidOperationException("结果超过画布显示预算；未截断运行事实，当前结果不显示叠加。");
             // 显示预算不是算法结果裁剪；大结果明确拒绝显示并保留完整运行事实。
             var layers = new List<CanvasLayer>();
@@ -360,12 +360,17 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             ? _visuals.FirstOrDefault(v => v.Id == "geometry-0")?.Caption : hit?.Caption;
     }
 
-    private static IEnumerable<Visual> FoundPoints(IReadOnlyList<VisionPoint> points, IReadOnlyList<bool> inliers, IReadOnlyList<VisionFoundEdgePair> pairs)
+    // 拟合点画成 ×（屏幕上约 10px）：绿色为计算点，红色为忽略点。
+    private static IEnumerable<Visual> FoundPoints(IReadOnlyList<VisionPoint> points, IReadOnlyList<bool> inliers, IReadOnlyList<VisionFoundEdgePair> pairs, double unit)
     {
         for (int i = 0; i < pairs.Count; i++)
             yield return new Visual($"find-pair-{i}", new ContourGeometry(new[] { pairs[i].First, pairs[i].Second }), 0xFF22D3EE);
         for (int i = 0; i < points.Count; i++)
-            yield return new Visual($"find-point-{i}", new EllipseGeometry(points[i].ImagePosition, 2.5, 2.5), inliers[i] ? 0xFF22C55E : 0xFFEF4444);
+        {
+            var (p, r, color) = (points[i].ImagePosition, 5 * Math.Max(1e-6, unit), inliers[i] ? 0xFF22C55E : 0xFFEF4444);
+            yield return new Visual($"find-point-{i}", new ContourGeometry(new[] { new PointD(p.X - r, p.Y - r), new PointD(p.X + r, p.Y + r) }), color);
+            yield return new Visual($"find-pointx-{i}", new ContourGeometry(new[] { new PointD(p.X - r, p.Y + r), new PointD(p.X + r, p.Y - r) }), color);
+        }
     }
 
     // 不画标签的图形在点击时给出的说明。
@@ -377,7 +382,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             var (summary, points, inliers, pairs) = facts is VisionFindLineResult l ? (l.Summary, l.EdgePoints, l.Inliers, l.EdgePairs)
                 : (circle!.Summary, circle.EdgePoints, circle.Inliers, circle.EdgePairs);
             if (id == "find-fit") return summary;
-            if (id.StartsWith("find-point-", StringComparison.Ordinal) && int.TryParse(id.AsSpan(11), out var found) && found < points.Count)
+            if (id.StartsWith("find-point", StringComparison.Ordinal) && int.TryParse(id.AsSpan(id.LastIndexOf('-') + 1), out var found) && found < points.Count)
                 return $"{(inliers[found] ? "计算点" : "忽略点")} ({points[found].ImagePosition.X:F4},{points[found].ImagePosition.Y:F4})"
                     + (found < pairs.Count ? $"；宽度 {pairs[found].Width:F4}px" : "");
             if (id.StartsWith("find-pair-", StringComparison.Ordinal) && int.TryParse(id.AsSpan(10), out var foundPair) && foundPair < pairs.Count)
@@ -413,19 +418,19 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         ? $"坐标系：{coordinates.CoordinateSystem.Definition.Name}/v{coordinates.CoordinateSystem.Definition.Version}"
         : fact.Summary;
 
-    private static IEnumerable<Visual> Visuals(object? facts)
+    private static IEnumerable<Visual> Visuals(object? facts, double unit = 1)
     {
         // 找线/找圆：绿色计算点、红色忽略点、黄色拟合线/圆，边缘对模式另画青色宽度线；卡尺位置由预览层按当前参数绘制，不画文字标签。
         if (facts is VisionFindLineResult foundLine)
         {
             yield return new Visual("find-fit", new ContourGeometry(new[] { foundLine.Fit.A, foundLine.Fit.B }), 0xFFFFCC00);
-            foreach (var visual in FoundPoints(foundLine.EdgePoints, foundLine.Inliers, foundLine.EdgePairs)) yield return visual;
+            foreach (var visual in FoundPoints(foundLine.EdgePoints, foundLine.Inliers, foundLine.EdgePairs, unit)) yield return visual;
             yield break;
         }
         if (facts is VisionFindCircleResult foundCircle)
         {
             yield return new Visual("find-fit", new EllipseGeometry(foundCircle.Fit.Center, foundCircle.Radius, foundCircle.Radius), 0xFFFFCC00);
-            foreach (var visual in FoundPoints(foundCircle.EdgePoints, foundCircle.Inliers, foundCircle.EdgePairs)) yield return visual;
+            foreach (var visual in FoundPoints(foundCircle.EdgePoints, foundCircle.Inliers, foundCircle.EdgePairs, unit)) yield return visual;
             yield break;
         }
         if (facts is IVisionGeometryFact geometry)

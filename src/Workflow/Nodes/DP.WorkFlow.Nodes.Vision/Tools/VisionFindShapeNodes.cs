@@ -97,6 +97,9 @@ public abstract class FindVisionShapeNodeModel : AnalyzeVisionFrameNodeModel, IW
     /// <summary>内点距离阈值；绑定坐标系时为业务单位。</summary>
     [WorkflowProperty("内点距离阈值", "边缘点到拟合结果的距离不超过此值才算内点；原图像素，绑定坐标系时为业务单位。", Category = "拟合")]
     public double DistanceThreshold { get; set; } = 1;
+    /// <summary>拟合时剔除的点数。</summary>
+    [WorkflowProperty("忽略点数", "拟合时按残差从大到小剔除的点数（逐个剔除并重新拟合），用于排除毛刺、缺口等干扰；被剔除的点显示为忽略点。0..卡尺数量−最少内点。", Category = "拟合")]
+    public int IgnoreCount { get; set; }
     /// <summary>最少内点数。</summary>
     [WorkflowProperty("最少内点", "至少3，内点不足时执行失败。", Category = "拟合")]
     public int MinimumInliers { get; set; } = 3;
@@ -113,6 +116,7 @@ public abstract class FindVisionShapeNodeModel : AnalyzeVisionFrameNodeModel, IW
         if (!double.IsFinite(MinimumSeparation) || MinimumSeparation <= 0) errors.Add("边缘最小间距必须为正数。");
         if (!double.IsFinite(DistanceThreshold) || DistanceThreshold <= 0) errors.Add("内点距离阈值必须为正数。");
         if (MinimumInliers < 3 || MinimumInliers > CaliperCount) errors.Add("最少内点必须为3到卡尺数量之间。");
+        if (IgnoreCount < 0 || IgnoreCount > CaliperCount - MinimumInliers) errors.Add("忽略点数必须为0到（卡尺数量−最少内点）之间。");
         if (!Enum.IsDefined(EdgeMode) || !double.IsFinite(MinimumPairWidth) || !double.IsFinite(MaximumPairWidth) || MinimumPairWidth < 0 || MaximumPairWidth <= MinimumPairWidth)
             errors.Add("边缘对宽度范围无效：最小宽度 ≥ 0 且小于最大宽度。");
         return errors;
@@ -310,7 +314,9 @@ public sealed class FindVisionCircleNodeModel : FindVisionShapeNodeModel
 /// <summary>找线结果：拟合直线、各卡尺边缘点及显示图形。</summary>
 public sealed class VisionFindLineResult : IVisionGeometryFact
 {
-    internal VisionFindLineResult(RobustLineResult fit, VisionShapeProbe probe) { Fit = fit; Probe = probe; }
+    internal VisionFindLineResult(RobustLineResult fit, VisionShapeProbe probe, IReadOnlyList<int> inliers) { Fit = fit; Probe = probe; InlierIndices = inliers; }
+    /// <summary>参与拟合的计算点在 <see cref="EdgePoints"/> 中的序号（已排除“忽略点数”剔除的点）。</summary>
+    public IReadOnlyList<int> InlierIndices { get; }
     /// <summary>鲁棒拟合原始结果。</summary>
     public RobustLineResult Fit { get; }
     internal VisionShapeProbe Probe { get; }
@@ -330,27 +336,27 @@ public sealed class VisionFindLineResult : IVisionGeometryFact
     /// <summary>各卡尺找到的边缘点（边缘对模式为中点；未找到的卡尺不在列表中），带来源。</summary>
     public IReadOnlyList<VisionPoint> EdgePoints => Probe.Points(Fit.CoordinateSystem);
     /// <summary>与 <see cref="EdgePoints"/> 同序：真为参与拟合的计算点，假为被忽略的点。</summary>
-    public IReadOnlyList<bool> Inliers => Probe.InlierFlags(Fit.InlierIndices);
+    public IReadOnlyList<bool> Inliers => Probe.InlierFlags(InlierIndices);
     /// <summary>参与拟合的计算点。</summary>
-    public IReadOnlyList<VisionPoint> InlierPoints => Probe.Select(Fit.CoordinateSystem, Fit.InlierIndices, inliers: true);
+    public IReadOnlyList<VisionPoint> InlierPoints => Probe.Select(Fit.CoordinateSystem, InlierIndices, inliers: true);
     /// <summary>被忽略的点。</summary>
-    public IReadOnlyList<VisionPoint> OutlierPoints => Probe.Select(Fit.CoordinateSystem, Fit.InlierIndices, inliers: false);
+    public IReadOnlyList<VisionPoint> OutlierPoints => Probe.Select(Fit.CoordinateSystem, InlierIndices, inliers: false);
     /// <summary>各把卡尺的原图位置。</summary>
     public IReadOnlyList<VisionCaliperScan> CaliperScans => Probe.CaliperScans;
     /// <summary>边缘对模式下与 <see cref="EdgePoints"/> 同序的边缘对；单边缘模式为空。</summary>
     public IReadOnlyList<VisionFoundEdgePair> EdgePairs => Probe.Pairs;
     /// <summary>边缘对模式下计算点的平均宽度，原图像素；单边缘模式为空。</summary>
-    public double? MeanWidth => Probe.InlierWidths(Fit.InlierIndices) is { Count: > 0 } w ? w.Average() : null;
+    public double? MeanWidth => Probe.InlierWidths(InlierIndices) is { Count: > 0 } w ? w.Average() : null;
     /// <summary>边缘对模式下计算点的最小宽度。</summary>
-    public double? MinimumWidth => Probe.InlierWidths(Fit.InlierIndices) is { Count: > 0 } w ? w.Min() : null;
+    public double? MinimumWidth => Probe.InlierWidths(InlierIndices) is { Count: > 0 } w ? w.Min() : null;
     /// <summary>边缘对模式下计算点的最大宽度。</summary>
-    public double? MaximumWidth => Probe.InlierWidths(Fit.InlierIndices) is { Count: > 0 } w ? w.Max() : null;
+    public double? MaximumWidth => Probe.InlierWidths(InlierIndices) is { Count: > 0 } w ? w.Max() : null;
     /// <summary>卡尺数量。</summary>
     public int CaliperCount => Probe.Scans.Count;
     /// <summary>找到边缘的卡尺数。</summary>
     public int FoundCount => Probe.Edges.Count;
     /// <summary>内点数。</summary>
-    public int InlierCount => Fit.InlierCount;
+    public int InlierCount => InlierIndices.Count;
     /// <summary>被忽略的点数。</summary>
     public int OutlierCount => FoundCount - InlierCount;
     /// <summary>内点距离RMS，原图像素。</summary>
@@ -366,7 +372,9 @@ public sealed class VisionFindLineResult : IVisionGeometryFact
 /// <summary>找圆结果：拟合圆、各卡尺边缘点及显示图形。</summary>
 public sealed class VisionFindCircleResult : IVisionGeometryFact
 {
-    internal VisionFindCircleResult(RobustCircleResult fit, VisionShapeProbe probe) { Fit = fit; Probe = probe; }
+    internal VisionFindCircleResult(RobustCircleResult fit, VisionShapeProbe probe, IReadOnlyList<int> inliers) { Fit = fit; Probe = probe; InlierIndices = inliers; }
+    /// <summary>参与拟合的计算点在 <see cref="EdgePoints"/> 中的序号（已排除“忽略点数”剔除的点）。</summary>
+    public IReadOnlyList<int> InlierIndices { get; }
     /// <summary>鲁棒拟合原始结果。</summary>
     public RobustCircleResult Fit { get; }
     internal VisionShapeProbe Probe { get; }
@@ -383,27 +391,27 @@ public sealed class VisionFindCircleResult : IVisionGeometryFact
     /// <summary>各卡尺找到的边缘点（边缘对模式为中点；未找到的卡尺不在列表中），带来源。</summary>
     public IReadOnlyList<VisionPoint> EdgePoints => Probe.Points(Fit.CoordinateSystem);
     /// <summary>与 <see cref="EdgePoints"/> 同序：真为参与拟合的计算点，假为被忽略的点。</summary>
-    public IReadOnlyList<bool> Inliers => Probe.InlierFlags(Fit.InlierIndices);
+    public IReadOnlyList<bool> Inliers => Probe.InlierFlags(InlierIndices);
     /// <summary>参与拟合的计算点。</summary>
-    public IReadOnlyList<VisionPoint> InlierPoints => Probe.Select(Fit.CoordinateSystem, Fit.InlierIndices, inliers: true);
+    public IReadOnlyList<VisionPoint> InlierPoints => Probe.Select(Fit.CoordinateSystem, InlierIndices, inliers: true);
     /// <summary>被忽略的点。</summary>
-    public IReadOnlyList<VisionPoint> OutlierPoints => Probe.Select(Fit.CoordinateSystem, Fit.InlierIndices, inliers: false);
+    public IReadOnlyList<VisionPoint> OutlierPoints => Probe.Select(Fit.CoordinateSystem, InlierIndices, inliers: false);
     /// <summary>各把卡尺的原图位置。</summary>
     public IReadOnlyList<VisionCaliperScan> CaliperScans => Probe.CaliperScans;
     /// <summary>边缘对模式下与 <see cref="EdgePoints"/> 同序的边缘对；单边缘模式为空。</summary>
     public IReadOnlyList<VisionFoundEdgePair> EdgePairs => Probe.Pairs;
     /// <summary>边缘对模式下计算点的平均宽度（环宽），原图像素；单边缘模式为空。</summary>
-    public double? MeanWidth => Probe.InlierWidths(Fit.InlierIndices) is { Count: > 0 } w ? w.Average() : null;
+    public double? MeanWidth => Probe.InlierWidths(InlierIndices) is { Count: > 0 } w ? w.Average() : null;
     /// <summary>边缘对模式下计算点的最小宽度。</summary>
-    public double? MinimumWidth => Probe.InlierWidths(Fit.InlierIndices) is { Count: > 0 } w ? w.Min() : null;
+    public double? MinimumWidth => Probe.InlierWidths(InlierIndices) is { Count: > 0 } w ? w.Min() : null;
     /// <summary>边缘对模式下计算点的最大宽度。</summary>
-    public double? MaximumWidth => Probe.InlierWidths(Fit.InlierIndices) is { Count: > 0 } w ? w.Max() : null;
+    public double? MaximumWidth => Probe.InlierWidths(InlierIndices) is { Count: > 0 } w ? w.Max() : null;
     /// <summary>卡尺数量。</summary>
     public int CaliperCount => Probe.Scans.Count;
     /// <summary>找到边缘的卡尺数。</summary>
     public int FoundCount => Probe.Edges.Count;
     /// <summary>内点数。</summary>
-    public int InlierCount => Fit.InlierCount;
+    public int InlierCount => InlierIndices.Count;
     /// <summary>被忽略的点数。</summary>
     public int OutlierCount => FoundCount - InlierCount;
     /// <summary>内点径向距离RMS，原图像素。</summary>
@@ -447,6 +455,39 @@ internal sealed class VisionShapeProbe(string frameId, IReadOnlyList<(PointD Sta
     public IReadOnlyList<Geometry> Display(Geometry fitted) => new[] { fitted }
         .Concat(Scans.Select(s => (Geometry)new ContourGeometry(new[] { s.Start, s.End })))
         .Concat(Edges.Select(p => (Geometry)new EllipseGeometry(p, 1.5, 1.5))).ToArray();
+}
+
+/// <summary>拟合时按残差剔除指定数量的点（对应 VisionPro 找线/找圆的“忽略点数”）。</summary>
+public static class VisionFitIgnoring
+{
+    /// <summary>
+    /// 带“忽略点数”的拟合：先用全部点拟合，剔除到拟合结果残差最大的一个点后重新拟合，重复 <paramref name="ignore"/> 次；
+    /// 最后一次拟合的内点（换算回原始序号）为计算点，其余（被剔除的与拟合判为外点的）为忽略点。
+    /// </summary>
+    /// <param name="points">全部拟合点。</param><param name="ignore">剔除点数。</param><param name="minimumInliers">剔除后至少保留的点数。</param>
+    /// <param name="fit">拟合函数。</param><param name="inliers">取拟合结果的内点序号（相对传入点）。</param><param name="residual">点到拟合结果的残差。</param>
+    public static (TFit Fit, IReadOnlyList<int> Inliers) FitIgnoring<TFit>(IReadOnlyList<PointD> points, int ignore, int minimumInliers,
+        Func<IReadOnlyList<PointD>, TFit> fit, Func<TFit, IReadOnlyList<int>> inliers, Func<TFit, PointD, double> residual)
+    {
+        var kept = Enumerable.Range(0, points.Count).ToList();
+        for (int k = 0; k < ignore && kept.Count - 1 >= minimumInliers; k++)
+        {
+            var current = fit(kept.Select(i => points[i]).ToArray());
+            var worst = kept.MaxBy(i => residual(current, points[i]));
+            kept.Remove(worst);
+        }
+        var final = fit(kept.Select(i => points[i]).ToArray());
+        return (final, inliers(final).Select(i => kept[i]).OrderBy(i => i).ToArray());
+    }
+
+    /// <summary>点到过 A、B 的直线的距离。</summary>
+    /// <param name="a">直线上一点。</param><param name="b">直线上另一点。</param><param name="p">待测点。</param>
+    public static double LineDistance(PointD a, PointD b, PointD p)
+    {
+        double dx = b.X - a.X, dy = b.Y - a.Y, length = Math.Sqrt(dx * dx + dy * dy);
+        return length < 1e-12 ? Math.Sqrt((p.X - a.X) * (p.X - a.X) + (p.Y - a.Y) * (p.Y - a.Y)) : Math.Abs((p.X - a.X) * dy - (p.Y - a.Y) * dx) / length;
+    }
+
 }
 
 /// <summary>按节点排布卡尺、逐把取边缘点；超出图像的卡尺跳过并计数。</summary>
@@ -531,11 +572,13 @@ public sealed class FindVisionLineNodeHandler : WorkflowNodeHandler<FindVisionLi
         var probe = VisionShapeFinding.Probe(node, context, frame, coordinates, cancellationToken);
         if (probe.Edges.Count < node.MinimumInliers)
             throw new InvalidOperationException($"找线失败：只有 {probe.Edges.Count} 把卡尺找到边缘，至少需要 {node.MinimumInliers} 个点。");
-        var fit = WorkflowVisionAlgorithmInvocation.Invoke(context, "fitter", node.FitterAlgorithm, "managed.robust-line",
-            (IRobustLineFitter fitter) => fitter.Fit(frame.FrameId, probe.Edges, node.DistanceThreshold * (coordinates?.SimilarityScale ?? 1), 256, node.MinimumInliers, cancellationToken),
-            cancellationToken);
+        var (fit, inliers) = VisionFitIgnoring.FitIgnoring(probe.Edges, node.IgnoreCount, node.MinimumInliers,
+            points => WorkflowVisionAlgorithmInvocation.Invoke(context, "fitter", node.FitterAlgorithm, "managed.robust-line",
+                (IRobustLineFitter fitter) => fitter.Fit(frame.FrameId, points, node.DistanceThreshold * (coordinates?.SimilarityScale ?? 1), 256, node.MinimumInliers, cancellationToken),
+                cancellationToken),
+            fit => fit.InlierIndices, (fit, p) => VisionFitIgnoring.LineDistance(fit.A, fit.B, p));
         if (coordinates is not null) fit = fit.InCoordinates(coordinates);
-        var result = new VisionFindLineResult(fit, probe);
+        var result = new VisionFindLineResult(fit, probe, inliers);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
     }
 }
@@ -551,11 +594,14 @@ public sealed class FindVisionCircleNodeHandler : WorkflowNodeHandler<FindVision
         var probe = VisionShapeFinding.Probe(node, context, frame, coordinates, cancellationToken);
         if (probe.Edges.Count < node.MinimumInliers)
             throw new InvalidOperationException($"找圆失败：只有 {probe.Edges.Count} 把卡尺找到边缘，至少需要 {node.MinimumInliers} 个点。");
-        var fit = WorkflowVisionAlgorithmInvocation.Invoke(context, "fitter", node.FitterAlgorithm, "managed.robust-circle",
-            (IRobustCircleFitter fitter) => fitter.Fit(frame.FrameId, probe.Edges, node.DistanceThreshold * (coordinates?.SimilarityScale ?? 1), 256, node.MinimumInliers, cancellationToken),
-            cancellationToken);
+        var (fit, inliers) = VisionFitIgnoring.FitIgnoring(probe.Edges, node.IgnoreCount, node.MinimumInliers,
+            points => WorkflowVisionAlgorithmInvocation.Invoke(context, "fitter", node.FitterAlgorithm, "managed.robust-circle",
+                (IRobustCircleFitter fitter) => fitter.Fit(frame.FrameId, points, node.DistanceThreshold * (coordinates?.SimilarityScale ?? 1), 256, node.MinimumInliers, cancellationToken),
+                cancellationToken),
+            fit => fit.InlierIndices,
+            (fit, p) => Math.Abs(Math.Sqrt((p.X - fit.Center.X) * (p.X - fit.Center.X) + (p.Y - fit.Center.Y) * (p.Y - fit.Center.Y)) - fit.Radius));
         if (coordinates is not null) fit = fit.InCoordinates(coordinates);
-        var result = new VisionFindCircleResult(fit, probe);
+        var result = new VisionFindCircleResult(fit, probe, inliers);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
     }
 }

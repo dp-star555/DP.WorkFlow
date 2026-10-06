@@ -163,6 +163,27 @@ public sealed class VisionArcCaliperTests
     }
 
     [Fact]
+    public void FitIgnoring_RemovesWorstResidualPoints()
+    {
+        // y=10 上 8 个点，第 3 个偏 0.8px（在内点阈值 1 内，RANSAC 会保留）。
+        var points = Enumerable.Range(0, 8).Select(i => new PointD(i * 10, i == 3 ? 10.8 : 10)).ToArray();
+        var fitter = new RobustLineFitter();
+        RobustLineResult Fit(IReadOnlyList<PointD> p) => fitter.Fit("f", p, 1, 256, 3);
+        double Residual(RobustLineResult f, PointD p) => VisionFitIgnoring.LineDistance(f.A, f.B, p);
+
+        var (_, none) = VisionFitIgnoring.FitIgnoring(points, 0, 3, Fit, f => f.InlierIndices, Residual);
+        Assert.Equal(8, none.Count);
+        var (fit, kept) = VisionFitIgnoring.FitIgnoring(points, 1, 3, Fit, f => f.InlierIndices, Residual);
+        Assert.Equal(new[] { 0, 1, 2, 4, 5, 6, 7 }, kept);
+        Assert.InRange(fit.RmsError, 0, 1e-9);
+        // 剔除数不会让剩余点少于最少内点。
+        Assert.Equal(3, VisionFitIgnoring.FitIgnoring(points, 10, 3, Fit, f => f.InlierIndices, Residual).Inliers.Count);
+
+        var node = new FindVisionLineNodeModel { CaliperCount = 10, MinimumInliers = 3, IgnoreCount = 8 };
+        Assert.Contains(node.ValidateConfiguration(), e => e.Contains("忽略点数", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ArcCaliperOptions_RejectInvalidBands()
     {
         Assert.Throws<ArgumentException>(() => new VisionArcCaliperOptions(new PointD(50, 50), 0, 0, 90));
