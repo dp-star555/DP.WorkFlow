@@ -1371,13 +1371,13 @@ public sealed partial class WorkflowDesignerSession
         var titleWidth = TextWidth(node.Node.Title);
         var horizontalPortWidth = groups
             .Where(group => group.Key is WorkflowPortSide.Top or WorkflowPortSide.Bottom)
-            .Select(group => group.Value.Sum(port => TextWidth(port.Key) + 24))
+            .Select(group => group.Value.Sum(port => TextWidth(WorkflowPorts.GetDisplayName(port.Key)) + 24))
             .DefaultIfEmpty(0)
             .Max();
         var sideLabelWidth = groups
             .Where(group => group.Key is WorkflowPortSide.Left or WorkflowPortSide.Right)
             .SelectMany(group => group.Value)
-            .Select(port => TextWidth(port.Key))
+            .Select(port => TextWidth(WorkflowPorts.GetDisplayName(port.Key)))
             .DefaultIfEmpty(0)
             .Max();
         var verticalPortCount = groups

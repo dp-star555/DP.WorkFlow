@@ -255,6 +255,9 @@ public sealed partial class WorkflowStudioControl : UserControl
     /// <summary>工作台交互错误时发生。</summary>
     public event EventHandler<string>? InteractionError;
 
+    /// <summary>流程运行以故障结束时发生（只用于记录；故障详情已写入运行监控）。</summary>
+    public event EventHandler<string>? RunFaulted;
+
     /// <summary>双击节点并关闭统一节点工作台后发生。</summary>
     public event EventHandler<IWorkflowNodeModel>? NodeEditRequested;
 
@@ -459,7 +462,11 @@ public sealed partial class WorkflowStudioControl : UserControl
         {
             var result = await RuntimeBinding.RunAsync();
             if (!result.Success && result.State == E_WorkflowExecutionState.Faulted)
-                InteractionError?.Invoke(this, $"流程运行失败：{result.Message}");
+            {
+                // 运行失败只记录：失败节点标红、故障写入运行监控轨迹，切到运行监控页查看，不弹窗。
+                bottomTabs.SelectedTab = runtimePage;
+                RunFaulted?.Invoke(this, $"流程运行失败：{result.Message}");
+            }
         }
         catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
         {

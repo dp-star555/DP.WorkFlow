@@ -85,6 +85,12 @@ public sealed record WorkflowPortDescriptor
         int maxConnections = 1,
         WorkflowPortSide side = WorkflowPortSide.Bottom) =>
         new(key, WorkflowPortDirection.Output, maxConnections, side);
+
+    /// <summary>创建失败出口（<see cref="WorkflowPorts.Failed"/>）：连线后节点失败不中止运行，沿该出口继续。</summary>
+    /// <param name="maxConnections">允许从该端口引出的最大下游连接数。</param>
+    /// <param name="side">端口在节点上的默认显示边。</param>
+    public static WorkflowPortDescriptor Failure(int maxConnections = 1, WorkflowPortSide side = WorkflowPortSide.Bottom) =>
+        Output(WorkflowPorts.Failed, maxConnections, side);
 }
 
 /// <summary>

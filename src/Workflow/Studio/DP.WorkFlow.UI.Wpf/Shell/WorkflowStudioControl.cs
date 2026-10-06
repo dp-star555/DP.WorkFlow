@@ -104,10 +104,9 @@ public sealed class WorkflowStudioControl : UserControl
         AddToGrid(root, Toolbox, 0, 2);
         AddToGrid(root, new Border { Background = Brush(30, 41, 59) }, 1, 2);
         AddToGrid(root, Designer, 2);
-        var bottomTabs = new TabControl();
-        bottomTabs.Items.Add(new TabItem { Header = "诊断", Content = Diagnostics });
-        bottomTabs.Items.Add(new TabItem { Header = "运行监视", Content = RuntimeMonitor });
-        AddToGrid(root, bottomTabs, 2, row: 2);
+        _bottomTabs.Items.Add(new TabItem { Header = "诊断", Content = Diagnostics });
+        _bottomTabs.Items.Add(new TabItem { Header = "运行监视", Content = RuntimeMonitor });
+        AddToGrid(root, _bottomTabs, 2, row: 2);
         Content = root;
 
         newButton.Click += (_, _) => NewDocument();
@@ -303,6 +302,11 @@ public sealed class WorkflowStudioControl : UserControl
 
     /// <summary>获取或设置 Interaction Error 成员。</summary>
     public event EventHandler<string>? InteractionError;
+
+    /// <summary>流程运行以故障结束时发生（只用于记录；故障详情已写入运行监视）。</summary>
+    public event EventHandler<string>? RunFaulted;
+
+    private readonly TabControl _bottomTabs = new();
 
     /// <summary>双击节点并关闭统一节点工作台后发生。</summary>
     public event EventHandler<IWorkflowNodeModel>? NodeEditRequested;
@@ -509,7 +513,11 @@ public sealed class WorkflowStudioControl : UserControl
         {
             var result = await RuntimeBinding.RunAsync();
             if (!result.Success && result.State == E_WorkflowExecutionState.Faulted)
-                InteractionError?.Invoke(this, $"流程运行失败：{result.Message}");
+            {
+                // 运行失败只记录：失败节点标红、故障写入运行监视轨迹，切到运行监视页查看，不弹窗。
+                _bottomTabs.SelectedIndex = 1;
+                RunFaulted?.Invoke(this, $"流程运行失败：{result.Message}");
+            }
         }
         catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
         {

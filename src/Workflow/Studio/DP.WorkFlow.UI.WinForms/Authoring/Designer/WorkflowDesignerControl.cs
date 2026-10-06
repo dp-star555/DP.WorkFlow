@@ -812,21 +812,27 @@ public sealed partial class WorkflowDesignerControl : Control
                 && ports.Count > 1;
             if (!connected && !semanticHandle) continue;
             var point = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports);
-            var radius = connected
-                ? (float)Math.Max(2, WorkflowDesignerGeometry.PortRadius * _session.Zoom * 0.72)
-                : 2.5f;
+            // 多出口节点的每个出口都画成正常大小的连接点：已连线为实心，未连线为空心圈；失败出口用红色。
+            var radius = (float)Math.Max(2.5, WorkflowDesignerGeometry.PortRadius * _session.Zoom * 0.72);
+            var failed = direction == WorkflowPortDirection.Output && port.Key == WorkflowPorts.Failed;
+            using var portFill = new SolidBrush(failed ? Color.FromArgb(239, 68, 68) : fill.Color);
             if (semanticHandle)
             {
-                using var neutralFill = new SolidBrush(Color.FromArgb(71, 85, 105));
-                graphics.FillEllipse(neutralFill, (float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
+                using var hollow = new SolidBrush(Color.FromArgb(30, 41, 59));
+                using var ring = new Pen(portFill.Color, 1.8f);
+                graphics.FillEllipse(hollow, (float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
+                graphics.DrawEllipse(ring, (float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
             }
             else
             {
-                graphics.FillEllipse(fill, (float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
+                graphics.FillEllipse(portFill, (float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
+                graphics.DrawEllipse(border, (float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
             }
-            graphics.DrawEllipse(border, (float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
             if ((connected || semanticHandle) && WorkflowDesignerInteraction.ShouldDrawPortLabel(_session, node, direction))
-                DrawPortLabel(graphics, labelFont, labelBrush, node, port, point, radius);
+            {
+                using var failedLabel = new SolidBrush(Color.FromArgb(252, 165, 165));
+                DrawPortLabel(graphics, labelFont, failed ? failedLabel : labelBrush, node, port, point, radius);
+            }
         }
     }
 
@@ -1191,7 +1197,7 @@ public sealed partial class WorkflowDesignerControl : Control
         float radius,
         WorkflowPortSide? sideOverride = null)
     {
-        var size = graphics.MeasureString(port.Key, font);
+        var size = graphics.MeasureString(WorkflowPorts.GetDisplayName(port.Key), font);
         var side = sideOverride ?? node.GetPortSide(port);
         var x = side switch
         {
@@ -1209,7 +1215,7 @@ public sealed partial class WorkflowDesignerControl : Control
             WorkflowPortSide.Bottom => (float)point.Y - radius - size.Height - 2,
             _ => (float)point.Y - size.Height / 2
         };
-        graphics.DrawString(port.Key, font, brush, x, y);
+        graphics.DrawString(WorkflowPorts.GetDisplayName(port.Key), font, brush, x, y);
     }
 
     /// <summary>绘制具有单连接边覆盖的额外端点。</summary>
@@ -1272,7 +1278,7 @@ public sealed partial class WorkflowDesignerControl : Control
         graphics.FillRectangle(background, rect);
         using var labelBorder = new Pen(palette.Border);
         graphics.DrawRectangle(labelBorder, rect.X, rect.Y, rect.Width, rect.Height);
-        graphics.DrawString(connection.FromPort, font, foreground, rect.X + 4, rect.Y + 1);
+        graphics.DrawString(WorkflowPorts.GetDisplayName(connection.FromPort), font, foreground, rect.X + 4, rect.Y + 1);
     }
 
     /// <summary>计算连接标签的屏幕边界。</summary>
@@ -1285,7 +1291,7 @@ public sealed partial class WorkflowDesignerControl : Control
             ? default
             : WorkflowDesignerInteraction.PointAlongPath(
                 WorkflowDesignerInteraction.GetConnectionPath(_session, connection), connection.LabelPosition);
-        var size = graphics.MeasureString(connection.FromPort, font);
+        var size = graphics.MeasureString(WorkflowPorts.GetDisplayName(connection.FromPort), font);
         return new RectangleF(
             (float)center.X - size.Width / 2 - 4,
             (float)center.Y - size.Height / 2 - 2,

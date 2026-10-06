@@ -322,7 +322,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         var canvasNode = _session.Canvas.Nodes.First(item => item.Node.Id == _model.SelectedNode.Id);
         foreach (var port in outputs)
         {
-            var text = $"启用输出 {port.Key}";
+            var text = $"启用输出 {WorkflowPorts.GetDisplayName(port.Key)}";
             var check = new ModernCheckbox
             {
                 Text = text,

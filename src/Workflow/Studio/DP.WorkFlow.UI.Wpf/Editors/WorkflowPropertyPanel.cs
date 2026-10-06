@@ -322,7 +322,7 @@ public sealed class WorkflowPropertyPanel : UserControl
         {
             var check = new CheckBox
             {
-                Content = $"显示并启用 {port.Key}",
+                Content = $"显示并启用 {WorkflowPorts.GetDisplayName(port.Key)}",
                 IsChecked = !canvasNode.HiddenOutputPorts.Contains(port.Key),
                 Foreground = Foreground,
                 Margin = new Thickness(7, 5, 7, 5)
