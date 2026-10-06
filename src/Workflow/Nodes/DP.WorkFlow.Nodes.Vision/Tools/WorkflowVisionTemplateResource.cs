@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using DP.Vision;
 using DP.Vision.Algorithms;
 
@@ -7,8 +8,10 @@ namespace DP.WorkFlow;
 public enum EWorkflowVisionTemplateSource
 {
     /// <summary>上游动态模板图像。</summary>
+    [Description("绑定模板图像")]
     ImageBinding,
     /// <summary>确定版本的本地模板资源。</summary>
+    [Description("节点内制作的模板")]
     Resource
 }
 

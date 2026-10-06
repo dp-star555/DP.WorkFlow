@@ -14,7 +14,7 @@ public sealed class VisionModuleTests
         Assert.Equal(13, nodes.Snapshot().Count);
         Assert.Equal(typeof(DP.Vision.Algorithms.RegionAnalysisResult), nodes.GetOrThrow("Vision.CreateRegion").OutputType);
         Assert.Equal(typeof(ImageFrame), nodes.GetOrThrow("Vision.AcquireFrame").OutputType);
-        Assert.Equal("5.Vision/Acquisition", nodes.GetOrThrow("Vision.AcquireFrame").Category);
+        Assert.Equal(WorkflowVisionCategories.Acquisition, nodes.GetOrThrow("Vision.AcquireFrame").Category);
         // 已合并或删除的节点类型不再注册：取图统一为“图像获取”，模板定位统一为一个节点。
         Assert.DoesNotContain(nodes.Snapshot().Keys, type => type is "Vision.AcquireImage" or "Vision.RunTool" or "Vision.Blob" or "Vision.Ocr" or "Vision.PaddleOcr"
             or "Vision.LoadFile" or "Vision.LoadFolder" or "Vision.CaptureAreaFrame" or "Vision.CaptureLineScanFrame"

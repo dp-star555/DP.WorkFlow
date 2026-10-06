@@ -3,7 +3,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>显式转换直线的局部表达，原图端点不变。</summary>
-[WorkflowNode("Vision.TransformLine", DisplayName = "直线坐标系转换", Category = "5.Vision/Location")]
+[WorkflowNode("Vision.TransformLine", DisplayName = "直线坐标系转换", Category = WorkflowVisionCategories.Geometry)]
 public sealed class TransformVisionLineNodeModel : WorkflowVisionGeometryNodeModel
 {
     /// <inheritdoc/>

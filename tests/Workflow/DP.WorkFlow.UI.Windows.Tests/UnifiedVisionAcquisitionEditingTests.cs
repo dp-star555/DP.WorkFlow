@@ -14,7 +14,7 @@ public sealed class UnifiedVisionAcquisitionEditingTests
     {
         var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
         var session = new WorkflowDesignerSession(new WorkflowDocument(), nodes);
-        var acquisition = session.GetToolboxItems().Where(item => item.Category == "5.Vision/Acquisition").ToArray();
+        var acquisition = session.GetToolboxItems().Where(item => item.Category == WorkflowVisionCategories.Acquisition).ToArray();
         Assert.Equal("Vision.AcquireFrame", Assert.Single(acquisition).NodeType);
         Assert.Equal("图像获取", acquisition[0].DisplayName);
         var document = new WorkflowDocument { EntryNodeId = "file" };
@@ -40,6 +40,10 @@ public sealed class UnifiedVisionAcquisitionEditingTests
         var mode = Entry(nameof(AcquireVisionImageNodeModel.SourceMode));
         Assert.Equal(WorkflowPropertyEditorKind.Choice, mode.EditorKind);
         Assert.Equal(new[] { "文件", "文件夹", "面阵相机", "线扫相机" }, mode.Choices.Select(choice => choice.Label));
+        var format = Entry(nameof(AcquireVisionImageNodeModel.PixelFormat));
+        Assert.Equal(WorkflowPropertyEditorKind.Choice, format.EditorKind);
+        Assert.Equal(new[] { "保持原样", "8位灰度" }, format.Choices.Select(choice => choice.Label));
+        Assert.Equal(EWorkflowVisionPixelFormat.Original, format.Value);
         Assert.Contains(inspector.Entries, entry => entry.Name == nameof(AcquireVisionImageNodeModel.FilePath));
         Assert.Contains(inspector.Entries, entry => entry.Name.StartsWith("Algorithm.", StringComparison.Ordinal));
         inspector.SetValue(mode, EWorkflowVisionImageSource.Folder);

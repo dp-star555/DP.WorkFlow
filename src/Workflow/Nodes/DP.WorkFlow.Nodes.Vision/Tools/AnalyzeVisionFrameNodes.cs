@@ -164,7 +164,7 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
 }
 
 /// <summary>新版Blob节点，输出中立BlobAnalysisResult。</summary>
-[WorkflowNode("Vision.AnalyzeBlobs", DisplayName = "分析连通域", Category = "5.Vision/ImageBuffer")]
+[WorkflowNode("Vision.AnalyzeBlobs", DisplayName = "分析连通域", Category = WorkflowVisionCategories.Inspection)]
 public sealed class AnalyzeVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
@@ -219,7 +219,7 @@ public sealed class AnalyzeVisionBlobsNodeHandler : WorkflowNodeHandler<AnalyzeV
 }
 
 /// <summary>新版颜色统计节点，输出中立ColorAnalysisResult，不输出产品OK/NG。</summary>
-[WorkflowNode("Vision.AnalyzeColor", DisplayName = "统计RGB颜色", Category = "5.Vision/ImageBuffer")]
+[WorkflowNode("Vision.AnalyzeColor", DisplayName = "统计RGB颜色", Category = WorkflowVisionCategories.Inspection)]
 public sealed class AnalyzeVisionColorNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>

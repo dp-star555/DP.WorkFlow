@@ -3,8 +3,6 @@ namespace DP.WorkFlow;
 /// <summary>工作流属性编辑器稳定键。节点只声明编辑语义，不依赖具体 UI 技术。</summary>
 public static class WorkflowPropertyEditorKeys
 {
-    /// <summary>统一图像获取节点的来源模式候选。</summary>
-    public const string VisionImageSourceMode = "VisionImageSourceMode";
     /// <summary>使用文件选择对话框编辑字符串路径。</summary>
     public const string FilePath = "FilePath";
 

@@ -4,7 +4,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>保持尺寸/坐标系的整图显式预处理。</summary>
-[WorkflowNode("Vision.PreprocessImage", DisplayName = "图像预处理", Category = "5.Vision/Processing")]
+[WorkflowNode("Vision.PreprocessImage", DisplayName = "图像预处理", Category = WorkflowVisionCategories.Processing)]
 public sealed class PreprocessVisionImageNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
@@ -17,7 +17,7 @@ public sealed class PreprocessVisionImageNodeModel : AnalyzeVisionFrameNodeModel
     /// <inheritdoc/>
     public override string NodeType => "Vision.PreprocessImage";
     /// <summary>显式操作，非灰度转换操作拒绝彩色输入。</summary>
-    [WorkflowProperty("预处理操作", "Gray16须显式选择Gray16ToGray8并设置增益；不自动归一化。", Category = "预处理")]
+    [WorkflowProperty("预处理操作", "16位灰度图像须选择“16位转8位”并设置增益，不自动归一化；“彩色转灰度”把彩色按亮度转为8位灰度。", Category = "预处理")]
     public EImagePreprocessing Operation { get; set; }
     /// <summary>核边长3..63奇数。</summary>
     [WorkflowProperty("核边长", "3..63奇数，仅滤波使用。", Category = "预处理")]
@@ -63,7 +63,7 @@ public sealed class PreprocessVisionImageNodeHandler : WorkflowNodeHandler<Prepr
 }
 
 /// <summary>灰度闭区间产生可绑定精确Region。</summary>
-[WorkflowNode("Vision.ThresholdRegion", DisplayName = "阈值分割区域", Category = "5.Vision/Region")]
+[WorkflowNode("Vision.ThresholdRegion", DisplayName = "阈值分割区域", Category = WorkflowVisionCategories.Region)]
 public sealed class ThresholdVisionRegionNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
@@ -111,7 +111,7 @@ public sealed class ThresholdVisionRegionNodeHandler : WorkflowNodeHandler<Thres
 }
 
 /// <summary>已分割Region的形态学；输入帧仅用于身份校验和预览。</summary>
-[WorkflowNode("Vision.MorphRegion", DisplayName = "区域形态学", Category = "5.Vision/Region")]
+[WorkflowNode("Vision.MorphRegion", DisplayName = "区域形态学", Category = WorkflowVisionCategories.Region)]
 public sealed class MorphVisionRegionNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
@@ -165,7 +165,7 @@ public sealed class MorphVisionRegionNodeHandler : WorkflowNodeHandler<MorphVisi
 }
 
 /// <summary>按明确特征范围筛选连通域，空结果成功。</summary>
-[WorkflowNode("Vision.SelectBlobs", DisplayName = "筛选连通域", Category = "5.Vision/Processing")]
+[WorkflowNode("Vision.SelectBlobs", DisplayName = "筛选连通域", Category = WorkflowVisionCategories.Inspection)]
 public sealed class SelectVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>

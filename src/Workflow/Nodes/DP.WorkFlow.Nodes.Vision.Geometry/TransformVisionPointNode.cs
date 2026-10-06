@@ -3,7 +3,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>显式变更点的局部表达；没有目标绑定时转为原图表达。</summary>
-[WorkflowNode("Vision.TransformPoint", DisplayName = "点坐标系转换", Category = "5.Vision/Location")]
+[WorkflowNode("Vision.TransformPoint", DisplayName = "点坐标系转换", Category = WorkflowVisionCategories.Geometry)]
 public sealed class TransformVisionPointNodeModel : WorkflowVisionGeometryNodeModel
 {
     /// <inheritdoc/>

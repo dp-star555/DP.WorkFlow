@@ -3,7 +3,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>两直线或两有限线段的最短距离。</summary>
-[WorkflowNode("Vision.MeasureLineDistance", DisplayName = "线到线距离", Category = "5.Vision/Measurement")]
+[WorkflowNode("Vision.MeasureLineDistance", DisplayName = "线到线距离", Category = WorkflowVisionCategories.Measurement)]
 public sealed class MeasureVisionLineDistanceNodeModel : WorkflowVisionGeometryAlgorithmNodeModel
 {
     /// <inheritdoc/>

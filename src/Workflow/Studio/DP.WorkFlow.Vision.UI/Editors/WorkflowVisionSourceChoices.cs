@@ -4,8 +4,8 @@ using DP.WorkFlow.UI;
 namespace DP.WorkFlow.Vision.UI;
 
 /// <summary>
-/// 把机器配置已发布的逻辑源投影成属性面板候选，并按节点类型过滤采集几何形态：
-/// 面阵节点只看到面阵源，线扫节点只看到线扫源。
+/// 把机器配置已发布的逻辑源投影成属性面板候选，并按来源过滤采集几何形态：
+/// 面阵来源只看到面阵源，线扫来源只看到线扫源。
 /// <para>
 /// 放在这里而不是DP.WorkFlow.UI.Shared，是因为过滤需要认识 <see cref="EVisionAcquisitionKind"/>；
 /// 共享属性模型只认识编辑器键，不能反向依赖采集领域。
@@ -25,13 +25,6 @@ public static class WorkflowVisionSourceChoices
         ArgumentNullException.ThrowIfNull(catalog);
         return (editorKey, _) => editorKey switch
         {
-            WorkflowPropertyEditorKeys.VisionImageSourceMode =>
-            [
-                new("文件", EWorkflowVisionImageSource.File),
-                new("文件夹", EWorkflowVisionImageSource.Folder),
-                new("面阵相机", EWorkflowVisionImageSource.AreaCamera),
-                new("线扫相机", EWorkflowVisionImageSource.LineCamera)
-            ],
             WorkflowPropertyEditorKeys.VisionAreaSource => Project(catalog, EVisionAcquisitionKind.AreaScan),
             WorkflowPropertyEditorKeys.VisionLineScanSource => Project(catalog, EVisionAcquisitionKind.LineScan),
             _ => Array.Empty<WorkflowPropertyChoice>()

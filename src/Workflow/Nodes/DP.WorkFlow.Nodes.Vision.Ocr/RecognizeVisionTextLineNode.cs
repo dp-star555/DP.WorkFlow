@@ -5,7 +5,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>明确水平单行的独立 OCR 节点；不包含文本检测和旋转矫正。</summary>
-[WorkflowNode("Vision.RecognizeTextLine", DisplayName = "识别水平单行文字", Category = "5.Vision/文字")]
+[WorkflowNode("Vision.RecognizeTextLine", DisplayName = "识别水平单行文字", Category = WorkflowVisionCategories.Recognition)]
 public sealed class RecognizeVisionTextLineNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>默认要求显式水平单行矩形。</summary>

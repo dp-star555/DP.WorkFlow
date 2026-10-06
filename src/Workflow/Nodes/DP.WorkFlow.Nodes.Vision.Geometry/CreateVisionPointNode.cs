@@ -4,7 +4,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>在明确空间生成带身份的视觉点。</summary>
-[WorkflowNode("Vision.CreatePoint", DisplayName = "生成视觉点", Category = "5.Vision/Geometry")]
+[WorkflowNode("Vision.CreatePoint", DisplayName = "生成视觉点", Category = WorkflowVisionCategories.Geometry)]
 public sealed class CreateVisionPointNodeModel : WorkflowVisionGeometryNodeModel
 {
     /// <inheritdoc/>

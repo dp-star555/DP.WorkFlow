@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using DP.Vision;
 
 namespace DP.WorkFlow;
@@ -6,10 +7,13 @@ namespace DP.WorkFlow;
 public enum EWorkflowVisionRoiShape
 {
     /// <summary>矩形，可以旋转。</summary>
+    [Description("矩形")]
     Rectangle,
     /// <summary>椭圆，可以旋转。</summary>
+    [Description("椭圆")]
     Ellipse,
     /// <summary>闭合填充多边形。</summary>
+    [Description("多边形")]
     Polygon
 }
 

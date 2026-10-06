@@ -33,6 +33,25 @@ public sealed class WorkflowPropertyInspectorTests
     }
 
     [Fact]
+    public void LabeledEnum_IsEditedAsChineseChoices_UnlabeledEnumKeepsNames()
+    {
+        var node = new LabeledEnumNode { Id = "labeled" };
+        var catalog = new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<LabeledEnumNode>());
+        var document = new WorkflowDocument { EntryNodeId = node.Id };
+        document.CanvasProjection.Nodes.Add(new() { Node = node });
+        var session = new WorkflowDesignerSession(document, catalog) { SelectedNodeId = node.Id };
+        using var inspector = new WorkflowPropertyInspectorModel(session, node.Id);
+        var mode = inspector.Entries.Single(e => e.Name == nameof(node.Mode));
+        Assert.Equal(WorkflowPropertyEditorKind.Choice, mode.EditorKind);
+        Assert.Equal(new[] { "快速", "精确" }, mode.Choices.Select(c => c.Label));
+        Assert.Equal(LabeledMode.Precise, mode.Value);
+        inspector.SetValue(mode, mode.Choices[0].Value);
+        Assert.Equal(LabeledMode.Fast, node.Mode);
+        Assert.True(session.Undo()); Assert.Equal(LabeledMode.Precise, node.Mode);
+        Assert.Equal(WorkflowPropertyEditorKind.Enum, inspector.Entries.Single(e => e.Name == nameof(node.Plain)).EditorKind);
+    }
+
+    [Fact]
     public void AngleProjection_ConvertsScalarAndLiteral_AndPreservesBindingUnits()
     {
         var node = new AngleInputNode { Id = "angles", Rotation = Math.PI / 2, Angle = WorkflowInput<double>.FromLiteral(Math.PI / 4) };
@@ -272,6 +291,22 @@ public sealed class WorkflowPropertyInspectorTests
     }
 
     private enum ConditionalMode { Literal, Binding }
+
+    private enum LabeledMode
+    {
+        [System.ComponentModel.Description("快速")] Fast,
+        [System.ComponentModel.Description("精确")] Precise
+    }
+
+    [WorkflowNode("LabeledEnumTest")]
+    private sealed class LabeledEnumNode : WorkflowNodeModel
+    {
+        public override string NodeType => "LabeledEnumTest";
+        [WorkflowProperty("模式", "带中文标签的枚举。")]
+        public LabeledMode Mode { get; set; } = LabeledMode.Precise;
+        [WorkflowProperty("输入模式", "未标注的枚举。")]
+        public ConditionalMode Plain { get; set; }
+    }
 
     [WorkflowNode("AngleInputTest")]
     private sealed class AngleInputNode : WorkflowNodeModel

@@ -5,7 +5,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>独立条码节点插件；只依赖中立读码契约。</summary>
-[WorkflowNode("Vision.ReadBarcode", DisplayName = "读取条码", Category = "5.Vision/读码")]
+[WorkflowNode("Vision.ReadBarcode", DisplayName = "读取条码", Category = WorkflowVisionCategories.Recognition)]
 public sealed class ReadVisionBarcodeNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>明确的引擎选择；不会自动切换到其他读码器。</summary>

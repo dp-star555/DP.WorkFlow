@@ -602,6 +602,11 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
                 kind = WorkflowPropertyEditorKind.Choice;
             else if (propertyType == typeof(bool))
                 kind = WorkflowPropertyEditorKind.Boolean;
+            else if (propertyEditor is null && LabeledEnumChoices(propertyType) is { Count: > 0 } labeled)
+            {
+                candidates = labeled;
+                kind = WorkflowPropertyEditorKind.Choice;
+            }
             else if ((Nullable.GetUnderlyingType(propertyType) ?? propertyType).IsEnum)
                 kind = WorkflowPropertyEditorKind.Enum;
             else if (IsNumber(Nullable.GetUnderlyingType(propertyType) ?? propertyType))
@@ -633,7 +638,7 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
             if (!string.IsNullOrWhiteSpace(workflowMetadata?.Unit))
                 description += $" 单位：{workflowMetadata.Unit}。";
             var enumType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
-            if (enumType.IsEnum) description = AppendEnumOptions(description, enumType);
+            if (enumType.IsEnum && kind == WorkflowPropertyEditorKind.Enum) description = AppendEnumOptions(description, enumType);
             var entry = new WorkflowPropertyEntry(
                 node,
                 property,
@@ -657,7 +662,6 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     private static bool IsChoiceEditor(WorkflowPropertyEditorAttribute? propertyEditor) =>
         propertyEditor?.EditorKey is WorkflowPropertyEditorKeys.VisionAreaSource
             or WorkflowPropertyEditorKeys.VisionLineScanSource
-            or WorkflowPropertyEditorKeys.VisionImageSourceMode
             or WorkflowPropertyEditorKeys.DocumentChoice
         || propertyEditor?.EditorKey.StartsWith(WorkflowPropertyEditorKeys.VisionAlgorithmPrefix, StringComparison.Ordinal) == true;
 
@@ -726,6 +730,19 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
                 return !string.Equals(Convert.ToString(valueSource, CultureInfo.InvariantCulture), "Binding", StringComparison.OrdinalIgnoreCase);
         }
         return true;
+    }
+
+    /// <summary>枚举每个取值都用 [Description] 给出中文标签时，按标签生成下拉候选；否则返回空，仍按枚举名编辑。</summary>
+    /// <param name="type">属性类型，可为可空枚举。</param>
+    private static IReadOnlyList<WorkflowPropertyChoice> LabeledEnumChoices(Type type)
+    {
+        var core = Nullable.GetUnderlyingType(type) ?? type;
+        if (!core.IsEnum) return Array.Empty<WorkflowPropertyChoice>();
+        var fields = core.GetFields(BindingFlags.Public | BindingFlags.Static);
+        var labels = fields.Select(field => field.GetCustomAttribute<DescriptionAttribute>()?.Description).ToArray();
+        return labels.All(label => !string.IsNullOrWhiteSpace(label))
+            ? fields.Select((field, index) => new WorkflowPropertyChoice(labels[index]!, field.GetValue(null))).ToArray()
+            : Array.Empty<WorkflowPropertyChoice>();
     }
 
     private static string AppendEnumOptions(string description, Type enumType)
