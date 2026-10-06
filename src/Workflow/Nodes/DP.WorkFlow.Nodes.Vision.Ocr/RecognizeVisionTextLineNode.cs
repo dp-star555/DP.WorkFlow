@@ -117,7 +117,7 @@ public sealed class WorkflowVisionTextLineModule : IWorkflowRuntimePluginModule
     public void Register(WorkflowRuntimePluginCatalog extensions)
     {
         extensions.Nodes.Register(WorkflowNodeDescriptor.Create<RecognizeVisionTextLineNodeModel, WorkflowVisionTextLineFact>(ports: new[]
-        { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success) }));
+        { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success), WorkflowPortDescriptor.Failure() }));
         extensions.Handlers.Register(new RecognizeVisionTextLineNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<ITextLineRecognizer>(),
             WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionAlgorithmBindings>(), WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>());
     }

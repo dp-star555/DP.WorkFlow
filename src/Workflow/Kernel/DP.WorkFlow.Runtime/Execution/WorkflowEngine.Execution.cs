@@ -27,7 +27,18 @@ public sealed partial class WorkflowEngine
                 throw new WorkflowPathException(node.Id, interruption, executionIdentity:
                     new WorkflowExecutionIdentity(_runId, token.TokenId, Array.Empty<long>(), Array.Empty<long>(), 0),
                     faultDisposition: WorkflowFaultDisposition.RequestRecovery) { IsBoundaryInterruption = true };
-            var result = await ExecuteNodeAsync(node, token, cancellationToken).ConfigureAwait(false);
+            NodeExecutionResult result;
+            try
+            {
+                result = await ExecuteNodeAsync(node, token, cancellationToken).ConfigureAwait(false);
+            }
+            catch (WorkflowPathException fault) when (fault.IsNodeFault && !fault.IsBoundaryInterruption
+                && _plan.GetNextNodeIds(node.Id, WorkflowPorts.Failed).Count > 0)
+            {
+                // 失败出口已连线：故障已记录（节点标记失败、写入运行事件），本次运行不中止，沿失败支路继续（例如视觉检测NG）。
+                RouteFaultToFailedPort(node, token, fault);
+                result = NodeExecutionResult.Continue(WorkflowPorts.Failed);
+            }
             if (result.CompleteCurrentPath)
             {
                 if (stopBeforeNodeId is not null)
@@ -198,7 +209,7 @@ public sealed partial class WorkflowEngine
             lock (_stateSync)
                 _currentFault = fault;
             MarkNodeFinished(node.Id, token.TokenId, E_NodeState.Failed, pathException.Message);
-            RecordRunEvent(WorkflowRunEventDraft.Fault(
+            var faultReceipt = TryRecordRunEvent(WorkflowRunEventDraft.Fault(
                 "NodeFailed",
                 node,
                 faultIdentity,
@@ -209,8 +220,27 @@ public sealed partial class WorkflowEngine
                     ["InterruptAlarmCode"] = fault.InterruptAlarmCode,
                     ["CommitStarted"] = commitStarted
                 }));
+            // 节点失败同时进入运行轨迹，界面在“运行监控”中查看，不依赖弹窗。
+            PublishTraceEntry(faultReceipt, node, faultIdentity, "NodeFailed", pathException.Message);
             throw pathException;
         }
+    }
+
+    /// <summary>把已记录的节点故障转为失败出口：清除当前故障，记录一条“故障已由失败支路处理”的运行事件。</summary>
+    private void RouteFaultToFailedPort(IWorkflowNodeModel node, ExecutionToken token, WorkflowPathException fault)
+    {
+        lock (_stateSync)
+            _currentFault = null;
+        var identity = fault.ExecutionIdentity
+            ?? new WorkflowExecutionIdentity(_runId, token.TokenId, token.AncestorTokenIds, token.ScopeIds, 0);
+        var message = $"节点失败，沿失败出口继续：{fault.Message}";
+        var receipt = TryRecordRunEvent(WorkflowRunEventDraft.Node(
+            "NodeFaultRouted",
+            node,
+            identity,
+            message,
+            new Dictionary<string, object?> { ["SelectedPort"] = WorkflowPorts.Failed, ["Message"] = fault.Message }));
+        PublishTraceEntry(receipt, node, identity, "NodeFaultRouted", message);
     }
 
     private TimeSpan GetNodeElapsed(string nodeId)

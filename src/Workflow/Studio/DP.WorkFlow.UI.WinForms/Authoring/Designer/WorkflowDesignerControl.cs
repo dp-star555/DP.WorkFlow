@@ -1191,7 +1191,7 @@ public sealed partial class WorkflowDesignerControl : Control
         float radius,
         WorkflowPortSide? sideOverride = null)
     {
-        var size = graphics.MeasureString(port.Key, font);
+        var size = graphics.MeasureString(WorkflowPorts.GetDisplayName(port.Key), font);
         var side = sideOverride ?? node.GetPortSide(port);
         var x = side switch
         {
@@ -1209,7 +1209,7 @@ public sealed partial class WorkflowDesignerControl : Control
             WorkflowPortSide.Bottom => (float)point.Y - radius - size.Height - 2,
             _ => (float)point.Y - size.Height / 2
         };
-        graphics.DrawString(port.Key, font, brush, x, y);
+        graphics.DrawString(WorkflowPorts.GetDisplayName(port.Key), font, brush, x, y);
     }
 
     /// <summary>绘制具有单连接边覆盖的额外端点。</summary>
@@ -1272,7 +1272,7 @@ public sealed partial class WorkflowDesignerControl : Control
         graphics.FillRectangle(background, rect);
         using var labelBorder = new Pen(palette.Border);
         graphics.DrawRectangle(labelBorder, rect.X, rect.Y, rect.Width, rect.Height);
-        graphics.DrawString(connection.FromPort, font, foreground, rect.X + 4, rect.Y + 1);
+        graphics.DrawString(WorkflowPorts.GetDisplayName(connection.FromPort), font, foreground, rect.X + 4, rect.Y + 1);
     }
 
     /// <summary>计算连接标签的屏幕边界。</summary>
@@ -1285,7 +1285,7 @@ public sealed partial class WorkflowDesignerControl : Control
             ? default
             : WorkflowDesignerInteraction.PointAlongPath(
                 WorkflowDesignerInteraction.GetConnectionPath(_session, connection), connection.LabelPosition);
-        var size = graphics.MeasureString(connection.FromPort, font);
+        var size = graphics.MeasureString(WorkflowPorts.GetDisplayName(connection.FromPort), font);
         return new RectangleF(
             (float)center.X - size.Width / 2 - 4,
             (float)center.Y - size.Height / 2 - 2,

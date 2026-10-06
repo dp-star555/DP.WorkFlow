@@ -167,7 +167,7 @@ public sealed class WorkflowVisionBarcodeModule : IWorkflowRuntimePluginModule
     public void Register(WorkflowRuntimePluginCatalog extensions)
     {
         extensions.Nodes.Register(WorkflowNodeDescriptor.Create<ReadVisionBarcodeNodeModel, WorkflowVisionBarcodeFact>(ports: new[]
-        { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success) }));
+        { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success), WorkflowPortDescriptor.Failure() }));
         extensions.Handlers.Register(new ReadVisionBarcodeNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IBarcodeReader>(),
             WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionAlgorithmBindings>(), WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>());
     }

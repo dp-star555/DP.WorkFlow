@@ -912,7 +912,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         var brush = direction == WorkflowPortDirection.Input
             ? Brush(196, 181, 253)
             : Brush(110, 231, 183);
-        var estimatedWidth = port.Key.Length * size * 0.58;
+        var estimatedWidth = WorkflowPorts.GetDisplayName(port.Key).Length * size * 0.58;
         var side = sideOverride ?? node.GetPortSide(port);
         var x = side switch
         {
@@ -928,7 +928,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             WorkflowPortSide.Bottom => point.Y - radius - size - 4,
             _ => point.Y - size / 2 - 2
         };
-        DrawText(context, port.Key, x, y, size, FontWeights.Normal, brush);
+        DrawText(context, WorkflowPorts.GetDisplayName(port.Key), x, y, size, FontWeights.Normal, brush);
     }
 
     /// <summary>绘制具有单连接边覆盖的额外端点。</summary>
@@ -980,7 +980,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         context.DrawRectangle(background, new Pen(border, 1), rect);
         DrawText(
             context,
-            connection.FromPort,
+            WorkflowPorts.GetDisplayName(connection.FromPort),
             rect.X + 4,
             rect.Y + 1,
             Math.Max(3, 10 * _session.Zoom),
@@ -997,7 +997,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             : WorkflowDesignerInteraction.PointAlongPath(
                 WorkflowDesignerInteraction.GetConnectionPath(_session, connection), connection.LabelPosition);
         var size = Math.Max(3, 10 * (_session?.Zoom ?? 1));
-        var width = MeasureTextWidth(connection.FromPort, size, FontWeights.SemiBold) + 8;
+        var width = MeasureTextWidth(WorkflowPorts.GetDisplayName(connection.FromPort), size, FontWeights.SemiBold) + 8;
         return new Rect(center.X - width / 2, center.Y - (size + 6) / 2, width, size + 6);
     }
 
