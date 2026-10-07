@@ -10,6 +10,18 @@ namespace DP.WorkFlow.Tests;
 public sealed class LabelInspectionEditorTests
 {
     [Fact]
+    public void PrepareCommit_WithoutRecipe_AllowsApplyingParameters_AndInvalidRecipeIsValidationError()
+    {
+        var node = new InspectLabelNodeModel();
+        var page = new LabelInspectionEditorPageModel(node, new OpenCvImageCodec(), () => { });
+        // 新建节点还没有配方：只改参数点“应用”不能抛未处理异常。
+        page.PrepareCommit();
+        node.RecipeJson = "{\"name\":\"broken\",\"width\":0}";
+        var error = Assert.Throws<InvalidOperationException>(page.PrepareCommit);
+        Assert.Contains("标签配方无效", error.Message);
+    }
+
+    [Fact]
     public void ImportIntoRoot_CopiesOutsideSampleIntoSamplesFolder_WithoutOverwriting()
     {
         var root = Path.Combine(Path.GetTempPath(), "label-root-" + Guid.NewGuid().ToString("N"));

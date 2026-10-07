@@ -91,7 +91,12 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
     {
         if (!CanCommit) throw new InvalidOperationException(CommitBlockReason);
         if (_capture?.Invoke() is { } recipe) SetRecipe(recipe);
-        _ = Serializer.Deserialize(Node.RecipeJson);
+        // 还没有配方（新建节点只改了参数）时允许提交，由节点校验提示“请创建/导入配方”。
+        if (string.IsNullOrWhiteSpace(Node.RecipeJson)) return;
+        // 配方无效转为参数校验错误，由节点窗口提示，而不是未处理异常。
+        try { _ = Serializer.Deserialize(Node.RecipeJson); }
+        catch (Exception error) when (error is not OperationCanceledException and not InvalidOperationException)
+        { throw new InvalidOperationException("标签配方无效：" + error.Message, error); }
     }
     /// <summary>取消/关闭只停止与释放；不会捕获或回写控件草稿。</summary>
     public async ValueTask DisposeAsync()
