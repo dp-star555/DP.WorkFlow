@@ -125,6 +125,7 @@ internal sealed class LabelWorkbenchControl : UserControl
         Add("导出配方", () =>
         {
             model.PrepareCommit();
+            if (string.IsNullOrWhiteSpace(model.Node.RecipeJson)) throw new InvalidOperationException("当前还没有配方：请先载入预览并创建ROI，或导入配方。");
             using var dialog = new SaveFileDialog { Filter = "标签配方|*.json", FileName = "recipe.json" };
             if (dialog.ShowDialog(this) == DialogResult.OK) File.WriteAllText(dialog.FileName, model.Node.RecipeJson);
             return Task.CompletedTask;
