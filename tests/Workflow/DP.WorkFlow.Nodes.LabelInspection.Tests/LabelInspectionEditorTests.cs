@@ -22,19 +22,20 @@ public sealed class LabelInspectionEditorTests
     }
 
     [Fact]
-    public void FitLabelRegion_CoversWholeImageInLabelCoordinates_AndSetterNotifies()
+    public void SetReferencePose_StoresPoseOnNode_AndNotifiesOnlyOnChange()
     {
-        // 参考点在原图(1500,700)：标签坐标 = 图像 - 参考点，整张原图对应原点(-1500,-700)、尺寸2544×1608。
-        var region = LabelInspectionEditorPageModel.FitLabelRegion((x, y) => (x - 1500.4, y - 700.6), 2544, 1608, 1);
-        Assert.Equal((-1501d, -701d, 2545, 1609), region);
-        Assert.Equal(1272, LabelInspectionEditorPageModel.FitLabelRegion((x, y) => (x, y), 2544, 1608, 2).Width);
-
         var node = new InspectLabelNodeModel(); int changed = 0;
         var model = new LabelInspectionEditorPageModel(node, new OpenCvImageCodec(), () => changed++);
-        model.SetLabelRegion(region.OriginX, region.OriginY, region.Width, region.Height);
-        model.SetLabelRegion(region.OriginX, region.OriginY, region.Width, region.Height);
+        Assert.Null(node.GetReferencePose());
+        var pose = DP.Vision.Algorithms.CoordinateMatrix2D.FromAffine(0.8, -0.6, 1500.5, 0.6, 0.8, 700.25);
+        model.SetReferencePose(pose);
+        model.SetReferencePose(pose);
         Assert.Equal(1, changed);
-        Assert.Equal((-1501d, -701d, 2545, 1609), (node.LabelOriginX, node.LabelOriginY, node.NewLabelWidth, node.NewLabelHeight));
+        var stored = node.GetReferencePose()!;
+        Assert.Equal((0.8, -0.6, 1500.5, 0.6, 0.8, 700.25), (stored.M11, stored.M12, stored.Tx, stored.M21, stored.M22, stored.Ty));
+        // 参考位姿随节点配置一起快照/保存。
+        var copy = (InspectLabelNodeModel)WorkflowNodeConfigurationSnapshotter.Capture(node);
+        Assert.Equal(1500.5, copy.GetReferencePose()!.Tx);
     }
 
     [Fact]

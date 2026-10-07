@@ -47,36 +47,14 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
         Node.ReferenceImagePath = relativePath; _changed();
     }
 
-    /// <summary>记录标签区域（标签坐标系下的原点与新建配方宽高），并通知属性页刷新。</summary>
-    /// <param name="originX">配方(0,0)在标签坐标系中的X。</param><param name="originY">配方(0,0)在标签坐标系中的Y。</param>
-    /// <param name="width">新建配方宽（像素）。</param><param name="height">新建配方高（像素）。</param>
-    public void SetLabelRegion(double originX, double originY, int width, int height)
+    /// <summary>记录参考位姿（配置帧坐标系的局部→原图），之后在这一帧原图上画的ROI随定位移动；并通知属性页刷新。</summary>
+    /// <param name="pose">配置帧坐标系的局部→原图矩阵。</param>
+    public void SetReferencePose(DP.Vision.Algorithms.CoordinateMatrix2D pose)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (Node.LabelOriginX == originX && Node.LabelOriginY == originY && Node.NewLabelWidth == width && Node.NewLabelHeight == height) return;
-        Node.LabelOriginX = originX; Node.LabelOriginY = originY; Node.NewLabelWidth = width; Node.NewLabelHeight = height; _changed();
-    }
-
-    /// <summary>
-    /// 把整张原图换算到标签坐标系，返回包住原图的标签区域（原点取整、尺寸按标签像素尺寸向上取整，限制在12000内）。
-    /// 用于还没有配方时首次摆正预览，避免默认原点(0,0)只截到定位参考点右下方的一角。
-    /// </summary>
-    /// <param name="imageToLocal">原图到标签坐标系的映射（定位坐标系的 ImageToLocal）。</param>
-    /// <param name="imageWidth">原图宽。</param><param name="imageHeight">原图高。</param><param name="pixelSize">标签像素尺寸。</param>
-    public static (double OriginX, double OriginY, int Width, int Height) FitLabelRegion(
-        Func<double, double, (double X, double Y)> imageToLocal, int imageWidth, int imageHeight, double pixelSize)
-    {
-        double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
-        double w = imageWidth, h = imageHeight;
-        foreach (var (x, y) in new[] { (0d, 0d), (w, 0d), (0d, h), (w, h) })
-        {
-            var (lx, ly) = imageToLocal(x, y);
-            minX = Math.Min(minX, lx); minY = Math.Min(minY, ly); maxX = Math.Max(maxX, lx); maxY = Math.Max(maxY, ly);
-        }
-        double originX = Math.Floor(minX), originY = Math.Floor(minY);
-        int width = (int)Math.Clamp(Math.Ceiling((maxX - originX) / pixelSize), 1, 12000);
-        int height = (int)Math.Clamp(Math.Ceiling((maxY - originY) / pixelSize), 1, 12000);
-        return (originX, originY, width, height);
+        if (Node.GetReferencePose() is { } current && current.M11 == pose.M11 && current.M12 == pose.M12 && current.Tx == pose.Tx
+            && current.M21 == pose.M21 && current.M22 == pose.M22 && current.Ty == pose.Ty) return;
+        Node.SetReferencePose(pose); _changed();
     }
 
     /// <summary>

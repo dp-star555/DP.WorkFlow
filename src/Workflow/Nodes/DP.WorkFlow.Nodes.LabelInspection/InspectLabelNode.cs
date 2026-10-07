@@ -22,23 +22,22 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
     [WorkflowProperty("任务期望数据", "可选绑定TaskDataSnapshot，不从识别结果生成期望值，也不保存本次任务数据。", Category = "输入")]
     public WorkflowInput<TaskDataSnapshot> TaskData { get; set; } = WorkflowInput<TaskDataSnapshot>.FromLiteral(null);
     /// <summary>可选：标签所在的本帧坐标系（来自模板定位后的“构建本帧坐标系”等），ROI随之平移、旋转和缩放。</summary>
-    [WorkflowProperty("标签坐标系", "可选。绑定定位节点输出的CoordinateSystem后，配方ROI画在标签坐标下，每帧按坐标系放置到原图并只对ROI范围取样（支持平移/旋转/缩放）；不绑定时配方坐标即原图坐标。", Category = "定位")]
+    [WorkflowProperty("标签坐标系", "可选。绑定定位节点输出的CoordinateSystem后，配方ROI直接画在配置时那一帧的原图上；每帧按本帧坐标系相对配置帧的位移/旋转/缩放放置ROI，只对ROI范围取样。不绑定时ROI固定在原图坐标。", Category = "定位")]
     public WorkflowInput<VisionCoordinateSystem> LabelCoordinates { get; set; } = WorkflowInput<VisionCoordinateSystem>.FromLiteral(null);
-    /// <summary>配方左上角在标签坐标系中的X。</summary>
-    [WorkflowProperty("标签原点X", "配方图左上角在标签坐标系中的X（坐标系单位）。", Category = "定位")]
-    public double LabelOriginX { get; set; }
-    /// <summary>配方左上角在标签坐标系中的Y。</summary>
-    [WorkflowProperty("标签原点Y", "配方图左上角在标签坐标系中的Y（坐标系单位）。", Category = "定位")]
-    public double LabelOriginY { get; set; }
-    /// <summary>每个配方像素对应的坐标系单位。</summary>
-    [WorkflowProperty("配方像素尺寸", "每个配方像素对应的坐标系单位；坐标系以像素为单位且不缩放时为1。", Category = "定位")]
-    public double LabelPixelSize { get; set; } = 1;
-    /// <summary>新建配方时的标签宽度（配方像素）；0表示使用预览图尺寸。已有配方以配方尺寸为准。</summary>
-    [WorkflowProperty("新建配方宽度", "绑定标签坐标系后，配置页按此尺寸摆正标签预览（配方像素）；0为预览图宽度。已有配方时以配方尺寸为准。", Category = "定位")]
-    public int NewLabelWidth { get; set; }
-    /// <summary>新建配方时的标签高度（配方像素）；0表示使用预览图尺寸。</summary>
-    [WorkflowProperty("新建配方高度", "绑定标签坐标系后，配置页按此尺寸摆正标签预览（配方像素）；0为预览图高度。已有配方时以配方尺寸为准。", Category = "定位")]
-    public int NewLabelHeight { get; set; }
+    /// <summary>是否已记录参考位姿（配置帧的标签坐标系）。</summary>
+    [Browsable(false)] public bool HasReferencePose { get; set; }
+    /// <summary>参考位姿：配置帧坐标系局部→原图矩阵 M11。</summary>
+    [Browsable(false)] public double ReferenceM11 { get; set; } = 1;
+    /// <summary>参考位姿 M12。</summary>
+    [Browsable(false)] public double ReferenceM12 { get; set; }
+    /// <summary>参考位姿 Tx。</summary>
+    [Browsable(false)] public double ReferenceTx { get; set; }
+    /// <summary>参考位姿 M21。</summary>
+    [Browsable(false)] public double ReferenceM21 { get; set; }
+    /// <summary>参考位姿 M22。</summary>
+    [Browsable(false)] public double ReferenceM22 { get; set; } = 1;
+    /// <summary>参考位姿 Ty。</summary>
+    [Browsable(false)] public double ReferenceTy { get; set; }
     /// <summary>SDK原生配方JSON，使用专用页面导入或捕获；完整保留项目选择、约束和库修订。</summary>
     [Browsable(false)]
     public string RecipeJson { get; set; } = string.Empty;
@@ -89,9 +88,12 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
         if (LabelCoordinates is null || !(Bound(LabelCoordinates) || LabelCoordinates.Source == WorkflowValueSource.Literal && LabelCoordinates.LiteralValue is null))
             errors.Add("标签坐标系只允许绑定或空Literal。");
         if (LabelCoordinates?.Binding is { IsPublicData: false } c && c.NodeId == Id) errors.Add("标签坐标系不能绑定自身。");
-        if (NewLabelWidth is < 0 or > 12000 || NewLabelHeight is < 0 or > 12000) errors.Add("新建配方宽高必须在0至12000之间。");
-        if (!double.IsFinite(LabelOriginX) || !double.IsFinite(LabelOriginY) || !double.IsFinite(LabelPixelSize) || LabelPixelSize <= 0)
-            errors.Add("标签原点必须有限，配方像素尺寸必须为正数。");
+        if (HasReferencePose)
+        {
+            double[] pose = { ReferenceM11, ReferenceM12, ReferenceTx, ReferenceM21, ReferenceM22, ReferenceTy };
+            if (pose.Any(v => !double.IsFinite(v)) || Math.Abs(ReferenceM11 * ReferenceM22 - ReferenceM12 * ReferenceM21) < 1e-12)
+                errors.Add("参考位姿无效，请在配置页重新载入上游预览。");
+        }
         // 还没有配方不阻止整个流程编译运行：上游节点要先跑出预览图，才能在配置页制作配方；本节点运行时报“尚未配置配方”。
         if (string.IsNullOrWhiteSpace(RecipeJson)) { }
         else if (RecipeJson.Length > 1024 * 1024) errors.Add("标签配方不能超过1MB。");
@@ -106,14 +108,31 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
         }
         return errors;
     }
-    /// <summary>配方像素坐标到原图坐标的放置；未提供坐标系时为空（配方坐标即原图坐标）。</summary>
+    /// <summary>参考位姿（配置帧坐标系的局部→原图）；未记录时为空。</summary>
+    public CoordinateMatrix2D? GetReferencePose() => HasReferencePose
+        ? CoordinateMatrix2D.FromAffine(ReferenceM11, ReferenceM12, ReferenceTx, ReferenceM21, ReferenceM22, ReferenceTy) : null;
+    /// <summary>记录或清除参考位姿。</summary>
+    /// <param name="pose">配置帧坐标系的局部→原图矩阵；为空时清除。</param>
+    public void SetReferencePose(CoordinateMatrix2D? pose)
+    {
+        HasReferencePose = pose is not null;
+        (ReferenceM11, ReferenceM12, ReferenceTx, ReferenceM21, ReferenceM22, ReferenceTy) = pose is null
+            ? (1d, 0d, 0d, 0d, 1d, 0d) : (pose.M11, pose.M12, pose.Tx, pose.M21, pose.M22, pose.Ty);
+    }
+    /// <summary>
+    /// 配方坐标（配置帧原图坐标）到本帧原图坐标的放置 = 本帧局部→原图 × 配置帧原图→局部，
+    /// 即ROI随标签相对配置帧的位移/旋转/缩放移动；配置帧本身为恒等。未提供坐标系时为空（ROI固定在原图坐标）。
+    /// </summary>
     /// <param name="system">本帧标签坐标系。</param>
     public InspectionPlacement? Placement(VisionCoordinateSystem? system)
     {
         if (system is null) return null;
-        var recipeToImage = system.LocalToImage.Multiply(CoordinateMatrix2D.FromAffine(LabelPixelSize, 0, LabelOriginX, 0, LabelPixelSize, LabelOriginY));
+        var reference = GetReferencePose() ?? throw new InvalidOperationException(MissingReferencePoseMessage);
+        var recipeToImage = system.LocalToImage.Multiply(reference.Inverse());
         return new InspectionPlacement(recipeToImage.M11, recipeToImage.M12, recipeToImage.Tx, recipeToImage.M21, recipeToImage.M22, recipeToImage.Ty);
     }
+    /// <summary>绑定了标签坐标系但还没有参考位姿时的执行故障说明。</summary>
+    public const string MissingReferencePoseMessage = "已绑定标签坐标系但尚未记录参考位姿：请运行一次采图与定位，在“标签配置与试检测”页点“载入上游预览”后再画ROI。";
     /// <summary>是否已经有配方；没有配方时节点可以随流程运行到此处，但执行时故障。</summary>
     [Browsable(false)] public bool HasRecipe => !string.IsNullOrWhiteSpace(RecipeJson);
     /// <summary>尚未配置配方时的执行故障说明。</summary>

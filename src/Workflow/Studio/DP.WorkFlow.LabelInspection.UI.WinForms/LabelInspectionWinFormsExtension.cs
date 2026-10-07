@@ -75,32 +75,27 @@ internal sealed class LabelWorkbenchControl : UserControl
             if (binding is not { IsPublicData: false } key) throw new InvalidOperationException("请先绑定上游图像；公开数据输入请手工加载配置样张。");
             using var preview = _previews?.Capture(key.NodeId) ?? throw new InvalidOperationException("没有本轮上游图像预览，请先运行采图节点或手工加载配置样张。");
             if (model.Node.LabelCoordinates.Binding is not { } coordinates) { await LoadAsync(preview.Frame); return; }
-            // 绑定了标签坐标系：用同一轮的定位把标签区域摆正成配方尺寸，ROI画在标签坐标下，生产时随定位放置。
+            // 绑定了标签坐标系：ROI直接画在原图上，同时记下这一帧的定位作为参考位姿，运行时ROI随标签相对它的位移/旋转/缩放移动。
             if (coordinates.IsPublicData || coordinates.MemberPath != "CoordinateSystem")
-                throw new InvalidOperationException("配置页摆正预览需要“标签坐标系”直接绑定定位节点的CoordinateSystem成员。");
+                throw new InvalidOperationException("记录参考位姿需要“标签坐标系”直接绑定定位节点的CoordinateSystem成员。");
             using var located = _previews.Capture(coordinates.NodeId) ?? throw new InvalidOperationException("没有本轮定位结果，请先运行定位节点。");
-            var system = (located.Facts as IVisionCoordinateResult)?.CoordinateSystem ?? throw new InvalidOperationException("本帧没有成功定位，不能摆正标签。");
+            var system = (located.Facts as IVisionCoordinateResult)?.CoordinateSystem ?? throw new InvalidOperationException("本帧没有成功定位，不能记录参考位姿。");
             system.ValidateFrame(preview.Frame);
             var node = model.Node;
-            // 还没有配方且标签区域仍是默认值：默认原点(0,0)是定位参考点，只能截到其右下方的一角。
-            // 改为把整张原图换算到标签坐标系，自动得到包住原图的原点与尺寸并写回参数，用户可再按需收小。
-            bool fitted = !node.HasRecipe && node.LabelOriginX == 0 && node.LabelOriginY == 0 && node.NewLabelWidth == 0 && node.NewLabelHeight == 0;
-            if (fitted)
+            if (!node.HasRecipe || node.GetReferencePose() is null)
             {
-                var info = preview.Frame.Image.Info;
-                var (ox, oy, w, h) = LabelInspectionEditorPageModel.FitLabelRegion((x, y) =>
-                {
-                    var local = system.ImageToLocal.Map(new Coordinate2D(x, y));
-                    return (local.X, local.Y);
-                }, info.Width, info.Height, node.LabelPixelSize);
-                model.SetLabelRegion(ox, oy, w, h);
+                // 还没有ROI：本帧就是配置帧，原图原样载入。
+                model.SetReferencePose(system.LocalToImage);
+                await LoadAsync(preview.Frame);
+                _status.Text = "已载入原图并以本帧定位为参考位姿；直接在原图上画ROI，运行时ROI随标签相对本帧的位移/旋转/缩放移动。";
+                return;
             }
-            var (width, height) = LabelSize(preview.Frame);
-            using var label = node.Placement(system)!.Rectify(preview.Frame, width, height);
-            await LoadAsync(label);
-            _status.Text = fitted
-                ? $"已按标签坐标系摆正为 {width}×{height}，并自动设置标签原点({node.LabelOriginX:0},{node.LabelOriginY:0})与新建宽高以包住整张原图；可在参数页收小到标签范围后重新载入。超出原图的部分为黑色。"
-                : $"已按标签坐标系摆正为 {width}×{height}（配方像素）；在此图上画的ROI为标签坐标，运行时随定位放置。超出原图的部分为黑色。";
+            // 已有ROI：不改参考位姿，把本帧按定位对齐到配置帧显示，ROI仍落在标签上；配置帧本身即原图（恒等）。
+            var placement = node.Placement(system)!;
+            var recipe = model.Serializer.Deserialize(node.RecipeJson);
+            using var aligned = placement.Rectify(preview.Frame, recipe.Width, recipe.Height);
+            await LoadAsync(aligned);
+            _status.Text = $"本帧标签相对配置帧旋转 {placement.RotationDegrees:0.#}°、平移 ({placement.Tx:0.#}, {placement.Ty:0.#})，已对齐到配置帧显示，ROI坐标不变；超出原图的部分为黑色。";
         });
         Add("保存为参考图", async () =>
         {
@@ -190,17 +185,6 @@ internal sealed class LabelWorkbenchControl : UserControl
             WorkflowWinFormsTheme.ApplyDark(form, followAddedControls: true);
             form.FormClosed += (_, _) => _themedDialogs.Remove(form);
         }
-    }
-    // 摆正尺寸：已有配方以配方为准，否则用“新建配方宽/高”，都没有时用预览图尺寸。
-    private (int Width, int Height) LabelSize(ImageFrame frame)
-    {
-        if (!string.IsNullOrWhiteSpace(_model.Node.RecipeJson))
-        {
-            var recipe = _model.Serializer.Deserialize(_model.Node.RecipeJson);
-            return (recipe.Width, recipe.Height);
-        }
-        return (_model.Node.NewLabelWidth > 0 ? _model.Node.NewLabelWidth : frame.Image.Info.Width,
-            _model.Node.NewLabelHeight > 0 ? _model.Node.NewLabelHeight : frame.Image.Info.Height);
     }
     private string Root => Path.GetFullPath(_model.Node.ResourceRoot, Path.GetFullPath(_baseDirectory()));
     private async Task LoadAuthorAsync()

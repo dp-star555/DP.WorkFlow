@@ -75,17 +75,26 @@ public sealed class LabelInspectionPipelineTests
     }
 
     [Fact]
-    public void Placement_ComposesCoordinateSystemWithLabelOriginAndPixelSize()
+    public void Placement_MovesRoisByPoseRelativeToReferenceFrame()
     {
-        var node = new InspectLabelNodeModel { LabelOriginX = 3, LabelOriginY = 4, LabelPixelSize = 0.5 };
+        var node = new InspectLabelNodeModel();
         Assert.Null(node.Placement(null));
-        // 局部→原图：尺度 2、平移 (10, 20)；配方像素 (x, y) → 局部 (3 + x/2, 4 + y/2) → 原图 (16 + x, 28 + y)。
-        var system = new VisionCoordinateSystem(new VisionCoordinateDefinition("label", "标签"), "frame", 400, 400,
-            CoordinateMatrix2D.FromAffine(2, 0, 10, 0, 2, 20));
-        var placement = node.Placement(system)!;
-        Assert.Equal((16d, 28d), placement.Map(0, 0));
-        Assert.Equal((26d, 33d), placement.Map(10, 5));
-        Assert.True(placement.IsIntegerTranslation);
+        var reference = Pose(1, 0, 10, 0, 1, 20);
+        // 没有参考位姿时不能放置：必须先在配置页用一帧定位结果记录。
+        Assert.Contains("参考位姿", Assert.Throws<InvalidOperationException>(() => node.Placement(reference)).Message);
+        node.SetReferencePose(reference.LocalToImage);
+        Assert.DoesNotContain(node.ValidateConfiguration(), e => e.Contains("参考位姿"));
+        // 配置帧本身为恒等：ROI就是原图坐标。
+        var same = node.Placement(reference)!;
+        Assert.Equal((3d, 4d), same.Map(3, 4));
+        Assert.True(same.IsIntegerTranslation);
+        // 本帧标签旋转90°并移动：配置帧原图 (10,20) 即标签原点 → 本帧 (50,5)；沿标签X轴 2 → 本帧 +Y 2。
+        var moved = node.Placement(Pose(0, -1, 50, 1, 0, 5))!;
+        Assert.Equal((50d, 5d), moved.Map(10, 20));
+        Assert.Equal((50d, 7d), moved.Map(12, 20));
+        Assert.Equal(90, moved.RotationDegrees, 1e-9);
+        static VisionCoordinateSystem Pose(double m11, double m12, double tx, double m21, double m22, double ty) =>
+            new(new VisionCoordinateDefinition("label", "标签"), "frame", 400, 400, CoordinateMatrix2D.FromAffine(m11, m12, tx, m21, m22, ty));
     }
 
     [Theory]
@@ -94,7 +103,8 @@ public sealed class LabelInspectionPipelineTests
     public async Task RunAsync_LabelCoordinates_PlaceRoisOnLargerShiftedImage(bool ink, EInspectionVerdict expected)
     {
         await using var rig = new Rig(false);
-        // 原图 84×58，标签（64×48 配方）位于 (10, 5)；墨点画在标签坐标 (12..24) 处。
+        // 配置帧中标签在原点（参考位姿为恒等），配方 64×48；本帧原图 84×58，标签移到 (10, 5)；墨点画在标签内 (12..24) 处。
+        rig.Node.SetReferencePose(CoordinateMatrix2D.Identity);
         var pixels = Enumerable.Repeat((byte)255, 84 * 58).ToArray();
         if (ink) for (int y = 12; y < 24; y++) for (int x = 12; x < 24; x++) pixels[(y + 5) * 84 + x + 10] = 0;
         File.WriteAllBytes(Path.Combine(rig.Root, "input.png"), new OpenCvImageCodec().EncodePng(new PixelSnapshot(84, 58, EImagePixelFormat.Gray8, pixels)));
