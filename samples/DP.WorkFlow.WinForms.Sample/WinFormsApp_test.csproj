@@ -29,6 +29,8 @@
     <ProjectReference Include="..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Process\DP.WorkFlow.Nodes.Process.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Standard\DP.WorkFlow.Nodes.Standard.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision\DP.WorkFlow.Nodes.Vision.csproj" />
+    <ProjectReference Include="..\..\src\Workflow\Hosting\DP.WorkFlow.LabelInspection.Runtime\DP.WorkFlow.LabelInspection.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\Workflow\Studio\DP.WorkFlow.LabelInspection.UI.WinForms\DP.WorkFlow.LabelInspection.UI.WinForms.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Persistence\DP.WorkFlow.Persistence.Json\DP.WorkFlow.Persistence.Json.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Kernel\DP.WorkFlow.Runtime\DP.WorkFlow.Runtime.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Studio\DP.WorkFlow.UI.Shared\DP.WorkFlow.UI.Shared.csproj" />

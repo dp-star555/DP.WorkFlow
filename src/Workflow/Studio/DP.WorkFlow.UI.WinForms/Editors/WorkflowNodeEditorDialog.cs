@@ -44,6 +44,27 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     private IReadOnlyDictionary<string, IWorkflowWinFormsNodeEditorPageRenderer> _renderers =
         new Dictionary<string, IWorkflowWinFormsNodeEditorPageRenderer>(StringComparer.Ordinal);
     private Action<IWorkflowBlockMappingNode>? _editMappings;
+    private bool _releasingPages, _pagesReleased;
+
+    // 在窗口仍有UI消息循环时等待页面停止；Designer.Dispose的同步兜底不能等待仍需UI线程的原生试运行。
+    protected override async void OnFormClosing(FormClosingEventArgs e)
+    {
+        base.OnFormClosing(e);
+        if (e.Cancel || _model is null || _pagesReleased) return;
+        e.Cancel = true;
+        if (_releasingPages) return;
+        _releasingPages = true;
+        var result = DialogResult;
+        DialogResult = DialogResult.None;
+        Enabled = false;
+        try { await _model.DisposeAsync(); }
+        catch (Exception error) { System.Diagnostics.Trace.TraceError(error.ToString()); }
+        finally
+        {
+            _pagesReleased = true;
+            if (!IsDisposed) BeginInvoke(new Action(() => { if (!IsDisposed) { DialogResult = result; Close(); } }));
+        }
+    }
 
     /// <summary>获取运行时模型，并避免设计器无参实例误触发业务页面构建。</summary>
     private WorkflowNodeEditorModel Model =>

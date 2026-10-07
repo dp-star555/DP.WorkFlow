@@ -10,7 +10,7 @@
 
 ## 历史：模板定位坐标系首轮
 
-已接入共享定位身份/正反矩阵、模板像素签名、局部ROI随动及双坐标结果。Blob/颜色/阈值Region、卡尺、鲁棒直线显式绑定；两平台面积ROI页面支持制作时逆变换、隔离确认/Undo、换图只读刷新和显式解除。当前仍18节点，不新增全局当前矩阵。用法与限制见[定位坐标系机制](nodes/vision-coordinate-systems.md)。
+已接入坐标来源绑定/正反矩阵、模板参考来源证据、局部ROI随动及双坐标结果；当前规则不锁定制作时的定义或模板身份，见[来源绑定决策](decisions/0017-vision-source-bindings-not-authoring-locks.md)。Blob/颜色/阈值Region、卡尺、鲁棒直线显式绑定；两平台面积ROI页面支持制作时逆变换、隔离确认/Undo、换图只读刷新和显式解除。当前仍18节点，不新增全局当前矩阵。用法与限制见[定位坐标系机制](nodes/vision-coordinate-systems.md)。
 
 最终Workflow **661/661**（Windows **337**）通过；DP.Vision两框架各核心 **115**、算法 **63**、HALCON边界 **5**，原生探针及Demo smoke通过。Workflow Debug/Release、独立WPF Debug/Release均零警告/错误，Solution 43/43。新坐标集成8项、算法数据用例6项；验证真实模板匹配后的平移旋转随动、同帧身份、换模板拒绝、失败不提交、编辑隔离与无效预览恢复。
 

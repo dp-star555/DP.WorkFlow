@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DP.WorkFlow.UI.Shared/DP.WorkFlow.UI.Shared.csproj" />
+    <ProjectReference Include="../../Nodes/DP.WorkFlow.Nodes.LabelInspection/DP.WorkFlow.Nodes.LabelInspection.csproj" />
+    <ProjectReference Include="../../../../../DP.LabelInspection/src/DP.LabelInspection.Storage/DP.LabelInspection.Storage.csproj" />
+  </ItemGroup>
+</Project>

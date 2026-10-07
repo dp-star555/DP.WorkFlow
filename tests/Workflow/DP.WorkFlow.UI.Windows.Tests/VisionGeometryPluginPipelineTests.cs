@@ -38,14 +38,19 @@ public sealed class VisionGeometryPluginPipelineTests
     }
 
     [Fact]
-    public async Task ChangedTemplate_RejectsRoiConfirmedWithOldReference()
+    public async Task ChangedTemplate_UsesCurrentCoordinates_WithoutRebindingRoiOrGeometricInputs()
     {
         using var rig = new Rig(); using var host = rig.Host(rig.TemplateDocument());
         Assert.True((await host.RunAsync()).Success);
         rig.ChangeTemplate(); rig.WriteScene();
-        Assert.False((await host.RunAsync()).Success);
-        Assert.True(Output<TemplatePoseResult>(host, "location").Found); // 匹配仍成功，是参考签名变化让下游拒绝。
-        Assert.DoesNotContain(host.Engine!.RunState.NodeOutputs, o => o.NodeId is "distance" or "business-roi" or "p0");
+        var run = await host.RunAsync(); Assert.True(run.Success, run.Message);
+        Assert.True(Output<TemplatePoseResult>(host, "location").Found);
+        Assert.Equal(2, Output<GeometricDistanceResult>(host, "distance").Distance, 9);
+        Assert.Equal(12, Output<BlobAnalysisResult>(host, "business-roi").Blobs.Sum(b => b.Area));
+        Assert.Equal(new PointD(12, 21.5), Output<VisionPoint>(host, "p0").ImagePosition);
+        var system = Output<VisionCoordinateSystemResult>(host, "business-source").CoordinateSystem;
+        Assert.Equal("", system.Definition.Reference);
+        Assert.Contains("reference:image:", system.SourceIdentity);
     }
 
     [Fact]
@@ -74,17 +79,16 @@ public sealed class VisionGeometryPluginPipelineTests
     [InlineData("version")]
     [InlineData("unit")]
     [InlineData("name")]
-    public void CoordinateDefinitionErrorsFailCompilationBeforeReadingImages(string fault)
+    public void CoordinateDefinitionEditsDoNotFreezeConsumerOrOtherSources(string fault)
     {
         using var rig = new Rig(); var document = rig.PoseDocument();
         var source = document.Graph.Nodes.Single(n => n.Id == "business-source");
         if (fault == "inconsistent") { var other = rig.Build("other", "Pose"); Set(other, "DefinitionVersion", 2); document = rig.Document([.. document.Graph.Nodes, other]); }
         if (fault == "version") Set(source, "DefinitionVersion", 2);
         if (fault == "unit") Set(source, "Unit", EVisionCoordinateUnit.Millimeter);
-        // 名称不进入签名，只是共用同一坐标系的节点之间必须一致。
+        // 来源节点独立；同一业务ID的其它来源显示名称变化不应否决当前绑定。
         if (fault == "name") { var other = rig.Build("other", "Pose"); Set(other, "CoordinateName", "夹具"); document = rig.Document([.. document.Graph.Nodes, other]); }
-        var error = Assert.Throws<WorkflowCompilationException>(() => new WorkflowCompiler(rig.Nodes).Compile(document));
-        Assert.Contains(error.Errors, e => e.Code == "WF030");
+        _ = new WorkflowCompiler(rig.Nodes).Compile(document);
         Assert.Null(rig.Frames.Capture("source"));
     }
 

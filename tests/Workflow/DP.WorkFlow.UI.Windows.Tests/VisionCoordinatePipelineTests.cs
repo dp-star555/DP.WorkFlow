@@ -115,30 +115,47 @@ public sealed class VisionCoordinatePipelineTests
         Assert.Contains(child.ValidateConfiguration(), e => e.Contains("自身", StringComparison.Ordinal));
     }
 
-    [Theory]
-    [InlineData("frame")]
-    [InlineData("definition")]
-    [InlineData("template")]
-    public async Task ConsumerRejectsMixedFrameOrChangedDefinitionBeforeOutput(string fault)
+    [Fact]
+    public async Task ConsumerRejectsMixedFrameBeforeOutput()
     {
         using var data = new Images(); var document = data.Pipeline();
         var blob = (AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node;
-        if (fault == "frame") blob.Frame = Input<ImageFrame>("template");
-        if (fault == "definition") blob.Coordinates!.CoordinateSystemId = "another-template";
-        if (fault == "template") data.ChangeTemplateOnePixel();
+        blob.Frame = Input<ImageFrame>("template");
         using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(data.Nodes, data.Handlers);
-        if (fault == "definition")
-        {
-            // 定义身份可静态解析，编译阶段即拒绝，不读取任何图像。
-            Assert.Throws<WorkflowCompilationException>(() => host.Configure(document, new WorkflowContext(Services(scope))));
-            Assert.Null(scope.Capture("scene"));
-            return;
-        }
         host.Configure(document, new WorkflowContext(Services(scope)));
         Assert.False((await host.RunAsync()).Success);
-        Assert.True(Output<TemplatePoseResult>(host, "pose").Found); // 不是通过匹配失败间接蒙混过关。
+        Assert.True(Output<TemplatePoseResult>(host, "pose").Found);
         Assert.DoesNotContain(host.Engine!.RunState.NodeOutputs, o => o.NodeId == "blob");
         using var preview = scope.Capture("blob"); Assert.Null(preview);
+    }
+
+    [Fact]
+    public async Task ChangingDynamicTemplate_KeepsConsumersAndEditorUsable_WithoutRebinding()
+    {
+        using var data = new Images(); var document = data.Pipeline();
+        var node = (AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node;
+        using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(data.Nodes, data.Handlers);
+        host.Configure(document, new WorkflowContext(Services(scope)));
+        Assert.True((await host.RunAsync()).Success);
+        var first = Output<BlobAnalysisResult>(host, "blob");
+        var binding = node.Coordinates;
+        var saved = new WorkflowDocumentJsonStore(data.Nodes).Serialize(document);
+        using var page = new VisionFrameEditorPageModel(node, scope);
+        using (var preview = page.Capture(0)) Assert.NotNull(preview);
+
+        data.ChangeTemplateOnePixel(); data.WriteScene(rotated: true);
+        var run = await host.RunAsync();
+
+        Assert.True(run.Success, run.Message);
+        var current = Output<BlobAnalysisResult>(host, "blob");
+        Assert.NotEqual(first.FrameId, current.FrameId);
+        Assert.Equal(8, Assert.Single(current.Blobs).Area);
+        Assert.Equal(7, Assert.Single(current.LocatedCentroids!).LocalPosition.X, 6);
+        using (var preview = page.Capture(0)) Assert.NotNull(preview);
+        Assert.True(page.CoordinateEditingReady);
+        Assert.Equal(38.5, Assert.IsType<RectangleGeometry>(page.Editor.Document.Rois[0].Shape).Center.X, 6);
+        Assert.Same(binding, node.Coordinates);
+        Assert.Equal(saved, new WorkflowDocumentJsonStore(data.Nodes).Serialize(document));
     }
 
     [Fact]
@@ -200,10 +217,8 @@ public sealed class VisionCoordinatePipelineTests
         finally { await editor.DisposeAsync(); }
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task InvalidNewPreviewDisablesLocalEditing_AndRecoveryDoesNotKeepUncommittedGestures(bool changedTemplate)
+    [Fact]
+    public async Task MissingMatchDisablesLocalEditing_AndRecoveryDoesNotKeepUncommittedGestures()
     {
         using var data = new Images(); var document = data.Pipeline();
         var node = (AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node;
@@ -213,20 +228,17 @@ public sealed class VisionCoordinatePipelineTests
         using (var frame = page.Capture(0)) Assert.NotNull(frame);
         Assert.True(page.CoordinateEditingReady);
         var saved = node.Regions.Select(r => (r.Id, r.CenterX, r.CenterY)).ToArray();
-        if (changedTemplate) data.ChangeTemplateOnePixel(); else data.WriteScene(absent: true);
+        data.WriteScene(absent: true);
         Assert.False((await host.RunAsync()).Success);
         Assert.Throws<InvalidOperationException>(() => page.Capture(0)); Assert.False(page.CoordinateEditingReady);
         page.Editor.Tool = ERoiTool.Rectangle;
         page.Editor.PointerDown(new PointD(1, 1), .1); page.Editor.PointerUp(new PointD(4, 4));
         Assert.Equal(saved, node.Regions.Select(r => (r.Id, r.CenterX, r.CenterY)).ToArray());
         Assert.Throws<InvalidOperationException>(() => VisionCoordinateRebinding.Unbind(node, scope));
-        if (!changedTemplate)
-        {
-            data.WriteScene(rotated: true); Assert.True((await host.RunAsync()).Success);
-            using (var frame = page.Capture(0)) Assert.NotNull(frame);
-            Assert.True(page.CoordinateEditingReady); Assert.Equal(saved.Length, page.Editor.Document.Rois.Count);
-            Assert.Equal(saved, node.Regions.Select(r => (r.Id, r.CenterX, r.CenterY)).ToArray());
-        }
+        data.WriteScene(rotated: true); Assert.True((await host.RunAsync()).Success);
+        using (var frame = page.Capture(0)) Assert.NotNull(frame);
+        Assert.True(page.CoordinateEditingReady); Assert.Equal(saved.Length, page.Editor.Document.Rois.Count);
+        Assert.Equal(saved, node.Regions.Select(r => (r.Id, r.CenterX, r.CenterY)).ToArray());
     }
 
     [Fact]
@@ -371,7 +383,7 @@ public sealed class VisionCoordinatePipelineTests
             Cv2.ImWrite(Template, mat);
         }
         public void ChangeTemplateOnePixel() { _template[0]++; WriteTemplate(); }
-        /// <summary>随动绑定：坐标定义并入当前模板像素的参考签名，局部原点在模板中心。</summary>
+        /// <summary>随动绑定；包含旧制作参考的记录也不阻止来源更新，局部原点由本帧模板参考决定。</summary>
         public WorkflowVisionCoordinateBinding Binding(string source = "part", string coordinateId = "part-definition")
         {
             using var image = VisionImage.CopyFrom(new ImageInfo(5, 3, EPixelLayout.Gray8), _template);

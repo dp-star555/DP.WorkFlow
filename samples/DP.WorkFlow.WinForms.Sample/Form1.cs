@@ -6,6 +6,8 @@ using DP.WorkFlow.UI;
 using DP.WorkFlow.UI.WinForms;
 using DP.WorkFlow.Vision.UI;
 using DP.WorkFlow.Vision.UI.WinForms;
+using DP.WorkFlow.LabelInspection;
+using DP.WorkFlow.LabelInspection.UI.WinForms;
 using DP.WorkFlow.OperatorUI.WinForms;
 using DP.WorkFlow.Samples;
 
@@ -19,6 +21,7 @@ public partial class Form1 : Form
     private readonly WorkflowStudioRuntimeBinding _runtimeBinding;
     private readonly WorkflowContext _runtimeContext;
     private readonly WorkflowVisionFrameScope _frameScope;
+    private readonly WorkflowLabelInspectionRuntime _labelRuntime;
     private readonly VisionAlgorithmRuntime _algorithmRuntime;
     private readonly WorkflowVisionAlgorithmBindings _algorithmBindings;
     private readonly WorkflowVisionAlgorithmDiagnostics _algorithmDiagnostics;
@@ -34,6 +37,8 @@ public partial class Form1 : Form
         var pluginDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "plugins");
         var loadSession = new PluginLoadSession();
         loadSession.RegisterSharedAssembly(typeof(IWorkflowVisionAlgorithmNode).Assembly);
+        loadSession.RegisterSharedAssembly(typeof(IWorkflowLabelInspectionService).Assembly);
+        loadSession.RegisterSharedAssembly(typeof(DP.LabelInspection.Contracts.InspectionReport).Assembly);
         var algorithmLoader = new VisionAlgorithmModuleLoader(loadSession);
         var driverLoader = new VisionAcquisitionDriverModuleLoader(loadSession);
         var workflowLoader = new WorkflowPluginLoader(loadSession);
@@ -50,7 +55,8 @@ public partial class Form1 : Form
             .Register(new WorkflowCompositeRuntimePluginModule())
             .Register(new WorkflowMotionRuntimePluginModule())
             .Register(new WorkflowProcessRuntimePluginModule())
-            .Register(new WorkflowImageRuntimePluginModule());
+            .Register(new WorkflowImageRuntimePluginModule())
+            .Register(new WorkflowLabelInspectionModule());
         if (recoveryDemo is not null) plugins.Register(recoveryDemo);
         plugins.LoadPlugins(pluginDirectory, workflowLoader);
         foreach (var failure in workflowLoader.DiscoveryFailures)
@@ -68,7 +74,10 @@ public partial class Form1 : Form
         var fileReader = new WorkflowVisionImageFileReader(_algorithmRuntime, new VisionAlgorithmSelection { ImplementationId = "opencv.image-read" });
         var acquisition = new WorkflowVisionAcquisitionSession(fileReader);
         _frameScope = new WorkflowVisionFrameScope(acquisition);
-        _algorithmBindings = new WorkflowVisionAlgorithmBindings(_algorithmRuntime, _frameScope, Resources);
+        string LabelBaseDirectory() => string.IsNullOrWhiteSpace(_workspace.CurrentFilePath)
+            ? AppContext.BaseDirectory : Path.GetDirectoryName(Path.GetFullPath(_workspace.CurrentFilePath))!;
+        _labelRuntime = new WorkflowLabelInspectionRuntime(LabelBaseDirectory, _frameScope);
+        _algorithmBindings = new WorkflowVisionAlgorithmBindings(_algorithmRuntime, _labelRuntime, Resources);
         _algorithmDiagnostics = new WorkflowVisionAlgorithmDiagnostics(algorithmCatalog, _algorithmRuntime, _algorithmBindings, Resources);
         _workspace.DocumentChanged += (_, _) => _algorithmDiagnostics.Invalidate();
 
@@ -77,7 +86,8 @@ public partial class Form1 : Form
 
         // 3. 创建新文档
         _workspace.New(recoveryDemo is null ? "新版视觉文件分析" : "异常恢复演示（仅软件模拟）");
-        if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--barcode-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateBarcode(_workspace.Navigator!.RootSession);
+        if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--label-demo", StringComparer.OrdinalIgnoreCase)) LabelInspectionDemo.Populate(_workspace.Navigator!.RootSession);
+        else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--barcode-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateBarcode(_workspace.Navigator!.RootSession);
         else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--coordinate-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateCoordinates(_workspace.Navigator!.RootSession);
         else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--geometry-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateGeometry(_workspace.Navigator!.RootSession);
         else if (recoveryDemo is null) WorkflowImageDemo.PopulateProcessing(_workspace.Navigator!.RootSession);
@@ -92,6 +102,8 @@ public partial class Form1 : Form
         workflowStudioControl1.NodeEditorExtensions.Register(
             new VisionWinFormsStudioExtension()
             { FrameSource = _frameScope, FileReader = fileReader, Templates = new VisionTemplateEditingRuntime(algorithmCatalog, _algorithmRuntime, Resources) });
+        workflowStudioControl1.NodeEditorExtensions.Register(new LabelInspectionWinFormsExtension
+            { BaseDirectory = LabelBaseDirectory, FrameSource = _frameScope });
         // 采集节点的"逻辑图像源"从本机已发布的源里选，避免手写出机器上不存在的标识；
         // 面阵节点与线扫节点各看各的采集类型，不能互相选到对方的源。
         workflowStudioControl1.Properties.ChoiceProvider = WorkflowVisionAlgorithmChoices.CreateProvider(algorithmCatalog, WorkflowVisionSourceChoices.CreateProvider(_visionSources));
@@ -121,6 +133,7 @@ public partial class Form1 : Form
             });
         var services = new WorkflowServiceProvider()
             .Add<IWorkflowVisionFrameScope>(_frameScope)
+            .Add<IWorkflowLabelInspectionService>(_labelRuntime)
             .Add<IWorkflowVisionFolderSource>(acquisition)
             .Add<IVisionAcquisition>(_visionAcquisition)
             .Add<IWorkflowVisionSourceCatalog>(_visionSources)
@@ -197,6 +210,8 @@ public partial class Form1 : Form
             _closing = true;
             workflowStudioControl1.Enabled = false;
             try { await _runtimeHost.StopAsync(); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
+            try { await _labelRuntime.DisposeAsync(); }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
             // 设备会话必须异步释放；放在这里等待，避免在同步释放路径上阻塞UI线程。
             try { await _visionAcquisition.DisposeAsync(); }

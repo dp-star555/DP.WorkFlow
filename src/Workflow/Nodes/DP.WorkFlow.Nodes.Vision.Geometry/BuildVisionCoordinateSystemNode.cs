@@ -63,7 +63,7 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
     [WorkflowProperty("坐标系名称", "显示用，可随时修改，不影响已绑定的ROI。", Category = "坐标系")]
     public string CoordinateName { get; set; } = "工件坐标";
     /// <summary>坐标系版本。</summary>
-    [WorkflowProperty("版本", "改变基准、单位或标定时递增；已绑定的下游ROI需要重新确认。", Category = "坐标系")]
+    [WorkflowProperty("版本", "用于记录基准、单位或标定的变化；下游继续使用本节点当前输出，不要求重新绑定。", Category = "坐标系")]
     public int DefinitionVersion { get; set; } = 1;
     /// <summary>局部长度单位。</summary>
     [WorkflowProperty("单位", "毫米需要已知物理长度或有效标定，单位本身不产生标定。", Category = "坐标系")]
@@ -103,7 +103,7 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
     [WorkflowProperty("构建方式", "“模板匹配结果”以匹配参考点和方向为原点和X轴；“相对父坐标系”在上游坐标系上叠加固定关系；其余方式直接构建局部到原图。", Category = "坐标")]
     public EVisionCoordinateBuildMode Mode { get; set; }
     /// <summary>模板匹配结果。</summary>
-    [WorkflowProperty("模板匹配结果", "绑定模板匹配节点的输出；原点取模板参考点，X轴取参考方向。模板参考变化后，下游ROI需重新确认。", Category = "模板")]
+    [WorkflowProperty("模板匹配结果", "绑定模板匹配节点的当前输出；原点取参考点，X轴取参考方向。重做模板后自动采用新映射，下游局部参数不变。", Category = "模板")]
     [WorkflowPropertyVisibleWhen(nameof(Mode), "Template")]
     public WorkflowInput<TemplatePoseResult> Template { get; set; } = WorkflowInput<TemplatePoseResult>.FromLiteral(null);
     /// <summary>原点X。</summary>
@@ -218,23 +218,7 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
         return errors;
     }
     /// <inheritdoc/>
-    public override IReadOnlyList<string> ValidateDocumentConfiguration(IReadOnlyList<IWorkflowNodeModel> nodes)
-    {
-        var errors = base.ValidateDocumentConfiguration(nodes).ToList();
-        if (nodes.OfType<BuildVisionCoordinateSystemNodeModel>().Any(n => n.Id != Id && n.CoordinateId == CoordinateId && n.CoordinateSystem != CoordinateSystem))
-            errors.Add($"坐标系“{CoordinateName}”在其它构建节点中的名称、版本或单位不同，请在“坐标系”下拉中重新选择以保持一致。");
-        return errors;
-    }
-    /// <inheritdoc/>
-    public VisionCoordinateDefinition? ResolveDefinition(IReadOnlyList<IWorkflowNodeModel> nodes)
-    {
-        var definition = GetCoordinateDefinition();
-        if (Mode != EVisionCoordinateBuildMode.Template) return definition;
-        // 已确认的资源模板可静态得到参考签名；动态模板图像的签名只有运行时才知道。
-        return Template.Binding is { IsPublicData: false } source && nodes.FirstOrDefault(n => n.Id == source.NodeId) is IWorkflowVisionTemplateNode
-            { TemplateSource: EWorkflowVisionTemplateSource.Resource, TemplateReferenceDefinition: { } reference }
-            ? reference.Reference().Bind(definition) : null;
-    }
+    public VisionCoordinateDefinition? ResolveDefinition(IReadOnlyList<IWorkflowNodeModel> nodes) => GetCoordinateDefinition();
 }
 
 /// <summary>构建同帧坐标，检查退化/残差，再发布有身份的矩阵。</summary>
@@ -257,8 +241,8 @@ public sealed class BuildVisionCoordinateSystemNodeHandler : WorkflowNodeHandler
                 var match = context.ResolveInput(node.Template) ?? throw new InvalidOperationException("模板匹配结果为空。");
                 if (match.FrameId != frame.FrameId) throw new InvalidOperationException("模板匹配结果不属于本帧。");
                 var reference = match.ReferenceToImage ?? throw new InvalidOperationException("模板未找到，不能构建本帧坐标系。");
-                system = VisionCoordinateBuilder.FromMatrix(match.Reference.Bind(definition), frame,
-                    reference.Multiply(VisionCoordinateBuilder.PoseMatrix(new PointD(0, 0), 0, Value(node.Scale))), "template:" + match.TemplateFrameId);
+                system = VisionCoordinateBuilder.FromMatrix(definition, frame,
+                    reference.Multiply(VisionCoordinateBuilder.PoseMatrix(new PointD(0, 0), 0, Value(node.Scale))), "template:" + match.TemplateFrameId + ";reference:" + match.Reference.Signature);
                 break;
             case EVisionCoordinateBuildMode.Pose: system = VisionCoordinateBuilder.FromPose(definition, frame, Origin(), Radians(), Value(node.Scale)); break;
             case EVisionCoordinateBuildMode.Parent: system = VisionCoordinateBuilder.FromParent(definition, frame, parent ?? throw new InvalidOperationException("父坐标缺失。"), VisionCoordinateBuilder.PoseMatrix(Origin(), Radians(), Value(node.Scale))); break;

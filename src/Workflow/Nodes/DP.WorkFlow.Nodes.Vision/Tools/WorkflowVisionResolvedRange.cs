@@ -12,7 +12,7 @@ public sealed class WorkflowVisionResolvedRange
     public PixelBounds Bounds { get; }
     /// <summary>可空精确原图掩码，已完成局部ROI变换、排除和输入Mask交集。</summary>
     public RegionGeometry? Region { get; }
-    /// <summary>已按本帧和制作身份验证的定位。</summary>
+    /// <summary>来自当前绑定来源、已验证本帧身份和图像尺寸的坐标映射。</summary>
     public VisionCoordinateSystem? Coordinates { get; }
     /// <summary>取得真正参与计算的原图区域，包含矩形边界与精确掩膜的交集；空区域保持为空。</summary>
     /// <param name="token">取消令牌。</param>

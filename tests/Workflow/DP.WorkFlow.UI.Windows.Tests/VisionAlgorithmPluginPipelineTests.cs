@@ -84,13 +84,10 @@ public sealed class VisionAlgorithmPluginPipelineTests
         Assert.True(session.Undo()); Assert.Equal("company.color", node.Algorithm.ImplementationId);
         Assert.True(session.Redo()); Assert.Equal("managed.color", node.Algorithm.ImplementationId);
         node.Algorithm.Settings["model"] = "recipe-model";
-        Assert.Throws<InvalidOperationException>(() => inspector.SetValue(inspector.Entries.Single(e => e.Name == choice.Name), "company.color"));
-        Assert.Equal("managed.color", node.Algorithm.ImplementationId);
-        inspector.SetValue(inspector.Entries.Single(e => e.Name == "Algorithm.algorithm.Reset"), true);
-        Assert.Empty(node.Algorithm.Settings);
-        Assert.True(session.Undo()); Assert.Equal("recipe-model", node.Algorithm.Settings["model"]);
-        Assert.True(session.Redo()); Assert.Empty(node.Algorithm.Settings);
         inspector.SetValue(inspector.Entries.Single(e => e.Name == choice.Name), "company.color");
+        Assert.Empty(node.Algorithm.Settings);
+        Assert.True(session.Undo()); Assert.Equal("managed.color", node.Algorithm.ImplementationId); Assert.Equal("recipe-model", node.Algorithm.Settings["model"]);
+        Assert.True(session.Redo()); Assert.Empty(node.Algorithm.Settings);
         Assert.Equal("company.color", node.Algorithm.ImplementationId);
         var restored = new WorkflowDocumentJsonStore(nodes).Deserialize(new WorkflowDocumentJsonStore(nodes).Serialize(document)).Document;
         Assert.Equal("company.color", Assert.IsType<AnalyzeVisionColorNodeModel>(Assert.Single(restored.CanvasProjection.Nodes).Node).Algorithm.ImplementationId);

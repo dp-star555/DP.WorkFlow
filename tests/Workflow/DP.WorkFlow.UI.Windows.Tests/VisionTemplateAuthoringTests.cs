@@ -1378,7 +1378,27 @@ public sealed class VisionTemplateAuthoringTests
     }
 
     [Fact]
-    public async Task Rebuild_KeepsReferenceDefinition_ChangingOriginInvalidatesDownstreamBinding()
+    public void TemplatePath_CanBeChangedDirectly_ThroughAnUndoableFileProperty()
+    {
+        using var fixture = new Fixture();
+        var node = new LocateVisionTemplatePoseNodeModel { Id = "locate", TemplateSource = EWorkflowVisionTemplateSource.Resource };
+        node.TemplateResourcePath = "Resources/Templates/old/manifest.json";
+        var document = new WorkflowDocument { EntryNodeId = node.Id };
+        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterImageNodes()) { SelectedNodeId = node.Id };
+        using var inspector = new WorkflowPropertyInspectorModel(session, node.Id, null, WorkflowVisionAlgorithmProperties.CreateProvider(fixture.Catalog));
+        var path = Assert.Single(inspector.Entries, e => e.Name == "Algorithm.model.templatePath");
+
+        inspector.SetValue(path, "Resources/Templates/new/manifest.json");
+
+        Assert.Equal("Resources/Templates/new/manifest.json", node.TemplateResourcePath);
+        Assert.Equal(WorkflowPropertyEditorKeys.FilePath, path.EditorKey);
+        Assert.True(session.Undo()); Assert.Equal("Resources/Templates/old/manifest.json", node.TemplateResourcePath);
+        Assert.True(session.Redo()); Assert.Equal("Resources/Templates/new/manifest.json", node.TemplateResourcePath);
+    }
+
+    [Fact]
+    public async Task Rebuild_KeepsReferenceEvidence_ChangingOriginDoesNotInvalidateDownstreamSourceBinding()
     {
         using var fixture = new Fixture(); var node = new LocateVisionTemplatePoseNodeModel();
         using var editor = new VisionTemplateEditorModel(node, fixture.Editing, () => throw new InvalidOperationException(), fixture.Reader);
@@ -1390,7 +1410,7 @@ public sealed class VisionTemplateAuthoringTests
         Assert.NotEqual(first.Manifest.RevisionId, second.Manifest.RevisionId);
         Assert.Equal(first.Manifest.Definition.Reference().Signature, second.Manifest.Definition.Reference().Signature);
         using var image = VisionTemplateSource.Decode(first.Read("source/image.bin")); using var frame = new ImageFrame("frame", image);
-        // 下游经“构建本帧坐标系”的模板方式随动：坐标定义并入模板参考签名。
+        // 旧制作记录即使附加了模板签名，下游也只绑定来源的本帧输出。
         var (catalog, _) = GeometryPluginTestCatalog.Create(Path.Combine(fixture.Root, "plugins"));
         var build = GeometryPluginTestCatalog.BuildFromTemplate(catalog, "part", "frame", "part", "locate");
         var business = GeometryPluginTestCatalog.Definition(build);
@@ -1404,8 +1424,8 @@ public sealed class VisionTemplateAuthoringTests
         editor.OriginX += .5; await editor.BuildAsync(); editor.PrepareCommit();
         var third = VisionTemplateStore.Capture(Path.Combine(fixture.Root, node.ModelAlgorithm.Settings["templatePath"]));
         Assert.Equal(2, third.Manifest.Definition.ReferenceVersion);
-        Assert.Throws<InvalidOperationException>(() => binding.Validate(Located(third.Manifest.Definition), frame));
-        Assert.Single(downstream.ValidateDocumentConfiguration(new IWorkflowNodeModel[] { node, build, downstream }));
+        binding.Validate(Located(third.Manifest.Definition), frame);
+        Assert.Empty(downstream.ValidateDocumentConfiguration(new IWorkflowNodeModel[] { node, build, downstream }));
     }
 
     [Fact]
@@ -1518,7 +1538,7 @@ public sealed class VisionTemplateAuthoringTests
     }
 
     [Fact]
-    public async Task ResourceFolderCanMove_WithRecipeRelativeReference_AndReferenceMismatchStopsBeforeAcquisition()
+    public async Task ResourceFolderCanMove_AndRuntimeUsesLoadedResourceInsteadOfCachedReference()
     {
         using var fixture = new Fixture(); var node = new LocateVisionTemplatePoseNodeModel { Id = "locate", Frame = Input<ImageFrame>("source") };
         using (var editor = new VisionTemplateEditorModel(node, fixture.Editing, () => throw new InvalidOperationException(), fixture.Reader))
@@ -1529,7 +1549,8 @@ public sealed class VisionTemplateAuthoringTests
         { var target = Path.Combine(moved, Path.GetRelativePath(fixture.Root, path)); Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.Copy(path, target); }
         using (var plan = await fixture.Runtime.PrepareAsync(new[] { new VisionAlgorithmRequest("moved", typeof(IPreparedVisionTemplateMatcher), node.ModelAlgorithm) }, new VisionAlgorithmResourceContext(moved), CancellationToken.None))
             Assert.NotNull(plan.Invoke<IPreparedVisionTemplateMatcher, object>("moved", m => m));
-        node.TemplateReferenceDefinition!.OriginX += .5;
+        var actualOrigin = node.TemplateReferenceDefinition!.OriginX;
+        node.TemplateReferenceDefinition.OriginX = double.NaN; // 过时的制作缓存不应作为运行契约。
         var source = new AcquireVisionImageNodeModel { Id = "source", FilePath = fixture.SamplePath };
         var document = new WorkflowDocument { EntryNodeId = "source" };
         foreach (var n in new IWorkflowNodeModel[] { source, node }) document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = n });
@@ -1539,8 +1560,12 @@ public sealed class VisionTemplateAuthoringTests
         var services = new WorkflowServiceProvider().Add<IWorkflowVisionFrameScope>(frames).Add<IWorkflowVisionAlgorithmBindings>(bindings)
             .Add<IWorkflowNodeCapabilityProvider>(bindings).Add<IWorkflowRunPreparationService>(bindings).Add<IWorkflowRunResourceOwner>(frames);
         using var host = new WorkflowRuntimeHost(new WorkflowNodeCatalog().RegisterImageNodes(), new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
-        host.Configure(document, new WorkflowContext(services)); await Assert.ThrowsAsync<InvalidOperationException>(() => host.RunAsync());
-        Assert.Empty(host.Engine!.RunState.NodeOutputs); Assert.Contains(report!.Issues, issue => issue.Code == "ALG_TEMPLATE_REFERENCE_MISMATCH" && issue.BindingKey.Contains("locate"));
+        host.Configure(document, new WorkflowContext(services));
+        var run = await host.RunAsync();
+        Assert.True(run.Success, run.Message);
+        var result = Assert.IsType<TemplatePoseResult>(host.Engine!.RunState.NodeOutputs.Single(o => o.NodeId == "locate").Value);
+        Assert.True(result.Found); Assert.Equal(actualOrigin, result.Reference.OriginX);
+        Assert.Empty(report!.Issues);
     }
 
     private sealed class HalconSdkTheoryAttribute : TheoryAttribute

@@ -110,7 +110,7 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
             errors.Add("输入图像必须配置上游/公共数据绑定，不能保存运行帧Literal。");
         if (Coordinates is not null)
         {
-            if (!SupportsCoordinates || !Coordinates.IsValid) errors.Add("此算子不支持定位，或定位绑定/制作身份无效。");
+            if (!SupportsCoordinates || !Coordinates.IsValid) errors.Add("此算子不支持定位，或坐标来源绑定无效。");
             if (!FullImage) errors.Add("随动范围使用局部Regions，不能再叠加原图整数矩形。");
             if (RangeCapability == EWorkflowVisionRange.Region
                 && (Regions is null || !Regions.Any(r => r is { Enabled: true, Exclude: false })))
@@ -142,23 +142,9 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
         return errors;
     }
 
-    /// <summary>对可静态解析的通用坐标定义提前检查制作身份。</summary>
+    /// <summary>文档级扩展检查；坐标来源的路径和类型由通用绑定编译器验证，不锁定来源内部定义。</summary>
     /// <param name="nodes">当前文档节点。</param><returns>校验信息。</returns>
-    public virtual IReadOnlyList<string> ValidateDocumentConfiguration(IReadOnlyList<IWorkflowNodeModel> nodes)
-    {
-        if (Coordinates is not { DefinitionSignature.Length: > 0, System.Binding: { IsPublicData: false } source }) return [];
-        if (nodes.FirstOrDefault(n => n.Id == source.NodeId) is not IWorkflowVisionCoordinateProducerNode producer) return [];
-        try
-        {
-            // 动态模板图像的参考签名只在运行时可知，此时先检查定义身份和版本，签名留给运行时校验。
-            var business = producer.GetCoordinateDefinition();
-            var definition = producer.ResolveDefinition(nodes);
-            return business.Id != Coordinates.CoordinateSystemId || business.Version != Coordinates.DefinitionVersion
-                || definition is not null && definition.Signature != Coordinates.DefinitionSignature
-                ? ["坐标系与ROI制作身份不一致（坐标系、版本、单位或模板参考已变化），请重新确认绑定。"] : [];
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return [ex.Message]; }
-    }
+    public virtual IReadOnlyList<string> ValidateDocumentConfiguration(IReadOnlyList<IWorkflowNodeModel> nodes) => [];
 
     internal PixelBounds Bounds(ImageFrame frame) => FullImage
         ? new PixelBounds(0, 0, frame.Image.Info.Width, frame.Image.Info.Height)

@@ -7,22 +7,21 @@ namespace DP.WorkFlow.Tests;
 /// <summary>按宿主方式从插件目录加载几何节点包（含“定义/构建本帧坐标系”），与图像节点组成同一目录。</summary>
 internal static class GeometryPluginTestCatalog
 {
-    /// <summary>复制已投放的几何插件到独立目录并加载。</summary>
-    /// <param name="root">本次运行目录，插件包复制到其下。</param>
+    /// <summary>从已投放目录加载几何插件；配置目录独立，不在可清理的图像目录内创建受程序集加载器锁定的DLL。</summary>
+    /// <param name="root">本次运行数据目录。</param>
     /// <param name="configure">冻结前追加注册。</param>
     /// <returns>节点与处理器目录。</returns>
     internal static (WorkflowNodeCatalog Nodes, WorkflowNodeHandlerCatalog Handlers) Create(string root,
         Action<WorkflowNodeCatalog, WorkflowNodeHandlerCatalog>? configure = null)
     {
         var nodes = new WorkflowNodeCatalog(); var handlers = new WorkflowNodeHandlerCatalog();
-        var package = Path.Combine(root, "workflow.vision.geometry"); Directory.CreateDirectory(package);
-        foreach (var file in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "plugins", "workflow.vision.geometry")))
-            File.Copy(file, Path.Combine(package, Path.GetFileName(file)));
+        Directory.CreateDirectory(root);
+        var package = Path.Combine(AppContext.BaseDirectory, "plugins", "workflow.vision.geometry");
         var load = new PluginLoadSession(); _ = new VisionAlgorithmModuleLoader(load);
         load.RegisterSharedAssembly(typeof(IWorkflowVisionAlgorithmNode).Assembly);
         var loader = new WorkflowPluginLoader(load);
         var composition = new WorkflowRuntimePluginCatalog(nodes, handlers).Register(new WorkflowImageRuntimePluginModule());
-        Assert.Equal(1, composition.LoadPlugins(root, loader)); Assert.Empty(loader.DiscoveryFailures);
+        Assert.Equal(1, composition.LoadPlugins(package, loader)); Assert.Empty(loader.DiscoveryFailures);
         configure?.Invoke(nodes, handlers); composition.Freeze();
         return (nodes, handlers);
     }
@@ -41,7 +40,7 @@ internal static class GeometryPluginTestCatalog
         return node;
     }
 
-    /// <summary>ROI随动绑定：定义签名包含模板参考签名。</summary>
+    /// <summary>ROI随动绑定：来源决定本帧输出，制作记录不冻结模板或定义。</summary>
     internal static WorkflowVisionCoordinateBinding Follow(string buildNodeId, VisionCoordinateDefinition definition) => new()
     {
         System = WorkflowInput<VisionCoordinateSystem>.FromBinding(new(buildNodeId, "CoordinateSystem")),

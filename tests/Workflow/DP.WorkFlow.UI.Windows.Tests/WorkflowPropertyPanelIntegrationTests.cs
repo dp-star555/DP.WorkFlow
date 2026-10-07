@@ -131,7 +131,10 @@ public sealed class WorkflowPropertyPanelIntegrationTests
                          && descriptor.Name is nameof(InputLayoutNode.Literal) or nameof(InputLayoutNode.Binding)))
             {
                 var source = Descendants(row).OfType<ModernUI.WinForms.ModernSelect>().Single();
-                var value = Descendants(row).Single(control => control is TextBox or Button);
+                var layout = Assert.IsType<TableLayoutPanel>(source.Parent);
+                var value = layout.GetControlFromPosition(1, 0);
+                Assert.NotNull(value);
+                Assert.True(value is ModernUI.WinForms.ModernInput or ModernUI.WinForms.ModernButton);
                 var sourceBounds = row.RectangleToClient(source.RectangleToScreen(source.ClientRectangle));
                 var valueBounds = row.RectangleToClient(value.RectangleToScreen(value.ClientRectangle));
                 Assert.True(row.ClientRectangle.Contains(sourceBounds));

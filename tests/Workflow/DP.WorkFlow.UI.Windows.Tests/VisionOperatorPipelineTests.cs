@@ -223,11 +223,14 @@ public sealed class VisionOperatorPipelineTests
     public void FindShapes_RequireOneSearchRoiOfTheRightShape()
     {
         var line = new FindVisionLineNodeModel { Frame = Input<ImageFrame>("file") };
+        Assert.Empty(line.ValidateConfiguration()); // 新节点已带可编辑的默认搜索框。
+        line.Regions.Clear();
         Assert.Contains(line.ValidateConfiguration(), e => e.Contains("矩形搜索框", StringComparison.Ordinal));
         line.Regions.Add(new WorkflowVisionRoi { Id = "e", Shape = EWorkflowVisionRoiShape.Ellipse, Width = 10, Height = 10 });
         Assert.Contains(line.ValidateConfiguration(), e => e.Contains("矩形搜索框", StringComparison.Ordinal));
         Assert.False(line.SupportsRegionMask);
         var circle = new FindVisionCircleNodeModel { Frame = Input<ImageFrame>("file") };
+        circle.Regions.Clear();
         circle.Regions.Add(new WorkflowVisionRoi { Id = "e", Shape = EWorkflowVisionRoiShape.Ellipse, CenterX = 20, CenterY = 20, Width = 20, Height = 12 });
         Assert.Contains(circle.ValidateConfiguration(), e => e.Contains("宽高相等", StringComparison.Ordinal));
         circle.Regions[0].Height = 20; circle.SearchLength = 30;

@@ -217,7 +217,7 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
         _node.TemplateReferenceDefinition = null; _node.TemplateSourceHash = "";
         _displayName = DefaultDisplayName();
         _node.ModelAlgorithm = new VisionAlgorithmSelection { ImplementationId = _implementation };
-        Invalidate(); Status = "已新建空白模板身份；请读取样图并生成模型。原下游ROI需重新确认。";
+        Invalidate(); Status = "已新建空白模板；请读取样图并生成模型。应用后，下游继续使用坐标来源的本帧输出，局部参数不变。";
     }
     private string Key() => _source == null ? "no-source" : _source.FrameId + "|" + _implementation + "|" +
         OriginX.ToString("R", CultureInfo.InvariantCulture) + "|" + OriginY.ToString("R", CultureInfo.InvariantCulture) + "|" + AxisAngleRadians.ToString("R", CultureInfo.InvariantCulture)

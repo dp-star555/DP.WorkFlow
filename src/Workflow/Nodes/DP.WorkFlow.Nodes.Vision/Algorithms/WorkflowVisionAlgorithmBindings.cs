@@ -79,15 +79,7 @@ public sealed class WorkflowVisionAlgorithmBindings : IWorkflowVisionAlgorithmBi
         IWorkflowPreparedRun? nextPrepared = null;
         try
         {
-            foreach (var position in positioned)
-                if (position.Node is IWorkflowVisionTemplateNode { TemplateSource: EWorkflowVisionTemplateSource.Resource, TemplateReferenceDefinition: { } expected } template)
-                {
-                    var key = Key(position.PlanPath, position.Node.Id, "model");
-                    var definition = plan.Invoke<IPreparedVisionTemplateMatcher, VisionTemplateDefinition>(key, matcher => matcher.Definition, cancellationToken);
-                    if (definition.Reference().Signature != expected.Reference().Signature)
-                        throw VisionAlgorithmExceptionDiagnostics.Attach(new InvalidOperationException("模板资源参考定义与节点确认内容不一致，请在节点内读取并确认资源。"),
-                            new[] { new VisionAlgorithmIssue("ALG_TEMPLATE_REFERENCE_MISMATCH", "Preparation", key, template.ModelAlgorithm.ImplementationId, "", "模板参考定义已变化，不能使用未确认的资源。") });
-                }
+            // 模板资源由算法准备捕获、验证并持有租约；节点制作缓存不是资源更新的否决条件。
             if (_next is IWorkflowTransactionalRunPreparationService transactional)
                 nextPrepared = await transactional.PrepareRunAsync(context, cancellationToken).ConfigureAwait(false);
             else if (_next is not null) await _next.PrepareAsync(context, cancellationToken).ConfigureAwait(false);

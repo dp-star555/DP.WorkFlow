@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <Using Include="Xunit" />
+    <ProjectReference Include="../../../src/Workflow/Studio/DP.WorkFlow.LabelInspection.UI.WinForms/DP.WorkFlow.LabelInspection.UI.WinForms.csproj" />
+  </ItemGroup>
+</Project>

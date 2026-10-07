@@ -34,7 +34,7 @@ public static class WorkflowVisionCoordinateProperties
         if (Current() is { Length: > 0 } current && choices.All(c => !Equals(c.Value, current)))
             choices.Add(new($"{current}（来源节点已不存在）", current));
         return WorkflowPropertyEntry.CreateChoice(EntryName, "坐标系", "坐标系",
-            "选择本文档的坐标来源后，ROI、卡尺等范围按本帧坐标系换算为局部坐标并随之移动；选“不使用”换算回原图坐标。需要先运行流程，使输入图像和坐标来源有本帧结果。",
+            "绑定坐标来源后，每轮使用其本帧输出；上游模板或坐标定义变化不要求重新绑定。选择或解除来源时按本帧矩阵换算已有范围以保持图上位置，因此该换算需要输入图像和坐标来源的预览。",
             Current, value =>
             {
                 var target = value as string ?? string.Empty;

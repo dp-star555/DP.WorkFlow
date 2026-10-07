@@ -231,7 +231,44 @@ public sealed class VisionAlgorithmDependencyEditingTests
     }
 
     [Fact]
-    public void SwitchingDependency_RequiresExplicitReset_IsUndoable_AndRejectsStaleParameters()
+    public void SwitchingRoot_WithSettingsAndDependencies_IsOneUndoableEdit()
+    {
+        var fixture = Create();
+        fixture.Node.Algorithm.SettingsVersion = 7;
+        fixture.Node.Algorithm.Settings["private"] = "old-setting";
+        fixture.Node.Algorithm.Dependencies["prep"] = new() { ImplementationId = "missing.plugin" };
+        using var inspector = Inspector(fixture);
+
+        inspector.SetValue(Entry(inspector, "Algorithm.algorithm.ImplementationId"), "test.root-other");
+
+        Assert.Equal("test.root-other", fixture.Node.Algorithm.ImplementationId);
+        Assert.Equal(1, fixture.Node.Algorithm.SettingsVersion);
+        Assert.Empty(fixture.Node.Algorithm.Settings); Assert.Empty(fixture.Node.Algorithm.Dependencies);
+        Assert.True(fixture.Session.Undo());
+        Assert.Equal("test.root", fixture.Node.Algorithm.ImplementationId);
+        Assert.Equal(7, fixture.Node.Algorithm.SettingsVersion);
+        Assert.Equal("old-setting", fixture.Node.Algorithm.Settings["private"]);
+        Assert.Equal("missing.plugin", fixture.Node.Algorithm.Dependencies["prep"].ImplementationId);
+        Assert.True(fixture.Session.Redo()); Assert.Equal("test.root-other", fixture.Node.Algorithm.ImplementationId);
+        Assert.Equal(0, fixture.Module.Preparations);
+    }
+
+    [Fact]
+    public void RepeatedImplementationInFiniteDependencyChain_IsEditableAndNotReportedAsCycle()
+    {
+        var fixture = Create();
+        fixture.Node.Algorithm.Dependencies["prep"] = new() { ImplementationId = "test.recursive-prep", Settings = new() { ["next"] = "true" },
+            Dependencies = new() { ["next"] = new() { ImplementationId = "test.recursive-prep" } } };
+        using var inspector = Inspector(fixture);
+
+        Assert.Contains(inspector.Entries, e => e.Name == Prep + ".Dependency.next.ImplementationId");
+        Assert.DoesNotContain(inspector.Entries, e => e.Name.EndsWith(".Status") && e.Value!.ToString()!.Contains("循环"));
+        Assert.Empty(new VisionAlgorithmInspection(fixture.Catalog).Analyze(Requests(fixture.Node), checkFiles: false).Issues);
+        Assert.Equal(0, fixture.Module.Preparations);
+    }
+
+    [Fact]
+    public void SwitchingDependency_ResetsOldConfigurationInOneUndoableEdit_AndRejectsStaleParameters()
     {
         var fixture = Create();
         using var inspector = Inspector(fixture);
@@ -239,15 +276,15 @@ public sealed class VisionAlgorithmDependencyEditingTests
         var oldGain = Entry(inspector, Prep + ".gain");
         inspector.SetValue(oldGain, "2");
         inspector.SetValue(Entry(inspector, Leaf + ".ImplementationId"), "test.leaf");
-        Assert.Throws<InvalidOperationException>(() => inspector.SetValue(Entry(inspector, Prep + ".ImplementationId"), "test.other"));
-        Assert.Equal("2", fixture.Node.Algorithm.Dependencies["prep"].Settings["gain"]);
-        inspector.SetValue(Entry(inspector, Prep + ".Reset"), true);
+        inspector.SetValue(Entry(inspector, Prep + ".ImplementationId"), "test.other");
         Assert.Empty(fixture.Node.Algorithm.Dependencies["prep"].Settings);
         Assert.Empty(fixture.Node.Algorithm.Dependencies["prep"].Dependencies);
+        Assert.Equal("test.other", fixture.Node.Algorithm.Dependencies["prep"].ImplementationId);
         Assert.True(fixture.Session.Undo());
+        Assert.Equal("test.prep", fixture.Node.Algorithm.Dependencies["prep"].ImplementationId);
+        Assert.Equal("2", fixture.Node.Algorithm.Dependencies["prep"].Settings["gain"]);
         Assert.Equal("test.leaf", fixture.Node.Algorithm.Dependencies["prep"].Dependencies["leaf"].ImplementationId);
         Assert.True(fixture.Session.Redo());
-        inspector.SetValue(Entry(inspector, Prep + ".ImplementationId"), "test.other");
         Assert.Throws<InvalidOperationException>(() => inspector.SetValue(oldGain, "3"));
         Assert.Empty(fixture.Node.Algorithm.Dependencies["prep"].Settings);
         inspector.SetValue(Entry(inspector, Prep + ".ImplementationId"), "");
@@ -272,8 +309,6 @@ public sealed class VisionAlgorithmDependencyEditingTests
         Assert.Equal(1, fixture.Node.Algorithm.Dependencies["prep"].SettingsVersion);
         inspector.SetValue(Entry(inspector, Prep + ".Reset"), true);
         inspector.SetValue(Entry(inspector, Prep + ".SettingsVersion"), 2);
-        Assert.Throws<InvalidOperationException>(() => inspector.SetValue(Entry(inspector, Prep + ".ImplementationId"), "test.other"));
-        inspector.SetValue(Entry(inspector, Prep + ".Reset"), true);
         inspector.SetValue(Entry(inspector, Prep + ".ImplementationId"), "test.other");
         Assert.Equal(1, fixture.Node.Algorithm.Dependencies["prep"].SettingsVersion);
     }
@@ -290,6 +325,7 @@ public sealed class VisionAlgorithmDependencyEditingTests
         inspector.SetValue(Entry(inspector, Prep + ".enabled"), false);
         Assert.Contains("没有声明", Entry(inspector, Leaf + ".Status").Value!.ToString());
         Assert.Equal("test.leaf", fixture.Node.Algorithm.Dependencies["prep"].Dependencies["leaf"].ImplementationId);
+        Assert.Empty(new VisionAlgorithmInspection(fixture.Catalog).Analyze(Requests(fixture.Node), checkFiles: false).Issues);
         inspector.SetValue(Entry(inspector, Leaf + ".ImplementationId"), "");
         Assert.Empty(fixture.Node.Algorithm.Dependencies["prep"].Dependencies);
         Assert.Equal("preserve", fixture.Node.Algorithm.Dependencies["obsolete"].Settings["private"]);
@@ -389,6 +425,8 @@ public sealed class VisionAlgorithmDependencyEditingTests
         public void Register(IVisionAlgorithmRegistration registrations)
         {
             registrations.Add(new("test.root", "Test", "1", Factory<IRootAlgorithm>(_ => [new("prep", typeof(IPrepAlgorithm))])));
+            registrations.Add(new("test.root-other", "Test", "1", Factory<IRootAlgorithm>(_ => [])));
+            registrations.Add(new("test.recursive-prep", "Test", "1", Factory<IPrepAlgorithm>(config => config.Settings.ContainsKey("next") ? [new("next", typeof(IPrepAlgorithm))] : [])));
             registrations.Add(new("test.prep", "Test", "1", Factory<IPrepAlgorithm>(config =>
             {
                 if (config.Settings.ContainsKey("explode")) throw new InvalidOperationException("invalid dependency metadata");

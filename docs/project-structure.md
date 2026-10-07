@@ -13,6 +13,7 @@ src/
 ├─ Workflow/                 工作流文档、编译、运行、节点扩展和 Studio
 │  ├─ Kernel/                稳定契约、文档/编译、运行内核
 │  ├─ Nodes/                 可独立注册的节点包
+│  ├─ Hosting/               业务节点的具体资源/运行时宿主 Adapter（不进入内核）
 │  ├─ Persistence/           文档持久化 Adapter
 │  └─ Studio/                框架无关 Studio 模型与 WinForms/WPF Adapter
 └─ Platform/                 可脱离工作流复用的平台库
@@ -54,6 +55,8 @@ samples/
 - `Process`：产品流、机器人和恢复语义节点。
 - `Motion`：轴、IO、气动和扫码设备节点。
 - `Vision`：Workflow 与同级 `DP.Vision.Algorithms` 中立契约之间的18种强类型节点集成；不引用 SDK 或桌面。独立视觉源码/算法/相机实现/原生画布位于 `../DP.Vision/src`，算法与 SDK 测试位于 `../DP.Vision/tests`。
+
+- `LabelInspection`：完整标签检测业务节点及能力契约；只依赖可移植标签 Contracts。其 Windows SDK 装配位于 `Hosting/DP.WorkFlow.LabelInspection.Runtime`，配置/报告页面位于 `Studio/DP.WorkFlow.LabelInspection.UI*`，不与通用视觉 ROI 混用。见[节点接入](nodes/label-inspection.md)。
 
 ### Persistence
 

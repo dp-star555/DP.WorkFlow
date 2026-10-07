@@ -9,9 +9,7 @@ public sealed partial class VisionFrameEditorPageModel
     private VisionCoordinateSystem? _displayCoordinates;
     private string? _displayBindingKey;
     private bool HasDisplayedCoordinateBinding(WorkflowVisionCoordinateBinding binding) => CoordinateEditingReady
-        && _displayCoordinates is not null && binding.CoordinateSystemId == _displayCoordinates.CoordinateSystemId
-        && binding.DefinitionSignature == _displayCoordinates.Definition.Signature && binding.DefinitionVersion == _displayCoordinates.Definition.Version
-        && binding.System?.Binding?.ToString() == _displayBindingKey;
+        && _displayCoordinates is not null && binding.System?.Binding?.ToString() == _displayBindingKey;
     /// <summary>范围能力允许坐标系绑定（在属性面板“坐标系”下拉中选择）；面积ROI、卡尺和几何事实使用各自配置语义。</summary>
     public bool CanBindCoordinates => !IsTemplateEditor && _node is AnalyzeVisionFrameNodeModel node && node.SupportsCoordinates;
     /// <summary>当前显示图像是否允许编辑；手动图像不能借用另一帧的定位。</summary>

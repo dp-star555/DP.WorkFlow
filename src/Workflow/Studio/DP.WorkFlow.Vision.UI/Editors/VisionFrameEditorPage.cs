@@ -374,7 +374,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
                     : " 切换到“输入图像”可查看和拖动编辑范围。";
             else if (CanEdit && view == 1) Status += " 切换到“输入图像”可查看和编辑ROI。";
             if (_node is AnalyzeVisionFrameNodeModel { Coordinates: { } binding })
-                Status += CoordinateEditingReady ? $" {(SupportsRegions ? "ROI" : "几何表达")}绑定坐标系 {binding.CoordinateSystemId}，按本帧坐标系显示。" : " 当前视图只读，不使用其他帧的定位。";
+                Status += CoordinateEditingReady ? $" {(SupportsRegions ? "ROI" : "几何表达")}使用坐标来源 {binding.System.Binding?.NodeId} 的本帧坐标系 {_displayCoordinates?.Definition.Name} 显示。" : " 当前视图只读，不使用其他帧的定位。";
             return canvas;
         }
     }

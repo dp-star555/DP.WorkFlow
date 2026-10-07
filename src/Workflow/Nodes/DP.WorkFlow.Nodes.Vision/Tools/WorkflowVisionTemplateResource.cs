@@ -26,9 +26,9 @@ public interface IWorkflowVisionTemplateNode
     string TemplateResourceId { get; set; }
     /// <summary>是否要求旋转或尺度搜索；只做平移时可用只支持平移的模型。</summary>
     bool RequiresPoseSearch { get; }
-    /// <summary>节点应用时确认的参考定义，独立于资源路径和引擎配置。</summary>
+    /// <summary>制作时的参考定义缓存；运行使用实际加载资源的定义，不以缓存阻止资源替换。</summary>
     VisionTemplateDefinition? TemplateReferenceDefinition { get; set; }
-    /// <summary>应用时记录的样图内容身份，用于替换样图时确认参考版本。</summary>
+    /// <summary>制作时记录的样图内容身份，仅用于编辑重建与来源追踪。</summary>
     string TemplateSourceHash { get; set; }
 }
 
@@ -42,22 +42,16 @@ internal static class WorkflowVisionTemplateResource
     {
         var errors = new List<string>();
         if (!Enum.IsDefined(node.TemplateSource)) errors.Add("模板来源未定义。");
-        if (node.TemplateReferenceDefinition != null)
-            try { node.TemplateReferenceDefinition.Validate(); } catch (ArgumentException error) { errors.Add(error.Message); }
         if (node.TemplateSource == EWorkflowVisionTemplateSource.Resource && (node.ModelAlgorithm?.Settings == null
             || !node.ModelAlgorithm.Settings.TryGetValue("templatePath", out var path) || string.IsNullOrWhiteSpace(path))) errors.Add("请在节点内制作模板或选择已发布的模板清单。");
         return errors;
     }
-    internal static TemplatePoseResult Match(IWorkflowVisionTemplateNode node, IWorkflowNodeExecutionContext context,
+    internal static TemplatePoseResult Match(IWorkflowNodeExecutionContext context,
         ImageFrame frame, PixelBounds bounds, RegionGeometry? region, TemplatePoseOptions options, CancellationToken token)
     {
         var bindings = context.Services.GetService(typeof(IWorkflowVisionAlgorithmBindings)) as IWorkflowVisionAlgorithmBindings
             ?? throw new InvalidOperationException("模板资源需要宿主注册算法绑定服务。");
-        return bindings.Invoke<IPreparedVisionTemplateMatcher, TemplatePoseResult>(context, "model", matcher =>
-        {
-            if (node.TemplateReferenceDefinition is { } expected && expected.Reference().Signature != matcher.Definition.Reference().Signature)
-                throw new InvalidOperationException("模板资源参考定义与节点确认内容不一致，请在节点内读取并确认资源。");
-            return matcher.Match(frame, bounds, options, region, token);
-        }, token);
+        return bindings.Invoke<IPreparedVisionTemplateMatcher, TemplatePoseResult>(context, "model",
+            matcher => matcher.Match(frame, bounds, options, region, token), token);
     }
 }
