@@ -47,6 +47,16 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
         Node.ReferenceImagePath = relativePath; _changed();
     }
 
+    /// <summary>记录参考位姿（配置帧坐标系的局部→原图），之后在这一帧原图上画的ROI随定位移动；并通知属性页刷新。</summary>
+    /// <param name="pose">配置帧坐标系的局部→原图矩阵。</param>
+    public void SetReferencePose(DP.Vision.Algorithms.CoordinateMatrix2D pose)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (Node.GetReferencePose() is { } current && current.M11 == pose.M11 && current.M12 == pose.M12 && current.Tx == pose.Tx
+            && current.M21 == pose.M21 && current.M22 == pose.M22 && current.Ty == pose.Ty) return;
+        Node.SetReferencePose(pose); _changed();
+    }
+
     /// <summary>
     /// 把资源根目录外的配置样张复制到根目录下的 <c>samples</c> 子目录，返回相对根目录的路径；已在根目录内时直接返回相对路径。
     /// 同名文件内容相同则复用，不同则追加序号，不覆盖已有文件。

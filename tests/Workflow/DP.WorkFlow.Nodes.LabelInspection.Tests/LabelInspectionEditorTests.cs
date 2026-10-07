@@ -22,6 +22,23 @@ public sealed class LabelInspectionEditorTests
     }
 
     [Fact]
+    public void SetReferencePose_StoresPoseOnNode_AndNotifiesOnlyOnChange()
+    {
+        var node = new InspectLabelNodeModel(); int changed = 0;
+        var model = new LabelInspectionEditorPageModel(node, new OpenCvImageCodec(), () => changed++);
+        Assert.Null(node.GetReferencePose());
+        var pose = DP.Vision.Algorithms.CoordinateMatrix2D.FromAffine(0.8, -0.6, 1500.5, 0.6, 0.8, 700.25);
+        model.SetReferencePose(pose);
+        model.SetReferencePose(pose);
+        Assert.Equal(1, changed);
+        var stored = node.GetReferencePose()!;
+        Assert.Equal((0.8, -0.6, 1500.5, 0.6, 0.8, 700.25), (stored.M11, stored.M12, stored.Tx, stored.M21, stored.M22, stored.Ty));
+        // 参考位姿随节点配置一起快照/保存。
+        var copy = (InspectLabelNodeModel)WorkflowNodeConfigurationSnapshotter.Capture(node);
+        Assert.Equal(1500.5, copy.GetReferencePose()!.Tx);
+    }
+
+    [Fact]
     public void ImportIntoRoot_CopiesOutsideSampleIntoSamplesFolder_WithoutOverwriting()
     {
         var root = Path.Combine(Path.GetTempPath(), "label-root-" + Guid.NewGuid().ToString("N"));
