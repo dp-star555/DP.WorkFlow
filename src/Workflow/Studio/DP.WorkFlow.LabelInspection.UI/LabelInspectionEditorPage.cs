@@ -47,6 +47,38 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
         Node.ReferenceImagePath = relativePath; _changed();
     }
 
+    /// <summary>记录标签区域（标签坐标系下的原点与新建配方宽高），并通知属性页刷新。</summary>
+    /// <param name="originX">配方(0,0)在标签坐标系中的X。</param><param name="originY">配方(0,0)在标签坐标系中的Y。</param>
+    /// <param name="width">新建配方宽（像素）。</param><param name="height">新建配方高（像素）。</param>
+    public void SetLabelRegion(double originX, double originY, int width, int height)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (Node.LabelOriginX == originX && Node.LabelOriginY == originY && Node.NewLabelWidth == width && Node.NewLabelHeight == height) return;
+        Node.LabelOriginX = originX; Node.LabelOriginY = originY; Node.NewLabelWidth = width; Node.NewLabelHeight = height; _changed();
+    }
+
+    /// <summary>
+    /// 把整张原图换算到标签坐标系，返回包住原图的标签区域（原点取整、尺寸按标签像素尺寸向上取整，限制在12000内）。
+    /// 用于还没有配方时首次摆正预览，避免默认原点(0,0)只截到定位参考点右下方的一角。
+    /// </summary>
+    /// <param name="imageToLocal">原图到标签坐标系的映射（定位坐标系的 ImageToLocal）。</param>
+    /// <param name="imageWidth">原图宽。</param><param name="imageHeight">原图高。</param><param name="pixelSize">标签像素尺寸。</param>
+    public static (double OriginX, double OriginY, int Width, int Height) FitLabelRegion(
+        Func<double, double, (double X, double Y)> imageToLocal, int imageWidth, int imageHeight, double pixelSize)
+    {
+        double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
+        double w = imageWidth, h = imageHeight;
+        foreach (var (x, y) in new[] { (0d, 0d), (w, 0d), (0d, h), (w, h) })
+        {
+            var (lx, ly) = imageToLocal(x, y);
+            minX = Math.Min(minX, lx); minY = Math.Min(minY, ly); maxX = Math.Max(maxX, lx); maxY = Math.Max(maxY, ly);
+        }
+        double originX = Math.Floor(minX), originY = Math.Floor(minY);
+        int width = (int)Math.Clamp(Math.Ceiling((maxX - originX) / pixelSize), 1, 12000);
+        int height = (int)Math.Clamp(Math.Ceiling((maxY - originY) / pixelSize), 1, 12000);
+        return (originX, originY, width, height);
+    }
+
     /// <summary>
     /// 把资源根目录外的配置样张复制到根目录下的 <c>samples</c> 子目录，返回相对根目录的路径；已在根目录内时直接返回相对路径。
     /// 同名文件内容相同则复用，不同则追加序号，不覆盖已有文件。

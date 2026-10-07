@@ -81,10 +81,26 @@ internal sealed class LabelWorkbenchControl : UserControl
             using var located = _previews.Capture(coordinates.NodeId) ?? throw new InvalidOperationException("没有本轮定位结果，请先运行定位节点。");
             var system = (located.Facts as IVisionCoordinateResult)?.CoordinateSystem ?? throw new InvalidOperationException("本帧没有成功定位，不能摆正标签。");
             system.ValidateFrame(preview.Frame);
+            var node = model.Node;
+            // 还没有配方且标签区域仍是默认值：默认原点(0,0)是定位参考点，只能截到其右下方的一角。
+            // 改为把整张原图换算到标签坐标系，自动得到包住原图的原点与尺寸并写回参数，用户可再按需收小。
+            bool fitted = !node.HasRecipe && node.LabelOriginX == 0 && node.LabelOriginY == 0 && node.NewLabelWidth == 0 && node.NewLabelHeight == 0;
+            if (fitted)
+            {
+                var info = preview.Frame.Image.Info;
+                var (ox, oy, w, h) = LabelInspectionEditorPageModel.FitLabelRegion((x, y) =>
+                {
+                    var local = system.ImageToLocal.Map(new Coordinate2D(x, y));
+                    return (local.X, local.Y);
+                }, info.Width, info.Height, node.LabelPixelSize);
+                model.SetLabelRegion(ox, oy, w, h);
+            }
             var (width, height) = LabelSize(preview.Frame);
-            using var label = model.Node.Placement(system)!.Rectify(preview.Frame, width, height);
+            using var label = node.Placement(system)!.Rectify(preview.Frame, width, height);
             await LoadAsync(label);
-            _status.Text = $"已按标签坐标系摆正为 {width}×{height}（配方像素）；在此图上画的ROI为标签坐标，运行时随定位放置。";
+            _status.Text = fitted
+                ? $"已按标签坐标系摆正为 {width}×{height}，并自动设置标签原点({node.LabelOriginX:0},{node.LabelOriginY:0})与新建宽高以包住整张原图；可在参数页收小到标签范围后重新载入。超出原图的部分为黑色。"
+                : $"已按标签坐标系摆正为 {width}×{height}（配方像素）；在此图上画的ROI为标签坐标，运行时随定位放置。超出原图的部分为黑色。";
         });
         Add("保存为参考图", async () =>
         {
