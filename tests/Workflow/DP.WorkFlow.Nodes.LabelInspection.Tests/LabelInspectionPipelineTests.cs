@@ -36,6 +36,44 @@ public sealed class LabelInspectionPipelineTests
         Assert.Null(rig.Frames.Capture("inspect"));
     }
 
+    [Theory]
+    [InlineData(true, EInspectionVerdict.Ng, WorkflowPorts.Failed)]
+    [InlineData(false, EInspectionVerdict.Ok, WorkflowPorts.Success)]
+    public async Task RunAsync_NgToFailedPort_RoutesNotOkReportToFailedBranchWithReport(bool ink, EInspectionVerdict expected, string port)
+    {
+        await using var rig = new Rig(ink);
+        rig.Node.NgToFailedPort = true;
+        var ok = rig.Document.CanvasProjection.Connections.Single(c => c.FromNodeId == "inspect");
+        rig.Document.CanvasProjection.Nodes.Add(new() { Node = new Consumer { Id = "ng", Verdict = WorkflowInput<EInspectionVerdict>.FromBinding(new("inspect", "Verdict")) } });
+        rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = "inspect", FromPort = WorkflowPorts.Failed, ToNodeId = "ng", ToPort = WorkflowPorts.Input });
+        var result = await rig.RunAsync();
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(expected, rig.Output().Verdict);
+        var outputs = rig.Host.Engine!.RunState.NodeOutputs;
+        // NG：报告照常提交，失败支路能读到判定；成功支路不执行。OK：反之。
+        Assert.Equal(port == WorkflowPorts.Failed, outputs.Any(o => o.NodeId == "ng"));
+        Assert.Equal(port == WorkflowPorts.Success, outputs.Any(o => o.NodeId == ok.ToNodeId));
+        if (port == WorkflowPorts.Failed) Assert.Equal(EInspectionVerdict.Ng, outputs.Single(o => o.NodeId == "ng").Value);
+    }
+
+    [Fact]
+    public async Task RunAsync_UnchangedResources_ReusesLoadedEngineAcrossRuns_AndReloadsAfterChange()
+    {
+        await using var rig = new Rig(false);
+        Assert.True((await rig.RunAsync()).Success);
+        Assert.True((await rig.RunAsync()).Success);
+        Assert.True((await rig.RunAsync()).Success);
+        Assert.Equal(1, rig.Runtime.ResourceLoadCount);
+        Assert.Equal(1, rig.Runtime.CachedResourceCount);
+        // 配方变化：下一轮重新加载，缓存仍只保留当前一份。
+        rig.Node.RecipeJson = rig.Json(new InspectionRecipe("changed", 64, 48, EInspectionMode.Free, EAlignmentMode.AssumeAligned,
+            new[] { new InspectionRegion("blank", ERegionKind.Blank, new PixelBounds(8, 8, 48, 32)) }, Rig.Options));
+        Assert.True((await rig.RunAsync()).Success);
+        Assert.Equal("changed", rig.Output().RecipeName);
+        Assert.Equal(2, rig.Runtime.ResourceLoadCount);
+        Assert.Equal(1, rig.Runtime.CachedResourceCount);
+    }
+
     [Fact]
     public async Task RunAsync_ValidReviewReport_IsNormalOutputNotNodeFault()
     {

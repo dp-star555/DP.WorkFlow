@@ -120,9 +120,35 @@ public sealed class WorkflowLabelInspectionResources : IDisposable
         catch
         {
             engine?.Dispose(); reference?.Dispose(); host?.Dispose();
-            Directory.Delete(temporary, true);
+            DeleteTemporary(temporary);
             throw;
         }
+    }
+
+    /// <summary>
+    /// 复用判断用的配置指纹：节点资源配置、解析后的根目录，以及模型/参考图文件的大小和修改时间。
+    /// 不读取文件内容；任何一项变化都会使下一轮重新加载。无法计算（例如路径越界）时返回空，交给加载过程报告错误。
+    /// 字库/异常库按配方中的库ID与修订引用，已发布修订不可变，因此不单独计入。
+    /// </summary>
+    /// <param name="node">节点配置。</param><param name="baseDirectory">流程目录。</param>
+    public static string? Fingerprint(InspectLabelNodeModel node, string baseDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        try
+        {
+            var root = Path.GetFullPath(node.ResourceRoot, Path.GetFullPath(baseDirectory));
+            string Stamp(string path)
+            {
+                if (string.IsNullOrWhiteSpace(path)) return "-";
+                var info = new FileInfo(ResolvePath(root, path));
+                return info.Exists ? $"{info.FullName}|{info.Length}|{info.LastWriteTimeUtc.Ticks}" : info.FullName + "|missing";
+            }
+            var text = string.Join("\n", root, ResolvePath(root, node.DataDirectory), node.MaximumParallelRois.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Stamp(node.ReferenceImagePath), Stamp(node.RecognitionModelPath), Stamp(node.AnomalyBackbonePath), node.RecipeJson);
+            return Hash(Encoding.UTF8.GetBytes(text));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or InvalidDataException)
+        { return null; }
     }
 
     /// <summary>在显式根内解析资源，不提供开发目录兜底，也不接受子目录重解析点。</summary>
@@ -186,8 +212,16 @@ public sealed class WorkflowLabelInspectionResources : IDisposable
         finally
         {
             Reference?.Dispose(); Host.Dispose();
-            if (Directory.Exists(_temporary)) Directory.Delete(_temporary, true);
+            DeleteTemporary(_temporary);
         }
+    }
+
+    // 临时模型副本只是快照：删除失败（例如文件仍被占用）不能让资源释放或运行收尾失败，只记录。
+    private static void DeleteTemporary(string directory)
+    {
+        try { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        { System.Diagnostics.Trace.TraceWarning($"标签临时模型目录删除失败：{directory}：{error.Message}"); }
     }
 
     private sealed class SnapshotRepositories : IGlyphLibraryRepository, IAnomalyLibraryRepository

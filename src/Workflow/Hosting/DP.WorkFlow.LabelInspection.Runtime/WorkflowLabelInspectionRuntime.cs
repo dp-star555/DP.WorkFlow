@@ -3,13 +3,19 @@ using DP.Vision;
 
 namespace DP.WorkFlow.LabelInspection;
 
-/// <summary>按绑定作用域和计划路径准备标签节点；根/嵌套准备独立提交、回滚和退役。</summary>
+/// <summary>
+/// 按绑定作用域和计划路径准备标签节点；根/嵌套准备独立提交、回滚和退役。
+/// 配置与资源文件（大小、修改时间）都没变时，多轮运行复用同一套已加载的模型和引擎，不再每轮重新读取、复制和加载ONNX；
+/// 有变化时下一轮准备重新加载，旧资源在所有在途调用结束后释放。
+/// </summary>
 public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionService, IWorkflowTransactionalRunPreparationService, IAsyncDisposable
 {
     private readonly object _gate = new();
     private readonly Func<string> _baseDirectory;
     private readonly IWorkflowRunPreparationService? _next;
     private readonly Dictionary<Guid, Dictionary<(string Path, string Node), Entry>> _active = new();
+    // 已提交过的资源，按计划位置缓存；缓存本身持有一个租约。
+    private readonly Dictionary<(string Path, string Node), Entry> _cache = new();
     private bool _disposed;
     /// <summary>资源根相对流程文件目录解析；可串接帧/采集准备，不释放上一轮资源。</summary>
     public WorkflowLabelInspectionRuntime(Func<string> baseDirectory, IWorkflowRunPreparationService? next = null)
@@ -34,10 +40,20 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
                 var node = (InspectLabelNodeModel)position.Node;
                 var errors = node.ValidateConfiguration();
                 if (errors.Count > 0) throw new InvalidOperationException($"标签节点{node.Id}：" + string.Join("；", errors));
-                var resource = await WorkflowLabelInspectionResources.CreateAsync(node, baseDirectory, cancellationToken).ConfigureAwait(false);
-                var entry = new Entry(resource);
-                if (!entries.TryAdd((position.PlanPath, node.Id), entry))
-                { await entry.RetireAsync().ConfigureAwait(false); throw new InvalidOperationException("标签计划位置重复。"); }
+                var key = (position.PlanPath, node.Id);
+                if (entries.ContainsKey(key)) throw new InvalidOperationException("标签计划位置重复。");
+                var fingerprint = WorkflowLabelInspectionResources.Fingerprint(node, baseDirectory);
+                Entry? entry = null;
+                lock (_gate)
+                    if (fingerprint is not null && _cache.TryGetValue(key, out var cached) && cached.Fingerprint == fingerprint && cached.TryAddLease())
+                        entry = cached;
+                if (entry is null)
+                {
+                    var resource = await WorkflowLabelInspectionResources.CreateAsync(node, baseDirectory, cancellationToken).ConfigureAwait(false);
+                    entry = new Entry(resource, fingerprint);
+                    Interlocked.Increment(ref _loadCount);
+                }
+                entries.Add(key, entry);
             }
             if (_next is IWorkflowTransactionalRunPreparationService transactional)
                 next = await transactional.PrepareRunAsync(context, cancellationToken).ConfigureAwait(false);
@@ -47,7 +63,7 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
         }
         catch
         {
-            try { await RetireAsync(entries.Values).ConfigureAwait(false); }
+            try { await ReleaseAsync(entries.Values).ConfigureAwait(false); }
             finally { if (next is not null) await next.DisposeAsync().ConfigureAwait(false); }
             throw;
         }
@@ -96,32 +112,65 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
         lock (_gate)
         {
             if (_disposed) return;
-            _disposed = true; entries = _active.Values.SelectMany(p => p.Values).Distinct().ToArray(); _active.Clear();
+            _disposed = true;
+            entries = _active.Values.SelectMany(p => p.Values).Concat(_cache.Values).Distinct().ToArray();
+            _active.Clear(); _cache.Clear();
         }
-        await RetireAsync(entries).ConfigureAwait(false);
+        await Task.WhenAll(entries.Select(e => e.RetireAsync())).ConfigureAwait(false);
     }
-    private static Task RetireAsync(IEnumerable<Entry> entries) => Task.WhenAll(entries.Select(e => e.RetireAsync()));
+    private static Task ReleaseAsync(IEnumerable<Entry> entries) => Task.WhenAll(entries.Select(e => e.ReleaseLeaseAsync()));
 
-    private sealed class Entry(WorkflowLabelInspectionResources resource)
+    private int _loadCount;
+    /// <summary>累计实际加载标签资源（模型、引擎、参考图）的次数；复用缓存的轮次不计入（诊断用）。</summary>
+    public int ResourceLoadCount => Volatile.Read(ref _loadCount);
+    /// <summary>已加载并缓存、可供下一轮复用的标签资源份数（诊断用）。</summary>
+    public int CachedResourceCount { get { lock (_gate) return _cache.Count; } }
+
+    // 提交后把本轮新加载的资源放入缓存，替换同一位置的旧资源（旧资源在没有租约和在途调用后释放）。
+    private void PublishToCache(Dictionary<(string, string), Entry> entries)
+    {
+        foreach (var (key, entry) in entries)
+        {
+            if (entry.Fingerprint is null || _cache.TryGetValue(key, out var cached) && ReferenceEquals(cached, entry) || !entry.TryAddLease()) continue;
+            if (_cache.Remove(key, out var old)) _ = old.ReleaseLeaseAsync();
+            _cache[key] = entry;
+        }
+    }
+
+    /// <summary>一套已加载资源；准备中的运行与缓存各持一个租约，租约归零后在在途调用结束时释放。</summary>
+    private sealed class Entry(WorkflowLabelInspectionResources resource, string? fingerprint)
     {
         private readonly object _gate = new();
         private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private int _users;
+        private int _users, _leases = 1;
         private bool _retired, _cleaning;
         internal WorkflowLabelInspectionResources Resource { get; } = resource;
+        internal string? Fingerprint { get; } = fingerprint;
         internal SemaphoreSlim Serial { get; } = new(1, 1);
         internal void Acquire()
         { lock (_gate) { if (_retired) throw new InvalidOperationException("标签资源已退役。"); _users++; } }
         internal void Release()
         { lock (_gate) { _users--; CleanIfIdle(); } }
+        internal bool TryAddLease()
+        { lock (_gate) { if (_retired) return false; _leases++; return true; } }
+        internal Task ReleaseLeaseAsync()
+        {
+            lock (_gate)
+            {
+                if (_retired) return _released.Task;
+                if (--_leases > 0) return Task.CompletedTask;
+                _retired = true; CleanIfIdle(); return _released.Task;
+            }
+        }
         internal Task RetireAsync()
         { lock (_gate) { _retired = true; CleanIfIdle(); return _released.Task; } }
         private void CleanIfIdle()
         {
             if (!_retired || _users != 0 || _cleaning) return;
             _cleaning = true;
-            try { Resource.Dispose(); Serial.Dispose(); _released.TrySetResult(); }
+            try { Resource.Dispose(); _released.TrySetResult(); }
             catch (Exception error) { _released.TrySetException(error); }
+            finally { Serial.Dispose(); }
         }
     }
     private sealed class Prepared(WorkflowLabelInspectionRuntime owner, Guid id, Dictionary<(string, string), Entry> entries,
@@ -135,7 +184,7 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
                 ObjectDisposedException.ThrowIf(owner._disposed || _released, owner);
                 if (_committed) return;
                 if (owner._active.ContainsKey(id)) throw new InvalidOperationException("标签绑定作用域已经发布。");
-                next?.Commit(); owner._active.Add(id, entries); _committed = true;
+                next?.Commit(); owner._active.Add(id, entries); owner.PublishToCache(entries); _committed = true;
             }
         }
         public async ValueTask DisposeAsync()
@@ -146,7 +195,7 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
                 _released = true;
                 if (_committed) owner._active.Remove(id);
             }
-            try { await RetireAsync(entries.Values).ConfigureAwait(false); }
+            try { await ReleaseAsync(entries.Values).ConfigureAwait(false); }
             finally { if (next is not null) await next.DisposeAsync().ConfigureAwait(false); }
         }
     }
