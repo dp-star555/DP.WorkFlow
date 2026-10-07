@@ -294,7 +294,7 @@ public sealed class WorkflowNodeEditorWindow : Window
         var panel = new WorkflowPropertyPanel
         {
             ChoiceProvider = page.ChoiceProvider,
-            AdditionalProperties = page.AdditionalProperties,
+            AdditionalProperties = WorkflowNodeEditorPropertyContributors.Compose(page.AdditionalProperties, _model.Pages),
             Session = page.Session,
             EntryNodeId = page.EntryNodeId,
             HideScriptProperty = _model.EditingNode is IWorkflowScriptNode,

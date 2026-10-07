@@ -135,11 +135,21 @@ public sealed class LabelInspectionEditorTests
         await RunStaAsync(async parent =>
         {
             var session = new WorkflowDesignerSession(rig.Document, rig.Nodes);
-            await using var editor = Editor(session);
+            await using var editor = Editor(session, reportPage: false);
+            Assert.DoesNotContain(editor.Pages, p => p.RendererKey == LabelInspectionResultPageModel.RendererKey);
             using var dialog = Dialog(editor, rig.Root);
             dialog.Show(parent);
             var control = Descendants(dialog).OfType<DP.LabelInspection.LabelInspectionControl>().Single();
             await WaitUntilAsync(() => control.Regions.Count == 1);
+            // 新布局：SDK侧栏隐藏，ROI规则为左侧分页，文件/字库等操作作为按钮出现在参数页。
+            Assert.False(control.SidebarVisible);
+            var rules = Descendants(dialog).OfType<DP.LabelInspection.RegionRulesControl>().Single();
+            Assert.Contains(Descendants(dialog).OfType<TabPage>(), tab => tab.Text == "ROI规则" && Descendants(tab).Contains(rules));
+            var page = Page(editor);
+            var actions = page.CreateProperties(page.Node).Select(e => e.Name).ToArray();
+            Assert.Contains("LabelInspection.Command.GlyphLibrary", actions);
+            Assert.Contains("LabelInspection.Command.ImportRecipe", actions);
+            Assert.Contains(Descendants(dialog).OfType<ModernUI.WinForms.ModernSelect>(), select => select.Items.Count == control.DrawKinds.Count);
             control.SetRegions(new[] { new InspectionRegion("changed", ERegionKind.Blank, new DP.Vision.Algorithms.PixelBounds(8, 8, 24, 24))
                 .WithTasks(new RoiInspectionTasks(false, false)) });
             editor.ApplyChanges();
@@ -162,7 +172,7 @@ public sealed class LabelInspectionEditorTests
         var original = rig.Node.RecipeJson;
         await RunStaAsync(async parent =>
         {
-            await using var editor = Editor(new WorkflowDesignerSession(rig.Document, rig.Nodes));
+            await using var editor = Editor(new WorkflowDesignerSession(rig.Document, rig.Nodes), reportPage: false);
             using var dialog = Dialog(editor, rig.Root);
             dialog.Show(parent);
             var control = Descendants(dialog).OfType<DP.LabelInspection.LabelInspectionControl>().Single();
@@ -182,11 +192,12 @@ public sealed class LabelInspectionEditorTests
         });
     }
 
-    private static WorkflowNodeEditorModel Editor(WorkflowDesignerSession session) => new(session, "image", "inspect",
-        new[] { new LabelInspectionEditorPageProvider(new OpenCvImageCodec()) });
+    // WinForms配置页在图像下方显示运行结果，不提供独立报告页；WPF等平台仍使用报告页。
+    private static WorkflowNodeEditorModel Editor(WorkflowDesignerSession session, bool reportPage = true) => new(session, "image", "inspect",
+        new[] { new LabelInspectionEditorPageProvider(new OpenCvImageCodec(), includeReportPage: reportPage) });
     private static LabelInspectionEditorPageModel Page(WorkflowNodeEditorModel editor) => Assert.IsType<LabelInspectionEditorPageModel>(editor.Pages.Single(p => p.PageId == "LabelInspection").Model);
     private static WorkflowNodeEditorDialog Dialog(WorkflowNodeEditorModel editor, string root) => new(editor,
-        new IWorkflowWinFormsNodeEditorPageRenderer[] { new LabelInspectionWorkbenchRenderer(() => root), new LabelInspectionReportRenderer() });
+        new IWorkflowWinFormsNodeEditorPageRenderer[] { new LabelInspectionWorkbenchRenderer(() => root) });
     private static IEnumerable<System.Windows.Forms.Control> Descendants(System.Windows.Forms.Control control)
     { foreach (System.Windows.Forms.Control child in control.Controls) { yield return child; foreach (var descendant in Descendants(child)) yield return descendant; } }
     private static async Task WaitUntilAsync(Func<bool> condition)
