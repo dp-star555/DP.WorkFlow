@@ -84,6 +84,28 @@ internal static class WorkflowWinFormsStyle
             return;
         }
 
+        // 原生属性表（SDK的ROI规则编辑等）：内部子控件由属性表自己按这些颜色绘制，不再递归改写。
+        if (control is PropertyGrid nativeGrid)
+        {
+            nativeGrid.BackColor = palette.Window;
+            nativeGrid.ForeColor = palette.Text;
+            nativeGrid.ViewBackColor = palette.Control;
+            nativeGrid.ViewForeColor = palette.Text;
+            nativeGrid.ViewBorderColor = palette.Border;
+            nativeGrid.LineColor = palette.Surface;
+            nativeGrid.CategoryForeColor = palette.Text;
+            nativeGrid.CategorySplitterColor = palette.Border;
+            nativeGrid.HelpBackColor = palette.Surface;
+            nativeGrid.HelpForeColor = palette.Text;
+            nativeGrid.HelpBorderColor = palette.Border;
+            nativeGrid.CommandsBackColor = palette.Surface;
+            nativeGrid.CommandsForeColor = palette.Text;
+            nativeGrid.DisabledItemForeColor = palette.MutedText;
+            nativeGrid.SelectedItemWithFocusBackColor = Color.FromArgb(0, 120, 215);
+            nativeGrid.SelectedItemWithFocusForeColor = Color.White;
+            return;
+        }
+
         bool first = !Hooked.TryGetValue(control, out _);
         if (first) Hooked.Add(control, new object());
 

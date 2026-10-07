@@ -172,17 +172,20 @@ public sealed partial class WorkflowNodeEditorDialog : Form
                 or WorkflowNodeEditorPageKind.Diagnostics or WorkflowNodeEditorPageKind.Results))
             .ToArray();
 
-        var panels = new List<WorkflowWinFormsNodeEditorSidePanel>
-        {
-            Panel(visible.Single(page => page.Kind == WorkflowNodeEditorPageKind.Properties))
-        };
+        // 先创建主体页面：其页面模型可能在控件连接后才为参数页贡献操作按钮（IWorkflowNodeEditorPropertyContributor）。
+        var sidePanels = new List<WorkflowWinFormsNodeEditorSidePanel>();
         var specialControls = specialPages.Select(page =>
         {
             var control = CreatePageControl(page);
             if (ResolveRenderer(page) is IWorkflowWinFormsNodeEditorSidePanelRenderer sides)
-                panels.AddRange(sides.CreateSidePanels(page));
+                sidePanels.AddRange(sides.CreateSidePanels(page));
             return control;
         }).ToArray();
+        var panels = new List<WorkflowWinFormsNodeEditorSidePanel>
+        {
+            Panel(visible.Single(page => page.Kind == WorkflowNodeEditorPageKind.Properties))
+        };
+        panels.AddRange(sidePanels);
         if (visible.FirstOrDefault(page => page.Kind == WorkflowNodeEditorPageKind.Results) is { } results)
             panels.Add(Panel(results));
         var side = CreateSidePanels(panels);
@@ -293,7 +296,7 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         var panel = new WorkflowPropertyPanel
         {
             ChoiceProvider = page.ChoiceProvider,
-            AdditionalProperties = page.AdditionalProperties,
+            AdditionalProperties = WorkflowNodeEditorPropertyContributors.Compose(page.AdditionalProperties, Model.Pages),
             Session = page.Session,
             EntryNodeId = page.EntryNodeId,
             Dock = DockStyle.Fill,

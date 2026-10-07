@@ -4,10 +4,19 @@ using DP.WorkFlow.UI;
 
 namespace DP.WorkFlow.LabelInspection.UI;
 
+/// <summary>参数页上的一个标签配置操作按钮（由平台工作台控件执行）。</summary>
+/// <param name="Id">稳定操作标识。</param><param name="Label">属性名。</param><param name="Category">参数页分组。</param>
+/// <param name="Caption">按钮文字。</param><param name="Description">操作说明。</param>
+public sealed record LabelInspectionEditorCommand(string Id, string Label, string Category, string Caption, string Description);
+
 /// <summary>UI无关配方编辑桥，只修改隔离节点；平台控件提供捕获与异步释放回调。</summary>
-public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitParticipant, IWorkflowNodeEditorCommitReadiness, IAsyncDisposable
+public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitParticipant, IWorkflowNodeEditorCommitReadiness,
+    IWorkflowNodeEditorPropertyContributor, IAsyncDisposable
 {
     private readonly Action _changed;
+    private IReadOnlyList<LabelInspectionEditorCommand> _commands = Array.Empty<LabelInspectionEditorCommand>();
+    private Func<string, Task>? _execute;
+    private Func<string, string>? _commandBlockReason;
     private Func<InspectionRecipe?>? _capture;
     private Func<bool>? _busy;
     private Func<ValueTask>? _release;
@@ -19,6 +28,30 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
     public InspectLabelNodeModel Node { get; }
     /// <summary>完整原生配方桥，保留私有setter的Tasks等配置。</summary>
     public InspectionRecipeSerializer Serializer { get; }
+    /// <summary>本节点最近一次正式运行的结果来源；配置页据此显示运行图像与报告。没有运行会话时为空。</summary>
+    public LabelInspectionResultPageModel? RunResults { get; init; }
+
+    /// <summary>平台控件连接后，把这些操作作为按钮追加到同一窗口的参数页。</summary>
+    /// <param name="commands">操作列表。</param><param name="execute">执行操作（异常由参数页显示）。</param>
+    /// <param name="blockReason">操作当前不可执行的原因；空文本表示可执行。</param>
+    public void AttachCommands(IReadOnlyList<LabelInspectionEditorCommand> commands, Func<string, Task> execute, Func<string, string> blockReason)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _commands = commands; _execute = execute; _commandBlockReason = blockReason;
+    }
+
+    /// <inheritdoc/>
+    public IEnumerable<WorkflowPropertyEntry> CreateProperties(IWorkflowNodeModel editingNode)
+    {
+        if (_disposed || _execute is not { } execute || editingNode.Id != Node.Id) yield break;
+        foreach (var command in _commands)
+        {
+            var id = command.Id;
+            yield return WorkflowPropertyEntry.CreateAction("LabelInspection.Command." + id, command.Label, command.Category, command.Description,
+                () => command.Caption, () => execute(id), () => _disposed ? "配置页已关闭。" : _commandBlockReason?.Invoke(id) ?? "");
+        }
+    }
+
     /// <summary>导入配方，不依赖运行预览；不会改上游输入或资源引用。</summary>
     public void ImportRecipe(string json) => SetRecipe(Serializer.Deserialize(json));
     /// <summary>写入草稿中的配方快照。</summary>
@@ -118,7 +151,9 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
 }
 
 /// <summary>标签节点的专用工作台页面，不贡献通用视觉ROI编辑页。</summary>
-public sealed class LabelInspectionEditorPageProvider(IImageCodec codec, IWorkflowVisionPreviewSource? previews = null) : IWorkflowNodeEditorPageProvider
+/// <param name="codec">配方中参考图像编码。</param><param name="previews">已提交的图像预览来源。</param>
+/// <param name="includeReportPage">是否提供独立的只读报告页；配置页能显示运行结果的平台传false。</param>
+public sealed class LabelInspectionEditorPageProvider(IImageCodec codec, IWorkflowVisionPreviewSource? previews = null, bool includeReportPage = true) : IWorkflowNodeEditorPageProvider
 {
     /// <summary>平台Renderer的稳定键。</summary>
     public const string RendererKey = "Workflow.LabelInspection.Workbench";
@@ -131,10 +166,13 @@ public sealed class LabelInspectionEditorPageProvider(IImageCodec codec, IWorkfl
     {
         if (!CanProvide(context)) yield break;
         yield return new("LabelInspection", "标签配置与试检测", WorkflowNodeEditorPageKind.Custom, 450,
-            new LabelInspectionEditorPageModel((InspectLabelNodeModel)context.Node, codec, context.Session.NotifyNodeConfigurationChanged),
+            new LabelInspectionEditorPageModel((InspectLabelNodeModel)context.Node, codec, context.Session.NotifyNodeConfigurationChanged)
+            { RunResults = new LabelInspectionResultPageModel(context.Node.Id, previews, context.RuntimeSession) },
             IconKey: "Image", RendererKey: RendererKey);
-        yield return new("LabelReport", "标签检测报告", WorkflowNodeEditorPageKind.Custom, 850,
-            new LabelInspectionResultPageModel(context.Node.Id, previews, context.RuntimeSession), IconKey: "Results", RendererKey: LabelInspectionResultPageModel.RendererKey);
+        // WinForms在配置页图像下方显示运行结果；没有原生工作台的平台（WPF）使用独立只读报告页。
+        if (includeReportPage)
+            yield return new("LabelReport", "标签检测报告", WorkflowNodeEditorPageKind.Custom, 850,
+                new LabelInspectionResultPageModel(context.Node.Id, previews, context.RuntimeSession), IconKey: "Results", RendererKey: LabelInspectionResultPageModel.RendererKey);
     }
 }
 
