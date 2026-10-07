@@ -38,6 +38,15 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
         Node.AuthorImagePath = relativePath; _changed();
     }
 
+    /// <summary>记录参考图路径（相对资源根目录），并通知属性页刷新。</summary>
+    /// <param name="relativePath">相对资源根目录的路径。</param>
+    public void SetReferenceImagePath(string relativePath)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (Node.ReferenceImagePath == relativePath) return;
+        Node.ReferenceImagePath = relativePath; _changed();
+    }
+
     /// <summary>
     /// 把资源根目录外的配置样张复制到根目录下的 <c>samples</c> 子目录，返回相对根目录的路径；已在根目录内时直接返回相对路径。
     /// 同名文件内容相同则复用，不同则追加序号，不覆盖已有文件。

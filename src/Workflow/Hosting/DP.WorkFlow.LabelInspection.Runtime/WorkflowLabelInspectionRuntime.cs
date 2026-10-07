@@ -74,7 +74,7 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
 
     /// <inheritdoc/>
     public async Task<WorkflowLabelInspectionResult> InspectAsync(IWorkflowNodeExecutionContext context, ImageFrame frame,
-        string? cycleId, TaskDataSnapshot? taskData, CancellationToken cancellationToken)
+        string? cycleId, TaskDataSnapshot? taskData, InspectionPlacement? placement, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Entry entry;
@@ -88,17 +88,17 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
         try
         {
             var resource = entry.Resource;
-            if (frame.Image.Info.Width != resource.Recipe.Width || frame.Image.Info.Height != resource.Recipe.Height)
-                throw new InvalidOperationException("标签输入图与配方尺寸不一致。");
-            // 在第一个异步等待之前独立保留两个输入；请求既用于检测，也可由独立宿主存储策略使用。
-            using var request = InspectionRequest.FromVision(frame, resource.Recipe, resource.Reference, cycleId, taskData);
+            if (placement is null && (frame.Image.Info.Width != resource.Recipe.Width || frame.Image.Info.Height != resource.Recipe.Height))
+                throw new InvalidOperationException($"标签输入图 {frame.Image.Info.Width}×{frame.Image.Info.Height} 与配方尺寸 {resource.Recipe.Width}×{resource.Recipe.Height} 不一致；图像尺寸不同时请绑定“标签坐标系”。");
+            // 在第一个异步等待之前独立保留两个输入；放置时只对ROI范围按放置从原图取样。
+            using var request = InspectionRequest.FromVision(frame, resource.Recipe, resource.Reference, cycleId, taskData, placement);
             await entry.Serial.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 var report = await resource.Engine.InspectAsync(request, cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 return new WorkflowLabelInspectionResult(request.FrameId, request.CycleId, resource.Recipe.Name,
-                    resource.RecipeSha256, resource.ResourceIdentity, report, resource.Recipe.Regions);
+                    resource.RecipeSha256, resource.ResourceIdentity, report, resource.Recipe.Regions, placement);
             }
             finally { entry.Serial.Release(); }
         }

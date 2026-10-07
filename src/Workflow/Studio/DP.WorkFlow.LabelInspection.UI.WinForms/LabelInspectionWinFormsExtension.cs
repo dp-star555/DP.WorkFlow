@@ -1,6 +1,7 @@
 using DP.LabelInspection.Contracts;
 using DP.LabelInspection.Runtime;
 using DP.Vision;
+using DP.Vision.Algorithms;
 using DP.WorkFlow.LabelInspection.UI;
 using DP.WorkFlow.UI;
 using DP.WorkFlow.UI.WinForms;
@@ -63,12 +64,41 @@ internal sealed class LabelWorkbenchControl : UserControl
         _model = model; _baseDirectory = baseDirectory; _previews = previews;
         BackColor = Theme.Background; ForeColor = Theme.Text;
         Controls.Add(_workbench); Controls.Add(_status); Controls.Add(_toolbar);
+        // SDK 工作台是原生控件，并会在运行中重建列表/面板：统一着色并跟随之后加入的子控件。
+        WorkflowWinFormsTheme.ApplyDark(_workbench, followAddedControls: true);
+        // SDK 的ROI/绑定/字库等编辑窗口是运行时 new 出来的普通 Form，宿主拿不到创建时机：空闲时（模态循环中同样触发）补着色。
+        Application.Idle += ThemeSdkDialogs;
+        Disposed += (_, _) => Application.Idle -= ThemeSdkDialogs;
         Add("载入上游预览", async () =>
         {
             var binding = model.Node.Frame.Binding;
             if (binding is not { IsPublicData: false } key) throw new InvalidOperationException("请先绑定上游图像；公开数据输入请手工加载配置样张。");
             using var preview = _previews?.Capture(key.NodeId) ?? throw new InvalidOperationException("没有本轮上游图像预览，请先运行采图节点或手工加载配置样张。");
-            await LoadAsync(preview.Frame);
+            if (model.Node.LabelCoordinates.Binding is not { } coordinates) { await LoadAsync(preview.Frame); return; }
+            // 绑定了标签坐标系：用同一轮的定位把标签区域摆正成配方尺寸，ROI画在标签坐标下，生产时随定位放置。
+            if (coordinates.IsPublicData || coordinates.MemberPath != "CoordinateSystem")
+                throw new InvalidOperationException("配置页摆正预览需要“标签坐标系”直接绑定定位节点的CoordinateSystem成员。");
+            using var located = _previews.Capture(coordinates.NodeId) ?? throw new InvalidOperationException("没有本轮定位结果，请先运行定位节点。");
+            var system = (located.Facts as IVisionCoordinateResult)?.CoordinateSystem ?? throw new InvalidOperationException("本帧没有成功定位，不能摆正标签。");
+            system.ValidateFrame(preview.Frame);
+            var (width, height) = LabelSize(preview.Frame);
+            using var label = model.Node.Placement(system)!.Rectify(preview.Frame, width, height);
+            await LoadAsync(label);
+            _status.Text = $"已按标签坐标系摆正为 {width}×{height}（配方像素）；在此图上画的ROI为标签坐标，运行时随定位放置。";
+        });
+        Add("保存为参考图", async () =>
+        {
+            if (_actual is null) throw new InvalidOperationException("请先载入上游预览或配置样张。");
+            // 模板模式需要与配方同尺寸的参考图；绑定标签坐标系时就是这张摆正后的标签图。
+            var relative = $"label-reference-{model.Node.Id}.png";
+            var info = _actual.Image.Info;
+            var pixels = new byte[info.ByteLength]; _actual.Image.CopyTo(0, pixels, 0, pixels.Length);
+            var snapshot = new PixelSnapshot(info.Width, info.Height, info.Layout == EPixelLayout.Gray8 ? EImagePixelFormat.Gray8 : EImagePixelFormat.Bgr24, pixels);
+            Directory.CreateDirectory(Root);
+            await File.WriteAllBytesAsync(Path.Combine(Root, relative), new OpenCvImageCodec().EncodePng(snapshot), _lifetime.Token);
+            model.SetReferenceImagePath(relative);
+            await LoadAsync(_actual);
+            _status.Text = $"参考图已保存为 {relative}；模板模式下用于比对。";
         });
         Add("加载配置样张", async () =>
         {
@@ -113,6 +143,27 @@ internal sealed class LabelWorkbenchControl : UserControl
             if (string.IsNullOrWhiteSpace(model.Node.AuthorImagePath)) return;
             await GuardAsync(LoadAuthorAsync);
         };
+    }
+    private readonly HashSet<Form> _themedDialogs = new();
+    private void ThemeSdkDialogs(object? sender, EventArgs e)
+    {
+        foreach (Form form in Application.OpenForms)
+        {
+            if (form.GetType() != typeof(Form) || !_themedDialogs.Add(form)) continue;
+            WorkflowWinFormsTheme.ApplyDark(form, followAddedControls: true);
+            form.FormClosed += (_, _) => _themedDialogs.Remove(form);
+        }
+    }
+    // 摆正尺寸：已有配方以配方为准，否则用“新建配方宽/高”，都没有时用预览图尺寸。
+    private (int Width, int Height) LabelSize(ImageFrame frame)
+    {
+        if (!string.IsNullOrWhiteSpace(_model.Node.RecipeJson))
+        {
+            var recipe = _model.Serializer.Deserialize(_model.Node.RecipeJson);
+            return (recipe.Width, recipe.Height);
+        }
+        return (_model.Node.NewLabelWidth > 0 ? _model.Node.NewLabelWidth : frame.Image.Info.Width,
+            _model.Node.NewLabelHeight > 0 ? _model.Node.NewLabelHeight : frame.Image.Info.Height);
     }
     private string Root => Path.GetFullPath(_model.Node.ResourceRoot, Path.GetFullPath(_baseDirectory()));
     private async Task LoadAuthorAsync()

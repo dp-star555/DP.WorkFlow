@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using DP.LabelInspection.Contracts;
 using DP.Vision;
+using DP.Vision.Algorithms;
 
 namespace DP.WorkFlow;
 
@@ -20,6 +21,24 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
     /// <summary>本周期外部期望数据，只允许绑定或空。</summary>
     [WorkflowProperty("任务期望数据", "可选绑定TaskDataSnapshot，不从识别结果生成期望值，也不保存本次任务数据。", Category = "输入")]
     public WorkflowInput<TaskDataSnapshot> TaskData { get; set; } = WorkflowInput<TaskDataSnapshot>.FromLiteral(null);
+    /// <summary>可选：标签所在的本帧坐标系（来自模板定位后的“构建本帧坐标系”等），ROI随之平移、旋转和缩放。</summary>
+    [WorkflowProperty("标签坐标系", "可选。绑定定位节点输出的CoordinateSystem后，配方ROI画在标签坐标下，每帧按坐标系放置到原图并只对ROI范围取样（支持平移/旋转/缩放）；不绑定时配方坐标即原图坐标。", Category = "定位")]
+    public WorkflowInput<VisionCoordinateSystem> LabelCoordinates { get; set; } = WorkflowInput<VisionCoordinateSystem>.FromLiteral(null);
+    /// <summary>配方左上角在标签坐标系中的X。</summary>
+    [WorkflowProperty("标签原点X", "配方图左上角在标签坐标系中的X（坐标系单位）。", Category = "定位")]
+    public double LabelOriginX { get; set; }
+    /// <summary>配方左上角在标签坐标系中的Y。</summary>
+    [WorkflowProperty("标签原点Y", "配方图左上角在标签坐标系中的Y（坐标系单位）。", Category = "定位")]
+    public double LabelOriginY { get; set; }
+    /// <summary>每个配方像素对应的坐标系单位。</summary>
+    [WorkflowProperty("配方像素尺寸", "每个配方像素对应的坐标系单位；坐标系以像素为单位且不缩放时为1。", Category = "定位")]
+    public double LabelPixelSize { get; set; } = 1;
+    /// <summary>新建配方时的标签宽度（配方像素）；0表示使用预览图尺寸。已有配方以配方尺寸为准。</summary>
+    [WorkflowProperty("新建配方宽度", "绑定标签坐标系后，配置页按此尺寸摆正标签预览（配方像素）；0为预览图宽度。已有配方时以配方尺寸为准。", Category = "定位")]
+    public int NewLabelWidth { get; set; }
+    /// <summary>新建配方时的标签高度（配方像素）；0表示使用预览图尺寸。</summary>
+    [WorkflowProperty("新建配方高度", "绑定标签坐标系后，配置页按此尺寸摆正标签预览（配方像素）；0为预览图高度。已有配方时以配方尺寸为准。", Category = "定位")]
+    public int NewLabelHeight { get; set; }
     /// <summary>SDK原生配方JSON，使用专用页面导入或捕获；完整保留项目选择、约束和库修订。</summary>
     [Browsable(false)]
     public string RecipeJson { get; set; } = string.Empty;
@@ -67,6 +86,12 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
         if (ReferenceImagePath is null || RecognitionModelPath is null || AnomalyBackbonePath is null || AuthorImagePath is null)
             errors.Add("资源路径不能为空引用，未启用时使用空字符串。");
         if (MaximumParallelRois is < 1 or > 128) errors.Add("ROI最大并行数必须在1至128之间。");
+        if (LabelCoordinates is null || !(Bound(LabelCoordinates) || LabelCoordinates.Source == WorkflowValueSource.Literal && LabelCoordinates.LiteralValue is null))
+            errors.Add("标签坐标系只允许绑定或空Literal。");
+        if (LabelCoordinates?.Binding is { IsPublicData: false } c && c.NodeId == Id) errors.Add("标签坐标系不能绑定自身。");
+        if (NewLabelWidth is < 0 or > 12000 || NewLabelHeight is < 0 or > 12000) errors.Add("新建配方宽高必须在0至12000之间。");
+        if (!double.IsFinite(LabelOriginX) || !double.IsFinite(LabelOriginY) || !double.IsFinite(LabelPixelSize) || LabelPixelSize <= 0)
+            errors.Add("标签原点必须有限，配方像素尺寸必须为正数。");
         if (string.IsNullOrWhiteSpace(RecipeJson) || RecipeJson.Length > 1024 * 1024) errors.Add("请在标签配置页创建/导入配方；配方不能超过1MB。");
         else
         {
@@ -79,6 +104,14 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
         }
         return errors;
     }
+    /// <summary>配方像素坐标到原图坐标的放置；未提供坐标系时为空（配方坐标即原图坐标）。</summary>
+    /// <param name="system">本帧标签坐标系。</param>
+    public InspectionPlacement? Placement(VisionCoordinateSystem? system)
+    {
+        if (system is null) return null;
+        var recipeToImage = system.LocalToImage.Multiply(CoordinateMatrix2D.FromAffine(LabelPixelSize, 0, LabelOriginX, 0, LabelPixelSize, LabelOriginY));
+        return new InspectionPlacement(recipeToImage.M11, recipeToImage.M12, recipeToImage.Tx, recipeToImage.M21, recipeToImage.M22, recipeToImage.Ty);
+    }
     private static bool Bound<T>(WorkflowInput<T>? input) => input is { Source: WorkflowValueSource.Binding, Binding: not null, LiteralValue: null };
 }
 
@@ -86,8 +119,12 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
 public interface IWorkflowLabelInspectionService
 {
     /// <summary>使用当前计划位置的固定配置；取消/异常不返回旧报告。</summary>
+    /// <param name="context">执行上下文。</param><param name="frame">本帧原图。</param>
+    /// <param name="cycleId">采集周期。</param><param name="taskData">任务期望数据。</param>
+    /// <param name="placement">配方坐标到原图的放置；为空时配方坐标即原图坐标。</param>
+    /// <param name="cancellationToken">取消。</param>
     Task<WorkflowLabelInspectionResult> InspectAsync(IWorkflowNodeExecutionContext context, ImageFrame frame,
-        string? cycleId, TaskDataSnapshot? taskData, CancellationToken cancellationToken);
+        string? cycleId, TaskDataSnapshot? taskData, InspectionPlacement? placement, CancellationToken cancellationToken);
 }
 
 /// <summary>完整标签业务输出；契约完成、检查覆盖和产品合格保持分离。</summary>
@@ -98,13 +135,17 @@ public sealed class WorkflowLabelInspectionResult : IWorkflowVisionFrameFact
     /// <param name="recipeName">配方名称。</param><param name="recipeSha256">配方摘要。</param>
     /// <param name="resourceIdentity">资源快照标识。</param><param name="report">SDK完整报告。</param>
     /// <param name="recipeRegions">本次所用配方的ROI定义，供报告页叠加显示；为空时不画ROI框。</param>
+    /// <param name="placement">配方坐标到原图的放置；为空时报告坐标即原图坐标。</param>
     public WorkflowLabelInspectionResult(string frameId, string? cycleId, string recipeName, string recipeSha256,
-        string resourceIdentity, InspectionReport report, IReadOnlyList<InspectionRegion>? recipeRegions = null)
+        string resourceIdentity, InspectionReport report, IReadOnlyList<InspectionRegion>? recipeRegions = null, InspectionPlacement? placement = null)
     {
+        Placement = placement;
         FrameId = frameId; CycleId = cycleId; RecipeName = recipeName; RecipeSha256 = recipeSha256;
         ResourceIdentity = resourceIdentity; Report = report ?? throw new ArgumentNullException(nameof(report));
         RecipeRegions = recipeRegions ?? Array.Empty<InspectionRegion>();
     }
+    /// <summary>配方坐标到原图的放置；报告与ROI坐标均为配方（标签）坐标，显示到原图时按此换算。</summary>
+    [Browsable(false)] public InspectionPlacement? Placement { get; }
     /// <summary>本次所用配方的ROI定义（检测范围），不是检测结果。</summary>
     [Browsable(false)] public IReadOnlyList<InspectionRegion> RecipeRegions { get; }
     [DisplayName("图像标识")] public string FrameId { get; }
@@ -129,9 +170,16 @@ public sealed class InspectLabelNodeHandler : WorkflowNodeHandler<InspectLabelNo
     {
         cancellationToken.ThrowIfCancellationRequested();
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("标签输入帧为空。");
+        // 绑定了标签坐标系时必须拿到本帧定位；不沿用其它帧的坐标系。
+        VisionCoordinateSystem? system = null;
+        if (node.LabelCoordinates.Source == WorkflowValueSource.Binding)
+        {
+            system = context.ResolveInput(node.LabelCoordinates) ?? throw new InvalidOperationException("本帧未定位到标签，不能放置ROI。");
+            system.ValidateFrame(frame);
+        }
         using var retained = frame.Retain();
         var result = await context.GetRequiredCapability<IWorkflowLabelInspectionService>().InspectAsync(context, retained,
-            context.ResolveInput(node.CycleId), context.ResolveInput(node.TaskData), cancellationToken).ConfigureAwait(false);
+            context.ResolveInput(node.CycleId), context.ResolveInput(node.TaskData), node.Placement(system), cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         if (result is null || result.FrameId != frame.FrameId) throw new InvalidOperationException("标签报告为空或与输入帧身份不一致。");
         // 报告已正式产生：即使走失败出口也提交输出，失败支路可直接读取判定与报告。

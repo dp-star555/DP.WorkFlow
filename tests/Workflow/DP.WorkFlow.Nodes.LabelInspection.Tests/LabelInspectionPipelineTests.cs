@@ -75,6 +75,63 @@ public sealed class LabelInspectionPipelineTests
     }
 
     [Fact]
+    public void Placement_ComposesCoordinateSystemWithLabelOriginAndPixelSize()
+    {
+        var node = new InspectLabelNodeModel { LabelOriginX = 3, LabelOriginY = 4, LabelPixelSize = 0.5 };
+        Assert.Null(node.Placement(null));
+        // 局部→原图：尺度 2、平移 (10, 20)；配方像素 (x, y) → 局部 (3 + x/2, 4 + y/2) → 原图 (16 + x, 28 + y)。
+        var system = new VisionCoordinateSystem(new VisionCoordinateDefinition("label", "标签"), "frame", 400, 400,
+            CoordinateMatrix2D.FromAffine(2, 0, 10, 0, 2, 20));
+        var placement = node.Placement(system)!;
+        Assert.Equal((16d, 28d), placement.Map(0, 0));
+        Assert.Equal((26d, 33d), placement.Map(10, 5));
+        Assert.True(placement.IsIntegerTranslation);
+    }
+
+    [Theory]
+    [InlineData(false, EInspectionVerdict.Ok)]
+    [InlineData(true, EInspectionVerdict.Ng)]
+    public async Task RunAsync_LabelCoordinates_PlaceRoisOnLargerShiftedImage(bool ink, EInspectionVerdict expected)
+    {
+        await using var rig = new Rig(false);
+        // 原图 84×58，标签（64×48 配方）位于 (10, 5)；墨点画在标签坐标 (12..24) 处。
+        var pixels = Enumerable.Repeat((byte)255, 84 * 58).ToArray();
+        if (ink) for (int y = 12; y < 24; y++) for (int x = 12; x < 24; x++) pixels[(y + 5) * 84 + x + 10] = 0;
+        File.WriteAllBytes(Path.Combine(rig.Root, "input.png"), new OpenCvImageCodec().EncodePng(new PixelSnapshot(84, 58, EImagePixelFormat.Gray8, pixels)));
+        rig.Nodes.Register(WorkflowNodeDescriptor.Create<ShiftedCoordinates, VisionCoordinateSystem>(ports: new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output() }));
+        rig.Handlers.Register(new ShiftedCoordinatesHandler());
+        var locate = new ShiftedCoordinates { Id = "locate", Frame = WorkflowInput<ImageFrame>.FromBinding(new("image", "$")) };
+        rig.Document.CanvasProjection.Nodes.Add(new() { Node = locate });
+        var toInspect = rig.Document.CanvasProjection.Connections.Single(c => c.FromNodeId == "image");
+        rig.Document.CanvasProjection.Connections.Remove(toInspect);
+        rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = "image", FromPort = WorkflowPorts.Success, ToNodeId = "locate", ToPort = WorkflowPorts.Input });
+        rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = "locate", FromPort = WorkflowPorts.Success, ToNodeId = "inspect", ToPort = WorkflowPorts.Input });
+        rig.Node.LabelCoordinates = WorkflowInput<VisionCoordinateSystem>.FromBinding(new("locate", "$"));
+
+        var result = await rig.RunAsync();
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(expected, rig.Output().Verdict);
+        Assert.NotNull(rig.Output().Placement);
+        Assert.Equal((10d, 5d), rig.Output().Placement!.Map(0, 0));
+    }
+
+    [WorkflowNode("Test.Label.ShiftedCoordinates")]
+    public sealed class ShiftedCoordinates : WorkflowNodeModel
+    {
+        public override string NodeType => "Test.Label.ShiftedCoordinates";
+        public WorkflowInput<ImageFrame> Frame { get; set; } = WorkflowInput<ImageFrame>.FromLiteral(null);
+    }
+    private sealed class ShiftedCoordinatesHandler : WorkflowNodeHandler<ShiftedCoordinates>
+    {
+        protected override ValueTask<NodeExecutionResult> ExecuteAsync(ShiftedCoordinates node, IWorkflowNodeExecutionContext context, CancellationToken token)
+        {
+            var frame = context.ResolveInput(node.Frame)!;
+            return ValueTask.FromResult(NodeExecutionResult.Continue(output: new VisionCoordinateSystem(new VisionCoordinateDefinition("label", "标签"),
+                frame.FrameId, frame.Image.Info.Width, frame.Image.Info.Height, CoordinateMatrix2D.FromAffine(1, 0, 10, 0, 1, 5))));
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_ValidReviewReport_IsNormalOutputNotNodeFault()
     {
         await using var rig = new Rig(false);
@@ -278,7 +335,7 @@ public sealed class LabelInspectionPipelineTests
     private sealed class ReviewService : IWorkflowLabelInspectionService
     {
         public Task<WorkflowLabelInspectionResult> InspectAsync(IWorkflowNodeExecutionContext context, ImageFrame frame, string? cycleId,
-            TaskDataSnapshot? taskData, CancellationToken cancellationToken) => Task.FromResult(new WorkflowLabelInspectionResult(frame.FrameId,
+            TaskDataSnapshot? taskData, InspectionPlacement? placement, CancellationToken cancellationToken) => Task.FromResult(new WorkflowLabelInspectionResult(frame.FrameId,
                 cycleId, "review", "test-recipe", "test-resource", new InspectionReport("test", EInspectionVerdict.Review,
                     new BackendAnalysis(double.NaN, double.NaN, Array.Empty<RegionInspectionResult>()), Array.Empty<InspectionFinding>(), 1)));
     }
