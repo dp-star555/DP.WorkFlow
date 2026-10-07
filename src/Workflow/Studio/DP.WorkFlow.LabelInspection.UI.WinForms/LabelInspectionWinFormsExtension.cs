@@ -4,6 +4,7 @@ using DP.Vision;
 using DP.WorkFlow.LabelInspection.UI;
 using DP.WorkFlow.UI;
 using DP.WorkFlow.UI.WinForms;
+using ModernUI.WinForms;
 
 namespace DP.WorkFlow.LabelInspection.UI.WinForms;
 
@@ -42,8 +43,14 @@ internal sealed class LabelWorkbenchControl : UserControl
     private readonly Func<string> _baseDirectory;
     private readonly IWorkflowVisionPreviewSource? _previews;
     private readonly DP.LabelInspection.LabelInspectionControl _workbench = new() { Dock = DockStyle.Fill };
-    private readonly Label _status = new() { Dock = DockStyle.Bottom, Height = 42, AutoEllipsis = true };
-    private readonly FlowLayoutPanel _toolbar = new() { Dock = DockStyle.Top, Height = 36, AutoSize = true };
+    private static readonly ModernTheme Theme = ModernTheme.Dark;
+    private readonly Label _status = new()
+    {
+        Dock = DockStyle.Bottom, Height = 42, AutoEllipsis = true, Padding = new Padding(8, 4, 8, 4),
+        BackColor = Theme.Container, ForeColor = Theme.TextSecondary, TextAlign = ContentAlignment.MiddleLeft
+    };
+    private readonly FlowLayoutPanel _toolbar = new()
+    { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(8, 6, 8, 6), BackColor = Theme.Container, WrapContents = true };
     private readonly CancellationTokenSource _lifetime = new();
     private WorkflowLabelInspectionResources? _resources;
     private ImageFrame? _actual;
@@ -54,6 +61,7 @@ internal sealed class LabelWorkbenchControl : UserControl
     internal LabelWorkbenchControl(LabelInspectionEditorPageModel model, Func<string> baseDirectory, IWorkflowVisionPreviewSource? previews)
     {
         _model = model; _baseDirectory = baseDirectory; _previews = previews;
+        BackColor = Theme.Background; ForeColor = Theme.Text;
         Controls.Add(_workbench); Controls.Add(_status); Controls.Add(_toolbar);
         Add("载入上游预览", async () =>
         {
@@ -66,9 +74,13 @@ internal sealed class LabelWorkbenchControl : UserControl
         {
             using var dialog = new OpenFileDialog { Filter = "图像|*.png;*.jpg;*.jpeg;*.bmp;*.pgm|所有文件|*.*", InitialDirectory = Root };
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
-            using var frame = await WorkflowLabelInspectionResources.ReadImageAsync(Root, dialog.FileName, _lifetime.Token);
+            // 资源根目录外的样张复制到根目录下 samples\，流程随资源目录一起部署时样张也在。
+            var relative = LabelInspectionEditorPageModel.ImportIntoRoot(Root, dialog.FileName);
+            using var frame = await WorkflowLabelInspectionResources.ReadImageAsync(Root, relative, _lifetime.Token);
             await LoadAsync(frame);
-            model.Node.AuthorImagePath = Path.GetRelativePath(Root, dialog.FileName);
+            model.SetAuthorImagePath(relative);
+            if (!string.Equals(Path.GetFullPath(Path.Combine(Root, relative)), Path.GetFullPath(dialog.FileName), StringComparison.OrdinalIgnoreCase))
+                _status.Text = $"样张不在资源根目录内，已复制到 {relative}。";
         });
         Add("导入配方", async () =>
         {
@@ -111,7 +123,11 @@ internal sealed class LabelWorkbenchControl : UserControl
     }
     private void Add(string text, Func<Task> action)
     {
-        var button = new Button { Text = text, AutoSize = true, Height = 30 };
+        var button = new ModernButton
+        {
+            Text = text, Theme = Theme, Margin = new Padding(0, 0, 6, 0),
+            Size = new Size(TextRenderer.MeasureText(text, Font).Width + 28, 30)
+        };
         _toolbar.Controls.Add(button);
         button.Click += async (_, _) => await GuardAsync(action);
     }

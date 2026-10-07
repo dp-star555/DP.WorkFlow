@@ -32,6 +32,8 @@
     <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Process.UI.Wpf\DP.WorkFlow.Process.UI.Wpf.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Vision.UI\DP.WorkFlow.Vision.UI.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.Vision.UI.Wpf\DP.WorkFlow.Vision.UI.Wpf.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Hosting\DP.WorkFlow.LabelInspection.Runtime\DP.WorkFlow.LabelInspection.Runtime.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Studio\DP.WorkFlow.LabelInspection.UI.Wpf\DP.WorkFlow.LabelInspection.UI.Wpf.csproj" />
   </ItemGroup>
 
   <ItemGroup>

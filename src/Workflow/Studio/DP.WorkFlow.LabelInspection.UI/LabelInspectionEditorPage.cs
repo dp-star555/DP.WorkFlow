@@ -29,6 +29,43 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
         if (Node.RecipeJson == json) return;
         Node.RecipeJson = json; _changed();
     }
+    /// <summary>记录配置样张路径（相对资源根目录），并通知属性页刷新。</summary>
+    /// <param name="relativePath">相对资源根目录的路径。</param>
+    public void SetAuthorImagePath(string relativePath)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (Node.AuthorImagePath == relativePath) return;
+        Node.AuthorImagePath = relativePath; _changed();
+    }
+
+    /// <summary>
+    /// 把资源根目录外的配置样张复制到根目录下的 <c>samples</c> 子目录，返回相对根目录的路径；已在根目录内时直接返回相对路径。
+    /// 同名文件内容相同则复用，不同则追加序号，不覆盖已有文件。
+    /// </summary>
+    /// <param name="root">资源根目录（完整路径）。</param><param name="path">选中的图像文件。</param>
+    public static string ImportIntoRoot(string root, string path)
+    {
+        root = Path.GetFullPath(root); path = Path.GetFullPath(path);
+        var prefix = Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar;
+        if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return Path.GetRelativePath(root, path);
+        var folder = Path.Combine(root, "samples");
+        Directory.CreateDirectory(folder);
+        var name = Path.GetFileNameWithoutExtension(path); var extension = Path.GetExtension(path);
+        for (int index = 0; ; index++)
+        {
+            var target = Path.Combine(folder, index == 0 ? name + extension : $"{name}-{index}{extension}");
+            if (!File.Exists(target)) { File.Copy(path, target); return Path.GetRelativePath(root, target); }
+            if (SameContent(target, path)) return Path.GetRelativePath(root, target);
+        }
+    }
+
+    private static bool SameContent(string a, string b)
+    {
+        var left = new FileInfo(a); var right = new FileInfo(b);
+        if (left.Length != right.Length) return false;
+        return File.ReadAllBytes(a).AsSpan().SequenceEqual(File.ReadAllBytes(b));
+    }
+
     /// <summary>控件注册确认前捕获、忙状态及关闭前停止原生工作的桥。</summary>
     public void AttachWorkbench(Func<InspectionRecipe?> capture, Func<bool> busy, Func<ValueTask> release)
     {

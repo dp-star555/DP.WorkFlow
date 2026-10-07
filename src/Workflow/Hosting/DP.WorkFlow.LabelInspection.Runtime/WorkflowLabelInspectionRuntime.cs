@@ -98,7 +98,7 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
                 var report = await resource.Engine.InspectAsync(request, cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 return new WorkflowLabelInspectionResult(request.FrameId, request.CycleId, resource.Recipe.Name,
-                    resource.RecipeSha256, resource.ResourceIdentity, report);
+                    resource.RecipeSha256, resource.ResourceIdentity, report, resource.Recipe.Regions);
             }
             finally { entry.Serial.Release(); }
         }

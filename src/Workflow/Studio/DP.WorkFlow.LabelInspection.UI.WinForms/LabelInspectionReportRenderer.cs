@@ -4,6 +4,7 @@ using DP.Vision;
 using DP.WorkFlow.LabelInspection.UI;
 using DP.WorkFlow.UI;
 using DP.WorkFlow.UI.WinForms;
+using ModernUI.WinForms;
 
 namespace DP.WorkFlow.LabelInspection.UI.WinForms;
 
@@ -20,13 +21,19 @@ public sealed class LabelInspectionReportRenderer : IWorkflowWinFormsNodeEditorP
     private sealed class ReportControl : UserControl
     {
         private readonly DP.Vision.Winform.VisionCanvasControl _canvas = new() { Dock = DockStyle.Fill };
-        private readonly TreeView _evidence = new() { Dock = DockStyle.Fill };
-        private readonly Label _summary = new() { Dock = DockStyle.Bottom, Height = 42, AutoEllipsis = true };
+        private static readonly ModernTheme Theme = ModernTheme.Dark;
+        private readonly ModernTreeView _evidence = new() { Dock = DockStyle.Fill, Theme = Theme };
+        private readonly Label _summary = new()
+        {
+            Dock = DockStyle.Bottom, Height = 42, AutoEllipsis = true, Padding = new Padding(8, 4, 8, 4),
+            BackColor = Theme.Container, ForeColor = Theme.TextSecondary, TextAlign = ContentAlignment.MiddleLeft
+        };
         private readonly System.Windows.Forms.Timer _timer = new() { Interval = 200 };
         private long _sequence = -1;
         internal ReportControl(LabelInspectionResultPageModel model)
         {
-            var split = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 500, Width = 900 };
+            BackColor = Theme.Background; ForeColor = Theme.Text;
+            var split = new ModernSplitter { Dock = DockStyle.Fill, Theme = Theme, Width = 900, SplitterDistance = 500 };
             split.Panel1.Controls.Add(_canvas); split.Panel2.Controls.Add(_evidence);
             Controls.Add(split); Controls.Add(_summary);
             _summary.Text = "尚无已提交的标签报告；试检测不进入此页。";
@@ -48,7 +55,8 @@ public sealed class LabelInspectionReportRenderer : IWorkflowWinFormsNodeEditorP
             _sequence = preview.Sequence;
             var report = result.Report;
             var characters = report.Analysis.Regions.Where(r => r.Segmentation != null).SelectMany(r => r.Segmentation!.Characters);
-            var layers = VisionAdapter.LabelLayers(Array.Empty<InspectionRegion>(), report.EvidenceGroups.Select(g => g.Summary), characters);
+            // 叠加配方ROI框作为检测范围参照，再叠加证据与字块。
+            var layers = VisionAdapter.LabelLayers(result.RecipeRegions, report.EvidenceGroups.Select(g => g.Summary), characters);
             using var frame = new CanvasFrame(result.FrameId, preview.Sequence, preview.Frame.Image, new GeometryOverlay(result.FrameId, layers));
             _canvas.Present(frame); _canvas.FitToWindow();
             _summary.Text = result.Summary + "；帧 " + result.FrameId + "；检查覆盖/阻断见详细报告，Success不代表产品合格。";
