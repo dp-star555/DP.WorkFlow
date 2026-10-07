@@ -90,10 +90,8 @@ internal sealed class LabelWorkbenchControl : UserControl
         new("ImportRecipe", "导入配方", "1. 配方与样张", "导入配方…", "导入SDK原生配方JSON，保留检测项目、约束及库修订。"),
         new("ExportRecipe", "导出配方", "1. 配方与样张", "导出配方…", "把当前配方（含未应用的工作台修改）导出为JSON文件。"),
         new("ReloadResources", "重载资源", "1. 配方与样张", "重载资源", "修改资源路径或外部文件后，重新装配试检测引擎与字库。"),
-        new("GlyphLibrary", "单字库", "2. 字库与模型", "单字库…", "管理单字模板库及版本。发布新修订是外部写入，不随取消回滚。"),
-        new("GlyphQuickBuilder", "多图制库", "2. 字库与模型", "多图制库…", "从多张图像的字符候选制作单字库新版本。"),
-        new("AnomalyLibrary", "异常模型库", "2. 字库与模型", "异常模型库(B)…", "质量方法B：管理异常模型库（版本、导入导出、归档），也可按ROI快速训练。"),
-        new("AnomalyBatchTraining", "批量训练", "2. 字库与模型", "批量训练(B)…", "质量方法B：多张良品图、每图框多个样本，一次训练并作为一个版本发布。"),
+        new("GlyphLibraries", "字库", "2. 字库与模型", "字库…", "单字库管理与多图制库在同一窗口的两个分页中；ROI绑定字库在“ROI规则”页。发布新修订是外部写入，不随取消回滚。"),
+        new("AnomalyLibraries", "异常模型", "2. 字库与模型", "异常模型…", "质量方法B：异常模型库管理与批量训练在同一窗口的两个分页中，关闭时可把新发布的版本绑定到ROI。"),
         new("Thresholds", "检测阈值", "3. 检测设置", "编辑阈值…", "墨迹、原图容差、最小面积、对比度及清晰度阈值，随配方保存。"),
         new("TaskData", "试检测任务数据", "3. 检测设置", "录入任务数据…", "只为配置页试检测提供本周期业务数据，载入新图后清除；生产数据来自“任务期望数据”绑定。"),
     };
@@ -240,7 +238,7 @@ internal sealed class LabelWorkbenchControl : UserControl
     {
         if (IsDisposed) return "配置页已关闭。";
         if (_loadingTask is not null || _loading || _workbench.IsInspectionRunning) return "请等待当前装配/试检测结束。";
-        return id is "SaveReference" or "GlyphQuickBuilder" && _actual is null ? "请先载入上游预览或配置样张。" : "";
+        return id == "SaveReference" && _actual is null ? "请先载入上游预览或配置样张。" : "";
     }
 
     /// <summary>参数页按钮：忙时拒绝；异常交给参数页提示。</summary>
@@ -314,10 +312,8 @@ internal sealed class LabelWorkbenchControl : UserControl
                 else if (!string.IsNullOrWhiteSpace(model.Node.AuthorImagePath)) await LoadAuthorAsync();
                 else await AttachLibrariesAsync();
                 return;
-            case "GlyphLibrary": _workbench.OpenGlyphLibrary(); break;
-            case "GlyphQuickBuilder": _workbench.OpenGlyphQuickBuilder(); break;
-            case "AnomalyLibrary": _workbench.OpenAnomalyLibraryManager(); break;
-            case "AnomalyBatchTraining": _workbench.OpenAnomalyBatchTraining(); break;
+            case "GlyphLibraries": _workbench.OpenGlyphLibraries(); break;
+            case "AnomalyLibraries": _workbench.OpenAnomalyLibraries(); break;
             case "Thresholds": _workbench.EditThresholds(); break;
             case "TaskData": _workbench.EditTaskData(); break;
             default: throw new InvalidOperationException("未知操作：" + id);

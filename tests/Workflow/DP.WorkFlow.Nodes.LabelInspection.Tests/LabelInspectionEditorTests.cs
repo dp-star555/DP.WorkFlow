@@ -147,7 +147,9 @@ public sealed class LabelInspectionEditorTests
             Assert.Contains(Descendants(dialog).OfType<TabPage>(), tab => tab.Text == "ROI规则" && Descendants(tab).Contains(rules));
             var page = Page(editor);
             var actions = page.CreateProperties(page.Node).Select(e => e.Name).ToArray();
-            Assert.Contains("LabelInspection.Command.GlyphLibrary", actions);
+            Assert.Contains("LabelInspection.Command.GlyphLibraries", actions);
+            Assert.Contains("LabelInspection.Command.AnomalyLibraries", actions);
+            Assert.DoesNotContain("LabelInspection.Command.GlyphQuickBuilder", actions);
             Assert.Contains("LabelInspection.Command.ImportRecipe", actions);
             Assert.Contains(Descendants(dialog).OfType<ModernUI.WinForms.ModernSelect>(), select => select.Items.Count == control.DrawKinds.Count);
             control.SetRegions(new[] { new InspectionRegion("changed", ERegionKind.Blank, new DP.Vision.Algorithms.PixelBounds(8, 8, 24, 24))
