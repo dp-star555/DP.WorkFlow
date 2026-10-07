@@ -22,6 +22,22 @@ public sealed class LabelInspectionEditorTests
     }
 
     [Fact]
+    public void FitLabelRegion_CoversWholeImageInLabelCoordinates_AndSetterNotifies()
+    {
+        // 参考点在原图(1500,700)：标签坐标 = 图像 - 参考点，整张原图对应原点(-1500,-700)、尺寸2544×1608。
+        var region = LabelInspectionEditorPageModel.FitLabelRegion((x, y) => (x - 1500.4, y - 700.6), 2544, 1608, 1);
+        Assert.Equal((-1501d, -701d, 2545, 1609), region);
+        Assert.Equal(1272, LabelInspectionEditorPageModel.FitLabelRegion((x, y) => (x, y), 2544, 1608, 2).Width);
+
+        var node = new InspectLabelNodeModel(); int changed = 0;
+        var model = new LabelInspectionEditorPageModel(node, new OpenCvImageCodec(), () => changed++);
+        model.SetLabelRegion(region.OriginX, region.OriginY, region.Width, region.Height);
+        model.SetLabelRegion(region.OriginX, region.OriginY, region.Width, region.Height);
+        Assert.Equal(1, changed);
+        Assert.Equal((-1501d, -701d, 2545, 1609), (node.LabelOriginX, node.LabelOriginY, node.NewLabelWidth, node.NewLabelHeight));
+    }
+
+    [Fact]
     public void ImportIntoRoot_CopiesOutsideSampleIntoSamplesFolder_WithoutOverwriting()
     {
         var root = Path.Combine(Path.GetTempPath(), "label-root-" + Guid.NewGuid().ToString("N"));
