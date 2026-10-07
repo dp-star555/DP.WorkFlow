@@ -22,6 +22,13 @@
 
 配置工作台中的“发布字库/异常库修订”、导出文件是明确的外部写入，不随节点取消/撤销回滚。新发布的库修订也不隐式替换配方原有固定修订。
 
+## 界面
+
+- WinForms 配置页和报告页使用 ModernUI 深色主题（按钮、证据树、分隔条），与工作台其它页面一致；内嵌的 SDK 标签工作台保持其自身外观。
+- 报告页画布叠加本次所用配方的 ROI 框（`WorkflowLabelInspectionResult.RecipeRegions`），再叠加证据与字块，便于对照 NG 位置。
+- “加载配置样张”可选资源根目录外的图片：自动复制到根目录下 `samples/`（同名同内容复用，内容不同追加序号，不覆盖），配置样张路径记录为相对根目录的路径，属性页同步刷新。
+- WPF：`DP.WorkFlow.LabelInspection.UI.Wpf` 的 `LabelInspectionWpfExtension` 提供“标签配置”页（导入/导出原生配方JSON、显示配方尺寸/模式/ROI 列表，确认时提交、取消不回写）和只读“标签检测报告”页（判定、ROI 结果、实际 OCR/读码文本与证据）。ROI 图上编辑与试检测仍需 WinForms 配置页，或导入在其它工作台导出的配方。WPF 示例已注册节点模块、运行能力和页面。
+
 ## 资源与生命周期
 
 `WorkflowLabelInspectionRuntime` 实现事务式准备：递归准备根/子计划，捕获配方、参考图、当前 ONNX 文件及活动库修订。ONNX 复制为临时文件快照后加载；字库/异常库以不可变仓传给引擎。准备失败/取消释放全部候选；提交后按绑定作用域和计划路径读取。
@@ -73,7 +80,7 @@ dotnet run --project samples/DP.WorkFlow.WinForms.Sample/WinFormsApp_test.csproj
 
 ## 明确未包含
 
-- WPF 标签节点 Renderer；没有使用 WindowsFormsHost 冒充原生 WPF 支持。
+- WPF 原生标签工作台（ROI 图上编辑与试检测）；没有使用 WindowsFormsHost 冒充原生 WPF 支持。WPF 只提供配方导入/导出与只读报告，见下文。
 - 通用业务坐标系随动、旋转/尺度/透视标签配准、任意 Region 标签 ROI。
 - 一键可部署资源包导入/导出、正式报告自动保存/永久历史和完整字块/差异多视图浏览器。
 - 新算法、HALCON 标签后端、ISO 评级、现场相机与生产精度验收。

@@ -10,6 +10,30 @@ namespace DP.WorkFlow.Tests;
 public sealed class LabelInspectionEditorTests
 {
     [Fact]
+    public void ImportIntoRoot_CopiesOutsideSampleIntoSamplesFolder_WithoutOverwriting()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "label-root-" + Guid.NewGuid().ToString("N"));
+        var outside = Path.Combine(Path.GetTempPath(), "label-outside-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root); Directory.CreateDirectory(outside);
+        try
+        {
+            File.WriteAllBytes(Path.Combine(root, "inside.png"), new byte[] { 1 });
+            Assert.Equal("inside.png", LabelInspectionEditorPageModel.ImportIntoRoot(root, Path.Combine(root, "inside.png")));
+
+            var first = Path.Combine(outside, "a.png"); File.WriteAllBytes(first, new byte[] { 1, 2 });
+            var copied = LabelInspectionEditorPageModel.ImportIntoRoot(root, first);
+            Assert.Equal(Path.Combine("samples", "a.png"), copied);
+            Assert.Equal(new byte[] { 1, 2 }, File.ReadAllBytes(Path.Combine(root, copied)));
+            // 同名同内容复用，同名不同内容追加序号，不覆盖已有样张。
+            Assert.Equal(copied, LabelInspectionEditorPageModel.ImportIntoRoot(root, first));
+            File.WriteAllBytes(first, new byte[] { 3 });
+            Assert.Equal(Path.Combine("samples", "a-1.png"), LabelInspectionEditorPageModel.ImportIntoRoot(root, first));
+            Assert.Equal(new byte[] { 1, 2 }, File.ReadAllBytes(Path.Combine(root, copied)));
+        }
+        finally { Directory.Delete(root, true); Directory.Delete(outside, true); }
+    }
+
+    [Fact]
     public async Task ApplyChanges_CapturesEntireRecipeIntoDraft_AndCanUndoAsOneEdit()
     {
         await using var rig = new LabelInspectionPipelineTests.Rig(false);

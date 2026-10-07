@@ -6,6 +6,8 @@ using DP.WorkFlow;
 using DP.WorkFlow.UI;
 using DP.WorkFlow.Vision.UI;
 using DP.WorkFlow.Vision.UI.Wpf;
+using DP.WorkFlow.LabelInspection;
+using DP.WorkFlow.LabelInspection.UI.Wpf;
 using DP.WorkFlow.OperatorUI.Wpf;
 using DP.WorkFlow.Samples;
 
@@ -17,6 +19,7 @@ public partial class MainWindow : Window
     private readonly WorkflowRuntimeHost _runtimeHost;
     private readonly WorkflowStudioRuntimeBinding _runtimeBinding;
     private readonly WorkflowVisionFrameScope _frameScope;
+    private readonly WorkflowLabelInspectionRuntime _labelRuntime;
     private readonly VisionAlgorithmRuntime _algorithmRuntime;
     private readonly WorkflowVisionAlgorithmBindings _algorithmBindings;
     private readonly WorkflowVisionAlgorithmDiagnostics _algorithmDiagnostics;
@@ -32,6 +35,8 @@ public partial class MainWindow : Window
         var pluginDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "plugins");
         var loadSession = new PluginLoadSession();
         loadSession.RegisterSharedAssembly(typeof(IWorkflowVisionAlgorithmNode).Assembly);
+        loadSession.RegisterSharedAssembly(typeof(IWorkflowLabelInspectionService).Assembly);
+        loadSession.RegisterSharedAssembly(typeof(DP.LabelInspection.Contracts.InspectionReport).Assembly);
         var algorithmLoader = new VisionAlgorithmModuleLoader(loadSession);
         var driverLoader = new VisionAcquisitionDriverModuleLoader(loadSession);
         var workflowLoader = new WorkflowPluginLoader(loadSession);
@@ -44,7 +49,8 @@ public partial class MainWindow : Window
         var plugins = new WorkflowRuntimePluginCatalog(catalog, handlers)
             .Register(new WorkflowStandardRuntimePluginModule())
             .Register(new WorkflowProcessRuntimePluginModule())
-            .Register(new WorkflowImageRuntimePluginModule());
+            .Register(new WorkflowImageRuntimePluginModule())
+            .Register(new WorkflowLabelInspectionModule());
         if (recoveryDemo is not null) plugins.Register(recoveryDemo);
         plugins.LoadPlugins(pluginDirectory, workflowLoader);
         foreach (var failure in workflowLoader.DiscoveryFailures)
@@ -60,7 +66,10 @@ public partial class MainWindow : Window
         _workspace = new WorkflowDocumentWorkspace(catalog);
         var algorithmEnvironment = WorkflowVisionAlgorithmEnvironment.Load(AppContext.BaseDirectory);
         VisionAlgorithmResourceContext Resources() => algorithmEnvironment.Capture(_workspace.CurrentFilePath);
-        _algorithmBindings = new WorkflowVisionAlgorithmBindings(_algorithmRuntime, _frameScope, Resources);
+        string LabelBaseDirectory() => string.IsNullOrWhiteSpace(_workspace.CurrentFilePath)
+            ? AppContext.BaseDirectory : System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(_workspace.CurrentFilePath))!;
+        _labelRuntime = new WorkflowLabelInspectionRuntime(LabelBaseDirectory, _frameScope);
+        _algorithmBindings = new WorkflowVisionAlgorithmBindings(_algorithmRuntime, _labelRuntime, Resources);
         _algorithmDiagnostics = new WorkflowVisionAlgorithmDiagnostics(algorithmCatalog, _algorithmRuntime, _algorithmBindings, Resources);
         _workspace.DocumentChanged += (_, _) => _algorithmDiagnostics.Invalidate();
         // 机器配置、采集插件组合与启动诊断见 SampleVisionHost。
@@ -78,6 +87,8 @@ public partial class MainWindow : Window
             () => _workspace.Navigator?.RootDocument, () => _workspace.Navigator?.CurrentSession));
         Studio.NodeEditorExtensions.Register(new VisionWpfStudioExtension
         { FrameSource = _frameScope, FileReader = fileReader, Templates = new VisionTemplateEditingRuntime(algorithmCatalog, _algorithmRuntime, Resources) });
+        // 标签节点：WPF 提供配方导入/导出与只读报告；ROI图上编辑与试检测使用 WinForms 配置页。
+        Studio.NodeEditorExtensions.Register(new LabelInspectionWpfExtension { FrameSource = _frameScope });
         // 采集节点的"逻辑图像源"从本机已发布的源里选；面阵节点与线扫节点各看各的采集类型。
         Studio.Properties.ChoiceProvider = WorkflowVisionAlgorithmChoices.CreateProvider(algorithmCatalog, WorkflowVisionSourceChoices.CreateProvider(_visionSources));
         // 算法实现与“坐标系”下拉；坐标系下拉按本轮运行结果换算ROI等范围。
@@ -90,6 +101,7 @@ public partial class MainWindow : Window
             .Add<IWorkflowOperatorService>(_operatorService)
             .Add<IWorkflowActionRegistry>(actions)
             .Add<IWorkflowVisionFrameScope>(_frameScope)
+            .Add<IWorkflowLabelInspectionService>(_labelRuntime)
             .Add<IWorkflowVisionFolderSource>(acquisition)
             .Add<IVisionAcquisition>(_visionAcquisition)
             .Add<IWorkflowVisionSourceCatalog>(_visionSources)
@@ -137,6 +149,8 @@ public partial class MainWindow : Window
         _closing = true;
         Studio.IsEnabled = false;
         try { await _runtimeHost.StopAsync(); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
+        try { await _labelRuntime.DisposeAsync(); }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
         // 设备会话必须异步释放；放在这里等待，避免在同步释放路径上阻塞UI线程。
         try { await _visionAcquisition.DisposeAsync(); }

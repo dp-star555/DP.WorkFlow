@@ -94,12 +94,19 @@ public interface IWorkflowLabelInspectionService
 public sealed class WorkflowLabelInspectionResult : IWorkflowVisionFrameFact
 {
     /// <summary>关联实际帧及所用资源快照，不重算SDK判定。</summary>
+    /// <param name="frameId">输入帧标识。</param><param name="cycleId">采集周期。</param>
+    /// <param name="recipeName">配方名称。</param><param name="recipeSha256">配方摘要。</param>
+    /// <param name="resourceIdentity">资源快照标识。</param><param name="report">SDK完整报告。</param>
+    /// <param name="recipeRegions">本次所用配方的ROI定义，供报告页叠加显示；为空时不画ROI框。</param>
     public WorkflowLabelInspectionResult(string frameId, string? cycleId, string recipeName, string recipeSha256,
-        string resourceIdentity, InspectionReport report)
+        string resourceIdentity, InspectionReport report, IReadOnlyList<InspectionRegion>? recipeRegions = null)
     {
         FrameId = frameId; CycleId = cycleId; RecipeName = recipeName; RecipeSha256 = recipeSha256;
         ResourceIdentity = resourceIdentity; Report = report ?? throw new ArgumentNullException(nameof(report));
+        RecipeRegions = recipeRegions ?? Array.Empty<InspectionRegion>();
     }
+    /// <summary>本次所用配方的ROI定义（检测范围），不是检测结果。</summary>
+    [Browsable(false)] public IReadOnlyList<InspectionRegion> RecipeRegions { get; }
     [DisplayName("图像标识")] public string FrameId { get; }
     [DisplayName("采集周期")] public string? CycleId { get; }
     [DisplayName("配方名称")] public string RecipeName { get; }
