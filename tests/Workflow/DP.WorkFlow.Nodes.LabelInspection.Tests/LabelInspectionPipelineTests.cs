@@ -132,6 +132,21 @@ public sealed class LabelInspectionPipelineTests
     }
 
     [Fact]
+    public async Task RunAsync_WithoutRecipe_UpstreamStillRunsAndLabelNodeFaultsWithGuidance()
+    {
+        await using var rig = new Rig(false);
+        rig.Node.RecipeJson = string.Empty;
+        Assert.Empty(rig.Node.ValidateConfiguration());
+        var result = await rig.RunAsync();
+        // 上游图像节点照常执行并产生预览，配置页可据此制作配方；标签节点本身故障。
+        Assert.False(result.Success);
+        Assert.Contains("尚未配置配方", result.Message);
+        using var image = rig.Frames.Capture("image");
+        Assert.NotNull(image);
+        Assert.Equal(0, rig.Runtime.ResourceLoadCount);
+    }
+
+    [Fact]
     public async Task RunAsync_ValidReviewReport_IsNormalOutputNotNodeFault()
     {
         await using var rig = new Rig(false);
