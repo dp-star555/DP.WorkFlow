@@ -141,9 +141,29 @@ internal sealed class LabelWorkbenchControl : UserControl
         _status.Text = "配置与试检测不发布生产输出。显式发布的字库/异常库新修订是外部资源，不随取消回滚。";
         Load += async (_, _) =>
         {
-            if (string.IsNullOrWhiteSpace(model.Node.AuthorImagePath)) return;
-            await GuardAsync(LoadAuthorAsync);
+            if (!string.IsNullOrWhiteSpace(model.Node.AuthorImagePath)) { await GuardAsync(LoadAuthorAsync); return; }
+            // 没有图也先接上字库/异常库管理，可以先浏览、导入已有库；截字建库、画ROI和试检测需要先载入图像。
+            await GuardAsync(AttachLibrariesAsync);
         };
+    }
+    private async Task AttachLibrariesAsync()
+    {
+        var node = (InspectLabelNodeModel)WorkflowNodeConfigurationSnapshotter.Capture(_model.Node);
+        if (!node.HasRecipe)
+            node.RecipeJson = _model.Serializer.Serialize(new InspectionRecipe("标签检测", 64, 64, EInspectionMode.Free,
+                EAlignmentMode.AssumeAligned, Array.Empty<InspectionRegion>()));
+        var candidate = await WorkflowLabelInspectionResources.CreateForEditingAsync(node, _baseDirectory(), _lifetime.Token);
+        try
+        {
+            _lifetime.Token.ThrowIfCancellationRequested();
+            _workbench.AttachLibraryManager(candidate.Host.Store);
+            _workbench.AttachAnomalyLibraryManager(candidate.Host.Store.AnomalyLibraries, candidate.Host.AnomalyTrainer, candidate.Host.TemplateLocator);
+            _resources?.Dispose(); _resources = candidate; candidate = null;
+        }
+        finally { candidate?.Dispose(); }
+        _status.Text = _model.Node.Frame.Binding is null
+            ? "下一步：在参数页绑定“输入图像”，运行一次流程后点“载入上游预览”；或点“加载配置样张”选一张图。字库/异常库管理已可用。"
+            : "下一步：运行一次流程（还没有配方时上游照常执行，本节点提示尚未配置配方），再点“载入上游预览”；或点“加载配置样张”。字库/异常库管理已可用。";
     }
     private readonly HashSet<Form> _themedDialogs = new();
     private void ThemeSdkDialogs(object? sender, EventArgs e)

@@ -92,7 +92,9 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
         if (NewLabelWidth is < 0 or > 12000 || NewLabelHeight is < 0 or > 12000) errors.Add("新建配方宽高必须在0至12000之间。");
         if (!double.IsFinite(LabelOriginX) || !double.IsFinite(LabelOriginY) || !double.IsFinite(LabelPixelSize) || LabelPixelSize <= 0)
             errors.Add("标签原点必须有限，配方像素尺寸必须为正数。");
-        if (string.IsNullOrWhiteSpace(RecipeJson) || RecipeJson.Length > 1024 * 1024) errors.Add("请在标签配置页创建/导入配方；配方不能超过1MB。");
+        // 还没有配方不阻止整个流程编译运行：上游节点要先跑出预览图，才能在配置页制作配方；本节点运行时报“尚未配置配方”。
+        if (string.IsNullOrWhiteSpace(RecipeJson)) { }
+        else if (RecipeJson.Length > 1024 * 1024) errors.Add("标签配方不能超过1MB。");
         else
         {
             try
@@ -112,6 +114,10 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
         var recipeToImage = system.LocalToImage.Multiply(CoordinateMatrix2D.FromAffine(LabelPixelSize, 0, LabelOriginX, 0, LabelPixelSize, LabelOriginY));
         return new InspectionPlacement(recipeToImage.M11, recipeToImage.M12, recipeToImage.Tx, recipeToImage.M21, recipeToImage.M22, recipeToImage.Ty);
     }
+    /// <summary>是否已经有配方；没有配方时节点可以随流程运行到此处，但执行时故障。</summary>
+    [Browsable(false)] public bool HasRecipe => !string.IsNullOrWhiteSpace(RecipeJson);
+    /// <summary>尚未配置配方时的执行故障说明。</summary>
+    public const string MissingRecipeMessage = "标签节点尚未配置配方：上游节点已运行，请打开本节点的“标签配置与试检测”页，点“载入上游预览”后创建ROI，或导入配方。";
     private static bool Bound<T>(WorkflowInput<T>? input) => input is { Source: WorkflowValueSource.Binding, Binding: not null, LiteralValue: null };
 }
 
@@ -169,6 +175,7 @@ public sealed class InspectLabelNodeHandler : WorkflowNodeHandler<InspectLabelNo
         IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (!node.HasRecipe) throw new InvalidOperationException(InspectLabelNodeModel.MissingRecipeMessage);
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("标签输入帧为空。");
         // 绑定了标签坐标系时必须拿到本帧定位；不沿用其它帧的坐标系。
         VisionCoordinateSystem? system = null;

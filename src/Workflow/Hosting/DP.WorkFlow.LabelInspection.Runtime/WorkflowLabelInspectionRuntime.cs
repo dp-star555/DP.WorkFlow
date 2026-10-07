@@ -40,6 +40,8 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
                 var node = (InspectLabelNodeModel)position.Node;
                 var errors = node.ValidateConfiguration();
                 if (errors.Count > 0) throw new InvalidOperationException($"标签节点{node.Id}：" + string.Join("；", errors));
+                // 还没有配方的节点不准备资源：流程照常运行（上游产生预览），执行到它时节点报“尚未配置配方”。
+                if (!node.HasRecipe) continue;
                 var key = (position.PlanPath, node.Id);
                 if (entries.ContainsKey(key)) throw new InvalidOperationException("标签计划位置重复。");
                 var fingerprint = WorkflowLabelInspectionResources.Fingerprint(node, baseDirectory);
