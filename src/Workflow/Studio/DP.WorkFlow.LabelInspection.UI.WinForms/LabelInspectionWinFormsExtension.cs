@@ -63,6 +63,11 @@ internal sealed class LabelWorkbenchControl : UserControl
         _model = model; _baseDirectory = baseDirectory; _previews = previews;
         BackColor = Theme.Background; ForeColor = Theme.Text;
         Controls.Add(_workbench); Controls.Add(_status); Controls.Add(_toolbar);
+        // SDK 工作台是原生控件，并会在运行中重建列表/面板：统一着色并跟随之后加入的子控件。
+        WorkflowWinFormsTheme.ApplyDark(_workbench, followAddedControls: true);
+        // SDK 的ROI/绑定/字库等编辑窗口是运行时 new 出来的普通 Form，宿主拿不到创建时机：空闲时（模态循环中同样触发）补着色。
+        Application.Idle += ThemeSdkDialogs;
+        Disposed += (_, _) => Application.Idle -= ThemeSdkDialogs;
         Add("载入上游预览", async () =>
         {
             var binding = model.Node.Frame.Binding;
@@ -113,6 +118,16 @@ internal sealed class LabelWorkbenchControl : UserControl
             if (string.IsNullOrWhiteSpace(model.Node.AuthorImagePath)) return;
             await GuardAsync(LoadAuthorAsync);
         };
+    }
+    private readonly HashSet<Form> _themedDialogs = new();
+    private void ThemeSdkDialogs(object? sender, EventArgs e)
+    {
+        foreach (Form form in Application.OpenForms)
+        {
+            if (form.GetType() != typeof(Form) || !_themedDialogs.Add(form)) continue;
+            WorkflowWinFormsTheme.ApplyDark(form, followAddedControls: true);
+            form.FormClosed += (_, _) => _themedDialogs.Remove(form);
+        }
     }
     private string Root => Path.GetFullPath(_model.Node.ResourceRoot, Path.GetFullPath(_baseDirectory()));
     private async Task LoadAuthorAsync()

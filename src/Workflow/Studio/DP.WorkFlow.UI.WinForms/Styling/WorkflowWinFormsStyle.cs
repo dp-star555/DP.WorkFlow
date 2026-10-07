@@ -1,3 +1,7 @@
+using System.Drawing.Drawing2D;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
 namespace DP.WorkFlow.UI.WinForms;
 
 /// <summary>提供当前固定的 WinForms 控件配色和原生控件样式。</summary>
@@ -24,16 +28,27 @@ internal static class WorkflowWinFormsStyle
             theme.Primary, theme.Primary, Color.White, theme.BorderSecondary);
     }
 
+    // 已挂接过自绘事件的原生控件，避免重复订阅；Following 记录已跟随动态子控件的容器。
+    private static readonly ConditionalWeakTable<Control, object> Hooked = new();
+    private static readonly ConditionalWeakTable<Control, object> Following = new();
+
     /// <summary>应用。</summary>
-    internal static void Apply(Control root)
+    /// <param name="root">根控件。</param>
+    /// <param name="followAddedControls">是否对之后动态加入的子控件也着色；用于运行中重建界面的第三方控件。</param>
+    internal static void Apply(Control root, bool followAddedControls = false)
     {
         var palette = Get();
-        ApplyControl(root, palette);
+        ApplyControl(root, palette, followAddedControls);
     }
 
     /// <summary>应用Control。</summary>
-    private static void ApplyControl(Control control, Palette palette)
+    private static void ApplyControl(Control control, Palette palette, bool follow = false)
     {
+        if (follow && !Following.TryGetValue(control, out _))
+        {
+            Following.Add(control, new object());
+            control.ControlAdded += (_, e) => { if (e.Control is { } child) ApplyControl(child, Get(), true); };
+        }
         // 自绘现代控件拥有自己的完整主题树，外层宿主不能再递归改写其内部原生控件。
         // 特别是 ModernPropertyGrid 的圆角行背景依赖 Background/Container 精确一致。
         if (control is ModernPropertyGrid.WinForms.ModernPropertyGrid propertyGrid)
@@ -47,7 +62,7 @@ internal static class WorkflowWinFormsStyle
             tabs.Theme = ModernUI.WinForms.ModernTheme.Dark;
             foreach (TabPage page in tabs.TabPages)
                 foreach (Control child in page.Controls)
-                    ApplyControl(child, palette);
+                    ApplyControl(child, palette, follow);
             return;
         }
         // 分栏只是宿主容器：分隔条使用 Modern 主题，两侧内容继续按宿主规则着色。
@@ -58,7 +73,7 @@ internal static class WorkflowWinFormsStyle
             {
                 panel.BackColor = palette.Window;
                 foreach (Control child in panel.Controls)
-                    ApplyControl(child, palette);
+                    ApplyControl(child, palette, follow);
             }
             return;
         }
@@ -68,6 +83,9 @@ internal static class WorkflowWinFormsStyle
             ModernUI.WinForms.ModernUiSettings.ApplyTheme(control, ModernUI.WinForms.ModernTheme.Dark);
             return;
         }
+
+        bool first = !Hooked.TryGetValue(control, out _);
+        if (first) Hooked.Add(control, new object());
 
         if (control is not WorkflowDesignerControl)
         {
@@ -98,6 +116,8 @@ internal static class WorkflowWinFormsStyle
             case ComboBox combo:
                 combo.BackColor = palette.Control;
                 combo.ForeColor = palette.Text;
+                combo.FlatStyle = FlatStyle.Flat;
+                if (first) DarkWindowTheme(combo, "DarkMode_CFD");
                 break;
             case Button button:
                 button.BackColor = palette.Control;
@@ -108,6 +128,54 @@ internal static class WorkflowWinFormsStyle
                     palette.Control.R == 255 ? 229 : 62,
                     palette.Control.R == 255 ? 241 : 62,
                     palette.Control.R == 255 ? 251 : 66);
+                // 原生按钮按 ModernButton 的样子自绘：圆角、悬停/按下高亮、禁用灰字。
+                if (first) button.Paint += (_, e) => PaintButton(button, e.Graphics);
+                break;
+            case ListView list:
+                list.BackColor = palette.Control;
+                list.ForeColor = palette.Text;
+                list.BorderStyle = BorderStyle.FixedSingle;
+                if (first)
+                {
+                    DarkWindowTheme(list, "DarkMode_Explorer", headerTheme: "DarkMode_ItemsView");
+                    // 详细视图表头自绘为深色；行和子项仍用系统绘制。
+                    if (!list.OwnerDraw)
+                    {
+                        list.OwnerDraw = true;
+                        list.DrawColumnHeader += (_, e) => PaintHeader(e);
+                        list.DrawItem += (_, e) => e.DrawDefault = true;
+                        list.DrawSubItem += (_, e) => e.DrawDefault = true;
+                    }
+                }
+                break;
+            case ListBox listBox:
+                listBox.BorderStyle = BorderStyle.FixedSingle;
+                if (first) DarkWindowTheme(listBox, "DarkMode_Explorer");
+                break;
+            case TabControl tabControl:
+                // 原生标签页头自绘为深色；ModernTabControl 已在前面单独处理。
+                if (first && tabControl.DrawMode == TabDrawMode.Normal)
+                {
+                    tabControl.DrawMode = TabDrawMode.OwnerDrawFixed;
+                    tabControl.DrawItem += (_, e) => PaintTab(tabControl, e);
+                }
+                break;
+            case CheckBox checkBox:
+                checkBox.FlatStyle = FlatStyle.Flat;
+                checkBox.FlatAppearance.BorderColor = palette.Border;
+                checkBox.FlatAppearance.CheckedBackColor = palette.Control;
+                break;
+            case RadioButton radio:
+                radio.FlatStyle = FlatStyle.Flat;
+                radio.FlatAppearance.BorderColor = palette.Border;
+                break;
+            case UpDownBase upDown:
+                upDown.BackColor = palette.Control;
+                upDown.ForeColor = palette.Text;
+                upDown.BorderStyle = BorderStyle.FixedSingle;
+                break;
+            case ScrollableControl { AutoScroll: true } scrollable when first:
+                DarkWindowTheme(scrollable, "DarkMode_Explorer");
                 break;
             case ToolStrip strip:
                 strip.BackColor = palette.Surface;
@@ -118,8 +186,90 @@ internal static class WorkflowWinFormsStyle
         }
 
         foreach (Control child in control.Controls)
-            ApplyControl(child, palette);
+            ApplyControl(child, palette, follow);
     }
+
+    private static void PaintButton(Button button, Graphics graphics)
+    {
+        var theme = ModernUI.WinForms.ModernTheme.Dark;
+        var bounds = new Rectangle(0, 0, button.Width - 1, button.Height - 1);
+        var hot = button.Enabled && button.ClientRectangle.Contains(button.PointToClient(Cursor.Position));
+        var pressed = hot && (Control.MouseButtons & MouseButtons.Left) != 0;
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        graphics.Clear(button.Parent?.BackColor ?? theme.Background);
+        using var path = RoundedRectangle(bounds, Math.Min(6, bounds.Height / 2));
+        using var fill = new SolidBrush(pressed ? theme.Border : hot ? theme.ControlHover : theme.Control);
+        using var border = new Pen(button.Focused ? theme.Primary : theme.Border);
+        graphics.FillPath(fill, path);
+        graphics.DrawPath(border, path);
+        TextRenderer.DrawText(graphics, button.Text, button.Font, bounds, button.Enabled ? theme.Text : theme.TextSecondary,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
+    }
+
+    private static void PaintHeader(DrawListViewColumnHeaderEventArgs e)
+    {
+        var theme = ModernUI.WinForms.ModernTheme.Dark;
+        using var fill = new SolidBrush(theme.Container);
+        using var line = new Pen(theme.Border);
+        e.Graphics.FillRectangle(fill, e.Bounds);
+        e.Graphics.DrawLine(line, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
+        e.Graphics.DrawLine(line, e.Bounds.Right - 1, e.Bounds.Top + 4, e.Bounds.Right - 1, e.Bounds.Bottom - 5);
+        var text = Rectangle.Inflate(e.Bounds, -6, 0);
+        TextRenderer.DrawText(e.Graphics, e.Header?.Text, e.Font, text, theme.Text,
+            TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
+    }
+
+    private static void PaintTab(TabControl tabs, DrawItemEventArgs e)
+    {
+        var theme = ModernUI.WinForms.ModernTheme.Dark;
+        var selected = e.Index == tabs.SelectedIndex;
+        using var fill = new SolidBrush(selected ? theme.Control : theme.Container);
+        e.Graphics.FillRectangle(fill, e.Bounds);
+        if (selected)
+        {
+            using var accent = new SolidBrush(theme.Primary);
+            e.Graphics.FillRectangle(accent, e.Bounds.Left, e.Bounds.Bottom - 2, e.Bounds.Width, 2);
+        }
+        TextRenderer.DrawText(e.Graphics, tabs.TabPages[e.Index].Text, tabs.Font, e.Bounds, selected ? theme.Text : theme.TextSecondary,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+    }
+
+    private static GraphicsPath RoundedRectangle(Rectangle bounds, int radius)
+    {
+        var path = new GraphicsPath();
+        if (radius <= 0) { path.AddRectangle(bounds); return path; }
+        int d = radius * 2;
+        path.AddArc(bounds.Left, bounds.Top, d, d, 180, 90);
+        path.AddArc(bounds.Right - d, bounds.Top, d, d, 270, 90);
+        path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
+        path.AddArc(bounds.Left, bounds.Bottom - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
+    // Windows 10 1809+ 的系统深色主题：用于原生滚动条、下拉列表和列表表头背景；旧系统或调用失败时保持原样。
+    private static void DarkWindowTheme(Control control, string theme, string? headerTheme = null)
+    {
+        void Apply()
+        {
+            if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763)) return;
+            try
+            {
+                _ = SetWindowTheme(control.Handle, theme, null);
+                if (headerTheme is not null && SendMessage(control.Handle, 0x101F /* LVM_GETHEADER */, IntPtr.Zero, IntPtr.Zero) is var header && header != IntPtr.Zero)
+                    _ = SetWindowTheme(header, headerTheme, null);
+            }
+            catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException) { }
+        }
+        if (control.IsHandleCreated) Apply();
+        control.HandleCreated += (_, _) => Apply();
+    }
+
+    [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+    private static extern int SetWindowTheme(IntPtr hwnd, string? subAppName, string? subIdList);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);
 
     /// <summary>应用Tree Nodes。</summary>
     private static void ApplyTreeNodes(TreeNodeCollection nodes, Palette palette)
