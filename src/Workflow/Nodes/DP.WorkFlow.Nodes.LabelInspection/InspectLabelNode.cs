@@ -50,6 +50,9 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
     /// <summary>同一次检测的ROI并行预算。</summary>
     [WorkflowProperty("ROI最大并行数", "1为串行；同一节点引擎的不同检测调用仍串行。", Category = "执行")]
     public int MaximumParallelRois { get; set; } = 1;
+    /// <summary>判定不是OK时走失败出口，便于直接接NG处理支路。</summary>
+    [WorkflowProperty("NG走失败出口", "开启后判定不是OK（NG或复判）时，报告照常输出并沿“失败”出口继续，失败支路可绑定本节点报告；请在“输出端口”中启用“失败”并连线，未连线时本路径到此结束。关闭时所有有效报告都走“成功”。", Category = "执行")]
+    public bool NgToFailedPort { get; set; }
 
     /// <inheritdoc/>
     public IReadOnlyList<string> ValidateConfiguration()
@@ -110,7 +113,7 @@ public sealed class WorkflowLabelInspectionResult : IWorkflowVisionFrameFact
     [DisplayName("摘要")] public string Summary => $"{RecipeName}：{Verdict}；{Regions.Count}个ROI；{ElapsedMilliseconds:F1}ms";
 }
 
-/// <summary>无界面调用；产品NG/Review仍使用Success出口输出原报告。</summary>
+/// <summary>无界面调用；默认产品NG/Review仍使用Success出口输出原报告，开启“NG走失败出口”时走Failed出口。</summary>
 public sealed class InspectLabelNodeHandler : WorkflowNodeHandler<InspectLabelNodeModel>
 {
     /// <inheritdoc/>
@@ -124,7 +127,9 @@ public sealed class InspectLabelNodeHandler : WorkflowNodeHandler<InspectLabelNo
             context.ResolveInput(node.CycleId), context.ResolveInput(node.TaskData), cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         if (result is null || result.FrameId != frame.FrameId) throw new InvalidOperationException("标签报告为空或与输入帧身份不一致。");
-        return NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result));
+        // 报告已正式产生：即使走失败出口也提交输出，失败支路可直接读取判定与报告。
+        var port = node.NgToFailedPort && !result.IsQualified ? WorkflowPorts.Failed : WorkflowPorts.Success;
+        return NodeExecutionResult.Continue(port, result, WorkflowVisionFrameScope.Stage(context, frame, result));
     }
 }
 
