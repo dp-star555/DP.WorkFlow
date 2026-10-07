@@ -8,6 +8,34 @@ using ModernUI.WinForms;
 
 namespace DP.WorkFlow.LabelInspection.UI.WinForms;
 
+/// <summary>把标签坐标下的叠加图层按放置换算到原图。</summary>
+public static class LabelOverlayMapping
+{
+    /// <summary>换算图层；相似变换保持为带角度矩形，含剪切时转为不填充的闭合轮廓。</summary>
+    /// <param name="layers">标签坐标下的图层。</param><param name="placement">配方坐标到原图的放置。</param>
+    public static IReadOnlyList<CanvasLayer> ToImage(IReadOnlyList<CanvasLayer> layers, InspectionPlacement placement)
+    {
+        ArgumentNullException.ThrowIfNull(layers); ArgumentNullException.ThrowIfNull(placement);
+        return layers.Select(layer => new CanvasLayer(layer.Id, layer.Kind,
+            layer.Visuals.Select(v => new Visual(v.Id, Map(v.Geometry, placement), v.Argb, v.Caption)), layer.Order, layer.Visible, layer.Name)).ToArray();
+    }
+
+    /// <summary>换算单个几何。</summary>
+    public static Geometry Map(Geometry geometry, InspectionPlacement placement)
+    {
+        PointD Point(PointD p) { var (x, y) = placement.Map(p.X, p.Y); return new PointD(x, y); }
+        bool similarity = Math.Abs(placement.M11 - placement.M22) < 1e-9 && Math.Abs(placement.M12 + placement.M21) < 1e-9;
+        return geometry switch
+        {
+            RectangleGeometry r when similarity => new RectangleGeometry(Point(r.Center), r.Width * placement.Scale, r.Height * placement.Scale,
+                r.Angle + Math.Atan2(placement.M21, placement.M11)),
+            RectangleGeometry r => new ContourGeometry(r.Corners.Select(Point), closed: true),
+            ContourGeometry c => new ContourGeometry(c.Points.Select(Point), c.Closed, c.Filled),
+            _ => geometry
+        };
+    }
+}
+
 /// <summary>只读显示本节点正式提交报告及同帧证据，不重跑算法。</summary>
 public sealed class LabelInspectionReportRenderer : IWorkflowWinFormsNodeEditorPageRenderer
 {
@@ -57,6 +85,8 @@ public sealed class LabelInspectionReportRenderer : IWorkflowWinFormsNodeEditorP
             var characters = report.Analysis.Regions.Where(r => r.Segmentation != null).SelectMany(r => r.Segmentation!.Characters);
             // 叠加配方ROI框作为检测范围参照，再叠加证据与字块。
             var layers = VisionAdapter.LabelLayers(result.RecipeRegions, report.EvidenceGroups.Select(g => g.Summary), characters);
+            // 绑定了标签坐标系时报告坐标是标签坐标：按本次放置换算到原图（随标签旋转）。
+            if (result.Placement is { } placement) layers = LabelOverlayMapping.ToImage(layers, placement);
             using var frame = new CanvasFrame(result.FrameId, preview.Sequence, preview.Frame.Image, new GeometryOverlay(result.FrameId, layers));
             _canvas.Present(frame); _canvas.FitToWindow();
             _summary.Text = result.Summary + "；帧 " + result.FrameId + "；检查覆盖/阻断见详细报告，Success不代表产品合格。";
