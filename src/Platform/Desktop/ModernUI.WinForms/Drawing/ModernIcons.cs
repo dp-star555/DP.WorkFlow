@@ -72,7 +72,9 @@ public enum ModernIconKind
     /// <summary>水平等距分布。</summary>
     DistributeHorizontal,
     /// <summary>垂直等距分布。</summary>
-    DistributeVertical
+    DistributeVertical,
+    /// <summary>刷新（顺时针圆弧箭头）。</summary>
+    Refresh
 }
 
 /// <summary>Specifies where a button icon is placed relative to its text.</summary>
@@ -331,6 +333,17 @@ internal static class ModernIconRenderer
                 pen.EndCap = LineCap.Round;
                 graphics.DrawArc(pen, RectangleF.Inflate(bounds, -strokeWidth, -strokeWidth), -75, 285);
                 break;
+            case ModernIconKind.Refresh:
+            {
+                pen.StartCap = LineCap.Round;
+                pen.EndCap = LineCap.Round;
+                var circle = new RectangleF(left + width * .2f, top + height * .2f, width * .6f, height * .6f);
+                graphics.DrawArc(pen, circle, -60, 300);
+                // 箭头在圆弧终点（顶部偏右），指向顺时针方向。
+                var tip = Point(.66f, .22f);
+                graphics.DrawLines(pen, [Point(.5f, .12f), tip, Point(.6f, .38f)]);
+                break;
+            }
         }
     }
 }
