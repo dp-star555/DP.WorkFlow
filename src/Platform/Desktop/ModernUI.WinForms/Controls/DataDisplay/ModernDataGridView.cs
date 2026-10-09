@@ -171,9 +171,9 @@ public sealed class ModernDataGridView : DataGridView
     protected override void OnScroll(ScrollEventArgs e)
     {
         base.OnScroll(e);
-        if (e.ScrollOrientation != ScrollOrientation.HorizontalScroll) return;
-        // DataGridView uses ScrollWindow to shift its client pixels. The modern outline is painted
-        // in that same client surface, so a complete repaint must follow every horizontal shift.
+        // DataGridView uses ScrollWindow to shift its client pixels in both directions. The modern
+        // rounded outline is painted in that same client surface, so after a vertical shift the copied
+        // outline would stay inside the rows as a stray line; repaint completely after every shift.
         Invalidate(true);
         Update();
     }
