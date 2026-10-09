@@ -14,6 +14,8 @@ public sealed partial class WorkflowStudioControl : UserControl
     private WorkflowStudioRuntimeBinding? _runtimeBinding;
     private WorkflowDocumentWorkspace? _workspace;
     private string? _startNodeId;
+    private bool _autoFitPending;
+    private bool _autoFitQueued;
 
     /// <summary>初始化集设计器、工具箱、诊断和运行控制于一体的工作室控件。</summary>
     public WorkflowStudioControl()
@@ -58,7 +60,9 @@ public sealed partial class WorkflowStudioControl : UserControl
         {
             if (toolboxAndEditor.Width > 500)
                 toolboxAndEditor.SplitterDistance = Math.Min(210, toolboxAndEditor.Width - 300);
+            QueueAutoFit();
         };
+        Designer.SizeChanged += (_, _) => QueueAutoFit();
         WorkflowWinFormsStyle.Apply(this);
     }
 
@@ -237,8 +241,35 @@ public sealed partial class WorkflowStudioControl : UserControl
             Designer.Session = value;
             Toolbox.Session = value;
             Diagnostics.Session = value;
+            _autoFitPending = value is not null;
+            QueueAutoFit();
             UpdateCommands();
         }
+    }
+
+    /// <inheritdoc />
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        QueueAutoFit();
+    }
+
+    // 会话绑定可能早于宿主布局；延迟到消息队列再读取画布的最终尺寸。
+    // 仅消费一次待居中请求，后续编辑及窗口尺寸变化不重置用户视口。
+    private void QueueAutoFit()
+    {
+        if (!_autoFitPending || _autoFitQueued || !IsHandleCreated || IsDisposed)
+            return;
+        _autoFitQueued = true;
+        BeginInvoke((Action)(() =>
+        {
+            _autoFitQueued = false;
+            if (IsDisposed || !_autoFitPending || Session is null
+                || Designer.ClientSize.Width <= 0 || Designer.ClientSize.Height <= 0)
+                return;
+            _autoFitPending = false;
+            Session.FitToView(Designer.ClientSize.Width, Designer.ClientSize.Height);
+        }));
     }
 
     /// <summary>获取或设置流程入口，用于属性面板生成绑定候选。</summary>

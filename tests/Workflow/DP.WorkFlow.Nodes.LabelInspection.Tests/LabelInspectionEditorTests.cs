@@ -167,6 +167,35 @@ public sealed class LabelInspectionEditorTests
     }
 
     [Fact]
+    public async Task WinFormsCacheCommands_CleanupProductionCacheWithoutChangingRecipeOrTrialResources()
+    {
+        await using var rig = new LabelInspectionPipelineTests.Rig(false);
+        Assert.True((await rig.RunAsync()).Success);
+        rig.Node.AuthorImagePath = "input.png"; var original = rig.Node.RecipeJson;
+        await RunStaAsync(async parent =>
+        {
+            await using var editor = Editor(new WorkflowDesignerSession(rig.Document, rig.Nodes), reportPage: false);
+            using var dialog = new WorkflowNodeEditorDialog(editor,
+                new IWorkflowWinFormsNodeEditorPageRenderer[] { new LabelInspectionWorkbenchRenderer(() => rig.Root, cacheRuntime: rig.Runtime) });
+            dialog.Show(parent);
+            var page = Page(editor);
+            var entries = page.CreateProperties(page.Node).ToArray();
+            Assert.Contains(entries, p => p.Name == "LabelInspection.Command.CacheStatistics");
+            var cleanup = entries.Single(p => p.Name == "LabelInspection.Command.CleanupIdleCache");
+            await WaitUntilAsync(() => cleanup.ActionBlockReason.Length == 0);
+            Assert.Equal(1, rig.Runtime.CachedResourceCount);
+            await cleanup.ExecuteActionAsync();
+            Assert.Equal(0, rig.Runtime.CachedResourceCount);
+            var control = Descendants(dialog).OfType<DP.LabelInspection.LabelInspectionControl>().Single();
+            Assert.Single(control.Regions);
+            Assert.Equal(original, rig.Node.RecipeJson);
+            var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            dialog.FormClosed += (_, _) => closed.TrySetResult(); dialog.Close();
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        });
+    }
+
+    [Fact]
     public async Task WinFormsDialog_CloseDuringTrial_CancelsAndWaitsWithoutDeadlockingUi()
     {
         await using var rig = new LabelInspectionPipelineTests.Rig(false);
@@ -191,6 +220,169 @@ public sealed class LabelInspectionEditorTests
             Assert.True(engine.Cancelled);
             Assert.Equal(original, rig.Node.RecipeJson);
             Assert.Null(rig.Frames.Capture("inspect"));
+        });
+    }
+
+    [Fact]
+    public async Task LoadCatalogProfile_OnlyChangesIsolatedRecipeDraft_PreservesProductionInputs_AndCanUndo()
+    {
+        await using var rig = new LabelInspectionPipelineTests.Rig(false);
+        rig.Node.RecipeCatalogPath = "recipes/index.json";
+        rig.Node.RecipeKey = WorkflowInput<string>.FromBinding(new("image", "FrameId"));
+        var original = rig.Node.RecipeJson; var key = rig.Node.RecipeKey.Binding;
+        var session = new WorkflowDesignerSession(rig.Document, rig.Nodes);
+        await using var editor = Editor(session); var page = Page(editor);
+        var profile = WorkflowLabelRecipeProfile.FromNode(rig.Node, "B", 2) with
+        { RecipeJson = original.Replace("\"blank\"", "\"draft-B\""), AuthorImagePath = "input.png", ReferencePose = new(1, 0, 8, 0, 1, 3) };
+        page.LoadProfile(profile); page.SetRecipeCatalog("recipes/index.json", "B");
+        Assert.Equal(original, rig.Node.RecipeJson); Assert.Equal(key, page.Node.RecipeKey.Binding);
+        Assert.Equal("image", page.Node.Frame.Binding!.Value.NodeId); Assert.Equal(rig.Node.ResourceRoot, page.Node.ResourceRoot);
+        editor.ApplyChanges(); Assert.Equal("draft-B", page.Serializer.Deserialize(rig.Node.RecipeJson).Name);
+        Assert.Equal(key, rig.Node.RecipeKey.Binding); Assert.Equal(8, rig.Node.GetReferencePose()!.Tx);
+        Assert.True(session.Undo()); Assert.Equal(original, rig.Node.RecipeJson);
+        Assert.Null(rig.Node.GetReferencePose());
+    }
+
+    [Fact]
+    public async Task WinFormsCatalogReport_UsesActualVersion_NotInvalidModelInDraft_AndDoesNotWriteItBack()
+    {
+        await using var rig = new LabelInspectionPipelineTests.Rig(false);
+        var profile = WorkflowLabelRecipeProfile.FromNode(rig.Node, "B", 1) with
+        { RecipeJson = rig.Node.RecipeJson.Replace("\"blank\"", "\"actual-B\"") };
+        await DP.WorkFlow.LabelInspection.WorkflowLabelRecipeCatalogStore.PublishAsync(rig.Root, "recipes/index.json", profile);
+        rig.Node.RecipeCatalogPath = "recipes/index.json"; rig.Node.RecipeKey = WorkflowInput<string>.FromLiteral("B");
+        rig.Node.RecognitionModelPath = "missing-draft-model.onnx"; var original = rig.Node.RecipeJson;
+        Assert.True((await rig.RunAsync()).Success);
+        await RunStaAsync(async parent =>
+        {
+            var session = new WorkflowDesignerSession(rig.Document, rig.Nodes);
+            session.NodeOutputProvider = id => rig.Host.Engine!.RunState.NodeOutputs.LastOrDefault(o => o.NodeId == id);
+            session.SetRuntimeSnapshot(rig.Host.GetSnapshot());
+            await using var editor = new WorkflowNodeEditorModel(session, "image", "inspect",
+                new[] { new LabelInspectionEditorPageProvider(new OpenCvImageCodec(), rig.Frames, includeReportPage: false) });
+            using var dialog = Dialog(editor, rig.Root); dialog.Show(parent);
+            var control = Descendants(dialog).OfType<DP.LabelInspection.LabelInspectionControl>().Single();
+            await WaitUntilAsync(() => control.Regions.Count == 1 && !control.Enabled);
+            Assert.Equal("actual-B", control.Regions[0].Name);
+            Assert.Contains(Descendants(dialog).OfType<System.Windows.Forms.Label>(), label => label.Text.Contains("B@1"));
+            editor.ApplyChanges();
+            Assert.Equal(original, rig.Node.RecipeJson); Assert.Equal("missing-draft-model.onnx", rig.Node.RecognitionModelPath);
+            Assert.Equal(1, rig.Runtime.ResourceLoadCount);
+            var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            dialog.FormClosed += (_, _) => closed.TrySetResult(); dialog.Close();
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        });
+    }
+
+    [Fact]
+    public async Task ResourcePathPreflight_PreservesProductionBoundary_AndAcceptsRootInternalAbsoluteOrRelativePaths()
+    {
+        await using var rig = new LabelInspectionPipelineTests.Rig(false);
+        var outside = rig.Root + "-sibling/model.onnx";
+        Assert.False(DP.WorkFlow.LabelInspection.WorkflowLabelInspectionResources.TryResolvePath(rig.Root, outside, out _, out var error));
+        Assert.Contains(rig.Root, error); Assert.Contains("复制", error);
+        Assert.Throws<InvalidDataException>(() => DP.WorkFlow.LabelInspection.WorkflowLabelInspectionResources.ResolvePath(rig.Root, outside));
+        Assert.False(DP.WorkFlow.LabelInspection.WorkflowLabelInspectionResources.TryResolvePath(rig.Root, "../model.onnx", out _, out _));
+        var expected = Path.Combine(rig.Root, "models", "rec.onnx");
+        foreach (var path in new[] { "models/rec.onnx", expected })
+        {
+            Assert.True(DP.WorkFlow.LabelInspection.WorkflowLabelInspectionResources.TryResolvePath(rig.Root, path, out var resolved, out var diagnostic));
+            Assert.Equal(expected, resolved); Assert.Empty(diagnostic);
+        }
+        var driveRoot = Path.GetPathRoot(rig.Root)!;
+        Assert.True(DP.WorkFlow.LabelInspection.WorkflowLabelInspectionResources.TryResolvePath(driveRoot, "models/rec.onnx", out _, out _));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WinFormsReopen_ExternalOcrPath_ShowsRecoveryGuidanceWithoutThrowingPathException(bool withAuthorImage)
+    {
+        await using var rig = new LabelInspectionPipelineTests.Rig(false);
+        var outside = Path.Combine(Path.GetDirectoryName(rig.Root)!, "external-ocr-" + Guid.NewGuid().ToString("N") + ".onnx");
+        File.WriteAllBytes(outside, [1]);
+        int pathExceptions = 0;
+        EventHandler<System.Runtime.ExceptionServices.FirstChanceExceptionEventArgs> observe = (_, args) =>
+        {
+            if (args.Exception is InvalidDataException && args.Exception.Message.Contains(outside, StringComparison.Ordinal))
+                Interlocked.Increment(ref pathExceptions);
+        };
+        try
+        {
+            // 先通过真实隔离编辑提交，再关闭重开，复现用户添加绝对模型路径后的操作。
+            var session = new WorkflowDesignerSession(rig.Document, rig.Nodes);
+            await using (var edit = Editor(session))
+            {
+                Page(edit).Node.RecognitionModelPath = outside;
+                Page(edit).Node.AuthorImagePath = withAuthorImage ? "input.png" : string.Empty;
+                edit.ApplyChanges();
+            }
+            AppDomain.CurrentDomain.FirstChanceException += observe;
+            await RunStaAsync(async parent =>
+            {
+                await using var editor = Editor(session, reportPage: false);
+                using var dialog = Dialog(editor, rig.Root); dialog.Show(parent);
+                await WaitUntilAsync(() => Descendants(dialog).OfType<System.Windows.Forms.Label>()
+                    .Any(label => label.Text.Contains("资源根目录", StringComparison.Ordinal) && label.Text.Contains(outside, StringComparison.Ordinal)));
+                var diagnostic = Descendants(dialog).OfType<System.Windows.Forms.Label>().Single(label => label.Text.Contains(outside, StringComparison.Ordinal)).Text;
+                Assert.Equal(0, Volatile.Read(ref pathExceptions)); // VS不能再停在后台预期路径错误的throw行。
+                Assert.Contains(rig.Root, diagnostic); Assert.Contains("复制", diagnostic);
+                Assert.True(editor.CanApplyChanges); Assert.Equal(outside, Page(editor).Node.RecognitionModelPath);
+                // 页面保持可修复：改正草稿路径、重载即可载入，不必退出进程。
+                var page = Page(editor); page.Node.RecognitionModelPath = string.Empty; page.Node.AuthorImagePath = "input.png";
+                await page.CreateProperties(page.Node).Single(entry => entry.Name == "LabelInspection.Command.ReloadResources").ExecuteActionAsync();
+                var workbench = Descendants(dialog).OfType<DP.LabelInspection.LabelInspectionControl>().Single();
+                Assert.Single(workbench.Regions); Assert.True(workbench.Enabled);
+                Assert.Equal(0, Volatile.Read(ref pathExceptions));
+                Assert.Equal(outside, rig.Node.RecognitionModelPath); // 重载不私自改写已提交的配置。
+                editor.ApplyChanges(); Assert.Equal(string.Empty, rig.Node.RecognitionModelPath);
+                var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                dialog.FormClosed += (_, _) => closed.TrySetResult(); dialog.Close();
+                await closed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            });
+        }
+        finally { AppDomain.CurrentDomain.FirstChanceException -= observe; File.Delete(outside); }
+    }
+
+    [Fact]
+    public async Task WinFormsLibraries_WithoutAuthorImage_ConnectsExtractionService()
+    {
+        await using var rig = new LabelInspectionPipelineTests.Rig(false);
+        rig.Node.AuthorImagePath = string.Empty;
+        await RunStaAsync(async parent =>
+        {
+            await using var editor = Editor(new WorkflowDesignerSession(rig.Document, rig.Nodes), reportPage: false);
+            using var dialog = Dialog(editor, rig.Root);
+            dialog.Show(parent);
+            var model = Page(editor);
+            var command = model.CreateProperties(model.Node).Single(entry => entry.Name == "LabelInspection.Command.GlyphLibraries");
+            await WaitUntilAsync(() => command.ActionBlockReason.Length == 0);
+            Exception? failure = null;
+            bool observed = false;
+            using var timer = new System.Windows.Forms.Timer { Interval = 20 };
+            timer.Tick += (_, _) =>
+            {
+                var libraryWindow = System.Windows.Forms.Application.OpenForms.Cast<Form>()
+                    .FirstOrDefault(f => f.Text.StartsWith("字库 ·", StringComparison.Ordinal));
+                if (libraryWindow is null) return;
+                timer.Stop(); observed = true;
+                try
+                {
+                    var builder = Descendants(libraryWindow).OfType<DP.LabelInspection.GlyphQuickBuilderControl>().Single();
+                    var pixels = Enumerable.Repeat((byte)255, 64 * 32).ToArray();
+                    builder.SetImage(new PixelSnapshot(64, 32, EImagePixelFormat.Gray8, pixels));
+                    builder.SetRegion(new DP.Vision.Algorithms.PixelBounds(0, 0, 64, 32));
+                    var extract = Descendants(builder).OfType<ModernUI.WinForms.ModernButton>().Single(b => b.Text == "提取当前ROI（OCR）");
+                    Assert.True(extract.Enabled, "未载入主工作台样张，仅在制库页载图也必须连接已装配的提取服务。");
+                }
+                catch (Exception error) { failure = error; }
+                finally { libraryWindow.Close(); }
+            };
+            timer.Start();
+            await command.ExecuteActionAsync();
+            Assert.True(observed);
+            if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+            dialog.Close();
         });
     }
 

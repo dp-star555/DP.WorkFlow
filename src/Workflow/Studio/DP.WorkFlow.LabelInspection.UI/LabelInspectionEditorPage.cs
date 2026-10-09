@@ -62,6 +62,25 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
         if (Node.RecipeJson == json) return;
         Node.RecipeJson = json; _changed();
     }
+    /// <summary>载入外部版本到隔离编辑草稿，不改变生产的目录选择输入；确认也不自动发布文件。</summary>
+    /// <param name="profile">已校验的配方版本。</param>
+    public void LoadProfile(WorkflowLabelRecipeProfile profile)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var recipe = Serializer.Deserialize(profile.RecipeJson);
+        profile.ApplyTo(Node); Node.RecipeJson = Serializer.Serialize(recipe); _changed();
+    }
+    /// <summary>记录目录索引路径；未绑定且选择为空时可初始化为新发布的ID。</summary>
+    /// <param name="relativePath">根内索引路径。</param><param name="initialKey">可选初始选择。</param>
+    public void SetRecipeCatalog(string relativePath, string? initialKey = null)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        Node.RecipeCatalogPath = relativePath;
+        if (initialKey is not null && Node.RecipeKey.Source == WorkflowValueSource.Literal && string.IsNullOrWhiteSpace(Node.RecipeKey.LiteralValue))
+            Node.RecipeKey = WorkflowInput<string>.FromLiteral(initialKey);
+        _changed();
+    }
+
     /// <summary>记录配置样张路径（相对资源根目录），并通知属性页刷新。</summary>
     /// <param name="relativePath">相对资源根目录的路径。</param>
     public void SetAuthorImagePath(string relativePath)

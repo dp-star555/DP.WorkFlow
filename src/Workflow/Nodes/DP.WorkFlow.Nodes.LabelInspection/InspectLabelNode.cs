@@ -41,6 +41,15 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
     /// <summary>SDK原生配方JSON，使用专用页面导入或捕获；完整保留项目选择、约束和库修订。</summary>
     [Browsable(false)]
     public string RecipeJson { get; set; } = string.Empty;
+    /// <summary>可选外部配方索引；空时保持节点内固定配方。</summary>
+    [WorkflowProperty("配方目录索引", "可选，相对资源根目录。填写后按“本次配方”选择外部版本，节点内配方只作为编辑草稿，不作为运行回退。", Category = "配方选择")]
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.FilePath)]
+    public string RecipeCatalogPath { get; set; } = string.Empty;
+    /// <summary>本周期配方ID或ID@版本，可绑定任务输出；不在检测中反复读取全局当前值。</summary>
+    [WorkflowProperty("本次配方", "目录模式使用配方ID或ID@版本，可固定或绑定上游任务输出。只写ID选择目录中最高版本；未知/空ID报错，不回退固定配方。", Category = "配方选择")]
+    public WorkflowInput<string> RecipeKey { get; set; } = WorkflowInput<string>.FromLiteral(string.Empty);
+    /// <summary>是否启用外部配方选择。</summary>
+    [Browsable(false)] public bool UsesRecipeCatalog => !string.IsNullOrWhiteSpace(RecipeCatalogPath);
     /// <summary>资源路径的显式根目录。</summary>
     [WorkflowProperty("资源根目录", "相对流程文件目录解析；未保存流程相对宿主目录。其余资源路径必须位于此目录内。", Category = "标签资源")]
     [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.FolderPath)]
@@ -80,6 +89,8 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
         if (TaskData is null || !(Bound(TaskData) || TaskData.Source == WorkflowValueSource.Literal && TaskData.LiteralValue is null))
             errors.Add("任务期望数据只允许绑定或空Literal。");
         if (CycleId is null) errors.Add("采集周期输入不能为空引用。");
+        if (RecipeCatalogPath is null || RecipeKey is null) errors.Add("配方目录和选择输入不能为空引用。");
+        if (RecipeKey?.Binding is { IsPublicData: false } r && r.NodeId == Id) errors.Add("本次配方不能绑定自身。");
         if (Frame?.Binding is { IsPublicData: false } b && b.NodeId == Id) errors.Add("输入图像不能绑定自身。");
         if (string.IsNullOrWhiteSpace(ResourceRoot) || string.IsNullOrWhiteSpace(DataDirectory)) errors.Add("资源根目录和字库/模型库目录不能为空。");
         if (ReferenceImagePath is null || RecognitionModelPath is null || AnomalyBackbonePath is null || AuthorImagePath is null)
@@ -88,14 +99,14 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
         if (LabelCoordinates is null || !(Bound(LabelCoordinates) || LabelCoordinates.Source == WorkflowValueSource.Literal && LabelCoordinates.LiteralValue is null))
             errors.Add("标签坐标系只允许绑定或空Literal。");
         if (LabelCoordinates?.Binding is { IsPublicData: false } c && c.NodeId == Id) errors.Add("标签坐标系不能绑定自身。");
-        if (HasReferencePose)
+        if (!UsesRecipeCatalog && HasReferencePose)
         {
             double[] pose = { ReferenceM11, ReferenceM12, ReferenceTx, ReferenceM21, ReferenceM22, ReferenceTy };
             if (pose.Any(v => !double.IsFinite(v)) || Math.Abs(ReferenceM11 * ReferenceM22 - ReferenceM12 * ReferenceM21) < 1e-12)
                 errors.Add("参考位姿无效，请在配置页重新载入上游预览。");
         }
         // 还没有配方不阻止整个流程编译运行：上游节点要先跑出预览图，才能在配置页制作配方；本节点运行时报“尚未配置配方”。
-        if (string.IsNullOrWhiteSpace(RecipeJson)) { }
+        if (UsesRecipeCatalog || string.IsNullOrWhiteSpace(RecipeJson)) { }
         else if (RecipeJson.Length > 1024 * 1024) errors.Add("标签配方不能超过1MB。");
         else
         {
@@ -161,10 +172,13 @@ public sealed class WorkflowLabelInspectionResult : IWorkflowVisionFrameFact
     /// <param name="resourceIdentity">资源快照标识。</param><param name="report">SDK完整报告。</param>
     /// <param name="recipeRegions">本次所用配方的ROI定义，供报告页叠加显示；为空时不画ROI框。</param>
     /// <param name="placement">配方坐标到原图的放置；为空时报告坐标即原图坐标。</param>
+    /// <param name="recipeId">外部配方标识；固定配方可为空。</param><param name="recipeVersion">所选外部版本。</param>
+    /// <param name="recipeJson">实际配方JSON，用于显示正确版本的ROI。</param>
     public WorkflowLabelInspectionResult(string frameId, string? cycleId, string recipeName, string recipeSha256,
-        string resourceIdentity, InspectionReport report, IReadOnlyList<InspectionRegion>? recipeRegions = null, InspectionPlacement? placement = null)
+        string resourceIdentity, InspectionReport report, IReadOnlyList<InspectionRegion>? recipeRegions = null, InspectionPlacement? placement = null,
+        string? recipeId = null, int? recipeVersion = null, string? recipeJson = null)
     {
-        Placement = placement;
+        Placement = placement; RecipeId = recipeId; RecipeVersion = recipeVersion; RecipeJson = recipeJson;
         FrameId = frameId; CycleId = cycleId; RecipeName = recipeName; RecipeSha256 = recipeSha256;
         ResourceIdentity = resourceIdentity; Report = report ?? throw new ArgumentNullException(nameof(report));
         RecipeRegions = recipeRegions ?? Array.Empty<InspectionRegion>();
@@ -175,6 +189,10 @@ public sealed class WorkflowLabelInspectionResult : IWorkflowVisionFrameFact
     [Browsable(false)] public IReadOnlyList<InspectionRegion> RecipeRegions { get; }
     [DisplayName("图像标识")] public string FrameId { get; }
     [DisplayName("采集周期")] public string? CycleId { get; }
+    [DisplayName("配方标识")] public string? RecipeId { get; }
+    [DisplayName("配方版本")] public int? RecipeVersion { get; }
+    /// <summary>检测实际配方的不可变JSON，供显示同版本ROI，不包含资产文件或运行数据。</summary>
+    [Browsable(false)] public string? RecipeJson { get; }
     [DisplayName("配方名称")] public string RecipeName { get; }
     [DisplayName("配方摘要")] public string RecipeSha256 { get; }
     [DisplayName("资源快照标识")] public string ResourceIdentity { get; }
@@ -194,7 +212,7 @@ public sealed class InspectLabelNodeHandler : WorkflowNodeHandler<InspectLabelNo
         IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!node.HasRecipe) throw new InvalidOperationException(InspectLabelNodeModel.MissingRecipeMessage);
+        if (!node.HasRecipe && !node.UsesRecipeCatalog) throw new InvalidOperationException(InspectLabelNodeModel.MissingRecipeMessage);
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("标签输入帧为空。");
         // 绑定了标签坐标系时必须拿到本帧定位；不沿用其它帧的坐标系。
         VisionCoordinateSystem? system = null;
@@ -204,8 +222,13 @@ public sealed class InspectLabelNodeHandler : WorkflowNodeHandler<InspectLabelNo
             system.ValidateFrame(frame);
         }
         using var retained = frame.Retain();
-        var result = await context.GetRequiredCapability<IWorkflowLabelInspectionService>().InspectAsync(context, retained,
-            context.ResolveInput(node.CycleId), context.ResolveInput(node.TaskData), node.Placement(system), cancellationToken).ConfigureAwait(false);
+        // 输入只解析一次，先绑定本次任务的配方，再进入加载/排队。
+        var cycleId = context.ResolveInput(node.CycleId); var taskData = context.ResolveInput(node.TaskData);
+        var result = node.UsesRecipeCatalog
+            ? await context.GetRequiredCapability<IWorkflowLabelRecipeInspectionService>().InspectRecipeAsync(context, retained,
+                context.ResolveInput(node.RecipeKey) ?? string.Empty, cycleId, taskData, system, cancellationToken).ConfigureAwait(false)
+            : await context.GetRequiredCapability<IWorkflowLabelInspectionService>().InspectAsync(context, retained,
+                cycleId, taskData, node.Placement(system), cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         if (result is null || result.FrameId != frame.FrameId) throw new InvalidOperationException("标签报告为空或与输入帧身份不一致。");
         // 报告已正式产生：即使走失败出口也提交输出，失败支路可直接读取判定与报告。
@@ -225,7 +248,11 @@ public sealed class WorkflowLabelInspectionModule : IWorkflowRuntimePluginModule
         ArgumentNullException.ThrowIfNull(extensions);
         extensions.Nodes.Register(WorkflowNodeDescriptor.Create<InspectLabelNodeModel, WorkflowLabelInspectionResult>(ports: new[]
         { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success), WorkflowPortDescriptor.Failure() }));
-        extensions.Handlers.Register(new InspectLabelNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IWorkflowLabelInspectionService>(),
-            WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>());
+        extensions.Handlers.Register(new InspectLabelNodeHandler(), node => new[]
+        {
+            ((InspectLabelNodeModel)node).UsesRecipeCatalog ? WorkflowRuntimeCapabilityRequirement.Require<IWorkflowLabelRecipeInspectionService>()
+                : WorkflowRuntimeCapabilityRequirement.Require<IWorkflowLabelInspectionService>(),
+            WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>()
+        });
     }
 }

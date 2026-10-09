@@ -57,6 +57,8 @@ public partial class Form1 : Form
             .Register(new WorkflowProcessRuntimePluginModule())
             .Register(new WorkflowImageRuntimePluginModule())
             .Register(new WorkflowLabelInspectionModule());
+        bool labelRecipeDemo = Environment.GetCommandLineArgs().Contains("--label-recipe-demo", StringComparer.OrdinalIgnoreCase);
+        if (labelRecipeDemo) plugins.Register(new LabelRecipeSelectionDemo());
         if (recoveryDemo is not null) plugins.Register(recoveryDemo);
         plugins.LoadPlugins(pluginDirectory, workflowLoader);
         foreach (var failure in workflowLoader.DiscoveryFailures)
@@ -76,7 +78,10 @@ public partial class Form1 : Form
         _frameScope = new WorkflowVisionFrameScope(acquisition);
         string LabelBaseDirectory() => string.IsNullOrWhiteSpace(_workspace.CurrentFilePath)
             ? AppContext.BaseDirectory : Path.GetDirectoryName(Path.GetFullPath(_workspace.CurrentFilePath))!;
-        _labelRuntime = new WorkflowLabelInspectionRuntime(LabelBaseDirectory, _frameScope);
+        bool labelCacheDemo = Environment.GetCommandLineArgs().Contains("--label-cache-demo", StringComparer.OrdinalIgnoreCase);
+        _labelRuntime = new WorkflowLabelInspectionRuntime(LabelBaseDirectory, _frameScope, labelCacheDemo
+            ? new WorkflowLabelInspectionCacheOptions { IdleExpiration = TimeSpan.FromSeconds(30), CleanupInterval = TimeSpan.FromSeconds(5), MaximumCachedRecipes = 2 }
+            : null, VisionAnomalyImplementations.FromCatalog(algorithmCatalog));
         _algorithmBindings = new WorkflowVisionAlgorithmBindings(_algorithmRuntime, _labelRuntime, Resources);
         _algorithmDiagnostics = new WorkflowVisionAlgorithmDiagnostics(algorithmCatalog, _algorithmRuntime, _algorithmBindings, Resources);
         _workspace.DocumentChanged += (_, _) => _algorithmDiagnostics.Invalidate();
@@ -86,7 +91,18 @@ public partial class Form1 : Form
 
         // 3. 创建新文档
         _workspace.New(recoveryDemo is null ? "新版视觉文件分析" : "异常恢复演示（仅软件模拟）");
-        if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--label-demo", StringComparer.OrdinalIgnoreCase)) LabelInspectionDemo.Populate(_workspace.Navigator!.RootSession);
+        if (recoveryDemo is null && labelRecipeDemo)
+        {
+            Shown += async (_, _) =>
+            {
+                workflowStudioControl1.Enabled = false;
+                try { await LabelRecipeSelectionDemo.PopulateAsync(_workspace.Navigator!.RootSession); }
+                catch (Exception error) { MessageBox.Show(this, error.Message, "配方演示初始化失败"); }
+                finally { workflowStudioControl1.Enabled = true; }
+            };
+        }
+        else if (recoveryDemo is null && labelCacheDemo) LabelInspectionDemo.PopulateCache(_workspace.Navigator!.RootSession);
+        else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--label-demo", StringComparer.OrdinalIgnoreCase)) LabelInspectionDemo.Populate(_workspace.Navigator!.RootSession);
         else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--barcode-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateBarcode(_workspace.Navigator!.RootSession);
         else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--coordinate-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateCoordinates(_workspace.Navigator!.RootSession);
         else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--geometry-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateGeometry(_workspace.Navigator!.RootSession);
@@ -103,7 +119,7 @@ public partial class Form1 : Form
             new VisionWinFormsStudioExtension()
             { FrameSource = _frameScope, FileReader = fileReader, Templates = new VisionTemplateEditingRuntime(algorithmCatalog, _algorithmRuntime, Resources) });
         workflowStudioControl1.NodeEditorExtensions.Register(new LabelInspectionWinFormsExtension
-            { BaseDirectory = LabelBaseDirectory, FrameSource = _frameScope });
+            { BaseDirectory = LabelBaseDirectory, FrameSource = _frameScope, CacheRuntime = _labelRuntime });
         // 采集节点的"逻辑图像源"从本机已发布的源里选，避免手写出机器上不存在的标识；
         // 面阵节点与线扫节点各看各的采集类型，不能互相选到对方的源。
         workflowStudioControl1.Properties.ChoiceProvider = WorkflowVisionAlgorithmChoices.CreateProvider(algorithmCatalog, WorkflowVisionSourceChoices.CreateProvider(_visionSources));
@@ -134,6 +150,7 @@ public partial class Form1 : Form
         var services = new WorkflowServiceProvider()
             .Add<IWorkflowVisionFrameScope>(_frameScope)
             .Add<IWorkflowLabelInspectionService>(_labelRuntime)
+            .Add<IWorkflowLabelRecipeInspectionService>(_labelRuntime)
             .Add<IWorkflowVisionFolderSource>(acquisition)
             .Add<IVisionAcquisition>(_visionAcquisition)
             .Add<IWorkflowVisionSourceCatalog>(_visionSources)

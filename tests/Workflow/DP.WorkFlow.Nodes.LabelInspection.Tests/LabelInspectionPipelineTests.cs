@@ -108,8 +108,6 @@ public sealed class LabelInspectionPipelineTests
         var pixels = Enumerable.Repeat((byte)255, 84 * 58).ToArray();
         if (ink) for (int y = 12; y < 24; y++) for (int x = 12; x < 24; x++) pixels[(y + 5) * 84 + x + 10] = 0;
         File.WriteAllBytes(Path.Combine(rig.Root, "input.png"), new OpenCvImageCodec().EncodePng(new PixelSnapshot(84, 58, EImagePixelFormat.Gray8, pixels)));
-        rig.Nodes.Register(WorkflowNodeDescriptor.Create<ShiftedCoordinates, VisionCoordinateSystem>(ports: new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output() }));
-        rig.Handlers.Register(new ShiftedCoordinatesHandler());
         var locate = new ShiftedCoordinates { Id = "locate", Frame = WorkflowInput<ImageFrame>.FromBinding(new("image", "$")) };
         rig.Document.CanvasProjection.Nodes.Add(new() { Node = locate });
         var toInspect = rig.Document.CanvasProjection.Connections.Single(c => c.FromNodeId == "image");
@@ -168,19 +166,15 @@ public sealed class LabelInspectionPipelineTests
     }
 
     [Fact]
-    public async Task PrepareRunAsync_LaterNodeFailure_RollsBackAndAllowsSubsequentRun()
+    public async Task PrepareRunAsync_NextPreparationFailure_RollsBackAndAllowsSubsequentRun()
     {
         await using var rig = new Rig(false);
-        var second = (InspectLabelNodeModel)WorkflowNodeConfigurationSnapshotter.Capture(rig.Node);
-        second.Id = "inspect2"; second.RecipeJson = "{\"name\":\"invalid\",\"width\":0}";
-        rig.Document.CanvasProjection.Nodes.Add(new() { Node = second });
-        var connection = rig.Document.CanvasProjection.Connections.Single(c => c.FromNodeId == "inspect");
-        rig.Document.CanvasProjection.Connections.Remove(connection);
-        rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = "inspect", FromPort = WorkflowPorts.Success, ToNodeId = "inspect2", ToPort = WorkflowPorts.Input });
-        rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = "inspect2", FromPort = WorkflowPorts.Success, ToNodeId = "consumer", ToPort = WorkflowPorts.Input });
-        await Assert.ThrowsAnyAsync<Exception>(() => rig.RunAsync());
+        rig.BeforeFirstNode = () => throw new InvalidOperationException("next preparation failed");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => rig.RunAsync());
         Assert.Empty(rig.Host.Engine!.RunState.NodeOutputs);
-        second.RecipeJson = rig.Node.RecipeJson;
+        Assert.Equal(0, rig.Runtime.CacheStatistics.RegisteredRecipes);
+        Assert.Equal(0, rig.Runtime.ResourceLoadCount);
+        rig.BeforeFirstNode = null;
         Assert.True((await rig.RunAsync()).Success);
         Assert.Equal(EInspectionVerdict.Ok, rig.Output().Verdict);
     }
@@ -197,7 +191,7 @@ public sealed class LabelInspectionPipelineTests
     }
 
     [Fact]
-    public async Task RunAsync_ReferenceReplacedAfterPreparation_UsesSnapshotThenRefreshesNextRun()
+    public async Task RunAsync_ReferenceReplacedBeforeFirstUse_CapturesLatestThenRefreshesNextRun()
     {
         await using var rig = new Rig(false);
         rig.Node.ReferenceImagePath = "reference.png";
@@ -207,11 +201,11 @@ public sealed class LabelInspectionPipelineTests
         rig.BeforeFirstNode = () => rig.WriteImage("reference.png", true);
         Assert.True((await rig.RunAsync()).Success);
         var first = rig.Output();
-        Assert.Equal(EInspectionVerdict.Ok, first.Verdict);
-        rig.BeforeFirstNode = null;
+        Assert.Equal(EInspectionVerdict.Ng, first.Verdict);
+        rig.BeforeFirstNode = () => rig.WriteImage("reference.png", false);
         Assert.True((await rig.RunAsync()).Success);
         var second = rig.Output();
-        Assert.Equal(EInspectionVerdict.Ng, second.Verdict);
+        Assert.Equal(EInspectionVerdict.Ok, second.Verdict);
         Assert.Equal(first.RecipeSha256, second.RecipeSha256);
         Assert.NotEqual(first.ResourceIdentity, second.ResourceIdentity);
         Assert.Equal("reference.png", rig.Node.ReferenceImagePath);
@@ -222,7 +216,7 @@ public sealed class LabelInspectionPipelineTests
     [InlineData("outside-root")]
     [InlineData("invalid-recipe")]
     [InlineData("missing-model")]
-    public async Task RunAsync_InvalidActiveResource_FailsBeforeFirstNode(string fault)
+    public async Task RunAsync_InvalidActiveResource_FaultsAtLabelNodeAfterUpstreamPreview(string fault)
     {
         await using var rig = new Rig(false);
         switch (fault)
@@ -234,9 +228,11 @@ public sealed class LabelInspectionPipelineTests
                     new[] { new InspectionRegion("blank", ERegionKind.Blank, new PixelBounds(4, 4, 56, 40)) }, Rig.Options));
                 rig.Node.ReferenceImagePath = fault == "outside-root" ? "../outside.png" : "absent.png"; break;
         }
-        await Assert.ThrowsAnyAsync<Exception>(() => rig.RunAsync());
-        Assert.Empty(rig.Host.Engine!.RunState.NodeOutputs);
-        Assert.Null(rig.Frames.Capture("image"));
+        var result = await rig.RunAsync();
+        Assert.False(result.Success);
+        Assert.DoesNotContain(rig.Host.Engine!.RunState.NodeOutputs, o => o.NodeId == "inspect");
+        using var image = rig.Frames.Capture("image");
+        Assert.NotNull(image);
         Assert.Null(rig.Frames.Capture("inspect"));
     }
 
@@ -313,12 +309,18 @@ public sealed class LabelInspectionPipelineTests
         internal InspectLabelNodeModel Node { get; }
         internal Action? BeforeFirstNode;
         internal IWorkflowLabelInspectionService? InspectionService;
-        internal Rig(bool ink)
+        internal Rig(bool ink, WorkflowLabelInspectionCacheOptions? cacheOptions = null,
+            Func<string, ITextLineRecognizer>? ocr = null, Func<string, IPatchAnomalyDetector>? anomaly = null,
+            IEnumerable<IAnomalyImplementation>? implementations = null)
         {
             Directory.CreateDirectory(Root);
             var composition = new WorkflowRuntimePluginCatalog(Nodes, Handlers).Register(new WorkflowImageRuntimePluginModule()).Register(new WorkflowLabelInspectionModule());
             Nodes.Register(WorkflowNodeDescriptor.Create<Consumer, EInspectionVerdict>(ports: new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output() }));
-            Handlers.Register(new ConsumerHandler()); composition.Freeze();
+            Handlers.Register(new ConsumerHandler());
+            Nodes.Register(WorkflowNodeDescriptor.Create<ShiftedCoordinates, VisionCoordinateSystem>(ports: new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output() }));
+            Handlers.Register(new ShiftedCoordinatesHandler());
+            Nodes.Register(WorkflowNodeDescriptor.Create<SelectBranch, bool>(ports: new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output(WorkflowPorts.True), WorkflowPortDescriptor.Output(WorkflowPorts.False) }));
+            Handlers.Register(new SelectBranchHandler()); composition.Freeze();
             WriteImage("input.png", ink);
             Node = new InspectLabelNodeModel { Id = "inspect", ResourceRoot = Root, Frame = WorkflowInput<ImageFrame>.FromBinding(new("image", "$")),
                 CycleId = WorkflowInput<string>.FromLiteral("cycle-1"), RecipeJson = Json(new InspectionRecipe("blank", 64, 48,
@@ -328,7 +330,7 @@ public sealed class LabelInspectionPipelineTests
             foreach (var model in models) Document.CanvasProjection.Nodes.Add(new() { Node = model });
             for (int i = 1; i < models.Length; i++) Document.CanvasProjection.Connections.Add(new() { FromNodeId = models[i - 1].Id,
                 FromPort = WorkflowPorts.Success, ToNodeId = models[i].Id, ToPort = WorkflowPorts.Input });
-            Runtime = new WorkflowLabelInspectionRuntime(() => Root, new CallbackPreparation(this));
+            Runtime = new WorkflowLabelInspectionRuntime(() => Root, new CallbackPreparation(this), cacheOptions ?? new(), ocr, anomaly, implementations);
             Host = new WorkflowRuntimeHost(Nodes, Handlers);
         }
         internal string Json(InspectionRecipe recipe) => new InspectionRecipeSerializer(new OpenCvImageCodec()).Serialize(recipe);
@@ -342,6 +344,7 @@ public sealed class LabelInspectionPipelineTests
         {
             var services = new WorkflowServiceProvider().Add<IImageFileReader>(new DP.Vision.OpenCv.OpenCvImageFileReader())
                 .Add<IWorkflowVisionFrameScope>(Frames).Add<IWorkflowLabelInspectionService>(InspectionService ?? Runtime)
+                .Add<IWorkflowLabelRecipeInspectionService>(Runtime)
                 .Add<IWorkflowRunPreparationService>(Runtime).Add<IWorkflowRunResourceOwner>(Frames);
             Host.Configure(Document, new WorkflowContext(services)); return Host.RunAsync();
         }
@@ -357,6 +360,18 @@ public sealed class LabelInspectionPipelineTests
             { rig.BeforeFirstNode?.Invoke(); await rig.Frames.PrepareAsync(context, token); }
         }
     }
+    [WorkflowNode("Test.Label.SelectBranch")]
+    public sealed class SelectBranch : WorkflowNodeModel
+    {
+        public override string NodeType => "Test.Label.SelectBranch";
+        public bool Selected { get; set; } = true;
+    }
+    private sealed class SelectBranchHandler : WorkflowNodeHandler<SelectBranch>
+    {
+        protected override ValueTask<NodeExecutionResult> ExecuteAsync(SelectBranch node, IWorkflowNodeExecutionContext context, CancellationToken token) =>
+            ValueTask.FromResult(NodeExecutionResult.Continue(node.Selected ? WorkflowPorts.True : WorkflowPorts.False, node.Selected));
+    }
+
     private sealed class ReviewService : IWorkflowLabelInspectionService
     {
         public Task<WorkflowLabelInspectionResult> InspectAsync(IWorkflowNodeExecutionContext context, ImageFrame frame, string? cycleId,

@@ -17,13 +17,15 @@ public sealed class LabelInspectionWinFormsExtension : IWorkflowWinFormsStudioEx
     public Func<string> BaseDirectory { get; init; } = () => AppContext.BaseDirectory;
     /// <summary>已经提交的图像预览来源。</summary>
     public IWorkflowVisionPreviewSource? FrameSource { get; init; }
+    /// <summary>可选生产资源宿主，用于查看缓存和主动清理；配置页试检测仍使用独立引擎。</summary>
+    public WorkflowLabelInspectionRuntime? CacheRuntime { get; init; }
     /// <inheritdoc/>
     public string ExtensionId => "workflow.label-inspection.winforms";
     /// <inheritdoc/>
     public void Register(WorkflowWinFormsStudioExtensionCatalog extensions)
     {
         extensions.RegisterPageProvider(new LabelInspectionEditorPageProvider(new OpenCvImageCodec(), FrameSource, includeReportPage: false));
-        extensions.RegisterRenderer(new LabelInspectionWorkbenchRenderer(BaseDirectory, FrameSource));
+        extensions.RegisterRenderer(new LabelInspectionWorkbenchRenderer(BaseDirectory, FrameSource, CacheRuntime));
     }
 }
 
@@ -31,7 +33,8 @@ public sealed class LabelInspectionWinFormsExtension : IWorkflowWinFormsStudioEx
 /// 复用原生标签工作台的页面Renderer：右侧为图像（上方工具栏、下方检测证据），左侧追加“ROI规则”分页，
 /// 文件/字库等操作作为按钮放进参数页。不通过控件执行生产节点。
 /// </summary>
-public sealed class LabelInspectionWorkbenchRenderer(Func<string> baseDirectory, IWorkflowVisionPreviewSource? previews = null)
+public sealed class LabelInspectionWorkbenchRenderer(Func<string> baseDirectory, IWorkflowVisionPreviewSource? previews = null,
+    WorkflowLabelInspectionRuntime? cacheRuntime = null)
     : IWorkflowWinFormsNodeEditorPageRenderer, IWorkflowWinFormsNodeEditorSidePanelRenderer
 {
     private readonly ConditionalWeakTable<LabelInspectionEditorPageModel, LabelWorkbenchControl> _controls = new();
@@ -43,7 +46,7 @@ public sealed class LabelInspectionWorkbenchRenderer(Func<string> baseDirectory,
     public Control CreateControl(WorkflowNodeEditorPageDescriptor page)
     {
         var model = (LabelInspectionEditorPageModel)page.Model;
-        var control = new LabelWorkbenchControl(model, baseDirectory, previews);
+        var control = new LabelWorkbenchControl(model, baseDirectory, previews, cacheRuntime);
         _controls.AddOrUpdate(model, control);
         return control;
     }
@@ -61,6 +64,7 @@ internal sealed class LabelWorkbenchControl : UserControl
     private readonly LabelInspectionEditorPageModel _model;
     private readonly Func<string> _baseDirectory;
     private readonly IWorkflowVisionPreviewSource? _previews;
+    private readonly WorkflowLabelInspectionRuntime? _cacheRuntime;
     private readonly DP.LabelInspection.LabelInspectionControl _workbench = new()
     { Dock = DockStyle.Fill, SidebarVisible = false, CanvasToolbarVisible = false };
     private readonly Label _status = new()
@@ -68,6 +72,7 @@ internal sealed class LabelWorkbenchControl : UserControl
         Dock = DockStyle.Bottom, Height = 30, AutoEllipsis = true, Padding = new Padding(8, 2, 8, 2),
         BackColor = Theme.Container, ForeColor = Theme.TextSecondary, TextAlign = ContentAlignment.MiddleLeft
     };
+    private readonly ToolTip _statusTip = new() { AutoPopDelay = 15000 };
     private readonly ModernToolStrip _toolbar = new() { Dock = DockStyle.Top, Theme = Theme };
     private readonly ModernSelect _drawKind = new() { Size = new Size(150, 30), Theme = Theme, DropDownAnimationDuration = 0 };
     private readonly ToolStripButton _editRois = new("选中/调整") { CheckOnClick = true, ToolTipText = "开启后左键选中并移动/缩放ROI；按住Shift仍可新建" };
@@ -80,13 +85,16 @@ internal sealed class LabelWorkbenchControl : UserControl
     private bool _loading;
     private Task? _loadingTask;
     private bool _syncing;
+    private bool _displayingRun;
+    private string _editingRecipeId = string.Empty;
+    private int _editingRecipeVersion;
     private readonly int _uiThread = Environment.CurrentManagedThreadId;
 
     // 参数页上的操作按钮：文件与配方、字库与模型、检测设置。
     private static readonly LabelInspectionEditorCommand[] Commands =
     {
         new("LoadSample", "配置样张", "1. 配方与样张", "加载配置样张…", "选一张图作配置底图；资源根目录外的图片复制到根目录下samples\\。绑定标签坐标系时请改用图像上方的“载入上游预览”。"),
-        new("SaveReference", "参考图", "1. 配方与样张", "保存为参考图", "把当前配置图保存为资源根目录下label-reference-<节点ID>.png并填入“参考图”，模板模式下用于比对。"),
+        new("SaveReference", "参考图", "1. 配方与样张", "保存为参考图", "把当前配置图保存到资源根并填入“参考图”。目录模式使用唯一新文件，避免覆盖已发布版本的参考资产。"),
         new("ImportRecipe", "导入配方", "1. 配方与样张", "导入配方…", "导入SDK原生配方JSON，保留检测项目、约束及库修订。"),
         new("ExportRecipe", "导出配方", "1. 配方与样张", "导出配方…", "把当前配方（含未应用的工作台修改）导出为JSON文件。"),
         new("ReloadResources", "重载资源", "1. 配方与样张", "重载资源", "修改资源路径或外部文件后，重新装配试检测引擎与字库。"),
@@ -94,11 +102,22 @@ internal sealed class LabelWorkbenchControl : UserControl
         new("AnomalyLibraries", "异常模型", "2. 字库与模型", "异常模型…", "质量方法B：异常模型库管理与批量训练在同一窗口的两个分页中，关闭时可把新发布的版本绑定到ROI。"),
         new("Thresholds", "检测阈值", "3. 检测设置", "编辑阈值…", "墨迹、原图容差、最小面积、对比度及清晰度阈值，随配方保存。"),
         new("TaskData", "试检测任务数据", "3. 检测设置", "录入任务数据…", "只为配置页试检测提供本周期业务数据，载入新图后清除；生产数据来自“任务期望数据”绑定。"),
+        new("LoadCatalogRecipe", "目录配方草稿", "5. 配方目录", "载入目录配方…", "选择目录ID/版本载入隔离草稿；不会改生产选择绑定或自动覆盖已发布文件。"),
+        new("PublishCatalogRecipe", "发布配方版本", "5. 配方目录", "发布新版本…", "把完整草稿、资产摘要及参考位姿发布为不可变版本，并原子更新索引。外部文件写入不随取消编辑回滚。"),
     };
 
-    internal LabelWorkbenchControl(LabelInspectionEditorPageModel model, Func<string> baseDirectory, IWorkflowVisionPreviewSource? previews)
+    private static readonly LabelInspectionEditorCommand[] CacheCommands =
     {
-        _model = model; _baseDirectory = baseDirectory; _previews = previews;
+        new("CacheStatistics", "生产资源缓存", "4. 资源缓存", "查看缓存状态…", "显示生产配方/共享模型缓存及实际加载次数；不包括配置页独立试检测引擎。"),
+        new("CleanupIdleCache", "清理闲置资源", "4. 资源缓存", "清理闲置缓存", "立即卸载生产闲置资源，不影响在途检测；下次使用时重新加载。外部副作用，不随取消节点编辑回滚。"),
+        new("RefreshRecipeCatalog", "刷新生产目录", "5. 配方目录", "刷新生产目录", "显式刷新生产目录元数据；新选择可见新版本，在途检测保持旧租约。失败保留旧目录，不随取消编辑回滚。"),
+        new("PrewarmCatalogRecipe", "预热配方", "5. 配方目录", "预热目录配方…", "提前加载所选版本到生产同一缓存，不检测、不改变本次配方输入。"),
+    };
+
+    internal LabelWorkbenchControl(LabelInspectionEditorPageModel model, Func<string> baseDirectory, IWorkflowVisionPreviewSource? previews,
+        WorkflowLabelInspectionRuntime? cacheRuntime = null)
+    {
+        _model = model; _baseDirectory = baseDirectory; _previews = previews; _cacheRuntime = cacheRuntime;
         BackColor = Theme.Background; ForeColor = Theme.Text;
         BuildToolbar();
         Controls.Add(_workbench); Controls.Add(_status); Controls.Add(_toolbar);
@@ -106,10 +125,12 @@ internal sealed class LabelWorkbenchControl : UserControl
         WorkflowWinFormsTheme.ApplyDark(_workbench, followAddedControls: true);
         // SDK 的ROI/绑定/字库等编辑窗口是运行时 new 出来的普通 Form，宿主拿不到创建时机：空闲时（模态循环中同样触发）补着色。
         Application.Idle += ThemeSdkDialogs;
-        Disposed += (_, _) => Application.Idle -= ThemeSdkDialogs;
+        _status.TextChanged += (_, _) => _statusTip.SetToolTip(_status, _status.Text);
+        _statusTip.SetToolTip(_status, _status.Text);
+        Disposed += (_, _) => { Application.Idle -= ThemeSdkDialogs; _statusTip.Dispose(); };
         _workbench.BusyChanged += (_, _) => SyncBusy();
         model.AttachWorkbench(CaptureRecipe, () => _loadingTask is not null || _loading || _workbench.IsInspectionRunning, ReleaseAsync);
-        model.AttachCommands(Commands, ExecuteCommandAsync, CommandBlockReason);
+        model.AttachCommands(cacheRuntime is null ? Commands : Commands.Concat(CacheCommands).ToArray(), ExecuteCommandAsync, CommandBlockReason);
         _status.Text = "配置与试检测不发布生产输出。显式发布的字库/异常库新修订是外部资源，不随取消回滚。";
         Load += async (_, _) => await GuardAsync(LoadInitialAsync);
     }
@@ -167,7 +188,7 @@ internal sealed class LabelWorkbenchControl : UserControl
     private void SyncBusy()
     {
         bool running = _workbench.IsInspectionRunning;
-        _run.Enabled = !running; _cancel.Enabled = running;
+        _run.Enabled = !running && !_displayingRun; _cancel.Enabled = running;
     }
 
     private async Task LoadInitialAsync()
@@ -175,10 +196,15 @@ internal sealed class LabelWorkbenchControl : UserControl
         // 运行过且有结果时首先显示运行结果；否则显示配置样张，或先接上字库/异常库管理。
         bool hasRun;
         using (var run = _model.RunResults?.Capture()) hasRun = run?.Facts is WorkflowLabelInspectionResult;
-        if (hasRun && _model.Node.HasRecipe)
+        if (hasRun)
         {
             try { await ShowRunResultAsync(); return; }
             catch (Exception error) when (error is not OperationCanceledException) { _status.Text = "运行结果无法显示：" + error.Message; }
+        }
+        if (_model.Node.UsesRecipeCatalog)
+        {
+            _status.Text = "目录模式：参数页可载入目录配方作为编辑草稿；生产按本次任务选择版本，未使用配方不加载。";
+            return;
         }
         if (!string.IsNullOrWhiteSpace(_model.Node.AuthorImagePath)) { await LoadAuthorAsync(); return; }
         await AttachLibrariesAsync();
@@ -202,7 +228,7 @@ internal sealed class LabelWorkbenchControl : UserControl
         {
             // 还没有ROI：本帧就是配置帧，原图原样载入。
             model.SetReferencePose(system.LocalToImage);
-            await LoadAsync(preview.Frame);
+            if (!await LoadAsync(preview.Frame)) return;
             _status.Text = "已载入原图并以本帧定位为参考位姿；直接在原图上画ROI，运行时ROI随标签相对本帧的位移/旋转/缩放移动。";
             return;
         }
@@ -210,7 +236,7 @@ internal sealed class LabelWorkbenchControl : UserControl
         var placement = node.Placement(system)!;
         var recipe = model.Serializer.Deserialize(node.RecipeJson);
         using var aligned = placement.Rectify(preview.Frame, recipe.Width, recipe.Height);
-        await LoadAsync(aligned);
+        if (!await LoadAsync(aligned)) return;
         _status.Text = $"本帧标签相对配置帧旋转 {placement.RotationDegrees:0.#}°、平移 ({placement.Tx:0.#}, {placement.Ty:0.#})，已对齐到配置帧显示，ROI坐标不变；超出原图的部分为黑色。";
     }
 
@@ -219,13 +245,25 @@ internal sealed class LabelWorkbenchControl : UserControl
     {
         using var preview = _model.RunResults?.Capture() ?? throw new InvalidOperationException("还没有本节点的运行结果，请先运行流程。");
         if (preview.Facts is not WorkflowLabelInspectionResult result) throw new InvalidOperationException("本节点最近一次输出不是标签检测报告。");
-        if (!_model.Node.HasRecipe) throw new InvalidOperationException("当前没有配方，不能显示运行结果。");
-        var recipe = _model.Serializer.Deserialize(_model.Node.RecipeJson);
+        var json = result.RecipeJson ?? _model.Node.RecipeJson;
+        if (string.IsNullOrWhiteSpace(json)) throw new InvalidOperationException("本次报告没有可显示的配方。");
+        var recipe = _model.Serializer.Deserialize(json);
         using var aligned = result.Placement?.Rectify(preview.Frame, recipe.Width, recipe.Height);
-        await LoadAsync(aligned ?? preview.Frame);
+        var display = aligned ?? preview.Frame;
+        if (_model.Node.UsesRecipeCatalog || json != _model.Node.RecipeJson)
+        {
+            // 只读显示实际版本，不加载当前草稿的模型、不把运行配方回写到编辑草稿。
+            _workbench.SetActualImage(display.Image); _workbench.SetReferenceImage(null, true); _workbench.ApplyRecipe(recipe);
+            _actual?.Dispose(); _actual = display.Retain(); _displayingRun = true;
+            _workbench.Enabled = false; _run.Enabled = false;
+            _editRois.Enabled = false; _drawKind.Enabled = false;
+            if (_rules is not null) _rules.Enabled = false;
+        }
+        else if (!await LoadAsync(display)) return;
         _workbench.ShowReport(result.Report);
-        _status.Text = $"本次运行（{result.FrameId}）：{result.Summary}" + (result.Placement is null ? "" : "；已按定位对齐到配置帧显示")
-            + (string.Equals(result.RecipeName, recipe.Name, StringComparison.Ordinal) ? "。" : "；运行后配方已修改，ROI框为当前配置。");
+        _status.Text = $"本次运行（{result.FrameId}）：{result.Summary}" + (result.RecipeId is null ? "" : $"；{result.RecipeId}@{result.RecipeVersion}")
+            + (result.Placement is null ? "" : "；已按定位对齐到配置帧显示")
+            + (_displayingRun ? "；实际运行版本只读，编辑/试检测请先载入目录配方或配置图。" : "。");
     }
 
     private async Task RunTrialAsync()
@@ -238,6 +276,8 @@ internal sealed class LabelWorkbenchControl : UserControl
     {
         if (IsDisposed) return "配置页已关闭。";
         if (_loadingTask is not null || _loading || _workbench.IsInspectionRunning) return "请等待当前装配/试检测结束。";
+        if (_displayingRun && id is "SaveReference" or "PublishCatalogRecipe" or "Thresholds" or "TaskData")
+            return "运行报告只读，请先载入目录配方或配置图。";
         return id == "SaveReference" && _actual is null ? "请先载入上游预览或配置样张。" : "";
     }
 
@@ -275,7 +315,9 @@ internal sealed class LabelWorkbenchControl : UserControl
             {
                 if (_actual is null) throw new InvalidOperationException("请先载入上游预览或配置样张。");
                 // 模板模式需要与配方同尺寸的参考图；绑定标签坐标系时就是配置帧原图。
-                var relative = $"label-reference-{model.Node.Id}.png";
+                var relative = model.Node.UsesRecipeCatalog
+                    ? $"label-reference-{Uri.EscapeDataString(model.Node.Id)}-{Guid.NewGuid():N}.png"
+                    : $"label-reference-{model.Node.Id}.png";
                 var info = _actual.Image.Info;
                 var pixels = new byte[info.ByteLength]; _actual.Image.CopyTo(0, pixels, 0, pixels.Length);
                 var snapshot = new PixelSnapshot(info.Width, info.Height, info.Layout == EPixelLayout.Gray8 ? EImagePixelFormat.Gray8 : EImagePixelFormat.Bgr24, pixels);
@@ -312,6 +354,63 @@ internal sealed class LabelWorkbenchControl : UserControl
                 else if (!string.IsNullOrWhiteSpace(model.Node.AuthorImagePath)) await LoadAuthorAsync();
                 else await AttachLibrariesAsync();
                 return;
+            case "LoadCatalogRecipe":
+            {
+                if (!model.Node.UsesRecipeCatalog) throw new InvalidOperationException("请先填写资源根及配方目录索引。");
+                var key = AskText("载入目录配方", "配方ID或ID@版本", SuggestedRecipeKey());
+                if (key is null) return;
+                var entries = await WorkflowLabelRecipeCatalogStore.ReadIndexAsync(Root, model.Node.RecipeCatalogPath, _lifetime.Token);
+                var entry = SelectEntry(entries, key);
+                var profile = await WorkflowLabelRecipeCatalogStore.ReadProfileAsync(Root, entry, _lifetime.Token);
+                // 草稿切换前解除旧图的捕获关系；新图失败时不能把旧工作台ROI写进新配方。
+                _actual?.Dispose(); _actual = null; _workbench.Enabled = false; _run.Enabled = false;
+                model.LoadProfile(profile); _editingRecipeId = profile.Id; _editingRecipeVersion = profile.Version;
+                _displayingRun = false;
+                if (!string.IsNullOrWhiteSpace(profile.AuthorImagePath)) { if (!await LoadAuthorAsync()) return; }
+                else { if (!ValidateResourcePaths(model.Node)) return; await AttachLibrariesAsync(); }
+                _status.Text = $"已载入{entry.Key}到隔离草稿；生产选择未改变。应用只保存草稿，发布新版本须显式操作。";
+                return;
+            }
+            case "PublishCatalogRecipe":
+            {
+                model.PrepareCommit();
+                if (!model.Node.HasRecipe) throw new InvalidOperationException("请先制作或导入完整配方。");
+                var recipeId = AskText("发布配方版本", "配方ID（不含@）", _editingRecipeId.Length == 0 ? SuggestedRecipeKey().Split('@')[0] : _editingRecipeId);
+                if (recipeId is null) return;
+                var versionText = AskText("发布配方版本", "新版本号（正整数，不能覆盖已发布版本）", (_editingRecipeVersion + 1).ToString());
+                if (versionText is null) return;
+                if (!int.TryParse(versionText, out var version) || version < 1) throw new InvalidOperationException("版本必须是正整数。");
+                var indexPath = model.Node.UsesRecipeCatalog ? model.Node.RecipeCatalogPath : "recipes/index.json";
+                var entry = await WorkflowLabelRecipeCatalogStore.PublishAsync(Root, indexPath,
+                    WorkflowLabelRecipeProfile.FromNode(model.Node, recipeId, version), _lifetime.Token);
+                model.SetRecipeCatalog(indexPath, recipeId); _editingRecipeId = recipeId; _editingRecipeVersion = version;
+                _status.Text = $"已写入外部版本{entry.Key}；不随取消编辑回滚。生产须显式刷新目录；节点目录设置在应用/确定后保存。";
+                return;
+            }
+            case "RefreshRecipeCatalog":
+                await (_cacheRuntime ?? throw new InvalidOperationException("宿主未接入生产目录能力。")).ReloadRecipeCatalogAsync(
+                    Root, model.Node.RecipeCatalogPath, _lifetime.Token);
+                _status.Text = "生产目录元数据已刷新；新任务选择可见新版本，在途检测不变。不随取消编辑回滚。";
+                return;
+            case "PrewarmCatalogRecipe":
+            {
+                var key = AskText("预热生产配方", "配方ID或ID@版本", SuggestedRecipeKey()); if (key is null) return;
+                await (_cacheRuntime ?? throw new InvalidOperationException("宿主未接入生产缓存。")).PrewarmRecipeAsync(
+                    Root, model.Node.RecipeCatalogPath, key, model.Node.MaximumParallelRois, _lifetime.Token);
+                _status.Text = $"配方{key}已预热到生产缓存；不改变生产选择或发布报告。";
+                return;
+            }
+            case "CacheStatistics":
+            {
+                var cache = _cacheRuntime ?? throw new InvalidOperationException("宿主未接入生产缓存诊断。");
+                var s = cache.CacheStatistics; var o = cache.CacheOptions;
+                MessageBox.Show(this, $"生产缓存（不含配置页试检测）\r\n当前运行登记配方：{s.RegisteredRecipes}（运行结束后登记撤销）\r\n配方缓存：{s.CachedRecipes}/{o.MaximumCachedRecipes}\r\n共享模型：{s.CachedModels}/{o.MaximumCachedModels}\r\n累计详细加载：配方 {s.RecipeLoads}，模型 {s.ModelLoads}\r\n累计命中：配方 {s.RecipeHits}，模型 {s.ModelHits}\r\n累计淘汰：配方 {s.RecipeEvictions}，模型 {s.ModelEvictions}\r\n空闲期限：{o.IdleExpiration}\r\n数量限制不是进程内存的字节硬限制。", "标签资源缓存", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            case "CleanupIdleCache":
+                (_cacheRuntime ?? throw new InvalidOperationException("宿主未接入生产缓存诊断。")).CleanupIdleResources(removeAllIdle: true);
+                _status.Text = "已清理生产闲置缓存；在途资源保留，下次使用冷配方时重新加载。此操作不随取消编辑回滚。";
+                return;
             case "GlyphLibraries": _workbench.OpenGlyphLibraries(); break;
             case "AnomalyLibraries": _workbench.OpenAnomalyLibraries(); break;
             case "Thresholds": _workbench.EditThresholds(); break;
@@ -322,18 +421,40 @@ internal sealed class LabelWorkbenchControl : UserControl
         _rules?.Reload();
     }
 
+    private string SuggestedRecipeKey() => _model.Node.RecipeKey.Source == WorkflowValueSource.Literal
+        ? _model.Node.RecipeKey.LiteralValue ?? _editingRecipeId : _editingRecipeId;
+    private static WorkflowLabelRecipeCatalogEntry SelectEntry(IReadOnlyList<WorkflowLabelRecipeCatalogEntry> entries, string key) =>
+        (key.Contains('@') ? entries.FirstOrDefault(e => e.Key == key) : entries.Where(e => e.Id == key).MaxBy(e => e.Version))
+        ?? throw new InvalidOperationException("配方目录中没有：" + key);
+    private string? AskText(string title, string label, string initial)
+    {
+        using var form = new Form { Text = title, Width = 520, Height = 185, StartPosition = FormStartPosition.CenterParent,
+            FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false };
+        var text = new TextBox { Text = initial, Left = 16, Top = 42, Width = 470 };
+        var ok = new Button { Text = "确定", DialogResult = DialogResult.OK, Left = 310, Top = 84, Width = 80 };
+        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Left = 406, Top = 84, Width = 80 };
+        form.Controls.Add(new Label { Text = label, AutoSize = true, Left = 16, Top = 16 });
+        form.Controls.Add(text); form.Controls.Add(ok); form.Controls.Add(cancel); form.AcceptButton = ok; form.CancelButton = cancel;
+        WorkflowWinFormsTheme.ApplyDark(form);
+        return form.ShowDialog(this) == DialogResult.OK ? text.Text.Trim() : null;
+    }
+
     private async Task AttachLibrariesAsync()
     {
         var node = (InspectLabelNodeModel)WorkflowNodeConfigurationSnapshotter.Capture(_model.Node);
         if (!node.HasRecipe)
             node.RecipeJson = _model.Serializer.Serialize(new InspectionRecipe("标签检测", 64, 64, EInspectionMode.Free,
                 EAlignmentMode.AssumeAligned, Array.Empty<InspectionRegion>()));
-        var candidate = await WorkflowLabelInspectionResources.CreateForEditingAsync(node, _baseDirectory(), _lifetime.Token);
+        if (!ValidateResourcePaths(node)) return;
+        var candidate = await WorkflowLabelInspectionResources.CreateForEditingAsync(node, _baseDirectory(), _lifetime.Token, _cacheRuntime?.AnomalyImplementations);
         try
         {
             _lifetime.Token.ThrowIfCancellationRequested();
+            // 制库页可独立载图，不能等主工作台先载入配置样张才连接候选提取服务。
+            // 资源重载时也必须同步换掉引擎，避免仍借用随后被释放的旧编辑资源。
+            _workbench.AttachEngine(candidate.Engine);
             _workbench.AttachLibraryManager(candidate.Host.Store);
-            _workbench.AttachAnomalyLibraryManager(candidate.Host.Store.AnomalyLibraries, candidate.Host.AnomalyTrainer, candidate.Host.TemplateLocator);
+            _workbench.AttachAnomalyLibraryManager(candidate.Host.Store.AnomalyLibraries, candidate.Host.AnomalyTrainer, candidate.Host.TemplateLocator, candidate.Host.AnomalyTrainers);
             _resources?.Dispose(); _resources = candidate; candidate = null;
         }
         finally { candidate?.Dispose(); }
@@ -353,24 +474,42 @@ internal sealed class LabelWorkbenchControl : UserControl
         }
     }
     private string Root => Path.GetFullPath(_model.Node.ResourceRoot, Path.GetFullPath(_baseDirectory()));
-    private async Task LoadAuthorAsync()
+    private bool ValidateResourcePaths(InspectLabelNodeModel node, bool includeAuthor = false)
+    {
+        var paths = new List<(string Name, string Path)> { ("字库/模型库目录", node.DataDirectory) };
+        if (!string.IsNullOrWhiteSpace(node.RecognitionModelPath)) paths.Add(("OCR识别模型", node.RecognitionModelPath));
+        if (!string.IsNullOrWhiteSpace(node.AnomalyBackbonePath)) paths.Add(("异常检测骨干", node.AnomalyBackbonePath));
+        if (includeAuthor && !string.IsNullOrWhiteSpace(node.AuthorImagePath)) paths.Add(("配置样张", node.AuthorImagePath));
+        if (node.HasRecipe && _model.Serializer.Deserialize(node.RecipeJson).Mode == EInspectionMode.Template)
+            paths.Add(("参考图", node.ReferenceImagePath));
+        foreach (var (name, path) in paths)
+        {
+            if (WorkflowLabelInspectionResources.TryResolvePath(Root, path, out _, out var error)) continue;
+            _status.Text = $"{name}配置未通过：{error} 修改参数后点击“重载资源”。";
+            _run.Enabled = false;
+            return false;
+        }
+        return true;
+    }
+    private async Task<bool> LoadAuthorAsync()
     {
         if (string.IsNullOrWhiteSpace(_model.Node.AuthorImagePath)) throw new InvalidOperationException("请选择配置样张或载入上游预览。");
+        if (!ValidateResourcePaths(_model.Node, includeAuthor: true)) return false;
         using var frame = await WorkflowLabelInspectionResources.ReadImageAsync(Root, _model.Node.AuthorImagePath, _lifetime.Token);
-        await LoadAsync(frame);
+        return await LoadAsync(frame);
     }
     private async Task GuardAsync(Func<Task> action)
     {
         if (_loadingTask is not null || _loading || _workbench.IsInspectionRunning) { _status.Text = "请等待当前装配/试检测结束。"; return; }
-        _loadingTask = action();
-        try { await _loadingTask; }
+        try { _loadingTask = action(); await _loadingTask; }
         catch (OperationCanceledException) { if (!IsDisposed) _status.Text = "已取消。"; }
         catch (Exception error) { if (!IsDisposed) _status.Text = error.Message; }
         finally { _loadingTask = null; }
     }
-    private async Task LoadAsync(ImageFrame frame)
+    private async Task<bool> LoadAsync(ImageFrame frame)
     {
         if (_loading || _workbench.IsInspectionRunning) throw new InvalidOperationException("标签工作台正在运行。");
+        if (!ValidateResourcePaths(_model.Node)) return false;
         // 即使frame是本页的_actual，也必须在替换前保留独立句柄。
         using var input = frame.Retain();
         _loading = true;
@@ -385,24 +524,27 @@ internal sealed class LabelWorkbenchControl : UserControl
                 : _model.Serializer.Deserialize(node.RecipeJson);
             if (recipe.Width != input.Image.Info.Width || recipe.Height != input.Image.Info.Height) throw new InvalidDataException("配置图与配方尺寸不一致。");
             node.RecipeJson = _model.Serializer.Serialize(recipe);
-            candidate = await WorkflowLabelInspectionResources.CreateForEditingAsync(node, _baseDirectory(), _lifetime.Token);
+            candidate = await WorkflowLabelInspectionResources.CreateForEditingAsync(node, _baseDirectory(), _lifetime.Token, _cacheRuntime?.AnomalyImplementations);
             _lifetime.Token.ThrowIfCancellationRequested();
             _workbench.SetActualImage(input.Image);
             _workbench.SetReferenceImage(candidate.Reference?.Image, recipe.Alignment == EAlignmentMode.AssumeAligned);
             _workbench.ApplyRecipe(recipe);
             _workbench.AttachEngine(candidate.Engine);
             _workbench.AttachLibraryManager(candidate.Host.Store);
-            _workbench.AttachAnomalyLibraryManager(candidate.Host.Store.AnomalyLibraries, candidate.Host.AnomalyTrainer, candidate.Host.TemplateLocator);
+            _workbench.AttachAnomalyLibraryManager(candidate.Host.Store.AnomalyLibraries, candidate.Host.AnomalyTrainer, candidate.Host.TemplateLocator, candidate.Host.AnomalyTrainers);
             _resources?.Dispose(); _resources = candidate; candidate = null;
-            _actual?.Dispose(); _actual = input.Retain();
-            _rules?.Reload();
+            _actual?.Dispose(); _actual = input.Retain(); _displayingRun = false;
+            _editRois.Enabled = true; _drawKind.Enabled = true;
+            if (_rules is not null) _rules.Enabled = true;
+            SyncBusy(); _rules?.Reload();
             _status.Text = $"配置图 {input.FrameId}；{recipe.Name}；编辑结果在应用/确定时捕获，生产输入仍来自绑定。";
+            return true;
         }
-        finally { candidate?.Dispose(); _loading = false; if (!IsDisposed) _workbench.Enabled = true; }
+        finally { candidate?.Dispose(); _loading = false; if (!IsDisposed) _workbench.Enabled = _actual is not null && !_displayingRun; }
     }
     private InspectionRecipe? CaptureRecipe()
     {
-        if (_actual is null) return null;
+        if (_actual is null || _displayingRun) return null;
         using var request = _workbench.CreateRequest();
         var current = request.Recipe;
         string name = string.IsNullOrWhiteSpace(_model.Node.RecipeJson) ? "标签检测" : _model.Serializer.Deserialize(_model.Node.RecipeJson).Name;

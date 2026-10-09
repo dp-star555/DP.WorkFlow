@@ -31,6 +31,8 @@ public sealed class WorkflowStudioControl : UserControl
     private WorkflowDesignerNavigator? _navigator;
     private StackPanel? _toolbar;
     private int _toolWindowCount;
+    private bool _autoFitPending;
+    private bool _autoFitQueued;
 
     /// <summary>初始化集设计器、工具箱、诊断和运行控制于一体的工作室控件。</summary>
     public WorkflowStudioControl()
@@ -128,6 +130,7 @@ public sealed class WorkflowStudioControl : UserControl
         Properties.EditError += (_, message) => InteractionError?.Invoke(this, message);
         Properties.BlockMappingEditRequested += OnBlockMappingEditRequested;
         Properties.PropertyActionRequested += OnPropertyActionRequested;
+        Designer.SizeChanged += (_, _) => QueueAutoFit();
         Unloaded += (_, _) =>
         {
             SubscribeSession(null);
@@ -143,6 +146,7 @@ public sealed class WorkflowStudioControl : UserControl
         };
         Loaded += (_, _) =>
         {
+            QueueAutoFit();
             SubscribeSession(Session);
             if (_navigator is not null)
             {
@@ -341,6 +345,8 @@ public sealed class WorkflowStudioControl : UserControl
         control.Toolbox.Session = session;
         control.Diagnostics.Session = session;
         control.SubscribeSession(session);
+        control._autoFitPending = session is not null;
+        control.QueueAutoFit();
         control.UpdateCommands();
     }
 
@@ -348,6 +354,23 @@ public sealed class WorkflowStudioControl : UserControl
     {
         var control = (WorkflowStudioControl)dependencyObject;
         control.Diagnostics.EntryNodeId = (string?)e.NewValue;
+    }
+
+    // 在 Loaded 和布局完成后消费一次请求，避免用初始化时的零尺寸计算视口。
+    private void QueueAutoFit()
+    {
+        if (!_autoFitPending || _autoFitQueued || !IsLoaded)
+            return;
+        _autoFitQueued = true;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, (Action)(() =>
+        {
+            _autoFitQueued = false;
+            if (!IsLoaded || !_autoFitPending || Session is null
+                || Designer.ActualWidth <= 0 || Designer.ActualHeight <= 0)
+                return;
+            _autoFitPending = false;
+            Session.FitToView(Designer.ActualWidth, Designer.ActualHeight);
+        }));
     }
 
     /// <summary>执行 Subscribe Session 相关处理。</summary>

@@ -102,6 +102,7 @@ public partial class MainWindow : Window
             .Add<IWorkflowActionRegistry>(actions)
             .Add<IWorkflowVisionFrameScope>(_frameScope)
             .Add<IWorkflowLabelInspectionService>(_labelRuntime)
+            .Add<IWorkflowLabelRecipeInspectionService>(_labelRuntime)
             .Add<IWorkflowVisionFolderSource>(acquisition)
             .Add<IVisionAcquisition>(_visionAcquisition)
             .Add<IWorkflowVisionSourceCatalog>(_visionSources)
