@@ -152,6 +152,14 @@ public sealed class LabelInspectionEditorTests
             Assert.DoesNotContain("LabelInspection.Command.GlyphQuickBuilder", actions);
             Assert.Contains("LabelInspection.Command.ImportRecipe", actions);
             Assert.Contains(Descendants(dialog).OfType<ModernUI.WinForms.ModernSelect>(), select => select.Items.Count == control.DrawKinds.Count);
+            // 工具栏：画布显示下拉；ROI默认可直接选中/调整，不再有“选中/调整”按钮。
+            var display = Assert.Single(Descendants(dialog).OfType<ModernUI.WinForms.ModernSelect>(), select => select.Items.Contains("检测结果"));
+            Assert.Equal(new object[] { "输入图像", "输入图像 + ROI", "检测结果" }, display.Items.Cast<object>().ToArray());
+            display.SelectedIndex = 0;
+            Assert.Equal(DP.LabelInspection.WorkbenchDisplayMode.InputImage, control.DisplayMode);
+            display.SelectedIndex = 2;
+            Assert.True(control.EditRegionsMode);
+            Assert.DoesNotContain(Descendants(dialog).OfType<ToolStrip>().SelectMany(t => t.Items.OfType<ToolStripItem>()), item => item.Text == "选中/调整");
             control.SetRegions(new[] { new InspectionRegion("changed", ERegionKind.Blank, new DP.Vision.Algorithms.PixelBounds(8, 8, 24, 24))
                 .WithTasks(new RoiInspectionTasks(false, false)) });
             editor.ApplyChanges();
@@ -372,7 +380,7 @@ public sealed class LabelInspectionEditorTests
                     var pixels = Enumerable.Repeat((byte)255, 64 * 32).ToArray();
                     builder.SetImage(new PixelSnapshot(64, 32, EImagePixelFormat.Gray8, pixels));
                     builder.SetRegion(new DP.Vision.Algorithms.PixelBounds(0, 0, 64, 32));
-                    var extract = Descendants(builder).OfType<ModernUI.WinForms.ModernButton>().Single(b => b.Text == "提取当前ROI（OCR）");
+                    var extract = Descendants(builder).OfType<ToolStrip>().SelectMany(t => t.Items.OfType<ToolStripButton>()).Single(b => b.Text == "提取当前ROI（OCR）");
                     Assert.True(extract.Enabled, "未载入主工作台样张，仅在制库页载图也必须连接已装配的提取服务。");
                 }
                 catch (Exception error) { failure = error; }

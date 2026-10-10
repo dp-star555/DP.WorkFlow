@@ -74,10 +74,18 @@ internal sealed class LabelWorkbenchControl : UserControl
     };
     private readonly ToolTip _statusTip = new() { AutoPopDelay = 15000 };
     private readonly ModernToolStrip _toolbar = new() { Dock = DockStyle.Top, Theme = Theme };
-    private readonly ModernSelect _drawKind = new() { Size = new Size(150, 30), Theme = Theme, DropDownAnimationDuration = 0 };
-    private readonly ToolStripButton _editRois = new("选中/调整") { CheckOnClick = true, ToolTipText = "开启后左键选中并移动/缩放ROI；按住Shift仍可新建" };
-    private readonly ToolStripButton _run = new("开始检测") { ToolTipText = "按当前ROI与规则试检测当前图像（不发布生产输出）" };
-    private readonly ToolStripButton _cancel = new("取消") { Enabled = false, ToolTipText = "取消正在进行的试检测" };
+    private readonly ModernSelect _display = ToolSelect(130);
+    private readonly ModernSelect _drawKind = ToolSelect(150);
+    private readonly ToolStripButton _run = IconItem("开始检测", ModernIconKind.Play, "按当前ROI与规则试检测当前图像（不发布生产输出）", true);
+    private readonly ToolStripButton _cancel = IconItem("取消", ModernIconKind.Stop, "取消正在进行的试检测", true);
+    private const int ControlHeight = 32, IconPixels = 32;
+    // 画布显示下拉：与SDK显示模式一一对应。
+    private static readonly (string Text, DP.LabelInspection.WorkbenchDisplayMode Mode)[] DisplayModes =
+    {
+        ("输入图像", DP.LabelInspection.WorkbenchDisplayMode.InputImage),
+        ("输入图像 + ROI", DP.LabelInspection.WorkbenchDisplayMode.Regions),
+        ("检测结果", DP.LabelInspection.WorkbenchDisplayMode.Result),
+    };
     private readonly CancellationTokenSource _lifetime = new();
     private DP.LabelInspection.RegionRulesControl? _rules;
     private WorkflowLabelInspectionResources? _resources;
@@ -145,9 +153,18 @@ internal sealed class LabelWorkbenchControl : UserControl
 
     private void BuildToolbar()
     {
-        Button("载入上游预览", "载入本轮上游图像；绑定标签坐标系时同时记录或对齐参考位姿", () => GuardAsync(LoadUpstreamAsync));
-        Button("显示运行结果", "显示本节点最近一次正式运行的图像与报告", () => GuardAsync(ShowRunResultAsync));
+        Button("载入上游预览", ModernIconKind.NavigateUp, "载入本轮上游图像；绑定标签坐标系时同时记录或对齐参考位姿", true, () => GuardAsync(LoadUpstreamAsync));
+        Button("显示运行结果", ModernIconKind.Info, "显示本节点最近一次正式运行的图像与报告", true, () => GuardAsync(ShowRunResultAsync));
         _toolbar.Items.Add(new ToolStripSeparator());
+        foreach (var (text, _) in DisplayModes) _display.Items.Add(text);
+        _display.SelectedIndex = Array.FindIndex(DisplayModes, m => m.Mode == _workbench.DisplayMode);
+        _display.SelectedIndexChanged += (_, _) =>
+        {
+            if (!_syncing && _display.SelectedIndex >= 0) _workbench.DisplayMode = DisplayModes[_display.SelectedIndex].Mode;
+        };
+        _workbench.DisplayModeChanged += (_, _) => Sync(() => _display.SelectedIndex = Array.FindIndex(DisplayModes, m => m.Mode == _workbench.DisplayMode));
+        _toolbar.Items.Add(IconLabel("显示", ModernIconKind.Eye));
+        _toolbar.Items.Add(Host(_display, "画布显示内容：仅输入图像 / 叠加ROI（可编辑）/ 检测结果"));
         foreach (var kind in _workbench.DrawKinds) _drawKind.Items.Add(kind);
         _drawKind.SelectedItem = _workbench.DrawKind;
         _drawKind.SelectedIndexChanged += (_, _) =>
@@ -156,26 +173,68 @@ internal sealed class LabelWorkbenchControl : UserControl
             _workbench.DrawKind = kind;
         };
         _workbench.DrawKindChanged += (_, _) => Sync(() => _drawKind.SelectedItem = _workbench.DrawKind);
-        _toolbar.Items.Add(new ToolStripLabel("新建ROI"));
-        _toolbar.Items.Add(new ToolStripControlHost(_drawKind)
-        { AutoSize = false, Size = _drawKind.Size, Margin = new Padding(2, 1, 2, 1), ToolTipText = "左键拖动新建ROI时的区域类型" });
-        _editRois.CheckedChanged += (_, _) => { if (!_syncing) _workbench.EditRegionsMode = _editRois.Checked; };
-        _workbench.EditRegionsModeChanged += (_, _) => Sync(() => _editRois.Checked = _workbench.EditRegionsMode);
-        _toolbar.Items.Add(_editRois);
+        _toolbar.Items.Add(IconLabel("新建ROI", ModernIconKind.Rectangle));
+        _toolbar.Items.Add(Host(_drawKind, "在框外左键拖动新建ROI时的区域类型；单击ROI选中后可直接拖动调整，Delete删除"));
         _toolbar.Items.Add(new ToolStripSeparator());
-        Button("适应窗口", "画布适应窗口（Home）", () => { _workbench.FitToWindow(); return Task.CompletedTask; });
-        Button("1:1", "按原始像素显示", () => { _workbench.ActualSize(); return Task.CompletedTask; });
+        Button("适应窗口", ModernIconKind.FitWindow, "画布适应窗口（Home）", false, () => { _workbench.FitToWindow(); return Task.CompletedTask; });
+        Button("1:1", ModernIconKind.Search, "按原始像素显示（1:1）", false, () => { _workbench.ActualSize(); return Task.CompletedTask; });
         _toolbar.Items.Add(new ToolStripSeparator());
         _run.Click += async (_, _) => await GuardAsync(RunTrialAsync);
         _cancel.Click += (_, _) => _workbench.CancelInspection();
+        _cancel.Enabled = false;
         _toolbar.Items.Add(_run); _toolbar.Items.Add(_cancel);
+        HandleCreated += (_, _) => FitToolbar();
+        FontChanged += (_, _) => FitToolbar();
 
-        void Button(string text, string tip, Func<Task> action)
+        void Button(string text, ModernIconKind icon, string tip, bool showText, Func<Task> action)
         {
-            var button = new ToolStripButton(text) { ToolTipText = tip };
+            var button = IconItem(text, icon, tip, showText);
             button.Click += async (_, _) => await action();
             _toolbar.Items.Add(button);
         }
+    }
+
+    private static ModernSelect ToolSelect(int width) => new() { Size = new Size(width, ControlHeight), Theme = Theme, DropDownAnimationDuration = 0 };
+
+    private static ToolStripButton IconItem(string text, ModernIconKind icon, string tip, bool showText) =>
+        new(text, ModernIcons.CreateBitmap(icon, Theme.Text, IconPixels))
+        {
+            DisplayStyle = showText ? ToolStripItemDisplayStyle.ImageAndText : ToolStripItemDisplayStyle.Image,
+            ToolTipText = tip, AutoToolTip = false, Padding = new Padding(4, 0, 4, 0),
+        };
+
+    private static ToolStripLabel IconLabel(string text, ModernIconKind icon) =>
+        new(text, ModernIcons.CreateBitmap(icon, Theme.TextSecondary, IconPixels)) { DisplayStyle = ToolStripItemDisplayStyle.ImageAndText };
+
+    // 宿主宽度保存在Tag中（逻辑像素），高度统一；二者随DPI重算，内嵌控件与宿主同尺寸，避免高低不一。
+    private static ToolStripControlHost Host(Control control, string tip) => new(control)
+    { AutoSize = false, Size = control.Size, Tag = control.Width, ToolTipText = tip };
+
+    private void FitToolbar()
+    {
+        if (IsDisposed) return;
+        int Scale(int logical) => LogicalToDeviceUnits(logical);
+        _toolbar.SuspendLayout();
+        try
+        {
+            _toolbar.Padding = new Padding(Scale(6), Scale(4), Scale(6), Scale(4));
+            _toolbar.ImageScalingSize = new Size(Scale(20), Scale(20));
+            foreach (var host in _toolbar.Items.OfType<ToolStripControlHost>())
+            {
+                var size = new Size(Scale(host.Tag is int width ? width : host.Control.Width), Scale(ControlHeight));
+                host.Control.MinimumSize = Size.Empty;
+                host.Control.Size = size; host.Size = size;
+                host.Margin = new Padding(Scale(2), 0, Scale(2), 0);
+            }
+        }
+        finally { _toolbar.ResumeLayout(true); }
+    }
+
+    /// <inheritdoc/>
+    protected override void OnDpiChangedAfterParent(EventArgs e)
+    {
+        base.OnDpiChangedAfterParent(e);
+        FitToolbar();
     }
 
     private void Sync(Action action)
@@ -256,11 +315,12 @@ internal sealed class LabelWorkbenchControl : UserControl
             _workbench.SetActualImage(display.Image); _workbench.SetReferenceImage(null, true); _workbench.ApplyRecipe(recipe);
             _actual?.Dispose(); _actual = display.Retain(); _displayingRun = true;
             _workbench.Enabled = false; _run.Enabled = false;
-            _editRois.Enabled = false; _drawKind.Enabled = false;
+            _drawKind.Enabled = false;
             if (_rules is not null) _rules.Enabled = false;
         }
         else if (!await LoadAsync(display)) return;
         _workbench.ShowReport(result.Report);
+        _workbench.DisplayMode = DP.LabelInspection.WorkbenchDisplayMode.Result;
         _status.Text = $"本次运行（{result.FrameId}）：{result.Summary}" + (result.RecipeId is null ? "" : $"；{result.RecipeId}@{result.RecipeVersion}")
             + (result.Placement is null ? "" : "；已按定位对齐到配置帧显示")
             + (_displayingRun ? "；实际运行版本只读，编辑/试检测请先载入目录配方或配置图。" : "。");
@@ -268,6 +328,7 @@ internal sealed class LabelWorkbenchControl : UserControl
 
     private async Task RunTrialAsync()
     {
+        _workbench.DisplayMode = DP.LabelInspection.WorkbenchDisplayMode.Result;
         try { await _workbench.RunInspectionAsync(); }
         catch (ArgumentException error) { MessageBox.Show(this, error.Message, "检测配置未通过", MessageBoxButtons.OK, MessageBoxIcon.Warning); throw; }
     }
@@ -534,7 +595,7 @@ internal sealed class LabelWorkbenchControl : UserControl
             _workbench.AttachAnomalyLibraryManager(candidate.Host.Store.AnomalyLibraries, candidate.Host.AnomalyTrainer, candidate.Host.TemplateLocator, candidate.Host.AnomalyTrainers);
             _resources?.Dispose(); _resources = candidate; candidate = null;
             _actual?.Dispose(); _actual = input.Retain(); _displayingRun = false;
-            _editRois.Enabled = true; _drawKind.Enabled = true;
+            _drawKind.Enabled = true;
             if (_rules is not null) _rules.Enabled = true;
             SyncBusy(); _rules?.Reload();
             _status.Text = $"配置图 {input.FrameId}；{recipe.Name}；编辑结果在应用/确定时捕获，生产输入仍来自绑定。";
