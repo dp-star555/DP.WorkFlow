@@ -138,7 +138,7 @@ public sealed class GlyphLibraryBrowserTests
     }
 
     [Fact]
-    public void BuilderRefresh_PreservesDraftAndPending_AndRejectsChangingPendingOwner()
+    public void BuilderRefresh_PreservesDraftCandidates_WhenSwitchingTarget()
     {
         Run(() =>
         {
@@ -147,22 +147,19 @@ public sealed class GlyphLibraryBrowserTests
             using var builder = new GlyphQuickBuilderControl();
             builder.AttachServices(rig.Store, selectedLibrary: rig.Id);
             builder.SetCandidate(Frame(), "X");
-            Assert.Equal(0, builder.PendingCount);
             Assert.Single(builder.Candidates.Rows.Cast<DataGridViewRow>());
-            builder.Candidates.Rows[0].Cells["Use"].Value = true;
-            builder.StageSelected();
             builder.RefreshLibraries(rig.Id);
-            Assert.Equal(1, builder.PendingCount);
             Assert.Equal(rig.Id, builder.SelectedLibraryId);
             Assert.Equal("X", builder.Candidates.Rows[0].Cells["Character"].Value);
-            Assert.Throws<InvalidOperationException>(() => builder.RefreshLibraries(other));
-            Assert.Equal(1, builder.PendingCount);
-            Assert.Equal(rig.Id, builder.SelectedLibraryId);
+            // 没有跨图待入库清单：切换目标字库只改变保存位置，当前图候选保留。
+            builder.RefreshLibraries(other);
+            Assert.Equal(other, builder.SelectedLibraryId);
+            Assert.Equal("X", builder.Candidates.Rows[0].Cells["Character"].Value);
         });
     }
 
     [Fact]
-    public void EditingStoredGlyph_OnlyPublishesFromBuilder_AndKeepsBinarizationInPendingSnapshot()
+    public void EditingStoredGlyph_OnlyPublishesFromBuilder_AndKeepsBinarization()
     {
         Run(() =>
         {
@@ -171,17 +168,13 @@ public sealed class GlyphLibraryBrowserTests
             using var builder = new GlyphQuickBuilderControl();
             builder.AttachServices(rig.Store, selectedLibrary: rig.Id);
             builder.EditStoredGlyph("A");
-            Assert.Equal(0, builder.PendingCount);
             Assert.Equal(4, rig.Store.Latest(rig.Id));
             Assert.Equal("A", builder.Candidates.Rows[0].Cells["Character"].Value);
             Assert.Equal("midpoint", Field<ModernSelect>(builder, "_binarization").SelectedItem);
             builder.Candidates.Rows[0].Cells["Use"].Value = true;
-            builder.StageSelected();
-            Assert.Equal(1, builder.PendingCount);
-            Field<ModernSelect>(builder, "_binarization").SelectedItem = "fixed";
             builder.RefreshLibraries(rig.Id);
             Assert.True(Field<ModernCheckbox>(builder, "_replace").Checked);
-            Assert.Equal(5, builder.SavePending());
+            Assert.Equal(5, builder.SaveSelected());
             Assert.Equal("midpoint", rig.Store.Load(rig.Id, 5).Glyphs["A"].Binarization);
             Assert.Equal("midpoint", rig.Store.Load(rig.Id, 4).Glyphs["A"].Binarization);
         });
@@ -217,8 +210,7 @@ public sealed class GlyphLibraryBrowserTests
                     builder.SetCandidate(Frame(), "X");
                     object candidate = builder.Candidates.Rows[0].Tag!;
                     builder.Candidates.Rows[0].Cells["Use"].Value = true;
-                    builder.StageSelected();
-                    builder.SavePending();
+                    builder.SaveSelected();
                     tabs.SelectedIndex = 0;
                     Assert.Equal(other, browser.SelectedLibraryId);
                     Assert.Equal("X", browser.SelectedCharacter);

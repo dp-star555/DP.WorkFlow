@@ -19,14 +19,14 @@ public sealed class GlyphMultiRoiWorkbenchTests
         {
             using var rig = new Rig(form, new FixtureService());
             rig.Page.SetRegion(new PixelRect(0, 0, 64, 32));
-            Assert.True(Field<ModernButton>(rig.Page, "_recognize").Enabled);
-            Assert.True(Field<ModernButton>(rig.Page, "_segment").Enabled);
-            Assert.True(Field<ModernButton>(rig.Page, "_extractAll").Enabled);
+            Assert.True(Field<ToolStripButton>(rig.Page, "_recognize").Enabled);
+            Assert.True(Field<ToolStripButton>(rig.Page, "_segment").Enabled);
+            Assert.True(Field<ToolStripButton>(rig.Page, "_extractAll").Enabled);
             return Task.CompletedTask;
         });
 
     [Fact]
-    public Task RecognizeThenEdit_StagesWithoutAdditionalCharacterConfirmation() =>
+    public Task RecognizeThenEdit_SavesWithoutAdditionalCharacterConfirmation() =>
         RunStaAsync(async form =>
         {
             using var rig = new Rig(form, new FixtureService());
@@ -34,9 +34,8 @@ public sealed class GlyphMultiRoiWorkbenchTests
             await rig.Page.ExtractAsync();
             rig.Page.Candidates.Rows[0].Cells["Character"].Value = "中";
             rig.Page.Candidates.Rows[0].Cells["Use"].Value = true;
-            rig.Page.StageSelected();
-            Assert.Equal(1, rig.Page.PendingCount);
-            rig.Page.SavePending();
+            // 勾选后直接保存为新修订，没有待入库清单。
+            Assert.Equal(2, rig.Page.SaveSelected());
             Assert.Contains("中", rig.Store.Load(rig.Id, 2).Glyphs.Keys);
             string json = rig.Store.ExportLibrary(rig.Id, 2);
             Assert.Contains("user_selected", json);
@@ -141,7 +140,7 @@ public sealed class GlyphMultiRoiWorkbenchTests
         });
 
     [Fact]
-    public Task MultiRoiCandidates_PublishWithSourceRoi_AndSurviveNextImageAsPending() =>
+    public Task MultiRoiCandidates_PublishWithSourceRoi() =>
         RunStaAsync(async form =>
         {
             using var rig = new Rig(form, new FixtureService());
@@ -150,13 +149,10 @@ public sealed class GlyphMultiRoiWorkbenchTests
             await rig.Page.ExtractAllAsync();
             foreach (DataGridViewRow row in rig.Page.Candidates.Rows)
                 row.Cells["Use"].Value = true;
-            rig.Page.StageSelected();
-            Assert.Equal(3, rig.Page.PendingCount);
+            Assert.Equal(2, rig.Page.SaveSelected());
             rig.Page.SetImage(Frame());
             Assert.Empty(rig.Page.Regions);
             Assert.Empty(Labels(rig.Page));
-            Assert.Equal(3, rig.Page.PendingCount);
-            Assert.Equal(2, rig.Page.SavePending());
             var json = rig.Store.ExportLibrary(rig.Id, 2);
             Assert.Contains("source_roi_id", json);
             Assert.Contains("ROI 1", json);
@@ -165,7 +161,7 @@ public sealed class GlyphMultiRoiWorkbenchTests
         });
 
     [Fact]
-    public Task DuplicateLabel_OnlySelectedRoiProvidesPendingSource() =>
+    public Task DuplicateLabel_OnlySelectedRoiProvidesSavedSource() =>
         RunStaAsync(async form =>
         {
             using var rig = new Rig(form, new FixtureService());
@@ -175,10 +171,7 @@ public sealed class GlyphMultiRoiWorkbenchTests
                 await rig.Page.ExtractAsync("中");
             }
             rig.Page.Candidates.Rows[1].Cells["Use"].Value = true;
-            rig.Page.StageSelected();
-            var pending = Field<DataGridView>(rig.Page, "_pending");
-            Assert.Contains("ROI 2", Convert.ToString(pending.Rows[0].Cells[2].Value)!);
-            rig.Page.SavePending();
+            rig.Page.SaveSelected();
             string json = rig.Store.ExportLibrary(rig.Id, 2);
             Assert.Contains("ROI 2", json);
             Assert.DoesNotContain("ROI 1", json);

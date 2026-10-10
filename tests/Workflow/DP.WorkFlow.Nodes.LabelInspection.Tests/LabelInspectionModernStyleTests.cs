@@ -25,6 +25,11 @@ public sealed class LabelInspectionModernStyleTests
             var gallery = Assert.IsType<FlowLayoutPanel>(Field(page, "_glyphGallery"));
             Assert.IsType<ModernScrollView>(gallery.Parent);
             Assert.False(gallery.AutoScroll);
+            // 单字比较卡片按宽度换行；ROI默认可直接选中/调整，画布默认显示检测结果。
+            Assert.True(gallery.WrapContents);
+            Assert.False(gallery.AutoSize);
+            Assert.True(page.EditRegionsMode);
+            Assert.Equal(WorkbenchDisplayMode.Result, page.DisplayMode);
             var tabs = Assert.Single(ApplicationControls(page).OfType<ModernTabControl>());
             Assert.Same(ModernTheme.Dark, tabs.Theme);
             Assert.Equal(new[] { "检查证据", "缺陷标记 / 单字" }, tabs.TabPages.Cast<TabPage>().Select(p => p.Text));
@@ -60,26 +65,37 @@ public sealed class LabelInspectionModernStyleTests
     }
 
     [Fact]
-    public void MultiImageBuilder_UsesModernEditorsTablesAndScrollers()
+    public void MultiImageBuilder_UsesModernToolbarsEditorsAndTables()
     {
         Run(() =>
         {
             using var page = new GlyphQuickBuilderControl();
-            foreach (var name in new[] { "_libraries", "_mode", "_regionsBox" })
+            foreach (var name in new[] { "_libraries", "_mode", "_regionsBox", "_binarization" })
                 Assert.IsType<ModernSelect>(Field(page, name));
             Assert.IsType<ModernInput>(Field(page, "_text"));
-            Assert.IsType<ModernTextArea>(Field(page, "_coverage"));
-            Assert.IsType<ModernListBox>(Field(page, "_saved"));
-            Assert.IsType<ModernCheckbox>(Field(page, "_replace"));
+            var replace = Assert.IsType<ModernCheckbox>(Field(page, "_replace"));
+            Assert.Equal("允许替换", replace.Text);
             foreach (var name in new[] { "_recognize", "_segment", "_extractAll", "_cancelButton" })
-                Assert.IsType<ModernButton>(Field(page, name));
+                Assert.IsType<ToolStripButton>(Field(page, name));
+            foreach (var name in new[] { "_libraryBar", "_editBar" })
+            {
+                var bar = Assert.IsType<ModernToolStrip>(Field(page, name));
+                Assert.Same(ModernTheme.Dark, bar.Theme);
+                // 内嵌下拉框/输入框与宿主同尺寸且同高，避免被裁切或高低不一。
+                var hosts = bar.Items.OfType<ToolStripControlHost>().ToArray();
+                Assert.NotEmpty(hosts);
+                Assert.All(hosts, host => Assert.Equal(host.Size, host.Control.Size));
+                Assert.Single(hosts.Select(host => host.Height).Distinct());
+            }
+            var buttons = ApplicationControls(page).OfType<ModernButton>().Select(b => b.Text).ToArray();
+            Assert.DoesNotContain("选择有标签项", buttons);
+            Assert.DoesNotContain("取消选择", buttons);
+            Assert.Contains("保存选中到字库", buttons);
             var candidates = Assert.IsType<ModernDataGridView>(page.Candidates);
-            var pending = Assert.IsType<ModernDataGridView>(Field(page, "_pending"));
             Assert.False(candidates.ReadOnly);
-            Assert.True(pending.ReadOnly);
             Assert.Equal(65, candidates.RowTemplate.Height);
             Assert.Same(ModernTheme.Dark, candidates.Theme);
-            Assert.Equal(2, ApplicationControls(page).OfType<ModernSplitter>().Count());
+            Assert.Equal(3, ApplicationControls(page).OfType<ModernSplitter>().Count());
         });
     }
 
