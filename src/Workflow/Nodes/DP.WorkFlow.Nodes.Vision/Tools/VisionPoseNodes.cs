@@ -83,12 +83,15 @@ public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeMo
     /// <summary>保守工作量预算。</summary>
     [WorkflowProperty("比较预算", "最多20亿；OpenCV约束像素比较量，HALCON约束候选ROI验证量。超限失败，不截断候选。", Category = "搜索")]
     public long MaximumWork { get; set; } = 200000000;
+    /// <summary>原生搜索最多返回的候选数。</summary>
+    [WorkflowProperty("最大候选数", "1..1024。HALCON按分数从高到低最多返回这么多个候选，再逐个检查模板是否完整落在搜索区域内；调小可减少搜索耗时和内存。OpenCV逐位置比较，不使用此参数。", Category = "搜索")]
+    public int MaximumCandidates { get; set; } = 32;
     internal TemplatePoseOptions Options(VisionCoordinateSystem? parent = null)
     {
         double rotation = parent == null ? 0 : Math.Atan2(Math.Sin(parent.RotationRadians), Math.Cos(parent.RotationRadians));
         double scale = parent?.SimilarityScale ?? 1;
         return new(MinimumAngleRadians + rotation, MaximumAngleRadians + rotation, MinimumScale * scale, MaximumScale * scale,
-            MinimumScore, MaximumWork, AngleStepRadians, ScaleStep * scale);
+            MinimumScore, MaximumWork, AngleStepRadians, ScaleStep * scale, MaximumCandidates);
     }
     /// <summary>制作界面沿用运行搜索区间、采样步长和比较预算。</summary>
     public TemplatePoseOptions OptionsForPreview(VisionCoordinateSystem? parent = null) => Options(parent);

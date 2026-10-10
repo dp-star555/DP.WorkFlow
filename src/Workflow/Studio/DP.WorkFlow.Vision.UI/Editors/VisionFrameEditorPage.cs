@@ -196,7 +196,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         var bounds = roiSelfTest ? new PixelBounds(definition.X, definition.Y, definition.Width, definition.Height)
             : new PixelBounds(0, 0, frame.Image.Info.Width, frame.Image.Info.Height);
         var pose = (LocateVisionTemplatePoseNodeModel)_node;
-        var options = roiSelfTest ? new TemplatePoseOptions(0d, 0d, 1d, 1d, pose.MinimumScore, pose.MaximumWork) : pose.OptionsForPreview();
+        var options = roiSelfTest ? new TemplatePoseOptions(0d, 0d, 1d, 1d, pose.MinimumScore, pose.MaximumWork, maximumCandidates: pose.MaximumCandidates) : pose.OptionsForPreview();
         return (bounds, options);
     }
     /// <summary>隔离节点当前保存的模板清单引用。</summary>
