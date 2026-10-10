@@ -37,7 +37,7 @@ public sealed partial class VisionTemplateEditorModel
         {
             var bounds = new PixelBounds(build.Definition.X, build.Definition.Y, build.Definition.Width, build.Definition.Height);
             var pose = (LocateVisionTemplatePoseNodeModel)_node;
-            var options = new TemplatePoseOptions(0d, 0d, 1d, 1d, pose.MinimumScore, pose.MaximumWork);
+            var options = new TemplatePoseOptions(0d, 0d, 1d, 1d, pose.MinimumScore, pose.MaximumWork, maximumCandidates: pose.MaximumCandidates);
             _buildSearchSummary = DescribeSearch(source, bounds, options);
             var result = await MatchModelAsync(build, source, bounds, options);
             if (_disposed || generation != _generation || key != Key()) return;
