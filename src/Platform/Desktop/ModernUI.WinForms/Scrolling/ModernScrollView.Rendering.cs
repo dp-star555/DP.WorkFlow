@@ -40,7 +40,9 @@ public sealed partial class ModernScrollView
     private void SetOffset(int value)
     {
         var next = ModernCompatibility.Clamp(value, 0, MaximumOffset);
-        if (_offset == next) return;
+        // 内容重建、焦点自动滚动等会直接改动显示区位置；只有缓存偏移与实际位置都已一致才跳过，
+        // 否则会出现“内容显示在顶端、滚动条仍在中间、一滚动又跳回原处”的错位。
+        if (_offset == next && -DisplayRectangle.Top == next) return;
         SetDisplayRectLocation(0, -next);
         _offset = ModernCompatibility.Clamp(-DisplayRectangle.Top, 0, MaximumOffset);
         HideNativeScrollBars();

@@ -34,6 +34,8 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
     private long _revision = -1;
     private IReadOnlyList<VisionTemplateResourceChoice>? _listed;
     private string _reference = "";
+    private string _schema = "";
+    private readonly Dictionary<string, object?> _shown = new(StringComparer.Ordinal);
 
     internal VisionTemplateWorkspaceControl(VisionTemplateAuthoringPageModel model)
     {
@@ -55,7 +57,7 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         _properties.RegisterEditor(new ChoiceEditor());
         _properties.RegisterEditor(new ActionEditor(this));
         _properties.RegisterEditor(new ReadOnlyEditor(this));
-        _properties.PropertyValueChanged += (_, _) => { RefreshProperties(); RefreshState(); };
+        _properties.PropertyValueChanged += (_, e) => { RefreshProperties(e.Property.Name); RefreshState(); };
         bool opened = false;
         Load += async (_, _) => { if (opened) return; opened = true; await Run(model.OpenAsync, "读取模板"); };
         _timer.Tick += (_, _) => { if (!IsDisposed) { RefreshPropertiesIfChanged(); RefreshState(); } }; _timer.Start();
@@ -70,12 +72,37 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         finally { _running = false; _model.IsOperating = false; if (!IsDisposed && !_model.Draft.IsDisposed) { RefreshProperties(); RefreshState(); _frame.RefreshPreview(); } }
     }
     private void RefreshPropertiesIfChanged() { if (_revision != _model.Draft.EditRevision || !ReferenceEquals(_listed, _model.Draft.Resources) || _reference != _model.Frame.TemplateReference) RefreshProperties(); }
-    private void RefreshProperties()
+    /// <summary>
+    /// 属性结构（名称、类型、分组、候选及所选项、范围、只读）未变时只同步值，保留编辑器、焦点和滚动位置；
+    /// 结构变化时才重建表格。<paramref name="edited"/>为刚提交的属性，不回写它的编辑器，避免打断正在输入的数字。
+    /// </summary>
+    private void RefreshProperties(string? edited = null)
     {
         if (_model.Draft.IsDisposed) return;
-        _revision = _model.Draft.EditRevision; _listed = _model.Draft.Resources; _reference = _model.Frame.TemplateReference; _actions.Clear(); _readOnly.Clear();
-        _properties.SelectedObject = new PropertyObject(_model.Properties(ExecuteCommand));
+        _revision = _model.Draft.EditRevision; _listed = _model.Draft.Resources; _reference = _model.Frame.TemplateReference;
+        var entries = _model.Properties(ExecuteCommand);
+        var schema = Schema(entries);
+        if (_properties.SelectedObject is PropertyObject current && schema == _schema)
+        {
+            current.Entries = entries;
+            foreach (var entry in entries)
+            {
+                var value = entry.Value;
+                bool changed = !_shown.TryGetValue(entry.Name, out var shown) || !Equals(shown, value);
+                _shown[entry.Name] = value;
+                if (changed && entry.Name != edited) _properties.RefreshProperty(entry.Name);
+            }
+            return;
+        }
+        _schema = schema; _actions.Clear(); _readOnly.Clear(); _shown.Clear();
+        foreach (var entry in entries) _shown[entry.Name] = entry.Value;
+        _properties.SelectedObject = new PropertyObject(entries);
     }
+    private static string Schema(IReadOnlyList<WorkflowPropertyEntry> entries) => string.Join("\u001f", entries.Select(e => string.Join("\u001e",
+        e.Name, e.EditorKind, e.ValueType.FullName, e.DisplayName, e.Category, e.IsReadOnly, e.NumberMinimum, e.NumberMaximum,
+        string.Join("\u001c", e.Choices.Select(c => c.Label + "\u001b" + c.Value)),
+        // 下拉框使用自定义候选项，表格的就地刷新不能匹配；所选值变化时重建。
+        e.EditorKind == WorkflowPropertyEditorKind.Choice ? e.Value : null)));
     private async Task ExecuteCommand(EVisionTemplateAuthoringCommand command)
     {
         if (_model.CommandBlockReason(command).Length != 0) return;
@@ -174,7 +201,9 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
     }
     private sealed class PropertyObject(IReadOnlyList<WorkflowPropertyEntry> entries) : CustomTypeDescriptor
     {
-        public override PropertyDescriptorCollection GetProperties() => new(entries.Select((e, order) => (PropertyDescriptor)new EntryProperty(e, order)).ToArray());
+        // 结构不变时替换为最新条目，值刷新读取当前条目。
+        internal IReadOnlyList<WorkflowPropertyEntry> Entries { get; set; } = entries;
+        public override PropertyDescriptorCollection GetProperties() => new(Entries.Select((e, order) => (PropertyDescriptor)new EntryProperty(e, order)).ToArray());
         public override PropertyDescriptorCollection GetProperties(Attribute[]? attributes) => GetProperties();
         public override object GetPropertyOwner(PropertyDescriptor? pd) => this;
     }

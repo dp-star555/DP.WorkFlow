@@ -967,6 +967,9 @@ public sealed class VisionTemplateAuthoringTests
                 Assert.Equal("", issue);
                 Assert.Equal(value, levels.Value);
                 Assert.Equal((decimal)value, number.Value);
+                // 提交数值不重建属性表：正在编辑的输入框保持同一实例，焦点与滚动位置不丢。
+                Assert.False(number.IsDisposed);
+                Assert.Same(number, FormsDescendants(root).OfType<ModernUI.WinForms.ModernInputNumber>().Single(c => c.AccessibleName == "金字塔层数"));
                 Assert.Equal(0m, number.Minimum);
                 Assert.Equal(6m, number.Maximum);
                 Assert.False(number.Controls.OfType<ModernUI.WinForms.ModernButton>().Single(b => b.AccessibleName == (increase ? "增加" : "减少")).Enabled);
