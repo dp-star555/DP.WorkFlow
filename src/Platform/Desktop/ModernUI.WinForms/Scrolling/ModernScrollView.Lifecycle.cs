@@ -37,6 +37,15 @@ public sealed partial class ModernScrollView
         base.WndProc(ref message);
     }
 
+    // 子控件获得焦点时，WinForms 按返回的位置直接设置显示区，不经过 SetOffset；同步自绘滚动条使用的偏移。
+    protected override Point ScrollToControl(Control activeControl)
+    {
+        var location = base.ScrollToControl(activeControl);
+        _offset = ModernCompatibility.Clamp(-location.Y, 0, MaximumOffset);
+        InvalidateScrollBarGutter();
+        return location;
+    }
+
     protected override void OnScroll(ScrollEventArgs se)
     {
         base.OnScroll(se);

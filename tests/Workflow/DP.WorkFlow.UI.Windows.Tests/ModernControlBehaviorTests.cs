@@ -5435,6 +5435,35 @@ public sealed class ModernControlBehaviorTests
     }
 
     [Fact]
+    public void ScrollOffset_ResyncsWhenDisplayPositionWasMovedOutsideTheScrollView()
+    {
+        RunInSta(() =>
+        {
+            using var host = new Form { ClientSize = new Size(320, 220), ShowInTaskbar = false };
+            using var scroll = new ModernScrollView { Dock = DockStyle.Fill };
+            var content = new Panel { AutoSize = true };
+            content.Controls.Add(new Label { Location = new Point(12, 620), Text = "Bottom" });
+            scroll.Content = content;
+            host.Controls.Add(scroll);
+            host.Show();
+            Application.DoEvents();
+            scroll.ScrollOffset = 200;
+            Application.DoEvents();
+            Assert.Equal(-200, content.Top);
+
+            // 模拟内容重建/焦点滚动把显示区直接移回顶端，而缓存偏移仍是200。
+            typeof(ScrollableControl).GetMethod("SetDisplayRectLocation", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .Invoke(scroll, new object[] { 0, 0 });
+            scroll.ScrollOffset = 200;
+            Application.DoEvents();
+
+            Assert.Equal(200, scroll.ScrollOffset);
+            Assert.Equal(-200, content.Top);
+            host.Close();
+        });
+    }
+
+    [Fact]
     public void AutoScrollPage_WheelOverNonScrollableModernListContinuesScrollingThePage()
     {
         RunInSta(() =>
