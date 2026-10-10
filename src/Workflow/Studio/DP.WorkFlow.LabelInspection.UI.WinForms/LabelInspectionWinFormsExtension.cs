@@ -108,6 +108,7 @@ internal sealed class LabelWorkbenchControl : UserControl
         new("ReloadResources", "重载资源", "1. 配方与样张", "重载资源", "修改资源路径或外部文件后，重新装配试检测引擎与字库。"),
         new("GlyphLibraries", "字库", "2. 字库与模型", "字库…", "单字库管理与多图制库在同一窗口的两个分页中；ROI绑定字库在“ROI规则”页。发布新修订是外部写入，不随取消回滚。"),
         new("AnomalyLibraries", "异常模型", "2. 字库与模型", "异常模型…", "质量方法B：异常模型库管理与批量训练在同一窗口的两个分页中，关闭时可把新发布的版本绑定到ROI。"),
+        new("FieldBindings", "字段绑定", "3. 检测设置", "编辑字段绑定…", "设置ROI之间或ROI与任务数据之间的内容约束，随配方保存。"),
         new("Thresholds", "检测阈值", "3. 检测设置", "编辑阈值…", "墨迹、原图容差、最小面积、对比度及清晰度阈值，随配方保存。"),
         new("TaskData", "试检测任务数据", "3. 检测设置", "录入任务数据…", "只为配置页试检测提供本周期业务数据，载入新图后清除；生产数据来自“任务期望数据”绑定。"),
         new("LoadCatalogRecipe", "目录配方草稿", "5. 配方目录", "载入目录配方…", "选择目录ID/版本载入隔离草稿；不会改生产选择绑定或自动覆盖已发布文件。"),
@@ -337,7 +338,7 @@ internal sealed class LabelWorkbenchControl : UserControl
     {
         if (IsDisposed) return "配置页已关闭。";
         if (_loadingTask is not null || _loading || _workbench.IsInspectionRunning) return "请等待当前装配/试检测结束。";
-        if (_displayingRun && id is "SaveReference" or "PublishCatalogRecipe" or "Thresholds" or "TaskData")
+        if (_displayingRun && id is "SaveReference" or "PublishCatalogRecipe" or "Thresholds" or "TaskData" or "FieldBindings")
             return "运行报告只读，请先载入目录配方或配置图。";
         return id == "SaveReference" && _actual is null ? "请先载入上游预览或配置样张。" : "";
     }
@@ -474,6 +475,7 @@ internal sealed class LabelWorkbenchControl : UserControl
                 return;
             case "GlyphLibraries": _workbench.OpenGlyphLibraries(); break;
             case "AnomalyLibraries": _workbench.OpenAnomalyLibraries(); break;
+            case "FieldBindings": _workbench.EditFieldBindings(); break;
             case "Thresholds": _workbench.EditThresholds(); break;
             case "TaskData": _workbench.EditTaskData(); break;
             default: throw new InvalidOperationException("未知操作：" + id);
