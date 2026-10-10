@@ -151,6 +151,9 @@ public sealed class LabelInspectionEditorTests
             Assert.Contains("LabelInspection.Command.AnomalyLibraries", actions);
             Assert.DoesNotContain("LabelInspection.Command.GlyphQuickBuilder", actions);
             Assert.Contains("LabelInspection.Command.ImportRecipe", actions);
+            // ROI规则页只有卡片：字段绑定移到参数页，页顶不再有操作按钮。
+            Assert.Contains("LabelInspection.Command.FieldBindings", actions);
+            Assert.DoesNotContain(Descendants(rules).OfType<ModernUI.WinForms.ModernButton>(), b => b.Text is "字段绑定" or "采用探索文字ROI" or "清空ROI");
             Assert.Contains(Descendants(dialog).OfType<ModernUI.WinForms.ModernSelect>(), select => select.Items.Count == control.DrawKinds.Count);
             // 工具栏：画布显示下拉；ROI默认可直接选中/调整，不再有“选中/调整”按钮。
             var display = Assert.Single(Descendants(dialog).OfType<ModernUI.WinForms.ModernSelect>(), select => select.Items.Contains("检测结果"));
