@@ -38,6 +38,8 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
     [Browsable(false)] public double ReferenceM22 { get; set; } = 1;
     /// <summary>参考位姿 Ty。</summary>
     [Browsable(false)] public double ReferenceTy { get; set; }
+    /// <summary>记录参考位姿时坐标系的来源标识（如模板身份与参考点）；为空表示未知。来源变化时参考位姿可能已失效。</summary>
+    [Browsable(false)] public string ReferenceSource { get; set; } = string.Empty;
     /// <summary>SDK原生配方JSON，使用专用页面导入或捕获；完整保留项目选择、约束和库修订。</summary>
     [Browsable(false)]
     public string RecipeJson { get; set; } = string.Empty;
@@ -124,9 +126,11 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
         ? CoordinateMatrix2D.FromAffine(ReferenceM11, ReferenceM12, ReferenceTx, ReferenceM21, ReferenceM22, ReferenceTy) : null;
     /// <summary>记录或清除参考位姿。</summary>
     /// <param name="pose">配置帧坐标系的局部→原图矩阵；为空时清除。</param>
-    public void SetReferencePose(CoordinateMatrix2D? pose)
+    /// <param name="source">该坐标系的来源标识（<see cref="VisionCoordinateSystem.SourceIdentity"/>）；未知时为空。</param>
+    public void SetReferencePose(CoordinateMatrix2D? pose, string? source = null)
     {
         HasReferencePose = pose is not null;
+        ReferenceSource = pose is null ? string.Empty : source ?? string.Empty;
         (ReferenceM11, ReferenceM12, ReferenceTx, ReferenceM21, ReferenceM22, ReferenceTy) = pose is null
             ? (1d, 0d, 0d, 0d, 1d, 0d) : (pose.M11, pose.M12, pose.Tx, pose.M21, pose.M22, pose.Ty);
     }
