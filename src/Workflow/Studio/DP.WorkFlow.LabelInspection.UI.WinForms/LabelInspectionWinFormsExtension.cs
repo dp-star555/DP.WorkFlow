@@ -155,6 +155,7 @@ internal sealed class LabelWorkbenchControl : UserControl
     private void BuildToolbar()
     {
         Button("载入上游预览", ModernIconKind.NavigateUp, "载入本轮上游图像；绑定标签坐标系时同时记录或对齐参考位姿", true, () => GuardAsync(LoadUpstreamAsync));
+        Button("重设参考位姿", ModernIconKind.Refresh, "以本轮上游图像的定位重新记录参考位姿并按原图显示（重做模板、修改参考点或坐标系构建方式后ROI整体偏移时使用）", false, () => GuardAsync(ResetReferenceAsync));
         Button("显示运行结果", ModernIconKind.Info, "显示本节点最近一次正式运行的图像与报告", true, () => GuardAsync(ShowRunResultAsync));
         _toolbar.Items.Add(new ToolStripSeparator());
         foreach (var (text, _) in DisplayModes) _display.Items.Add(text);
@@ -270,7 +271,19 @@ internal sealed class LabelWorkbenchControl : UserControl
         await AttachLibrariesAsync();
     }
 
-    private async Task LoadUpstreamAsync()
+    private Task LoadUpstreamAsync() => LoadUpstreamAsync(resetReference: false);
+
+    private async Task ResetReferenceAsync()
+    {
+        if (_model.Node.LabelCoordinates.Binding is null) throw new InvalidOperationException("未绑定标签坐标系：ROI固定在原图坐标，不需要参考位姿。");
+        if (MessageBox.Show(this, "以本轮上游图像的定位作为新的参考位姿？" + Environment.NewLine + Environment.NewLine
+                + "图像按原图显示，ROI坐标保持不变：请确认ROI落在本帧标签上，不在时拖动调整。之后每帧ROI随标签相对本帧移动。" + Environment.NewLine + Environment.NewLine
+                + "适用于重做模板、修改模板参考点或坐标系构建方式后，ROI整体偏移的情况。",
+                "重设参考位姿", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+        await LoadUpstreamAsync(resetReference: true);
+    }
+
+    private async Task LoadUpstreamAsync(bool resetReference)
     {
         var model = _model;
         var binding = model.Node.Frame.Binding;
@@ -284,12 +297,15 @@ internal sealed class LabelWorkbenchControl : UserControl
         var system = (located.Facts as IVisionCoordinateResult)?.CoordinateSystem ?? throw new InvalidOperationException("本帧没有成功定位，不能记录参考位姿。");
         system.ValidateFrame(preview.Frame);
         var node = model.Node;
-        if (!node.HasRecipe || node.GetReferencePose() is null)
+        bool hadRecipe = node.HasRecipe;
+        if (resetReference || !hadRecipe || node.GetReferencePose() is null)
         {
-            // 还没有ROI：本帧就是配置帧，原图原样载入。
-            model.SetReferencePose(system.LocalToImage);
+            // 本帧成为配置帧，原图原样载入；已有ROI坐标不变，它们若画在别的图上，需要在本帧上核对。
+            model.SetReferencePose(system.LocalToImage, system.SourceIdentity);
             if (!await LoadAsync(preview.Frame)) return;
-            _status.Text = "已载入原图并以本帧定位为参考位姿；直接在原图上画ROI，运行时ROI随标签相对本帧的位移/旋转/缩放移动。";
+            _status.Text = hadRecipe
+                ? "已以本帧定位为参考位姿并按原图显示，ROI坐标不变：请核对ROI是否落在本帧标签上，不在时拖动调整；运行时ROI随标签相对本帧移动。"
+                : "已载入原图并以本帧定位为参考位姿；直接在原图上画ROI，运行时ROI随标签相对本帧的位移/旋转/缩放移动。";
             return;
         }
         // 已有ROI：不改参考位姿，把本帧按定位对齐到配置帧显示，ROI仍落在标签上；配置帧本身即原图（恒等）。
@@ -297,7 +313,10 @@ internal sealed class LabelWorkbenchControl : UserControl
         var recipe = model.Serializer.Deserialize(node.RecipeJson);
         using var aligned = placement.Rectify(preview.Frame, recipe.Width, recipe.Height);
         if (!await LoadAsync(aligned)) return;
-        _status.Text = $"本帧标签相对配置帧旋转 {placement.RotationDegrees:0.#}°、平移 ({placement.Tx:0.#}, {placement.Ty:0.#})，已对齐到配置帧显示，ROI坐标不变；超出原图的部分为黑色。";
+        // 参考位姿记录后定位来源变了（重做模板、改参考点或构建方式），同一张图的局部→原图也会变，ROI会整体偏移。
+        bool sourceChanged = node.ReferenceSource.Length != 0 && node.ReferenceSource != system.SourceIdentity;
+        _status.Text = $"本帧标签相对配置帧旋转 {placement.RotationDegrees:0.#}°、平移 ({placement.Tx:0.#}, {placement.Ty:0.#})，已对齐到配置帧显示，ROI坐标不变；超出原图的部分为黑色。"
+            + (sourceChanged ? "注意：定位来源与记录参考位姿时不同（如重做了模板），ROI若整体偏离标签，请点“重设参考位姿”。" : "");
     }
 
     /// <summary>显示本节点最近一次正式运行：同一帧（有放置时对齐到配置帧）＋完整报告，证据显示在图像下方。</summary>

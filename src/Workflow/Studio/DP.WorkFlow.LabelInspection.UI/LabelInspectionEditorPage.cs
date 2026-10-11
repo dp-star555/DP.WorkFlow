@@ -101,12 +101,13 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
 
     /// <summary>记录参考位姿（配置帧坐标系的局部→原图），之后在这一帧原图上画的ROI随定位移动；并通知属性页刷新。</summary>
     /// <param name="pose">配置帧坐标系的局部→原图矩阵。</param>
-    public void SetReferencePose(DP.Vision.Algorithms.CoordinateMatrix2D pose)
+    /// <param name="source">该坐标系的来源标识；用于之后提示定位来源已变化。</param>
+    public void SetReferencePose(DP.Vision.Algorithms.CoordinateMatrix2D pose, string? source = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (Node.GetReferencePose() is { } current && current.M11 == pose.M11 && current.M12 == pose.M12 && current.Tx == pose.Tx
-            && current.M21 == pose.M21 && current.M22 == pose.M22 && current.Ty == pose.Ty) return;
-        Node.SetReferencePose(pose); _changed();
+            && current.M21 == pose.M21 && current.M22 == pose.M22 && current.Ty == pose.Ty && Node.ReferenceSource == (source ?? string.Empty)) return;
+        Node.SetReferencePose(pose, source); _changed();
     }
 
     /// <summary>

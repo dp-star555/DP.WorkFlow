@@ -297,6 +297,7 @@ public sealed partial class ModernListView : ListView
     protected override void OnColumnWidthChanged(ColumnWidthChangedEventArgs e)
     {
         base.OnColumnWidthChanged(e);
+        ResetCellToolTip();
         LayoutTransaction.Request();
         Invalidate();
     }
@@ -341,6 +342,7 @@ public sealed partial class ModernListView : ListView
         base.WndProc(ref message);
         if (message.Msg is 0x0114 or 0x0115 or 0x020A)
         {
+            ResetCellToolTip();
             _verticalScrollBar?.RefreshFromTarget();
             _horizontalScrollBar?.RefreshFromTarget();
             LayoutScrollBars();
@@ -360,6 +362,7 @@ public sealed partial class ModernListView : ListView
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+        UpdateCellToolTip(e.Location);
         var index = GetItemAt(e.X, e.Y)?.Index ?? -1;
         if (_hoveredIndex == index) return;
         InvalidateItem(_hoveredIndex);
@@ -369,6 +372,7 @@ public sealed partial class ModernListView : ListView
 
     protected override void OnMouseLeave(EventArgs e)
     {
+        ResetCellToolTip();
         InvalidateItem(_hoveredIndex);
         _hoveredIndex = -1;
         base.OnMouseLeave(e);
@@ -384,6 +388,7 @@ public sealed partial class ModernListView : ListView
     {
         if (disposing)
         {
+            DisposeCellToolTip();
             _headerWindow?.Release();
             _headerWindow = null;
             if (ReferenceEquals(SmallImageList, _rowHeightImages)) SmallImageList = null;

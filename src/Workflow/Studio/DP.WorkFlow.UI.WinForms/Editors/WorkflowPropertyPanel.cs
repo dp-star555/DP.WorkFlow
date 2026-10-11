@@ -33,6 +33,8 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     private readonly TableLayoutPanel _modernHost;
     private WorkflowPropertyObjectAdapter? _modernAdapter;
     private string? _modernSchemaKey;
+    // 各输入属性当前的来源/绑定形态；只有它变化时只重建该行编辑器，不重建整张表格。
+    private Dictionary<string, string> _modernInputStates = new(StringComparer.Ordinal);
 
     /// <summary>初始化节点属性编辑面板。</summary>
     public WorkflowPropertyPanel()
@@ -237,19 +239,35 @@ public sealed partial class WorkflowPropertyPanel : UserControl
                     IsModernPropertyVisible,
                     CommitModernValue);
                 _modernSchemaKey = schemaKey;
+                _modernInputStates = CreateModernInputStates();
                 _modernGrid.SelectedObject = _modernAdapter;
             }
             else if (!string.Equals(_modernSchemaKey, schemaKey, StringComparison.Ordinal))
             {
                 _inputEditorGeneration++;
                 _modernSchemaKey = schemaKey;
+                _modernInputStates = CreateModernInputStates();
                 _modernGrid.RefreshProperties();
             }
             else
             {
-                // 属性结构未改变时只同步值，保留编辑器、焦点、滚动位置和原生句柄。
+                // 属性结构未改变时只同步值，保留编辑器、焦点、滚动位置和原生句柄；
+                // 输入来源/绑定变化只重建那一行的编辑器。
+                var inputStates = CreateModernInputStates();
+                var rebuildAll = false;
                 foreach (var entry in _model.Entries.Where(IsModernPropertyVisible))
-                    _modernGrid.RefreshProperty(entry.Name);
+                {
+                    var changed = !_modernInputStates.TryGetValue(entry.Name, out var previous)
+                        || !string.Equals(previous, inputStates.GetValueOrDefault(entry.Name), StringComparison.Ordinal);
+                    if (changed) rebuildAll |= !_modernGrid.RebuildProperty(entry.Name);
+                    else _modernGrid.RefreshProperty(entry.Name);
+                }
+                _modernInputStates = inputStates;
+                if (rebuildAll)
+                {
+                    _inputEditorGeneration++;
+                    _modernGrid.RefreshProperties();
+                }
             }
         }
         finally
@@ -282,17 +300,20 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             entry.IsReadOnly,
             entry.EditorKind == WorkflowPropertyEditorKind.Action ? entry.Value : null,
             entry.EditorKind == WorkflowPropertyEditorKind.Action ? entry.ActionBlockReason : null,
-            entry.EditorKind == WorkflowPropertyEditorKind.WorkflowInput ? entry.GetInputSource() : null,
-            entry.EditorKind == WorkflowPropertyEditorKind.WorkflowInput ? entry.GetInputBinding() : null,
-            entry.EditorKind == WorkflowPropertyEditorKind.WorkflowInput
-                ? entry.CanEditInputLiteralAsText ? entry.GetInputLiteral() : entry.GetInputLiteral() is not null
-                : null,
             string.Join("\u001c", entry.Choices.Select(choice => choice.Label + "\u001b" + choice.Value)))));
+
+    private Dictionary<string, string> CreateModernInputStates() => _model!.Entries
+        .Where(entry => IsModernPropertyVisible(entry) && entry.EditorKind == WorkflowPropertyEditorKind.WorkflowInput)
+        .ToDictionary(entry => entry.Name, entry => string.Join("\u001e",
+            entry.GetInputSource(),
+            entry.GetInputBinding(),
+            entry.CanEditInputLiteralAsText ? entry.GetInputLiteral() : entry.GetInputLiteral() is not null), StringComparer.Ordinal);
 
     private void CommitModernValue(WorkflowPropertyEntry entry, object? value)
     {
         if (_model is null) return;
         var previousSchema = CreateModernSchemaKey();
+        var previousInputs = CreateModernInputStates();
         try
         {
             _editing = true;
@@ -302,7 +323,9 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         {
             _editing = false;
         }
-        if (string.Equals(previousSchema, CreateModernSchemaKey(), StringComparison.Ordinal))
+        var inputs = CreateModernInputStates();
+        if (string.Equals(previousSchema, CreateModernSchemaKey(), StringComparison.Ordinal)
+            && previousInputs.Count == inputs.Count && previousInputs.All(pair => inputs.TryGetValue(pair.Key, out var state) && state == pair.Value))
         {
             // 一次领域操作可能同时改变参数和依赖值，例如清空配置；同步所有值，保留焦点。
             foreach (var current in _model.Entries.Where(IsModernPropertyVisible))
