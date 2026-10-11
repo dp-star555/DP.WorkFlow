@@ -25,6 +25,12 @@ public sealed partial class ModernPropertyGrid
         if (_building || IsDisposed) return;
         _building = true;
         var rebuildVersion = ++_rebuildVersion;
+        // 必须在销毁旧编辑器之前记录滚动位置与焦点：销毁持有焦点的编辑器时焦点会移到别的控件，
+        // WinForms 随即把滚动区滚到该控件（常在顶端），之后再读到的就是错误位置。
+        var restorePropertyKey = _selectedPropertyKey;
+        var restoreScrollOffset = _scrollViewport.ScrollOffset;
+        var restoreEditorFocus = _editors.FirstOrDefault(pair => pair.Value.ContainsFocus).Key;
+        var suppressFocusScroll = _scrollViewport.SuppressScrollToControl();
         try
         {
             _content.SuspendLayout();
@@ -34,9 +40,6 @@ public sealed partial class ModernPropertyGrid
                 existing.Dispose();
             }
             _content.Controls.Clear();
-            var restorePropertyKey = _selectedPropertyKey;
-            var restoreScrollOffset = _scrollViewport.ScrollOffset;
-            var restoreEditorFocus = _editors.FirstOrDefault(pair => pair.Value.ContainsFocus).Key;
             _editors.Clear();
             _presentations.Clear();
             _rows.Clear();
@@ -73,13 +76,14 @@ public sealed partial class ModernPropertyGrid
                 if (rebuildVersion != _rebuildVersion) return;
                 _scrollViewport.ScrollOffset = restoreScrollOffset;
                 if (!string.IsNullOrEmpty(restoreEditorFocus) && _editors.TryGetValue(restoreEditorFocus, out var restoredEditor) && restoredEditor.Visible)
-                    restoredEditor.Focus();
+                    using (_scrollViewport.SuppressScrollToControl()) restoredEditor.Focus();
             });
         }
         finally
         {
             _content.ResumeLayout();
             ResizeRows();
+            suppressFocusScroll.Dispose();
             _building = false;
         }
     }

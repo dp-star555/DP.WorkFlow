@@ -37,9 +37,28 @@ public sealed partial class ModernScrollView
         base.WndProc(ref message);
     }
 
+    private int _scrollToControlSuppression;
+
+    /// <summary>在返回的作用域内，子控件获得焦点不再自动滚动（内容重建、程序恢复焦点时使用）。</summary>
+    internal IDisposable SuppressScrollToControl()
+    {
+        _scrollToControlSuppression++;
+        return new ScrollToControlScope(this);
+    }
+
+    private sealed class ScrollToControlScope(ModernScrollView owner) : IDisposable
+    {
+        private ModernScrollView? _owner = owner;
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _owner, null) is { } scroll) scroll._scrollToControlSuppression--;
+        }
+    }
+
     // 子控件获得焦点时，WinForms 按返回的位置直接设置显示区，不经过 SetOffset；同步自绘滚动条使用的偏移。
     protected override Point ScrollToControl(Control activeControl)
     {
+        if (_scrollToControlSuppression > 0) return DisplayRectangle.Location;
         var location = base.ScrollToControl(activeControl);
         _offset = ModernCompatibility.Clamp(-location.Y, 0, MaximumOffset);
         InvalidateScrollBarGutter();
