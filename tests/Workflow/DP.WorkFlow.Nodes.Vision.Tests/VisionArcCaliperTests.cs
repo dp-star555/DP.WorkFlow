@@ -164,6 +164,37 @@ public sealed class VisionArcCaliperTests
     }
 
     [Fact]
+    public void SectorCaliper_PartlyOutsideImage_StillFindsEdgeInside()
+    {
+        // 亮圆盘边缘在 x=70；卡尺沿 +X 从半径 10 扫到 60，终点 x=110 已在图外：只在图内部分取边缘。
+        using var frame = BrightDisc();
+        var scan = new VisionCaliperScan(new PointD(60, 50), new PointD(110, 50), 2, new PointD(50, 50));
+        var edge = Assert.Single(VisionSectorCaliper.Measure(frame, scan, 2, 1, 20, ECaliperPolarity.Falling, 2, out bool measured));
+        Assert.True(measured);
+        Assert.InRange(edge.Position.X, 69.3, 70.7);
+        Assert.InRange(edge.Distance, 9.3, 10.7);
+
+        // 整把卡尺都在图外：不测量，也不从钳到边缘的采样里造出边缘。
+        var outside = new VisionCaliperScan(new PointD(160, 50), new PointD(210, 50), 2, new PointD(50, 50));
+        Assert.Empty(VisionSectorCaliper.Measure(frame, outside, 2, 1, 20, ECaliperPolarity.Any, 2, out bool outsideMeasured));
+        Assert.False(outsideMeasured);
+    }
+
+    [Fact]
+    public void LineScanClip_KeepsOnlyTheSegmentWhoseBandIsInside()
+    {
+        var info = new ImageInfo(100, 100, EPixelLayout.Gray8);
+        // 起点在图左外 20px：图内部分从距离 20.5 开始（像素中心 0.5），终点在图内保持不变。
+        var clip = VisionLineScanClip.Inside(info, new PointD(-20, 50), new PointD(80, 50), 2);
+        Assert.NotNull(clip);
+        Assert.Equal(20.5, clip.Value.From, 6);
+        Assert.Equal(100, clip.Value.To, 6);
+        // 带宽方向越界（贴着上边缘扫描）时整条都不可用。
+        Assert.Null(VisionLineScanClip.Inside(info, new PointD(10, 1), new PointD(90, 1), 2));
+        Assert.Null(VisionLineScanClip.Inside(info, new PointD(150, 50), new PointD(250, 50), 2));
+    }
+
+    [Fact]
     public void NewFindNodes_HavePlaceholderSearchRoi_FittedToFirstImage()
     {
         var line = new FindVisionLineNodeModel();
