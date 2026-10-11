@@ -88,6 +88,37 @@ public sealed partial class ModernPropertyGrid
         }
     }
 
+    /// <summary>
+    /// 只重建一个属性行的编辑器（例如输入来源从常量切换为绑定后编辑器形态变化），其余行、滚动位置和焦点不动。
+    /// 属性不在当前表格中时返回 false，调用方应改为整体刷新。
+    /// </summary>
+    private bool RebuildEditor(string propertyName)
+    {
+        if (_building || IsDisposed || _selectedObject is null || !_editors.TryGetValue(propertyName, out var existing)
+            || existing.Parent is not PropertyRowPanel row || TypeDescriptor.GetProperties(_selectedObject)[propertyName] is not { } property)
+            return false;
+        var hadFocus = existing.ContainsFocus;
+        // 销毁持有焦点的旧编辑器会让焦点移到别的控件，此时不能让滚动区跟着跳。
+        using var suppressFocusScroll = _scrollViewport.SuppressScrollToControl();
+        row.SuspendLayout();
+        Control editor;
+        try
+        {
+            editor = CreateEditor(property);
+            editor.Dock = DockStyle.Fill;
+            editor.Margin = Padding.Empty;
+            row.Controls.Remove(existing);
+            existing.Dispose();
+            row.Controls.Add(editor, 1, 0);
+            row.Tag = property;
+            _editors[propertyName] = editor;
+            WireSelection(editor, row, property);
+        }
+        finally { row.ResumeLayout(); }
+        if (hadFocus && editor.Visible) editor.Focus();
+        return true;
+    }
+
     private bool MatchesSearch(PropertyDescriptor property, string search)
     {
         if (search.Length == 0) return true;

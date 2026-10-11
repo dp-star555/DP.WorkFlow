@@ -89,12 +89,19 @@ public sealed partial class ModernToolTip : Component, IExtenderProvider
     }
 
     /// <summary>立即在指定控件附近显示气泡。</summary>
-    public void Show(Control control, string text, ModernToolTipKind kind = ModernToolTipKind.Default, int? duration = null)
+    public void Show(Control control, string text, ModernToolTipKind kind = ModernToolTipKind.Default, int? duration = null) =>
+        ShowCore(control, null, text, kind, duration);
+
+    /// <summary>立即在控件内指定区域（客户区坐标，如列表的某个单元格）附近显示气泡。</summary>
+    public void Show(Control control, Rectangle anchorBounds, string text, ModernToolTipKind kind = ModernToolTipKind.Default, int? duration = null) =>
+        ShowCore(control, anchorBounds, text, kind, duration);
+
+    private void ShowCore(Control control, Rectangle? anchorBounds, string text, ModernToolTipKind kind, int? duration)
     {
         ModernCompatibility.ThrowIfNull(control, nameof(control));
         if (control.IsDisposed || !control.IsHandleCreated || string.IsNullOrWhiteSpace(text)) return;
         if (_popup is { Visible: true } existing && ReferenceEquals(_anchor, control) &&
-            string.Equals(_popupText, text, StringComparison.Ordinal) && _popupKind == kind)
+            string.Equals(_popupText, text, StringComparison.Ordinal) && _popupKind == kind && existing.AnchorBounds == anchorBounds)
         {
             _active = this;
             existing.CommitFinalFrame(control);
@@ -115,7 +122,7 @@ public sealed partial class ModernToolTip : Component, IExtenderProvider
             Math.Max(ModernDpi.ScaleToInt(80, control.DeviceDpi), ModernDpi.ScaleToInt(MaximumWidth, control.DeviceDpi)),
             Math.Max(0, ModernDpi.ScaleToInt(Radius, control.DeviceDpi)),
             Math.Max(ModernDpi.ScaleToInt(4, control.DeviceDpi), ModernDpi.ScaleToInt(ArrowSize, control.DeviceDpi)),
-            Placement, dpiScale);
+            Placement, dpiScale) { AnchorBounds = anchorBounds };
         _anchor = control;
         _popupText = text;
         _popupKind = kind;

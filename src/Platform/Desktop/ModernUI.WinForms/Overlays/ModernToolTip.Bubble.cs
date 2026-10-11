@@ -85,10 +85,13 @@ public sealed partial class ModernToolTip
                 : new Size(bodyWidth + _arrow, bodyHeight);
         }
 
+        /// <summary>气泡指向的控件内区域（客户区坐标）；为空时指向整个控件。</summary>
+        public Rectangle? AnchorBounds { get; init; }
+
         public void Place(Control anchor)
         {
             _placement = _preferredPlacement;
-            var target = anchor.RectangleToScreen(anchor.ClientRectangle);
+            var target = anchor.RectangleToScreen(AnchorBounds ?? anchor.ClientRectangle);
             var working = Screen.FromControl(anchor).WorkingArea;
             if (_placement == ModernToolTipPlacement.Top && target.Top - Height < working.Top) _placement = ModernToolTipPlacement.Bottom;
             else if (_placement == ModernToolTipPlacement.Bottom && target.Bottom + Height > working.Bottom) _placement = ModernToolTipPlacement.Top;

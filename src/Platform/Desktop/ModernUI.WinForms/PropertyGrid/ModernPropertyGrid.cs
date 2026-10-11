@@ -281,6 +281,16 @@ public sealed partial class ModernPropertyGrid : UserControl
         return RefreshEditorValue(propertyName);
     }
 
+    /// <summary>
+    /// 重新创建指定属性的编辑器（编辑器形态随值变化时使用），不重建其它行，保留滚动位置和焦点；
+    /// 属性不在当前表格中时返回 false，此时应调用 <see cref="RefreshProperties"/>。
+    /// </summary>
+    public bool RebuildProperty(string propertyName)
+    {
+        ModernCompatibility.ThrowIfNullOrWhiteSpace(propertyName, nameof(propertyName));
+        return RebuildEditor(propertyName);
+    }
+
     /// <inheritdoc />
     protected override bool ProcessCmdKey(ref Message message, Keys keyData)
     {
