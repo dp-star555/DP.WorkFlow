@@ -51,9 +51,12 @@ internal sealed class WorkflowGraphIndex
             .Where(node => node is not null && !string.IsNullOrWhiteSpace(node.Id))
             .GroupBy(node => node.Id, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
-        var connections = graph.ControlConnections
+        var active = graph.ControlConnections
             .Where(connection => connection.State == WorkflowConnectionState.Active)
             .ToArray();
+        // 停用的连线（并行分支）不进入可执行控制图，单独保留供结构检查和诊断说明使用。
+        var connections = active.Where(connection => connection.Enabled).ToArray();
+        var disabled = Array.AsReadOnly(active.Where(connection => !connection.Enabled).ToArray());
 
         var outgoingByPort = connections
             .Where(connection => !string.IsNullOrWhiteSpace(connection.FromNodeId)
@@ -80,7 +83,24 @@ internal sealed class WorkflowGraphIndex
             new ReadOnlyDictionary<string, IWorkflowNodeModel>(nodes),
             new ReadOnlyDictionary<WorkflowPortAddress, IReadOnlyList<string>>(outgoingByPort),
             new ReadOnlyDictionary<string, IReadOnlyList<string>>(successors),
-            new ReadOnlyDictionary<string, IReadOnlyList<string>>(predecessors));
+            new ReadOnlyDictionary<string, IReadOnlyList<string>>(predecessors)) { DisabledConnections = disabled };
+    }
+
+    /// <summary>Gets disabled connections (disabled parallel branches); they are excluded from successors and predecessors.</summary>
+    public IReadOnlyList<WorkflowControlConnection> DisabledConnections { get; private init; } = Array.Empty<WorkflowControlConnection>();
+
+    /// <summary>
+    /// 节点是否只能经由停用的连线到达：从停用连线的目标出发可达，但从 <paramref name="startNodeId"/> 沿启用的连线不可达。
+    /// 找到时返回第一条使其可达的停用连线。
+    /// </summary>
+    /// <param name="startNodeId">流程入口。</param><param name="nodeId">要检查的节点。</param>
+    /// <param name="connection">让该节点可达的停用连线。</param>
+    public bool IsOnlyBehindDisabledConnection(string startNodeId, string nodeId, out WorkflowControlConnection? connection)
+    {
+        connection = null;
+        if (DisabledConnections.Count == 0 || CollectReachable(startNodeId).Contains(nodeId)) return false;
+        connection = DisabledConnections.FirstOrDefault(c => CollectReachable(c.ToNodeId).Contains(nodeId));
+        return connection is not null;
     }
 
     /// <summary>Gets all distinct successors selected through one control outcome.</summary>

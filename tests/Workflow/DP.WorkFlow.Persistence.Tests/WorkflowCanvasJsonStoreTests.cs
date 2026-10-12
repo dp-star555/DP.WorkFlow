@@ -32,6 +32,26 @@ public sealed class WorkflowDocumentJsonStoreTests
     }
 
     [Fact]
+    public void SerializeAndDeserialize_ConnectionNoteAndDisabledFlag()
+    {
+        var store = new WorkflowDocumentJsonStore(new WorkflowNodeCatalog().RegisterStandardNodes());
+        var document = BuildDocument();
+        var plain = store.Serialize(document);
+        Assert.DoesNotContain("\"Note\"", plain);     // 未设置时不写出，旧文件格式不变。
+        Assert.DoesNotContain("\"Disabled\"", plain);
+
+        document.CanvasProjection.Connections[0].Note = "左相机";
+        document.CanvasProjection.Connections[1].Enabled = false;
+        var loaded = store.Deserialize(store.Serialize(document));
+
+        Assert.Equal("左相机", loaded.Canvas.Connections[0].Note);
+        Assert.True(loaded.Canvas.Connections[0].Enabled);
+        Assert.Null(loaded.Canvas.Connections[1].Note);
+        Assert.False(loaded.Canvas.Connections[1].Enabled);
+        Assert.True(store.Deserialize(plain).Canvas.Connections.All(c => c.Enabled && c.Note is null));
+    }
+
+    [Fact]
     public void SerializeAndDeserialize_CSharpScript_PreservesIdentityAndDllReferences()
     {
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();

@@ -144,6 +144,8 @@ public static class WorkflowNodeConfigurationSnapshotter
                 FromSide = connection.FromSide,
                 ToSide = connection.ToSide,
                 LabelPosition = connection.LabelPosition,
+                Note = connection.Note,
+                Enabled = connection.Enabled,
                 State = connection.State,
                 Diagnostic = connection.Diagnostic
             };

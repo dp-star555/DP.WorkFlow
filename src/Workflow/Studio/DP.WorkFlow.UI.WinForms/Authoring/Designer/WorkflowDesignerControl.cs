@@ -160,13 +160,11 @@ public sealed partial class WorkflowDesignerControl : Control
         _pointer = e.Location;
         if (e.Button == MouseButtons.Right)
         {
-            var contextConnection = WorkflowDesignerInteraction.HitConnection(_session, e.X, e.Y);
+            var contextConnection = HitConnectionLabel(e.X, e.Y) ?? WorkflowDesignerInteraction.HitConnection(_session, e.X, e.Y);
             if (contextConnection is not null)
             {
-                if (ReferenceEquals(_session.SelectedConnection, contextConnection))
-                    _session.RemoveConnection(contextConnection);
-                else
-                    _session.SelectConnection(contextConnection);
+                _session.SelectConnection(contextConnection);
+                ShowConnectionMenu(contextConnection, e.Location);
                 return;
             }
         }
@@ -453,6 +451,13 @@ public sealed partial class WorkflowDesignerControl : Control
             NodeEditRequested?.Invoke(this, node.Node);
             return;
         }
+        // 双击标签编辑备注；双击连线其它位置仍是添加拐点。
+        if (HitConnectionLabel(e.X, e.Y) is { } labelled)
+        {
+            _session.SelectConnection(labelled);
+            EditConnectionNote(labelled);
+            return;
+        }
         if (WorkflowDesignerInteraction.HitConnection(_session, e.X, e.Y) is { } connection)
         {
             _session.SelectConnection(connection);
@@ -523,9 +528,10 @@ public sealed partial class WorkflowDesignerControl : Control
                 continue;
             var selected = ReferenceEquals(_session.SelectedConnection, connection);
             var palette = WorkflowWinFormsStyle.Get();
+            // 停用的并行分支：淡灰虚线，线和下游节点保留，随时可以重新启用。
             using var pen = new Pen(
-                selected ? palette.Accent : Color.FromArgb(155, 155, 155),
-                selected ? 3 : 2);
+                selected ? palette.Accent : connection.Enabled ? Color.FromArgb(155, 155, 155) : Color.FromArgb(95, 95, 95),
+                selected ? 3 : 2) { DashStyle = connection.Enabled ? System.Drawing.Drawing2D.DashStyle.Solid : System.Drawing.Drawing2D.DashStyle.Dash };
             DrawConnectionPath(graphics, pen, connection, source.Value, target.Value);
             DrawConnectionLabel(graphics, connection, source.Value);
             if (selected)
@@ -696,6 +702,48 @@ public sealed partial class WorkflowDesignerControl : Control
             menu.Items.Add(item.DisplayName, null, (_, _) => Bind(item));
         menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
         menu.Show(this, location);
+    }
+
+    // 连线右键菜单：编辑备注、启用/停用并行分支、删除连线。
+    private void ShowConnectionMenu(WorkflowConnectionModel connection, Point location)
+    {
+        if (_session is null) return;
+        var session = _session;
+        var menu = new ModernUI.WinForms.ModernContextMenu { Theme = ModernUI.WinForms.ModernTheme.Dark };
+        menu.Items.Add(new ToolStripLabel(WorkflowDesignerInteraction.GetConnectionLabel(session, connection)) { Enabled = false });
+        menu.Items.Add("编辑备注…", null, (_, _) => EditConnectionNote(connection));
+        if (WorkflowDesignerInteraction.CanDisableConnection(session, connection))
+            menu.Items.Add(connection.Enabled ? "停用分支" : "启用分支", null, (_, _) => Guard(() => session.SetConnectionEnabled(connection, !connection.Enabled)));
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("删除连线", null, (_, _) => session.RemoveConnection(connection));
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+        menu.Show(this, location);
+    }
+
+    // 备注只用于显示；端口的固定语义不可编辑，留空恢复默认。
+    private void EditConnectionNote(WorkflowConnectionModel connection)
+    {
+        if (_session is null) return;
+        var session = _session;
+        var semantic = WorkflowPorts.GetDisplayName(connection.FromPort);
+        using var dialog = new Form
+        {
+            Text = "编辑连线备注", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent,
+            MinimizeBox = false, MaximizeBox = false, ShowInTaskbar = false, ClientSize = new Size(380, 128), Font = Font
+        };
+        var hint = new Label { Text = $"固定语义：{semantic}（不可修改）。备注只用于显示，留空恢复默认。", AutoSize = false, Bounds = new Rectangle(12, 10, 356, 34) };
+        var input = new TextBox { Text = connection.Note ?? "", MaxLength = 64, Bounds = new Rectangle(12, 48, 356, 24) };
+        var ok = new Button { Text = "确定", DialogResult = DialogResult.OK, Bounds = new Rectangle(206, 88, 76, 28) };
+        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Bounds = new Rectangle(292, 88, 76, 28) };
+        dialog.Controls.AddRange(new Control[] { hint, input, ok, cancel });
+        dialog.AcceptButton = ok; dialog.CancelButton = cancel;
+        if (dialog.ShowDialog(FindForm()) == DialogResult.OK) Guard(() => session.SetConnectionNote(connection, input.Text));
+    }
+
+    private void Guard(Action action)
+    {
+        try { action(); }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException) { InteractionError?.Invoke(this, exception.Message); }
     }
 
     /// <summary>在节点标题栏右侧绘制执行序号和耗时。</summary>
@@ -1274,11 +1322,11 @@ public sealed partial class WorkflowDesignerControl : Control
         var rect = GetConnectionLabelBounds(graphics, font, connection);
         var palette = WorkflowWinFormsStyle.Get();
         using var background = new SolidBrush(Color.FromArgb(235, palette.Surface));
-        using var foreground = new SolidBrush(palette.Accent);
+        using var foreground = new SolidBrush(connection.Enabled ? palette.Accent : palette.MutedText);
         graphics.FillRectangle(background, rect);
         using var labelBorder = new Pen(palette.Border);
         graphics.DrawRectangle(labelBorder, rect.X, rect.Y, rect.Width, rect.Height);
-        graphics.DrawString(WorkflowPorts.GetDisplayName(connection.FromPort), font, foreground, rect.X + 4, rect.Y + 1);
+        graphics.DrawString(WorkflowDesignerInteraction.GetConnectionLabelDisplay(_session, connection), font, foreground, rect.X + 4, rect.Y + 1);
     }
 
     /// <summary>计算连接标签的屏幕边界。</summary>
@@ -1291,7 +1339,7 @@ public sealed partial class WorkflowDesignerControl : Control
             ? default
             : WorkflowDesignerInteraction.PointAlongPath(
                 WorkflowDesignerInteraction.GetConnectionPath(_session, connection), connection.LabelPosition);
-        var size = graphics.MeasureString(WorkflowPorts.GetDisplayName(connection.FromPort), font);
+        var size = graphics.MeasureString(_session is null ? "" : WorkflowDesignerInteraction.GetConnectionLabelDisplay(_session, connection), font);
         return new RectangleF(
             (float)center.X - size.Width / 2 - 4,
             (float)center.Y - size.Height / 2 - 2,
