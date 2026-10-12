@@ -193,6 +193,44 @@ public sealed class LabelInspectionEditorTests
     }
 
     [Fact]
+    public async Task WinFormsReferenceImage_FilledPathMeansTemplateModeAndKeepsDraftRegions()
+    {
+        await using var rig = new LabelInspectionPipelineTests.Rig(false);
+        rig.Node.AuthorImagePath = "input.png";
+        File.Copy(Path.Combine(rig.Root, "input.png"), Path.Combine(rig.Root, "reference.png"));
+        await RunStaAsync(async parent =>
+        {
+            var session = new WorkflowDesignerSession(rig.Document, rig.Nodes);
+            await using var editor = Editor(session, reportPage: false);
+            using var dialog = Dialog(editor, rig.Root);
+            dialog.Show(parent);
+            var control = Descendants(dialog).OfType<DP.LabelInspection.LabelInspectionControl>().Single();
+            await WaitUntilAsync(() => control.Regions.Count == 1);
+            using (var request = control.CreateRequest()) Assert.Equal(EInspectionMode.Free, request.Recipe.Mode);
+            // 未确认的工作台ROI修改不能在重载时被旧节点配方覆盖。
+            control.SetRegions(new[] { new InspectionRegion("fixed", ERegionKind.Fixed, new DP.Vision.Algorithms.PixelBounds(8, 8, 24, 24))
+                .WithTasks(new RoiInspectionTasks(false, true)) });
+            var page = Page(editor);
+            page.Node.ReferenceImagePath = "reference.png";
+            await page.CreateProperties(page.Node).Single(entry => entry.Name == "LabelInspection.Command.ReloadResources").ExecuteActionAsync();
+            // 填写了参考图即模板模式：工作台拿到参考图，固定内容区可以与它比较。
+            using (var request = control.CreateRequest())
+            {
+                Assert.Equal(EInspectionMode.Template, request.Recipe.Mode);
+                Assert.True(request.HasReference);
+                Assert.Equal("fixed", Assert.Single(request.Recipe.Regions).Name);
+            }
+            editor.ApplyChanges();
+            Assert.Equal(EInspectionMode.Template, Page(editor).Serializer.Deserialize(rig.Node.RecipeJson).Mode);
+            Assert.Equal("reference.png", rig.Node.ReferenceImagePath);
+            var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            dialog.FormClosed += (_, _) => closed.TrySetResult();
+            dialog.Close();
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        });
+    }
+
+    [Fact]
     public async Task WinFormsCacheCommands_CleanupProductionCacheWithoutChangingRecipeOrTrialResources()
     {
         await using var rig = new LabelInspectionPipelineTests.Rig(false);
