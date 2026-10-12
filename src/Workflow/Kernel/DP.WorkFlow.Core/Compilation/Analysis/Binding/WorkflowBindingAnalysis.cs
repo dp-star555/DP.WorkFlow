@@ -206,7 +206,7 @@ public sealed class WorkflowBindingAnalyzer
                     WorkflowValidationSeverity.Warning));
                 continue;
             }
-            var memberType = ResolveMemberType(descriptor.OutputType, declaration.Binding.MemberPath);
+            var memberType = WorkflowOutputMembers.Resolve(sourceNode, descriptor.OutputType, declaration.Binding.MemberPath);
             if (memberType is null)
             {
                 diagnostics.Add(Error("WFB004", usage,
@@ -235,12 +235,12 @@ public sealed class WorkflowBindingAnalyzer
             {
                 if (!_catalog.TryGet(node.NodeType, out var descriptor) || descriptor!.OutputType is null)
                     return Array.Empty<WorkflowBindingCandidate>();
-                return EnumerateMembers(descriptor.OutputType, "$", 0)
+                return WorkflowOutputMembers.Describe(node, descriptor.OutputType)
                     .Select(member => new WorkflowBindingCandidate(
                         node.Id,
                         member.Path,
                         member.Type,
-                        $"{node.Title}/{member.Path}"));
+                        $"{node.Title}/{member.DisplayName}"));
             })
             .ToArray();
     }
@@ -298,7 +298,7 @@ public sealed class WorkflowBindingAnalyzer
                 WorkflowValidationSeverity.Warning));
             return;
         }
-        var memberType = ResolveMemberType(descriptor.OutputType, usage.Binding.MemberPath);
+        var memberType = WorkflowOutputMembers.Resolve(sourceNode, descriptor.OutputType, usage.Binding.MemberPath);
         if (memberType is null)
         {
             diagnostics.Add(Error("WFB004", usage,
@@ -336,8 +336,8 @@ public sealed class WorkflowBindingAnalyzer
             {
                 continue;
             }
-            foreach (var member in EnumerateMembers(descriptor.OutputType, "$", 0))
-                yield return new WorkflowBindingCandidate(source.Id, member.Path, member.Type, $"{source.Title}/{member.Path}");
+            foreach (var member in WorkflowOutputMembers.Describe(source, descriptor.OutputType))
+                yield return new WorkflowBindingCandidate(source.Id, member.Path, member.Type, $"{source.Title}/{member.DisplayName}");
         }
     }
 
@@ -411,53 +411,13 @@ public sealed class WorkflowBindingAnalyzer
         }
     }
 
-    /// <summary>按不区分大小写的公开属性路径解析输出成员类型。</summary>
-    /// <param name="rootType">节点描述器声明的标准输出根类型。</param>
-    /// <param name="path">点分隔属性路径；<c>$</c> 代表根类型。</param>
-    /// <returns>解析后的非 Nullable 成员类型；路径无效时返回 <see langword="null"/>。</returns>
-    private static Type? ResolveMemberType(Type rootType, string path)
-    {
-        if (path == "$")
-            return rootType;
-        var current = rootType;
-        foreach (var segment in path.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var property = current.GetProperty(segment, BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
-            if (property is null || !property.CanRead || property.GetIndexParameters().Length != 0)
-                return null;
-            current = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
-        }
-        return current;
-    }
-
     /// <summary>枚举类型本身以及递归最多三层的公开可读属性。</summary>
     /// <param name="type">要展开的根输出类型。</param>
     /// <param name="path">根值的显示路径，默认使用 <c>$</c>。</param>
     /// <param name="depth">当前递归深度；外部调用通常保持默认值零。</param>
     /// <returns>成员路径及其去除 Nullable 包装后的类型序列。</returns>
     public static IEnumerable<(string Path, Type Type)> EnumerateBindableMembers(Type type, string path = "$", int depth = 0) =>
-        EnumerateMembers(type, path, depth);
-
-    /// <summary>递归展开绑定根值和公开可读属性，简单类型或三层深度处停止。</summary>
-    /// <param name="type">当前成员类型。</param>
-    /// <param name="path">当前成员路径。</param>
-    /// <param name="depth">当前递归深度。</param>
-    /// <returns>包含当前值本身及其子成员的路径和类型。</returns>
-    private static IEnumerable<(string Path, Type Type)> EnumerateMembers(Type type, string path, int depth)
-    {
-        yield return (path, type);
-        if (depth >= 3 || IsSimple(type))
-            yield break;
-        foreach (var property in type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
-                     .Where(property => property.CanRead && property.GetIndexParameters().Length == 0)
-                     .OrderBy(property => property.Name, StringComparer.Ordinal))
-        {
-            var childType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
-            var childPath = path == "$" ? property.Name : $"{path}.{property.Name}";
-            foreach (var member in EnumerateMembers(childType, childPath, depth + 1))
-                yield return member;
-        }
-    }
+        WorkflowOutputMembers.OfType(type, path, maxDepth: Math.Max(0, 3 - depth)).Select(member => (member.Path, member.Type));
 
     /// <summary>判断来源节点输出是否保证在消费者执行前产生并对其可见。</summary>
     /// <param name="sourceId">绑定来源节点 ID。</param>
@@ -559,13 +519,6 @@ public sealed class WorkflowBindingAnalyzer
     /// <returns>定位到消费节点的错误级诊断。</returns>
     private static WorkflowValidationError Error(string code, WorkflowBindingUsage usage, string message) =>
         new(code, $"节点 {usage.ConsumerNodeId} 配置 {usage.ConfigurationPath}：{message}", usage.ConsumerNodeId);
-
-    /// <summary>判断类型是否应作为绑定叶节点而不再展开公开属性。</summary>
-    /// <param name="type">待检查类型。</param>
-    /// <returns>基础类型、枚举、字符串及常用标量类型返回 <see langword="true"/>。</returns>
-    private static bool IsSimple(Type type) => type.IsPrimitive || type.IsEnum || type == typeof(string)
-        || type == typeof(decimal) || type == typeof(DateTime) || type == typeof(DateTimeOffset)
-        || type == typeof(TimeSpan) || type == typeof(Guid);
 
     /// <summary>判断类型是否属于运行时支持互相转换的数值类型集合。</summary>
     /// <param name="type">已去除 Nullable 包装的类型。</param>

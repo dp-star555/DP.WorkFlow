@@ -188,6 +188,9 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
             }
             items.Add(new(OutputCategory, WorkflowOutputDisplayNames.Resolve(property), text));
         }
+        if (value is IWorkflowResultRows rows)
+            foreach (var row in rows.ResultRows.Take(MaximumOutputMembers))
+                items.Add(new(OutputCategory, row.Key, FormatValue(row.Value)));
     }
 
     /// <summary>将任意值格式化为单行只读文本，过长时截断。</summary>

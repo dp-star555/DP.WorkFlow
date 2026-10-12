@@ -559,22 +559,3 @@ public sealed class VisionCaliperGizmo : IVisionCanvasGizmo
     // 原图像素保留 2 位小数；局部单位（可能是毫米）保留 4 位。
     private double Round(double value) => Math.Round(value, Bound ? 4 : 2);
 }
-
-/// <summary>卡尺节点“区域类型”下拉框的一项：直线卡尺或圆弧卡尺。</summary>
-/// <param name="Shape">卡尺形状。</param>
-/// <param name="Text">显示文字。</param>
-public sealed record VisionCaliperShapeChoice(EVisionCaliperShape Shape, string Text)
-{
-    /// <summary>全部卡尺形状。</summary>
-    public static IReadOnlyList<VisionCaliperShapeChoice> All { get; } = Array.AsReadOnly(new[]
-    {
-        new VisionCaliperShapeChoice(EVisionCaliperShape.Line, "直线卡尺"),
-        new VisionCaliperShapeChoice(EVisionCaliperShape.Arc, "圆弧卡尺")
-    });
-
-    /// <summary>下拉框图标键。</summary>
-    public string IconKey => "caliper-" + Shape;
-
-    /// <inheritdoc/>
-    public override string ToString() => Text;
-}

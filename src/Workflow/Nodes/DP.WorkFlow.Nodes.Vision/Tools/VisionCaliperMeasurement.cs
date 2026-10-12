@@ -93,7 +93,7 @@ public static class VisionEdgePairing
 /// 单个卡尺（直线或圆弧）的采样证据：剖面、边缘，以及边缘对模式下的边缘对与宽度。
 /// 成员名与直线卡尺原结果一致（起终点、剖面、边缘、边缘点），下游绑定不需要改路径。
 /// </summary>
-public sealed class VisionCaliperMeasurement : IWorkflowVisionFrameFact
+public sealed class VisionCaliperMeasurement : IWorkflowVisionFrameFact, IVisionDisplayFact
 {
     private VisionCaliperMeasurement(string frameId, EVisionCaliperShape shape, PointD start, PointD end, double sampleStep,
         IReadOnlyList<double> profile, IReadOnlyList<VisionCaliperEdge> edges, IReadOnlyList<PointD> path, CaliperResult? line)
@@ -232,6 +232,31 @@ public sealed class VisionCaliperMeasurement : IWorkflowVisionFrameFact
     /// <summary>扫描路径折线（原图像素），供图上显示。</summary>
     [Browsable(false)]
     public IReadOnlyList<PointD> Path { get; }
+
+    /// <summary>
+    /// 扫描路径为输入；单边缘模式边缘为结果点。边缘对模式下全部边缘为输入点，每对画测量线，中点为结果点。
+    /// 图上不写字，点击给出坐标、梯度或宽度。
+    /// </summary>
+    [Browsable(false)]
+    public IReadOnlyList<VisionDisplayItem> DisplayItems
+    {
+        get
+        {
+            var pairs = EdgeMode == EVisionCaliperEdgeMode.Pair;
+            var items = new List<VisionDisplayItem> { new(new ContourGeometry(Path), EVisionDisplayRole.Input) };
+            items.AddRange(Edges.Select(e => VisionDisplayItem.Point(e.Position, pairs ? EVisionDisplayRole.Input : EVisionDisplayRole.Result,
+                detail: FormattableString.Invariant($"边缘 ({e.Position.X:F4},{e.Position.Y:F4})；梯度 {e.Gradient:F3}")
+                    + (e.AngleDegrees is { } angle ? FormattableString.Invariant($"；角度 {angle:F2}°") : ""))));
+            for (int i = 0; i < Pairs.Count; i++)
+            {
+                var pair = Pairs[i];
+                var detail = FormattableString.Invariant($"边缘对 #{i + 1}：宽度 {pair.Width:F4}px；中点 ({pair.Midpoint.X:F4},{pair.Midpoint.Y:F4})");
+                items.Add(VisionDisplayItem.Segment(pair.First.Position, pair.Second.Position, EVisionDisplayRole.Measurement, detail: detail));
+                items.Add(VisionDisplayItem.Point(pair.Midpoint, EVisionDisplayRole.Result, detail: detail));
+            }
+            return items;
+        }
+    }
 
     /// <summary>附加同帧定位坐标，不改变采样证据。</summary>
     /// <param name="system">同帧坐标系。</param>

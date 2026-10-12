@@ -134,6 +134,20 @@ public sealed class WorkflowBindingResolver
         return ConvertValue<T>(binding, raw);
     }
 
+    /// <summary>按最近一次运行的 Latest 输出解析输入（固定值照常返回）；只用于编辑器试运行，不校验 Token/Scope 可见性。</summary>
+    internal static T? ResolveLatestInput<T>(WorkflowContext context, WorkflowInput<T> input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var validationError = input.Validate();
+        if (validationError is not null)
+            throw new InvalidOperationException(validationError);
+        if (input.Source == WorkflowValueSource.Literal)
+            return typeof(T) == typeof(object) && input.LiteralValue is JsonElement element
+                ? (T?)(object?)ConvertJsonElement(element)
+                : input.LiteralValue;
+        return ResolveLatest<T>(context, input.Binding!.Value);
+    }
+
     private static object? ConvertJsonElement(JsonElement element) => element.ValueKind switch
     {
         JsonValueKind.Null or JsonValueKind.Undefined => null,
@@ -151,7 +165,10 @@ public sealed class WorkflowBindingResolver
         _ => throw new NotSupportedException($"不支持的 JSON 值类型：{element.ValueKind}。")
     };
 
-    /// <summary>使用按根类型和路径缓存的反射计划逐级读取公开属性。</summary>
+    /// <summary>
+    /// 逐级读取成员路径：普通对象按根类型和路径缓存的反射计划读取公开属性；
+    /// 路径经过 <see cref="IWorkflowKeyedOutput"/> 时，找不到同名属性的段按键读取（例如测量项 Id）。
+    /// </summary>
     /// <param name="binding">提供成员路径及异常上下文的绑定键。</param>
     /// <param name="root">节点标准输出或公共数据的根值。</param>
     /// <returns>路径末端值；<c>$</c> 直接返回根值。</returns>
@@ -165,25 +182,48 @@ public sealed class WorkflowBindingResolver
         var plan = PathPlans.GetOrAdd(
             new BindingPlanKey(root.GetType(), binding.MemberPath),
             static key => BuildPlan(key.RootType, key.MemberPath));
-        if (plan.Error is not null)
-            throw new WorkflowBindingException(binding, plan.Error);
+        if (plan.Error is null)
+        {
+            object? value = root;
+            foreach (var property in plan.Properties)
+                value = ReadProperty(binding, property, value);
+            return value;
+        }
 
+        // 静态计划失败时，按运行时对象逐段读取，允许经过按键寻址的输出。
         object? current = root;
-        foreach (var property in plan.Properties)
+        bool keyed = false;
+        foreach (var name in binding.MemberPath.Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
         {
             if (current is null)
-                throw new WorkflowBindingException(binding, $"读取成员 {property.Name} 前对象已经为空。");
-
-            try
+                throw new WorkflowBindingException(binding, $"读取成员 {name} 前对象已经为空。");
+            var property = current.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
+            if (property is not null && property.CanRead && property.GetIndexParameters().Length == 0)
             {
-                current = property.GetValue(current);
+                current = ReadProperty(binding, property, current);
+                continue;
             }
-            catch (TargetInvocationException exception)
-            {
-                throw new WorkflowBindingException(binding, $"读取成员 {property.Name} 时发生异常。", exception.InnerException ?? exception);
-            }
+            if (current is not IWorkflowKeyedOutput output)
+                throw new WorkflowBindingException(binding, keyed ? $"类型 {current.GetType().Name} 中不存在可读成员 {name}。" : plan.Error);
+            keyed = true;
+            if (!output.TryGetKeyedValue(name, out current))
+                throw new WorkflowBindingException(binding, output.DescribeMissingKey(name));
         }
         return current;
+    }
+
+    private static object? ReadProperty(WorkflowBindingKey binding, PropertyInfo property, object? current)
+    {
+        if (current is null)
+            throw new WorkflowBindingException(binding, $"读取成员 {property.Name} 前对象已经为空。");
+        try
+        {
+            return property.GetValue(current);
+        }
+        catch (TargetInvocationException exception)
+        {
+            throw new WorkflowBindingException(binding, $"读取成员 {property.Name} 时发生异常。", exception.InnerException ?? exception);
+        }
     }
 
     /// <summary>为根运行时类型构建不区分大小写的公开可读属性访问计划。</summary>

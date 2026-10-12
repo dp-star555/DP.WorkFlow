@@ -117,7 +117,9 @@ public partial class Form1 : Form
             () => _workspace.Navigator?.RootDocument, () => _workspace.Navigator?.CurrentSession));
         workflowStudioControl1.NodeEditorExtensions.Register(
             new VisionWinFormsStudioExtension()
-            { FrameSource = _frameScope, FileReader = fileReader, Templates = new VisionTemplateEditingRuntime(algorithmCatalog, _algorithmRuntime, Resources) });
+            { FrameSource = _frameScope, FileReader = fileReader, Templates = new VisionTemplateEditingRuntime(algorithmCatalog, _algorithmRuntime, Resources),
+              // 画布“运行”：用流程上下文中最近一次运行的上游输出执行单个节点；上下文在下面第 5 步创建。
+              NodeRunner = new WorkflowNodeTrialRunner(handlers, () => _runtimeContext ?? throw new InvalidOperationException("运行上下文尚未创建。")) });
         workflowStudioControl1.NodeEditorExtensions.Register(new LabelInspectionWinFormsExtension
             { BaseDirectory = LabelBaseDirectory, FrameSource = _frameScope, CacheRuntime = _labelRuntime });
         // 采集节点的"逻辑图像源"从本机已发布的源里选，避免手写出机器上不存在的标识；

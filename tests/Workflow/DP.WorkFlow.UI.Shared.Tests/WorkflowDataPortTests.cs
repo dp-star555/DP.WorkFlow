@@ -48,6 +48,32 @@ public sealed class WorkflowDataPortTests
         Assert.Empty(session.GetDataLinks());
     }
 
+    [Fact]
+    public void MeasureGroup_ExposesPerItemMembersAndLinksByThatMember()
+    {
+        var session = new WorkflowDesignerSession(new WorkflowDocument { Name = "DataPorts" }, new WorkflowNodeCatalog().RegisterStandardNodes().RegisterImageNodes());
+        var start = session.AddNode("Start", 0, 0);
+        var group = session.AddNode("Vision.MeasureGroup", 0, 200);
+        var decision = session.AddNode("Decision", 0, 400);
+        session.Connect(start.Node.Id, WorkflowPorts.Success, group.Node.Id);
+        session.Connect(group.Node.Id, WorkflowPorts.Success, decision.Node.Id);
+        var item = VisionMeasureItem.Create(EVisionMeasureKind.Line, "左边");
+        ((MeasureVisionGroupNodeModel)group.Node).Items.Add(item);
+
+        var members = session.GetOutputMembers(group.Node.Id);
+        var found = Assert.Single(members, m => m.Name == $"Items.{item.Id}.Found");
+        Assert.Equal("左边 · 是否找到", found.DisplayName);
+        Assert.Contains(members, m => m.Name == $"Items.{item.Id}.MeasuredLine" && m.ValueType == typeof(DP.Vision.Algorithms.VisionLine));
+        Assert.Contains(members, m => m.Name == nameof(VisionMeasureGroupResult.AllFound) && m.DisplayName == "全部找到");
+        Assert.DoesNotContain(members, m => m.Name.Split('.').Length > 3);
+
+        Assert.True(session.SetOutputMemberExposed(group.Node.Id, found.Name, true));
+        var target = Assert.Single(session.GetDataPortTargets(group.Node.Id, found.Name, decision.Node.Id));
+        session.BindDataPort(group.Node.Id, found.Name, target);
+        var link = Assert.Single(session.GetDataLinks());
+        Assert.Equal(found.Name, link.Member);
+    }
+
     private static (WorkflowDesignerSession Session, WorkflowCanvasNode Start, WorkflowCanvasNode Compare, WorkflowCanvasNode Decision) CreateChain()
     {
         var session = new WorkflowDesignerSession(new WorkflowDocument { Name = "DataPorts" }, new WorkflowNodeCatalog().RegisterStandardNodes());

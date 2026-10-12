@@ -26,6 +26,8 @@
 | Vision.FitRobustLine | RobustLineResult | 聚合同帧卡尺边缘，确定性RANSAC＋正交TLS，输出内点索引与RMS |
 | Vision.FindLine | VisionFindLineResult | 矩形搜索框内排布N把卡尺（沿框宽度排布、沿高度扫描），每把取首个/最强/末个边缘，鲁棒拟合直线；输出拟合直线、角度、边缘点 |
 | Vision.FindCircle | VisionFindCircleResult | 期望圆周上排布N把径向卡尺（由内向外/由外向内，可只扫圆弧），鲁棒拟合圆；输出圆心、半径、直径、边缘点 |
+| Vision.FindRectangle | VisionFindRectangleResult | 期望矩形（可旋转）四边各排布N把卡尺，垂直于边扫描（由内向外/由外向内），每边鲁棒拟合直线（忽略点数按边计），相邻边求交；输出四个角点、中心、宽高、角度、最大直角偏差、各边直线及各边找线结果。某条边内点不足或相邻边接近平行时失败并指明哪条边/哪个角 |
+| Vision.MeasureGroup | VisionMeasureGroupResult | “测量组”：同一张图、同一坐标系下多个找线/找圆/找矩形测量项；每项产出与对应单节点相同的结果。下游按 `Items.<测量项标识>.成员` 绑定（设计器显示为“项名 · 成员”），失败策略为全部必须成功或允许部分失败 |
 | Vision.LocateTemplatePose | TemplatePoseResult | “模板定位”：显式角度／尺度区间，都固定时即平移定位；OpenCV按步长采样，HALCON资源模型原生范围搜索；单个最佳姿态 |
 
 ## 成功/失败出口（检测NG不中止）
@@ -181,3 +183,16 @@ OpenCV搜索采样最多4096组，默认保守工作量预算2亿（位置数×�
 ## 后续仍未实现
 
 独立Region并/差节点、凸度/孔洞数量特征、自动边缘配对策略、鲁棒圆/圆弧、连续姿态细化和多实例、像素重采样后的图像校正/裁剪节点、Lab色差及畸变/手眼标定仍是后续能力。没有以空接口或改名包装声称完成这些功能。
+
+## 测量组的结果与绑定
+
+- **测量项**：每项有稳定标识（`m` + 8 位十六进制，建项时生成、之后不变）、显示名、类型（找线 / 找圆 / 找矩形）和该类型的配置。输入图像与坐标系由测量组统一提供，测量项配置里不保存这两项。
+- **结果**：`VisionMeasureGroupResult` 含 `Items`（启用项，按配置顺序）、`AllFound`、`FoundCount`、`FailedCount`、`FailedNames` 和 `Summary`。每项是 `VisionMeasureItemResult`：`Id`、`Name`、`Kind`、`Found`、`Error`，以及实际结果 `Value`（`VisionFindLineResult` / `VisionFindCircleResult` / `VisionFindRectangleResult`）。
+- **绑定路径**：`Items.<标识>.<成员>`。信封成员（`Found`、`Name`、`Error`、`Kind`、`Id`）优先；其余成员直接读实际结果，不必写 `.Value`。例如 `Items.m3f9a1c2b.MeasuredLine`、`Items.m3f9a1c2b.Width`、`Items.m3f9a1c2b.Found`。按标识而不按序号，删项、调序不会让绑定静默错位；改名不影响绑定。
+- **设计期校验**：节点实现 `IWorkflowDynamicOutputNode`，按当前测量项列出可绑定成员，编译期绑定校验和候选以此为准。删掉或停用的项报 WFB004，把项从找线改成找圆后，绑定 `MeasuredLine` 的下游报 WFB004/WFB005。
+- **失败策略**：
+  - 全部必须成功：任一项失败，节点走失败出口，消息为“测量项 X：原因”。
+  - 允许部分失败：节点成功，失败项 `Found=false`；下游读取它的结果时报“测量项 X 未找到：原因”。画布上失败项的卡尺画成 NG（红），并标“X 未找到”。
+- **运行时**：成员路径经过实现 `IWorkflowKeyedOutput` 的对象时，找不到同名公开属性的段按键读取；缺键时用该对象自己的说明作为绑定错误。
+- **编辑界面**：左侧“测量项”页按类型新增（找线 / 找圆 / 找矩形）、删除、启用或停用测量项，并显示最近一次运行的逐项结果。选中项在画布上用对应的图上编辑器拖动，其它启用项以淡灰色卡尺线和名称显示。参数页增加“测量项：名称”分组，内容为名称、启用、类型、绑定路径和该项自己的卡尺、边缘与拟合参数。工具栏的卡尺下拉显示选中项的布局，不可切换；要换类型请删除后重新添加。
+- **设计器**：数据端口和绑定下拉按测量项展开，例如“左边 · 拟合直线”“孔 · 是否找到”；数据连线按最长的已显示成员匹配。结果页另有“测量项 · 名称”逐项行（摘要或失败原因）。

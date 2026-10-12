@@ -567,6 +567,16 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// 为任意节点配置对象构建属性条目（与参数页同一规则），供页面把嵌套配置（如测量组中某个测量项的找线参数）贡献到参数页。
+    /// </summary>
+    /// <param name="node">配置对象。</param><param name="choiceProvider">可选候选提供者。</param>
+    public static IReadOnlyList<WorkflowPropertyEntry> CreateEntries(IWorkflowNodeModel node, WorkflowPropertyChoiceProvider? choiceProvider = null)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        return BuildEntries(node, choiceProvider, Array.Empty<IWorkflowNodeModel>());
+    }
+
     /// <summary>通过反射为节点构建可编辑属性条目。</summary>
     /// <param name="node">目标画布节点或节点模型。</param>
     /// <param name="choiceProvider">可选候选提供者。</param>

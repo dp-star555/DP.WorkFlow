@@ -7,7 +7,7 @@ namespace DP.WorkFlow.Vision.UI;
 
 /// <summary>新版帧节点共用页面，不依赖厂商原生视口。</summary>
 public sealed class VisionFrameEditorPageProvider(IWorkflowVisionPreviewSource? frames = null, IImageFileReader? reader = null,
-    VisionTemplateEditingRuntime? templates = null) : IWorkflowNodeEditorPageProvider
+    VisionTemplateEditingRuntime? templates = null, WorkflowNodeTrialRunner? runner = null) : IWorkflowNodeEditorPageProvider
 {
     /// <summary>两个平台共享的精确Renderer键。</summary>
     public const string RendererKey = "DP.Vision.FrameEditor";
@@ -21,7 +21,7 @@ public sealed class VisionFrameEditorPageProvider(IWorkflowVisionPreviewSource? 
         if (!CanProvide(context)) yield break;
         yield return new WorkflowNodeEditorPageDescriptor("Image", "图像与测量范围",
             WorkflowNodeEditorPageKind.Custom, 450, new VisionFrameEditorPageModel(context.Node, frames, reader,
-                templates, enableTemplateEditing: false, configurationChanged: context.Session.NotifyNodeConfigurationChanged),
+                templates, enableTemplateEditing: false, configurationChanged: context.Session.NotifyNodeConfigurationChanged, runner: runner),
             IconKey: "Image", RendererKey: RendererKey, Priority: 100);
         if (context.Node is IWorkflowVisionTemplateNode && context.RequestedPropertyEditor == WorkflowPropertyEditorKeys.VisionTemplateEditor)
             yield return new WorkflowNodeEditorPageDescriptor("Template", "模板制作/选择", WorkflowNodeEditorPageKind.Custom, 460,
@@ -54,7 +54,8 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     private readonly Action? _configurationChanged;
     private double _imagePixelsPerScreenPixel = 1;
     private IReadOnlyList<Visual> _visuals = Array.Empty<Visual>();
-    private object? _pickFacts;
+    // 显示项的点击说明，按显示项标识查找；没有单独说明的项为结果摘要。
+    private IReadOnlyDictionary<string, string> _details = new Dictionary<string, string>();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly List<Action> _releaseViews = new();
 
@@ -75,15 +76,18 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     /// <param name="enableTemplateEditing">是否创建模板制作草稿。</param>
     /// <param name="templateEditorOnly">是否只编辑模板，保留匹配节点搜索范围。</param>
     /// <param name="configurationChanged">图上编辑修改了节点参数后的通知（例如刷新参数页）。</param>
+    /// <param name="runner">“运行本节点”使用的试运行器，可为空。</param>
     public VisionFrameEditorPageModel(IWorkflowNodeModel node, IWorkflowVisionPreviewSource? frames = null, IImageFileReader? reader = null,
         VisionTemplateEditingRuntime? templates = null,
-        bool enableTemplateEditing = true, bool templateEditorOnly = false, Action? configurationChanged = null)
+        bool enableTemplateEditing = true, bool templateEditorOnly = false, Action? configurationChanged = null, WorkflowNodeTrialRunner? runner = null)
     {
-        IsTemplateEditor = templateEditorOnly;
+        IsTemplateEditor = templateEditorOnly; _runner = runner;
         _configurationChanged = configurationChanged;
         if (!templateEditorOnly && node is MeasureVisionCaliperNodeModel caliper) Caliper = new VisionCaliperGizmo(caliper);
         if (!templateEditorOnly && node is FindVisionShapeNodeModel find) Caliper = new VisionFindShapeGizmo(find);
         _node = node ?? throw new ArgumentNullException(nameof(node)); _frames = frames; _reader = reader;
+        if (!templateEditorOnly && node is MeasureVisionGroupNodeModel group && group.Items.FirstOrDefault(i => i.Shape is not null) is { } first)
+            SelectMeasureItemCore(first.Id);
         Editor = new RoiEditor();
         if (node is AnalyzeVisionFrameNodeModel { Coordinates: not null }) { /* 等待同帧定位后显示局部ROI，不在原图上误画局部数值。 */ }
         else if (node is AnalyzeVisionFrameNodeModel { Regions.Count: > 0 } regionNode)
@@ -137,7 +141,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         => templateEditor ? 4 : hasResult || !editable ? 1 : 0;
 
     /// <summary>卡尺节点的图上编辑器；其他节点为空。</summary>
-    public IVisionCanvasGizmo? Caliper { get; }
+    public IVisionCanvasGizmo? Caliper { get; private set; }
 
     /// <summary>当前缩放下 1 个屏幕像素对应的原图像素；由画布在缩放变化时设置，用于固定控制点的屏幕大小。</summary>
     public double ImagePixelsPerScreenPixel
@@ -313,7 +317,10 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             if (view == 0 && _node is AnalyzeVisionFrameNodeModel a && a.Frame.Binding is { IsPublicData: false } input) id = input.NodeId;
             if (view == 2 && _node is LocateVisionTemplatePoseNodeModel p && p.Template.Binding is { IsPublicData: false } poseTemplate) id = poseTemplate.NodeId;
             using var current = view == 3 ? null : _frames?.Capture(id);
-            var frame = view == 3 ? _manual : current?.Frame;
+            // 本窗口运行的结果在下一次流程运行之前代替“结果图像”；选了文件来源时输入图像为手动图像。
+            var trial = view == 1 && _trial is { } t && t.BaseSequence == current?.Sequence ? t : null;
+            var manualInput = view == 0 ? ManualInputLocked : null;
+            var frame = view == 3 ? _manual : trial?.Frame ?? manualInput ?? current?.Frame;
             if (frame is null)
             {
                 CoordinateEditingReady = false;
@@ -331,16 +338,26 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
                 _lastKey = null;
                 _configurationChanged?.Invoke();
             }
+            // 测量组：未绑定坐标系时，新建测量项的占位搜索范围按首张图像居中。
+            if (view is 0 or 1 && MeasureGroup is { Coordinates: null } placeholders
+                && placeholders.Items.Select(i => i.Shape?.FitPlaceholderSearchRoi(frame.Image.Info.Width, frame.Image.Info.Height) == true).ToArray().Any(changed => changed))
+            {
+                _lastKey = null;
+                _configurationChanged?.Invoke();
+            }
+            _lastFrameSize = (frame.Image.Info.Width, frame.Image.Info.Height);
             UpdateCoordinatePreview(frame, view);
             // 绑定坐标系的卡尺按本帧坐标系换算到原图显示和拖动；没有同帧定位时不显示。
             if (Caliper is not null) Caliper.Coordinates = CoordinateEditingReady ? _displayCoordinates : null;
             var analysis = _node as AnalyzeVisionFrameNodeModel;
             using var maskPreview = analysis?.Mask.Binding is { IsPublicData: false } maskBinding ? _frames?.Capture(maskBinding.NodeId) : null;
-            string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}:{Caliper?.Key}:{_imagePixelsPerScreenPixel:0.###}";
+            string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}:{Caliper?.Key}:{_imagePixelsPerScreenPixel:0.###}:{_trialVersion}:{trial is not null}:{manualInput is not null}:{MeasureKey}";
             if (_lastKey == key) return null;
-            var facts = view == 1 ? current?.Facts : null;
+            NotifyMeasureResults(current?.Sequence);
+            var facts = view == 1 ? trial is not null ? trial.Facts : current?.Facts : null;
             _lastKey = key; // 失败的显示包不在定时器中反复分配；切换来源或新帧才重试。
-            var visuals = Visuals(facts, _imagePixelsPerScreenPixel).Take(10001).ToArray();
+            var shown = Visuals(facts, Describe(facts, frame), _imagePixelsPerScreenPixel).Take(10001).ToArray();
+            var visuals = shown.Select(v => v.Visual).ToArray();
             if (visuals.Length > 10000) throw new InvalidOperationException("结果超过画布显示预算；未截断运行事实，当前结果不显示叠加。");
             // 显示预算不是算法结果裁剪；大结果明确拒绝显示并保留完整运行事实。
             var layers = new List<CanvasLayer>();
@@ -361,12 +378,14 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
                 { maskStatus = " 无法预览掩膜：" + error.Message; }
             }
             layers.Add(new CanvasLayer("facts", ELayerKind.Annotation, visuals));
+            if (MeasureGroup is not null && ShowsEditableOverlays(view))
+                layers.Add(new CanvasLayer("measure-items", ELayerKind.Annotation, OtherMeasureItemVisuals(), 5, name: "测量项"));
             if (Caliper is { IsEditable: true } && ShowsEditableOverlays(view))
                 layers.Add(new CanvasLayer("caliper", ELayerKind.Annotation, Caliper.Visuals(_imagePixelsPerScreenPixel), 10, name: "卡尺"));
             var overlay = new GeometryOverlay(frame.FrameId, layers);
             var canvas = new CanvasFrame(frame.FrameId, ++_sequence, frame.Image, overlay);
-            _visuals = visuals; _pickFacts = facts; _lastKey = key;
-            Status = Describe(facts, frame) + maskStatus;
+            _visuals = visuals; _details = shown.ToDictionary(v => v.Visual.Id, v => v.Detail, StringComparer.Ordinal); _lastKey = key;
+            Status = (trial?.Text ?? (manualInput is not null ? $"手动图像 {ImageSourceText}；" : "")) + Describe(facts, frame) + maskStatus;
             // 卡尺尺寸说明放在状态栏，图上不画文字标签。
             if (Caliper is not null)
                 Status += ShowsEditableOverlays(view)
@@ -386,122 +405,65 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     public string? Pick(PointD point, double tolerance)
     {
         var hit = _visuals.Reverse().FirstOrDefault(v => v.Geometry.Contains(point, tolerance));
-        if (hit is { Caption: null } && PickText(_pickFacts, hit.Id) is { } text) return text;
-        // 同一几何事实只在第一个图形上标注；拾取其余图形（如参考轴）时沿用这条说明。
-        return hit is { Caption: null } && hit.Id.StartsWith("geometry-", StringComparison.Ordinal)
-            ? _visuals.FirstOrDefault(v => v.Id == "geometry-0")?.Caption : hit?.Caption;
-    }
-
-    // 拟合点画成 ×（屏幕上约 10px）：绿色为计算点，红色为忽略点。
-    private static IEnumerable<Visual> FoundPoints(IReadOnlyList<VisionPoint> points, IReadOnlyList<bool> inliers, IReadOnlyList<VisionFoundEdgePair> pairs, double unit)
-    {
-        for (int i = 0; i < pairs.Count; i++)
-            yield return new Visual($"find-pair-{i}", new ContourGeometry(new[] { pairs[i].First, pairs[i].Second }), 0xFF22D3EE);
-        for (int i = 0; i < points.Count; i++)
-        {
-            var (p, r, color) = (points[i].ImagePosition, 5 * Math.Max(1e-6, unit), inliers[i] ? 0xFF22C55E : 0xFFEF4444);
-            yield return new Visual($"find-point-{i}", new ContourGeometry(new[] { new PointD(p.X - r, p.Y - r), new PointD(p.X + r, p.Y + r) }), color);
-            yield return new Visual($"find-pointx-{i}", new ContourGeometry(new[] { new PointD(p.X - r, p.Y + r), new PointD(p.X + r, p.Y - r) }), color);
-        }
-    }
-
-    // 不画标签的图形在点击时给出的说明。
-    private static string? PickText(object? facts, string id)
-    {
-        if (facts is VisionFindLineResult or VisionFindCircleResult)
-        {
-            var circle = facts as VisionFindCircleResult;
-            var (summary, points, inliers, pairs) = facts is VisionFindLineResult l ? (l.Summary, l.EdgePoints, l.Inliers, l.EdgePairs)
-                : (circle!.Summary, circle.EdgePoints, circle.Inliers, circle.EdgePairs);
-            if (id == "find-fit") return summary;
-            if (id.StartsWith("find-point", StringComparison.Ordinal) && int.TryParse(id.AsSpan(id.LastIndexOf('-') + 1), out var found) && found < points.Count)
-                return $"{(inliers[found] ? "计算点" : "忽略点")} ({points[found].ImagePosition.X:F4},{points[found].ImagePosition.Y:F4})"
-                    + (found < pairs.Count ? $"；宽度 {pairs[found].Width:F4}px" : "");
-            if (id.StartsWith("find-pair-", StringComparison.Ordinal) && int.TryParse(id.AsSpan(10), out var foundPair) && foundPair < pairs.Count)
-                return $"边缘对宽度 {pairs[foundPair].Width:F4}px";
-            return null;
-        }
-        if (facts is not VisionCaliperMeasurement measurement) return null;
-        if (id == "profile") return measurement.Summary;
-        if (id.StartsWith("pair-", StringComparison.Ordinal) && int.TryParse(id.AsSpan(id.LastIndexOf('-') + 1), out var pairIndex) && pairIndex < measurement.PairCount)
-        {
-            var pair = measurement.Pairs[pairIndex];
-            return $"边缘对 #{pairIndex + 1}：宽度 {pair.Width:F4}px；中点 ({pair.Midpoint.X:F4},{pair.Midpoint.Y:F4})";
-        }
-        if (!id.StartsWith("edge-", StringComparison.Ordinal) || !int.TryParse(id.AsSpan(5), out var index) || index >= measurement.Count) return null;
-        var edge = measurement.Edges[index];
-        return $"边缘 ({edge.Position.X:F4},{edge.Position.Y:F4})；梯度 {edge.Gradient:F3}" + (edge.AngleDegrees is { } angle ? $"；角度 {angle:F2}°" : "");
+        return hit is null ? null : _details.TryGetValue(hit.Id, out var detail) ? detail : hit.Caption;
     }
 
     private static string Describe(object? facts, ImageFrame frame) => facts switch
     {
         IWorkflowVisionFrameFact result => result.Summary,
-        IVisionGeometryFact result => Caption(result),
-        RegionAnalysisResult r => $"精确Region面积 {r.Area}；孔洞保留，空区域正常完成。",
-        CaliperResult c => $"卡尺边缘 {c.Count}；剖面采样 {c.Profile.Count}；梯度峰抛物线插值。",
-        RobustLineResult r => $"鲁棒直线内点 {r.InlierCount}；RMS {r.RmsError:F4}px。",
-        BlobAnalysisResult b => $"帧 {frame.FrameId}；连通域 {b.Count}；完成≠产品合格。点击Region查看面积/质心。",
+        IVisionDisplayFact result => result.Summary,
+        IVisionGeometryFact result => result.Summary,
         ColorAnalysisResult c => $"RGB=({c.Red:F3},{c.Green:F3},{c.Blue:F3})；像素 {c.PixelCount}；Alpha不加权。",
         _ => $"帧 {frame.FrameId}；{frame.Image.Info.Width}×{frame.Image.Info.Height}；{frame.Image.Info.Layout}"
     };
 
-    /// <summary>图上标注文字：坐标系只显示“名称/版本”，ID、单位与来源标识留在运行结果中查看。</summary>
-    private static string Caption(IVisionGeometryFact fact) => fact is VisionCoordinateSystemResult coordinates
-        ? $"坐标系：{coordinates.CoordinateSystem.Definition.Name}/v{coordinates.CoordinateSystem.Definition.Version}"
-        : fact.Summary;
-
-    private static IEnumerable<Visual> Visuals(object? facts, double unit = 1)
+    // 所有结果按显示角色统一配色；结果类型只声明角色，不决定颜色。
+    private static uint RoleColor(EVisionDisplayRole role) => role switch
     {
-        // 找线/找圆：绿色计算点、红色忽略点、黄色拟合线/圆，边缘对模式另画青色宽度线；卡尺位置由预览层按当前参数绘制，不画文字标签。
-        if (facts is VisionFindLineResult foundLine)
+        EVisionDisplayRole.Input => 0xFF94A3B8,
+        EVisionDisplayRole.Measurement => 0xFF22D3EE,
+        EVisionDisplayRole.Accepted => 0xFF22C55E,
+        EVisionDisplayRole.Rejected => 0xFFEF4444,
+        EVisionDisplayRole.Model => 0xFFA78BFA,
+        EVisionDisplayRole.Region => 0xFF22DD88,
+        EVisionDisplayRole.AxisX => 0xFFF87171,
+        EVisionDisplayRole.AxisY => 0xFF4ADE80,
+        _ => 0xFFFFCC00
+    };
+
+    // 颜色优先级：显式颜色 > 判定状态 > 角色；状态同时改几何和标签的颜色。
+    private static uint ItemColor(VisionDisplayItem item) => item.Argb ?? item.Tone switch
+    {
+        EVisionDisplayTone.Ok => 0xFF22C55E,
+        EVisionDisplayTone.Warning => 0xFFF59E0B,
+        EVisionDisplayTone.Ng => 0xFFEF4444,
+        _ => RoleColor(item.Role)
+    };
+
+    /// <summary>
+    /// 把结果的显示项画成图层：几何按显式颜色、判定状态、角色的顺序着色，标记点画成约 10 屏幕像素的 ×，图上只写显示项的短标签；
+    /// 点击说明取显示项自带说明，没有时为结果摘要。只有显示几何的旧结果按“主结果”画。
+    /// </summary>
+    private static IEnumerable<(Visual Visual, string Detail)> Visuals(object? facts, string summary, double unit)
+    {
+        var items = facts switch
         {
-            yield return new Visual("find-fit", new ContourGeometry(new[] { foundLine.Fit.A, foundLine.Fit.B }), 0xFFFFCC00);
-            foreach (var visual in FoundPoints(foundLine.EdgePoints, foundLine.Inliers, foundLine.EdgePairs, unit)) yield return visual;
-            yield break;
-        }
-        if (facts is VisionFindCircleResult foundCircle)
+            IVisionDisplayFact display => display.DisplayItems,
+            IVisionGeometryFact geometry => geometry.DisplayGeometry.Select(g => new VisionDisplayItem(g, EVisionDisplayRole.Result)).ToArray(),
+            _ => Array.Empty<VisionDisplayItem>()
+        };
+        double r = 5 * Math.Max(1e-6, unit);
+        for (int i = 0; i < items.Count; i++)
         {
-            yield return new Visual("find-fit", new EllipseGeometry(foundCircle.Fit.Center, foundCircle.Radius, foundCircle.Radius), 0xFFFFCC00);
-            foreach (var visual in FoundPoints(foundCircle.EdgePoints, foundCircle.Inliers, foundCircle.EdgePairs, unit)) yield return visual;
-            yield break;
-        }
-        if (facts is IVisionGeometryFact geometry)
-            for (var index = 0; index < geometry.DisplayGeometry.Count; index++)
-                yield return new Visual("geometry-" + index, geometry.DisplayGeometry[index], 0xFFFFCC00, index == 0 ? Caption(geometry) : null);
-        if (facts is RegionAnalysisResult region)
-            yield return new Visual("region", region.Region, 0xFF22DD88, $"精确区域面积 {region.Area}");
-        if (facts is CaliperResult caliper)
-        {
-            yield return new Visual("profile", new ContourGeometry(new[] { caliper.Start, caliper.End }), 0xFF33BBFF, "卡尺采样方向");
-            for (int i = 0; i < caliper.Count; i++)
-                yield return new Visual($"edge-{i}", new EllipseGeometry(caliper.Edges[i].Position, 1, 1), 0xFFFFCC00,
-                    $"边缘 ({caliper.Edges[i].Position.X:F4},{caliper.Edges[i].Position.Y:F4})；梯度 {caliper.Edges[i].Gradient:F3}");
-        }
-        // 卡尺结果不在图上画文字标签；点击边缘点时由 PickText 在状态栏给出坐标和梯度。
-        if (facts is VisionCaliperMeasurement measurement)
-        {
-            yield return new Visual("profile", new ContourGeometry(measurement.Path), 0xFF33BBFF);
-            // 边缘对模式：全部边缘为小灰点，每对的两个边缘为青色点并用宽度线连起来，中点为黄色；单边缘模式边缘为黄点。
-            var pairs = measurement.EdgeMode == EVisionCaliperEdgeMode.Pair;
-            for (int i = 0; i < measurement.Count; i++)
-                yield return new Visual($"edge-{i}", new EllipseGeometry(measurement.Edges[i].Position, 1, 1), pairs ? 0xFF94A3B8 : 0xFFFFCC00);
-            for (int i = 0; i < measurement.PairCount; i++)
+            var item = items[i];
+            var (color, detail) = (ItemColor(item), item.Detail ?? summary);
+            if (item.Marker is { } p)
             {
-                var pair = measurement.Pairs[i];
-                yield return new Visual($"pair-{i}", new ContourGeometry(new[] { pair.First.Position, pair.Second.Position }), 0xFF22D3EE);
-                yield return new Visual($"pair-first-{i}", new EllipseGeometry(pair.First.Position, 1.8, 1.8), 0xFF22D3EE);
-                yield return new Visual($"pair-second-{i}", new EllipseGeometry(pair.Second.Position, 1.8, 1.8), 0xFF22D3EE);
-                yield return new Visual($"pair-mid-{i}", new EllipseGeometry(pair.Midpoint, 2.2, 2.2), 0xFFFFCC00);
+                yield return (new Visual($"item-{i}", new ContourGeometry(new[] { new PointD(p.X - r, p.Y - r), new PointD(p.X + r, p.Y + r) }), color, item.Label), detail);
+                yield return (new Visual($"item-{i}-x", new ContourGeometry(new[] { new PointD(p.X - r, p.Y + r), new PointD(p.X + r, p.Y - r) }), color), detail);
             }
+            else yield return (new Visual($"item-{i}", item.Geometry!, color, item.Label), detail);
         }
-        if (facts is RobustLineResult line)
-            yield return new Visual("robust-line", new ContourGeometry(new[] { line.A, line.B }), 0xFFFFCC00, $"内点 {line.InlierCount}；RMS {line.RmsError:F4}");
-        if (facts is BlobAnalysisResult blobs)
-            for (int i = 0; i < blobs.Count; i++)
-            {
-                var b = blobs.Blobs[i];
-                yield return new Visual($"blob-{i}", b.Region, 0xFF22DD88, $"#{i + 1} 面积 {b.Area}；质心 ({b.Centroid.X:F3},{b.Centroid.Y:F3})；栅格周长 {b.Features.GridPerimeter}；圆度 {b.Features.Circularity:F4}；轴比 {b.Features.Elongation:F4}");
-            }
     }
 
     /// <inheritdoc/>
@@ -510,7 +472,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         lock (_gate)
         {
             if (_disposed) return; _disposed = true;
-            _lifetime.Cancel(); _manual?.Dispose(); _manual = null;
+            _lifetime.Cancel(); _manual?.Dispose(); _manual = null; _trial?.Frame.Dispose(); _trial = null;
             Template?.Dispose();
             Editor.DocumentChanged -= OnDocumentChanged; Editor.Cancel();
         }
