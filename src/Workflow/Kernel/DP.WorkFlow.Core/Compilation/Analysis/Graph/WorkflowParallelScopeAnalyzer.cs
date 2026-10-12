@@ -22,13 +22,13 @@ internal static class WorkflowParallelScopeAnalyzer
         foreach (var parallelNode in graph.Nodes.Values.OfType<IWorkflowParallelForkNode>())
         {
             var branches = graph.GetSuccessors(parallelNode.Id, WorkflowPorts.Branch);
-            // 停用的分支不派发；分支总数（含停用）仍须至少两个，启用的至少一个。
+            // 单分支也允许（例如其余分支暂时停用或尚未接入）；停用的分支不派发，启用的至少一个。
             int disabledBranches = graph.DisabledConnections.Count(c => c.FromNodeId == parallelNode.Id && c.FromPort == WorkflowPorts.Branch);
-            if (branches.Count + disabledBranches < 2)
+            if (branches.Count + disabledBranches == 0)
             {
                 diagnostics.Add(new WorkflowValidationError(
                     "WF020",
-                    $"并行节点 {parallelNode.Id} 至少需要两个 Branch 目标。",
+                    $"并行节点 {parallelNode.Id} 没有连出任何 Branch 分支。",
                     parallelNode.Id));
                 continue;
             }

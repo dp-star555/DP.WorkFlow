@@ -278,6 +278,24 @@ public sealed class ParallelWorkflowTests
         Assert.Equal((1, 0, 1), (a, b, after));
     }
 
+    [Fact]
+    public async Task RunAsync_SingleBranchParallelIsAllowed()
+    {
+        var document = BuildParallelDocument();
+        document.CanvasProjection.Connections.Remove(document.CanvasProjection.Connections.Single(c => c.ToNodeId == "BranchB"));
+        int a = 0, after = 0;
+        var actions = new WorkflowActionRegistry()
+            .Register("BranchA", (_, _) => { Interlocked.Increment(ref a); return ValueTask.FromResult<object?>(null); })
+            .Register("BranchB", (_, _) => ValueTask.FromResult<object?>(null))
+            .Register("AfterMerge", (_, _) => { Interlocked.Increment(ref after); return ValueTask.FromResult<object?>(null); });
+        var engine = CreateEngine(document, new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
+
+        var result = await engine.RunAsync();
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal((1, 1), (a, after));
+    }
+
     private static WorkflowEngine CreateEngine(
         WorkflowDocument document,
         IServiceProvider services,
