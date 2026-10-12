@@ -38,6 +38,64 @@ public sealed class WorkflowDiagnosticsModelTests
         Assert.Equal("same", navigator.CurrentSession.SelectedNodeId);
     }
 
+    [Fact]
+    public void SubDocumentProblems_AreSummarizedOnTheCompositeNode_AndListedInTheChildPanel()
+    {
+        var catalog = new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes();
+        var consumer = new DecisionNodeModel
+        {
+            Id = "ChildConsumer",
+            ConditionSource = E_DecisionConditionSource.Binding,
+            Condition = WorkflowInput<bool>.FromBinding(new WorkflowBindingKey("Nope", "Value"))
+        };
+        var child = Document(new StartNodeModel { Id = "ChildStart" }, consumer);
+        child.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        {
+            FromNodeId = "ChildStart", FromPort = WorkflowPorts.Success, ToNodeId = consumer.Id, ToPort = WorkflowPorts.Input
+        });
+        var block = new LoopBlockNodeModel { Id = "LoopBlock1", Title = "扫描循环", SubDocument = child };
+        var root = Document(new StartNodeModel { Id = "start" }, block);
+        root.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        {
+            FromNodeId = "start", FromPort = WorkflowPorts.Success, ToNodeId = block.Id, ToPort = WorkflowPorts.Input
+        });
+        var session = new WorkflowDesignerSession(root, catalog);
+
+        using var diagnostics = new WorkflowDiagnosticsModel(session, "start");
+
+        // 主画布：子画布的问题汇总成一条，定位到复合节点，并阻止运行。
+        var summary = Assert.Single(diagnostics.Items);
+        Assert.Equal(WorkflowDiagnosticsModel.SubDocumentSummaryCode, summary.Code);
+        Assert.Equal(block.Id, summary.NodeId);
+        Assert.Equal(WorkflowValidationSeverity.Error, summary.Severity);
+        Assert.Contains("扫描循环", summary.Message);
+        Assert.False(diagnostics.CanRun);
+        Assert.True(diagnostics.NavigateTo(summary));
+        Assert.Equal(block.Id, session.SelectedNodeId);
+
+        // 子画布诊断：按子画布当前入口检查，列出具体问题并定位到子画布内的节点。
+        var childSession = new WorkflowDesignerSession(child, catalog);
+        using var childDiagnostics = new WorkflowDiagnosticsModel(childSession);
+        var problem = Assert.Single(childDiagnostics.Items, item => item.Severity == WorkflowValidationSeverity.Error);
+        Assert.Equal(consumer.Id, problem.NodeId);
+        Assert.True(childDiagnostics.NavigateTo(problem));
+        Assert.Equal(consumer.Id, childSession.SelectedNodeId);
+    }
+
+    [Fact]
+    public void ChildPanel_FollowsEntryAddedAfterOpening()
+    {
+        var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
+        var session = new WorkflowDesignerSession(new WorkflowDocument(), catalog);
+        using var diagnostics = new WorkflowDiagnosticsModel(session);
+        Assert.False(diagnostics.CanRun);
+
+        session.AddNode("Start", 72, 72);
+
+        Assert.Equal(session.Document.EntryNodeId, diagnostics.EntryNodeId);
+        Assert.DoesNotContain(diagnostics.Items, item => item.Code == "UI001");
+    }
+
     private static WorkflowDocument Document(params IWorkflowNodeModel[] nodes)
     {
         var document = new WorkflowDocument { EntryNodeId = nodes[0].Id };

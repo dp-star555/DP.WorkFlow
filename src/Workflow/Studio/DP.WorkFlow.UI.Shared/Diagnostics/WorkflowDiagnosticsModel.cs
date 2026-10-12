@@ -23,10 +23,17 @@ public sealed record WorkflowDiagnosticItem(
     public string? Phase { get; init; }
 }
 
-/// <summary>汇总结构、并行和绑定编译诊断，并支持导航到问题节点。</summary>
+/// <summary>
+/// 汇总结构、并行和绑定编译诊断，并支持导航到问题节点。
+/// 子画布内部的问题按复合节点各汇总成一条，定位到该复合节点；详情在节点窗口子画布页的诊断中查看。
+/// </summary>
 public sealed class WorkflowDiagnosticsModel : IDisposable
 {
+    /// <summary>子画布问题汇总项的诊断代码。</summary>
+    public const string SubDocumentSummaryCode = "WFSUB";
+
     private readonly WorkflowDesignerSession _session;
+    private readonly bool _followsDocumentEntry;
     private IReadOnlyList<WorkflowDiagnosticItem> _items = Array.Empty<WorkflowDiagnosticItem>();
     private bool _refreshing;
     private readonly IWorkflowDiagnosticProvider? _provider;
@@ -38,10 +45,23 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
     /// <param name="startNodeId">工作流开始节点标识。</param>
     public WorkflowDiagnosticsModel(WorkflowDesignerSession session, string startNodeId) : this(session, startNodeId, null, null) { }
 
+    /// <summary>
+    /// 创建检查会话当前文档的诊断模型，入口始终跟随文档入口；用于节点窗口中正在编辑的子画布，
+    /// 子画布刚创建时可能还没有启动节点，放入后自动按新入口检查。
+    /// </summary>
+    /// <param name="session">子画布的设计会话。</param>
+    public WorkflowDiagnosticsModel(WorkflowDesignerSession session)
+        : this(session, session?.Document.EntryNodeId ?? throw new ArgumentNullException(nameof(session)), null, null, followsDocumentEntry: true) { }
+
     /// <summary>组合领域检查并支持子流程定位；保持原构造入口兼容。</summary>
     public WorkflowDiagnosticsModel(WorkflowDesignerSession session, string startNodeId, IWorkflowDiagnosticProvider? provider, WorkflowDesignerNavigator? navigator)
+        : this(session, startNodeId, provider, navigator, followsDocumentEntry: false) { }
+
+    private WorkflowDiagnosticsModel(WorkflowDesignerSession session, string startNodeId, IWorkflowDiagnosticProvider? provider,
+        WorkflowDesignerNavigator? navigator, bool followsDocumentEntry)
     {
         _provider = provider; _navigator = navigator; _navigationDepth = navigator?.Depth ?? 0;
+        _followsDocumentEntry = followsDocumentEntry;
         _session = session ?? throw new ArgumentNullException(nameof(session));
         EntryNodeId = startNodeId ?? throw new ArgumentNullException(nameof(startNodeId));
         _session.Changed += OnSessionChanged;
@@ -68,6 +88,8 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
         try
         {
             IReadOnlyList<WorkflowValidationError> diagnostics;
+            if (_followsDocumentEntry)
+                EntryNodeId = _session.Document.EntryNodeId;
             try
             {
                 var compiler = new WorkflowCompiler(_session.Catalog);
@@ -92,9 +114,9 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
             var external = Array.Empty<WorkflowDiagnosticItem>();
             try { external = _provider?.Analyze(_session.Document).ToArray() ?? external; }
             catch (Exception error) { external = new[] { new WorkflowDiagnosticItem("UI_DIAGNOSTICS_FAILED", WorkflowValidationSeverity.Error, error.Message, null) { Detail = error.ToString() } }; }
-            _items = diagnostics
-                .Select(item => new WorkflowDiagnosticItem(item.Code, item.Severity, item.Message, item.NodeId))
-                .Concat(external)
+            _items = SummarizeSubDocuments(diagnostics
+                    .Select(item => new WorkflowDiagnosticItem(item.Code, item.Severity, item.Message, item.NodeId) { PlanPath = item.PlanPath })
+                    .Concat(external))
                 .OrderByDescending(item => item.Severity)
                 .ThenBy(item => item.Code, StringComparer.Ordinal)
                 .ThenBy(item => item.NodeId, StringComparer.Ordinal)
@@ -105,6 +127,56 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
         {
             _refreshing = false;
         }
+    }
+
+    /// <summary>
+    /// 当前画布内的问题原样保留；位于子画布内的问题按所在的最外层复合节点各汇总成一条，
+    /// 定位到当前画布上的该复合节点。
+    /// </summary>
+    private IEnumerable<WorkflowDiagnosticItem> SummarizeSubDocuments(IEnumerable<WorkflowDiagnosticItem> items)
+    {
+        var nested = new Dictionary<string, List<WorkflowDiagnosticItem>>(StringComparer.Ordinal);
+        foreach (var item in items)
+        {
+            var compositeId = item.FromRoot && _navigationDepth != 0 ? null : FirstSegment(item.PlanPath);
+            if (compositeId is null)
+            {
+                yield return item;
+                continue;
+            }
+            if (!nested.TryGetValue(compositeId, out var list))
+                nested[compositeId] = list = new List<WorkflowDiagnosticItem>();
+            list.Add(item);
+        }
+        foreach (var (compositeId, list) in nested)
+        {
+            var errors = list.Count(item => item.Severity == WorkflowValidationSeverity.Error);
+            var warnings = list.Count - errors;
+            var title = _session.Document.Graph.Nodes.FirstOrDefault(node => node.Id == compositeId)?.Title;
+            var name = string.IsNullOrWhiteSpace(title) ? compositeId : title;
+            var counts = string.Join("、", new[]
+            {
+                errors > 0 ? $"{errors} 个错误" : null,
+                warnings > 0 ? $"{warnings} 个警告" : null
+            }.Where(text => text is not null));
+            yield return new WorkflowDiagnosticItem(
+                SubDocumentSummaryCode,
+                errors > 0 ? WorkflowValidationSeverity.Error : WorkflowValidationSeverity.Warning,
+                $"{name} 的子画布有 {counts}，请打开该节点在子画布诊断中查看。",
+                compositeId)
+            {
+                BlocksRun = list.Any(item => item.Severity == WorkflowValidationSeverity.Error && item.BlocksRun),
+                Detail = string.Join(Environment.NewLine, list.Select(item =>
+                    $"{(item.Severity == WorkflowValidationSeverity.Error ? "错误" : "警告")} {item.NodeId}：{item.Message}"))
+            };
+        }
+    }
+
+    /// <summary>子画布路径的第一段复合节点 ID；当前画布（<c>$</c>）返回空。</summary>
+    private static string? FirstSegment(string planPath)
+    {
+        var segments = planPath.Split('/');
+        return segments.Length > 1 && segments[1].Length > 0 ? Uri.UnescapeDataString(segments[1]) : null;
     }
 
     /// <summary>选择诊断关联节点；节点位于子流程内部时选择包含它的最外层子流程节点。</summary>

@@ -339,9 +339,24 @@ public sealed class WorkflowNodeEditorWindow : Window
         var canvas = new Grid();
         canvas.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         canvas.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        canvas.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        canvas.RowDefinitions.Add(new RowDefinition { Height = new GridLength(140), MinHeight = 60 });
         canvas.Children.Add(toolbar);
         Grid.SetRow(designer, 1);
         canvas.Children.Add(designer);
+        // 子画布自己的诊断：检查正在编辑的草稿，双击选中子画布内的问题节点。
+        var diagnosticsSplitter = new GridSplitter
+        {
+            Height = 5,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ResizeDirection = GridResizeDirection.Rows,
+            Background = new SolidColorBrush(Color.FromRgb(51, 51, 55))
+        };
+        Grid.SetRow(diagnosticsSplitter, 2);
+        canvas.Children.Add(diagnosticsSplitter);
+        var diagnostics = new WorkflowDiagnosticsControl { FollowsDocumentEntry = true, Session = page.Session };
+        Grid.SetRow(diagnostics, 3);
+        canvas.Children.Add(diagnostics);
 
         // 子画布与主工作台一致：左侧工具箱双击添加到画布中心，或直接拖放到画布。
         var toolbox = new WorkflowToolboxControl { Session = page.Session };

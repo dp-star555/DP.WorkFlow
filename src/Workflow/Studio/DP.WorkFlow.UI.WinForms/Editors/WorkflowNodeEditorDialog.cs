@@ -339,8 +339,19 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             mappings.Click += (_, _) => _editMappings(block);
             toolbar.Controls.Add(mappings);
         }
+        // 子画布自己的诊断：检查正在编辑的草稿，双击选中子画布内的问题节点。
+        var diagnostics = new WorkflowDiagnosticsControl
+        {
+            FollowsDocumentEntry = true,
+            Session = page.Session,
+            Dock = DockStyle.Bottom,
+            Height = 140
+        };
         var canvas = new Panel { Dock = DockStyle.Fill };
+        // 停靠按添加的逆序处理：工具栏、诊断、分隔条先停靠，画布最后填满剩余区域。
         canvas.Controls.Add(designer);
+        canvas.Controls.Add(new Splitter { Dock = DockStyle.Bottom, Height = 4 });
+        canvas.Controls.Add(diagnostics);
         canvas.Controls.Add(toolbar);
 
         // 子画布与主工作台一致：左侧工具箱双击添加到画布中心，或直接拖放到画布。
