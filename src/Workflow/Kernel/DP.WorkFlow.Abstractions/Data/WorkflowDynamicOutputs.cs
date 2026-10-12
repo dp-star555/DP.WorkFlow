@@ -38,9 +38,9 @@ public static class WorkflowOutputMembers
 {
     private const System.Reflection.BindingFlags Public = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public;
 
-    /// <summary>类型本身以及递归最多 <paramref name="maxDepth"/> 层的公开可读属性，显示名为路径。</summary>
+    /// <summary>类型本身以及递归最多 <paramref name="maxDepth"/> 层的公开可读属性。</summary>
     /// <param name="type">根类型。</param><param name="path">根路径，默认 <c>$</c>。</param>
-    /// <param name="displayPrefix">显示名前缀，例如“左边 · ”；为空时显示名就是路径。</param>
+    /// <param name="displayPrefix">显示名前缀，例如“左边 · ”；给出时各级成员用中文显示名（<see cref="WorkflowOutputDisplayNames"/>）拼接，为空时显示名就是路径。</param>
     /// <param name="maxDepth">递归层数。</param>
     public static IEnumerable<WorkflowOutputMember> OfType(Type type, string path = "$", string? displayPrefix = null, int maxDepth = 3)
     {
@@ -57,8 +57,9 @@ public static class WorkflowOutputMembers
                          .OrderBy(p => p.Name, StringComparer.Ordinal))
             {
                 var child = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+                var shown = displayPrefix is null ? property.Name : WorkflowOutputDisplayNames.Resolve(property);
                 foreach (var member in Walk(child, currentPath == "$" ? property.Name : $"{currentPath}.{property.Name}",
-                             relative.Length == 0 ? property.Name : $"{relative}.{property.Name}", depth + 1))
+                             relative.Length == 0 ? shown : $"{relative}.{shown}", depth + 1))
                     yield return member;
             }
         }

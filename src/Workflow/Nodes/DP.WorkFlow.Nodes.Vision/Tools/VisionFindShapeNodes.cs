@@ -918,79 +918,52 @@ public static class VisionSectorCaliper
     }
 }
 
-/// <summary>找线：卡尺取点后鲁棒拟合直线。</summary>
-public sealed class FindVisionLineNodeHandler : WorkflowNodeHandler<FindVisionLineNodeModel>
+/// <summary>找线、找圆、找矩形的测量过程；单个节点和测量组共用，拟合槽位名由调用方指定。</summary>
+internal static class VisionShapeMeasure
 {
-    /// <inheritdoc/>
-    protected override ValueTask<NodeExecutionResult> ExecuteAsync(FindVisionLineNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+    internal static VisionFindLineResult Line(FindVisionShapeNodeModel node, IWorkflowNodeExecutionContext context, ImageFrame frame,
+        VisionCoordinateSystem? coordinates, CancellationToken token, string fitterSlot = "fitter", IReadOnlyList<VisionCaliperScan>? scans = null,
+        string failure = "找线失败")
     {
-        var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
-        var coordinates = node.ResolveCoordinates(frame, context);
-        var probe = VisionShapeFinding.Probe(node, context, frame, coordinates, cancellationToken);
+        var probe = VisionShapeFinding.Probe(node, context, frame, coordinates, token, scans);
         if (probe.Edges.Count < node.MinimumInliers)
-            throw new InvalidOperationException($"找线失败：只有 {probe.Edges.Count} 把卡尺找到边缘，至少需要 {node.MinimumInliers} 个点。");
+            throw new InvalidOperationException($"{failure}：只有 {probe.Edges.Count} 把卡尺找到边缘，至少需要 {node.MinimumInliers} 个点。");
         var (fit, inliers) = VisionFitIgnoring.FitIgnoring(probe.Edges, node.IgnoreCount, node.MinimumInliers,
-            points => WorkflowVisionAlgorithmInvocation.Invoke(context, "fitter", node.FitterAlgorithm, "managed.robust-line",
-                (IRobustLineFitter fitter) => fitter.Fit(frame.FrameId, points, node.DistanceThreshold * (coordinates?.SimilarityScale ?? 1), 256, node.MinimumInliers, cancellationToken),
-                cancellationToken),
+            points => WorkflowVisionAlgorithmInvocation.Invoke(context, fitterSlot, node.FitterAlgorithm, "managed.robust-line",
+                (IRobustLineFitter fitter) => fitter.Fit(frame.FrameId, points, node.DistanceThreshold * (coordinates?.SimilarityScale ?? 1), 256, node.MinimumInliers, token),
+                token),
             fit => fit.InlierIndices, (fit, p) => VisionFitIgnoring.LineDistance(fit.A, fit.B, p));
         if (coordinates is not null) fit = fit.InCoordinates(coordinates);
-        var result = new VisionFindLineResult(fit, probe, inliers);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
+        return new VisionFindLineResult(fit, probe, inliers);
     }
-}
 
-/// <summary>找圆：径向卡尺取点后鲁棒拟合圆。</summary>
-public sealed class FindVisionCircleNodeHandler : WorkflowNodeHandler<FindVisionCircleNodeModel>
-{
-    /// <inheritdoc/>
-    protected override ValueTask<NodeExecutionResult> ExecuteAsync(FindVisionCircleNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+    internal static VisionFindCircleResult Circle(FindVisionCircleNodeModel node, IWorkflowNodeExecutionContext context, ImageFrame frame,
+        VisionCoordinateSystem? coordinates, CancellationToken token, string fitterSlot = "fitter")
     {
-        var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
-        var coordinates = node.ResolveCoordinates(frame, context);
-        var probe = VisionShapeFinding.Probe(node, context, frame, coordinates, cancellationToken);
+        var probe = VisionShapeFinding.Probe(node, context, frame, coordinates, token);
         if (probe.Edges.Count < node.MinimumInliers)
             throw new InvalidOperationException($"找圆失败：只有 {probe.Edges.Count} 把卡尺找到边缘，至少需要 {node.MinimumInliers} 个点。");
         var (fit, inliers) = VisionFitIgnoring.FitIgnoring(probe.Edges, node.IgnoreCount, node.MinimumInliers,
-            points => WorkflowVisionAlgorithmInvocation.Invoke(context, "fitter", node.FitterAlgorithm, "managed.robust-circle",
-                (IRobustCircleFitter fitter) => fitter.Fit(frame.FrameId, points, node.DistanceThreshold * (coordinates?.SimilarityScale ?? 1), 256, node.MinimumInliers, cancellationToken),
-                cancellationToken),
+            points => WorkflowVisionAlgorithmInvocation.Invoke(context, fitterSlot, node.FitterAlgorithm, "managed.robust-circle",
+                (IRobustCircleFitter fitter) => fitter.Fit(frame.FrameId, points, node.DistanceThreshold * (coordinates?.SimilarityScale ?? 1), 256, node.MinimumInliers, token),
+                token),
             fit => fit.InlierIndices,
             (fit, p) => Math.Abs(Math.Sqrt((p.X - fit.Center.X) * (p.X - fit.Center.X) + (p.Y - fit.Center.Y) * (p.Y - fit.Center.Y)) - fit.Radius));
         if (coordinates is not null) fit = fit.InCoordinates(coordinates);
-        var result = new VisionFindCircleResult(fit, probe, inliers);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
+        return new VisionFindCircleResult(fit, probe, inliers);
     }
-}
 
-/// <summary>找矩形：四条边各自卡尺取点、鲁棒拟合直线，相邻边求交得到角点。</summary>
-public sealed class FindVisionRectangleNodeHandler : WorkflowNodeHandler<FindVisionRectangleNodeModel>
-{
-    /// <inheritdoc/>
-    protected override ValueTask<NodeExecutionResult> ExecuteAsync(FindVisionRectangleNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+    internal static VisionFindRectangleResult Rectangle(FindVisionRectangleNodeModel node, IWorkflowNodeExecutionContext context, ImageFrame frame,
+        VisionCoordinateSystem? coordinates, CancellationToken token, string fitterSlot = "fitter")
     {
-        var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
-        var coordinates = node.ResolveCoordinates(frame, context);
         var all = node.CaliperScans(coordinates);
         var sides = new VisionFindLineResult[4];
         for (int side = 0; side < 4; side++)
-        {
-            var name = FindVisionRectangleNodeModel.SideNames[side];
-            var probe = VisionShapeFinding.Probe(node, context, frame, coordinates, cancellationToken, all.Skip(side * node.CaliperCount).Take(node.CaliperCount).ToArray());
-            if (probe.Edges.Count < node.MinimumInliers)
-                throw new InvalidOperationException($"找矩形失败：{name}只有 {probe.Edges.Count} 把卡尺找到边缘，至少需要 {node.MinimumInliers} 个点。");
-            var (fit, inliers) = VisionFitIgnoring.FitIgnoring(probe.Edges, node.IgnoreCount, node.MinimumInliers,
-                points => WorkflowVisionAlgorithmInvocation.Invoke(context, "fitter", node.FitterAlgorithm, "managed.robust-line",
-                    (IRobustLineFitter fitter) => fitter.Fit(frame.FrameId, points, node.DistanceThreshold * (coordinates?.SimilarityScale ?? 1), 256, node.MinimumInliers, cancellationToken),
-                    cancellationToken),
-                fit => fit.InlierIndices, (fit, p) => VisionFitIgnoring.LineDistance(fit.A, fit.B, p));
-            if (coordinates is not null) fit = fit.InCoordinates(coordinates);
-            sides[side] = new VisionFindLineResult(fit, probe, inliers);
-        }
+            sides[side] = Line(node, context, frame, coordinates, token, fitterSlot, all.Skip(side * node.CaliperCount).Take(node.CaliperCount).ToArray(),
+                $"找矩形失败：{FindVisionRectangleNodeModel.SideNames[side]}");
         // 角点：左上 = 左∩上，右上 = 上∩右，右下 = 右∩下，左下 = 下∩左。
         var corners = new[] { Corner(sides[3], sides[0], "左上"), Corner(sides[0], sides[1], "右上"), Corner(sides[1], sides[2], "右下"), Corner(sides[2], sides[3], "左下") };
-        var result = new VisionFindRectangleResult(sides, corners, coordinates);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
+        return new VisionFindRectangleResult(sides, corners, coordinates);
     }
 
     private static PointD Corner(VisionFindLineResult a, VisionFindLineResult b, string name)
@@ -1003,5 +976,41 @@ public sealed class FindVisionRectangleNodeHandler : WorkflowNodeHandler<FindVis
             throw new InvalidOperationException($"找矩形失败：{name}角处的两条边接近平行，无法求角点；请检查搜索范围是否压在同一条边上。");
         double s = ((r.X - p.X) * vy - (r.Y - p.Y) * vx) / cross;
         return new PointD(p.X + s * ux, p.Y + s * uy);
+    }
+}
+
+/// <summary>找线：卡尺取点后鲁棒拟合直线。</summary>
+public sealed class FindVisionLineNodeHandler : WorkflowNodeHandler<FindVisionLineNodeModel>
+{
+    /// <inheritdoc/>
+    protected override ValueTask<NodeExecutionResult> ExecuteAsync(FindVisionLineNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+    {
+        var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
+        var result = VisionShapeMeasure.Line(node, context, frame, node.ResolveCoordinates(frame, context), cancellationToken);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
+    }
+}
+
+/// <summary>找圆：径向卡尺取点后鲁棒拟合圆。</summary>
+public sealed class FindVisionCircleNodeHandler : WorkflowNodeHandler<FindVisionCircleNodeModel>
+{
+    /// <inheritdoc/>
+    protected override ValueTask<NodeExecutionResult> ExecuteAsync(FindVisionCircleNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+    {
+        var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
+        var result = VisionShapeMeasure.Circle(node, context, frame, node.ResolveCoordinates(frame, context), cancellationToken);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
+    }
+}
+
+/// <summary>找矩形：四条边各自卡尺取点、鲁棒拟合直线，相邻边求交得到角点。</summary>
+public sealed class FindVisionRectangleNodeHandler : WorkflowNodeHandler<FindVisionRectangleNodeModel>
+{
+    /// <inheritdoc/>
+    protected override ValueTask<NodeExecutionResult> ExecuteAsync(FindVisionRectangleNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+    {
+        var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
+        var result = VisionShapeMeasure.Rectangle(node, context, frame, node.ResolveCoordinates(frame, context), cancellationToken);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
     }
 }
