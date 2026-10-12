@@ -41,7 +41,8 @@ internal static class WorkflowParallelScopeAnalyzer
                     common.IntersectWith(reachable);
             }
 
-            var postDominators = graph.ComputePostDominators(branches);
+            // 回到并行节点的边（流程首尾回环）视为本次并行的终点，汇聚点仍按分支到这些终点的路径判定。
+            var postDominators = graph.ComputePostDominators(branches, parallelNode.Id);
             var candidates = (common ?? new HashSet<string>(StringComparer.Ordinal))
                 .Where(nodeId => graph.Nodes.TryGetValue(nodeId, out var node)
                     && node is IWorkflowParallelJoinNode

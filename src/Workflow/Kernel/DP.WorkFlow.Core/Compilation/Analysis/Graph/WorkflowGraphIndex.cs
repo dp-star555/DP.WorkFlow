@@ -189,12 +189,17 @@ internal sealed class WorkflowGraphIndex
     /// <summary>Computes post-dominator sets for nodes reachable from the supplied entries.</summary>
     /// <param name="entryNodeIds">One or more control-flow entries.</param>
     /// <returns>Each reachable node and the nodes occurring on every finite path from it to a terminal.</returns>
-    public IReadOnlyDictionary<string, HashSet<string>> ComputePostDominators(IEnumerable<string> entryNodeIds)
+    /// <param name="boundaryNodeId">
+    /// 可选边界节点：不进入该节点，指向它的边按“到达终点”处理。并行分析传入并行节点本身，
+    /// 这样流程首尾回环（汇聚之后又回到并行节点之前）不会让所有路径都变成无穷循环、找不到汇聚点。
+    /// </param>
+    public IReadOnlyDictionary<string, HashSet<string>> ComputePostDominators(IEnumerable<string> entryNodeIds, string? boundaryNodeId = null)
     {
         ArgumentNullException.ThrowIfNull(entryNodeIds);
         var reachable = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entryNodeId in entryNodeIds)
-            reachable.UnionWith(CollectReachable(entryNodeId));
+            reachable.UnionWith(CollectReachable(entryNodeId, boundaryNodeId));
+        if (boundaryNodeId is not null) reachable.Remove(boundaryNodeId);
         var exits = reachable.Where(nodeId => GetSuccessors(nodeId).All(target => !reachable.Contains(target))).ToArray();
         if (exits.Length == 0)
             return new ReadOnlyDictionary<string, HashSet<string>>(
