@@ -21,7 +21,12 @@ public sealed class WorkflowVisionGeometryModule : IWorkflowRuntimePluginModule
             .Register(WorkflowNodeDescriptor.Create<GenerateVisionLineNodeModel, VisionLine>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<MeasureVisionPointDistanceNodeModel, GeometricDistanceResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<MeasureVisionPointLineDistanceNodeModel, GeometricDistanceResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<MeasureVisionLineDistanceNodeModel, GeometricDistanceResult>(ports: ports));
+            .Register(WorkflowNodeDescriptor.Create<MeasureVisionLineDistanceNodeModel, GeometricDistanceResult>(ports: ports))
+            .Register(WorkflowNodeDescriptor.Create<IntersectVisionLinesNodeModel, VisionLineIntersectionResult>(ports: ports))
+            .Register(WorkflowNodeDescriptor.Create<MeasureVisionLineAngleNodeModel, VisionLineAngleResult>(ports: ports))
+            .Register(WorkflowNodeDescriptor.Create<IntersectVisionLineCircleNodeModel, VisionCurveIntersectionResult>(ports: ports))
+            .Register(WorkflowNodeDescriptor.Create<IntersectVisionCirclesNodeModel, VisionCurveIntersectionResult>(ports: ports))
+            .Register(WorkflowNodeDescriptor.Create<ProjectVisionPointToLineNodeModel, VisionPerpendicularFootResult>(ports: ports));
         var frames = WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>();
         var bindings = WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionAlgorithmBindings>();
         var geometry = WorkflowRuntimeCapabilityRequirement.Require<IGeometryMeasurer>();
@@ -31,6 +36,9 @@ public sealed class WorkflowVisionGeometryModule : IWorkflowRuntimePluginModule
             .Register(new GenerateVisionLineNodeHandler(), frames, bindings, geometry)
             .Register(new MeasureVisionPointDistanceNodeHandler(), frames, bindings, geometry)
             .Register(new MeasureVisionPointLineDistanceNodeHandler(), frames, bindings, geometry)
-            .Register(new MeasureVisionLineDistanceNodeHandler(), frames, bindings, geometry);
+            .Register(new MeasureVisionLineDistanceNodeHandler(), frames, bindings, geometry)
+            .Register(new IntersectVisionLinesNodeHandler(), frames).Register(new MeasureVisionLineAngleNodeHandler(), frames)
+            .Register(new IntersectVisionLineCircleNodeHandler(), frames).Register(new IntersectVisionCirclesNodeHandler(), frames)
+            .Register(new ProjectVisionPointToLineNodeHandler(), frames);
     }
 }

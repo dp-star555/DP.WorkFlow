@@ -40,6 +40,12 @@ internal static class WorkflowVisionGeometryExecution
         if (line == null) throw new InvalidOperationException("直线输入为空，圆模型不提供直线。");
         return new VisionLine(Align(line.A, frame, coordinates), Align(line.B, frame, coordinates));
     }
+    internal static RobustCircleResult Align(RobustCircleResult? circle, ImageFrame frame, VisionCoordinateSystem? coordinates)
+    {
+        if (circle == null || circle.FrameId != frame.FrameId) throw new InvalidOperationException("圆输入为空或不属于当前帧。");
+        if (circle.CoordinateSystem is { } source) source.ValidateFrame(frame);
+        return coordinates is null ? circle : circle.InCoordinates(coordinates);
+    }
     internal static ValueTask<NodeExecutionResult> Output(IWorkflowNodeExecutionContext context, ImageFrame frame, IVisionGeometryFact fact) =>
         ValueTask.FromResult(NodeExecutionResult.Continue(output: fact, projection: WorkflowVisionFrameScope.Stage(context, frame, fact)));
     internal static T Invoke<T>(IWorkflowNodeExecutionContext context, Func<IGeometryMeasurer, T> operation, CancellationToken token) =>
