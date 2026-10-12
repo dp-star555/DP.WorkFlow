@@ -64,6 +64,9 @@ internal static class WorkflowNodeConfigurationValidator
                 continue;
             }
             var propertyPath = $"{path}.{property.Name}";
+            // 子画布节点由编译子文档时各自校验，不能把它们的错误记到复合节点上。
+            if (value is WorkflowDocument)
+                continue;
             var propertyType = property.PropertyType;
             if (propertyType.IsGenericType && propertyType.GetGenericTypeDefinition() == typeof(WorkflowInput<>))
             {

@@ -384,6 +384,9 @@ public sealed class WorkflowBindingAnalyzer
             try { value = property.GetValue(instance); }
             catch (TargetInvocationException) { continue; }
             var propertyPath = $"{path}.{property.Name}";
+            // 子画布节点的绑定指向子画布内的节点，由编译子文档时单独分析；不能按当前画布校验。
+            if (value is WorkflowDocument)
+                continue;
             if (propertyType.IsGenericType && propertyType.GetGenericTypeDefinition() == typeof(WorkflowInput<>))
             {
                 if (value is null)

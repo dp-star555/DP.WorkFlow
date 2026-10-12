@@ -129,6 +129,33 @@ public sealed class WorkflowBindingAnalyzerTests
             candidate => candidate.SourceNodeId == source.Id && candidate.MemberPath == "Value");
     }
 
+    [Fact]
+    public void Analyze_BindingsInsideSubDocumentAreNotValidatedAgainstParentCanvas()
+    {
+        var source = new DecisionNodeModel { Id = "ChildSource", Title = "子流程来源" };
+        var consumer = BoundDecision("ChildConsumer", new WorkflowBindingKey(source.Id, "Value"));
+        var child = CreateDocument(source, consumer, Connect(source.Id, WorkflowPorts.True, consumer.Id));
+        child.EntryNodeId = source.Id;
+        var composite = new CompositeNode { Id = "Composite", Title = "子流程", SubDocument = child };
+        var parent = CreateDocument(composite);
+        parent.EntryNodeId = composite.Id;
+        var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
+
+        var parentAnalysis = new WorkflowBindingAnalyzer(catalog).Analyze(parent);
+        var childAnalysis = new WorkflowBindingAnalyzer(catalog).Analyze(child);
+
+        // 子画布的绑定只在子文档内分析：父画布没有 ChildSource 也不报 WFB001。
+        Assert.DoesNotContain(parentAnalysis.Diagnostics, item => item.Code == "WFB001");
+        Assert.DoesNotContain(childAnalysis.Diagnostics, item => item.Severity == WorkflowValidationSeverity.Error);
+    }
+
+    private sealed class CompositeNode : WorkflowNodeModel, IWorkflowSubDocumentNode
+    {
+        public override string NodeType => "AnalyzerTest.Composite";
+
+        public WorkflowDocument SubDocument { get; set; } = new();
+    }
+
     private static DecisionNodeModel BoundDecision(string id, WorkflowBindingKey binding) => new()
     {
         Id = id,
