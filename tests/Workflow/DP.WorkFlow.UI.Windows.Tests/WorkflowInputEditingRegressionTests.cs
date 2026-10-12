@@ -36,7 +36,7 @@ public sealed class WorkflowInputEditingRegressionTests
                 using var panel = new DP.WorkFlow.UI.WinForms.WorkflowPropertyPanel { Session = session, EntryNodeId = node.Id };
                 var text = FormsDescendants(panel).OfType<ModernUI.WinForms.ModernInput>()
                     .Single(control => control.Parent is System.Windows.Forms.TableLayoutPanel table
-                        && table.Controls.OfType<ModernUI.WinForms.ModernSelect>().Any()).InnerTextBox;
+                        && table.Controls.OfType<ModernUI.WinForms.ModernButton>().Any(IsSourceToggle)).InnerTextBox;
                 typeof(System.Windows.Forms.Control).GetMethod("OnValidated", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .Invoke(text, [EventArgs.Empty]);
                 Assert.True(text.ReadOnly);
@@ -45,6 +45,8 @@ public sealed class WorkflowInputEditingRegressionTests
             Assert.Null(node.Frame.LiteralValue);
         });
     }
+
+    private static bool IsSourceToggle(ModernUI.WinForms.ModernButton button) => button.AccessibleName is "来源：绑定" or "来源：固定值";
 
     public sealed class InputNode : WorkflowNodeModel
     {
@@ -139,13 +141,13 @@ public sealed class WorkflowInputEditingRegressionTests
                 using var panel = new DP.WorkFlow.UI.WinForms.WorkflowPropertyPanel { Session = session, EntryNodeId = node.Id };
                 for (var index = 0; index < 3; index++)
                 {
-                    var selector = FormsDescendants(panel).OfType<ModernUI.WinForms.ModernSelect>()
-                        .Single(control => control.Items.Contains(WorkflowValueSource.Binding));
-                    Assert.Equal(WorkflowValueSource.Binding, selector.SelectedItem);
-                    selector.SelectedItem = WorkflowValueSource.Literal;
+                    // 来源图标按钮：链环为绑定，点击改为固定值。
+                    var toggle = FormsDescendants(panel).OfType<ModernUI.WinForms.ModernButton>().Single(IsSourceToggle);
+                    Assert.Equal("来源：绑定", toggle.AccessibleName);
+                    toggle.PerformClick();
                     var text = FormsDescendants(panel).OfType<ModernUI.WinForms.ModernInput>()
                         .Single(control => control.Parent is System.Windows.Forms.TableLayoutPanel table
-                            && table.Controls.OfType<ModernUI.WinForms.ModernSelect>().Any()).InnerTextBox;
+                            && table.Controls.OfType<ModernUI.WinForms.ModernButton>().Any(IsSourceToggle)).InnerTextBox;
                     Assert.True(text.ReadOnly);
                     typeof(System.Windows.Forms.Control).GetMethod("OnValidated", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(text, [EventArgs.Empty]);
                     Assert.Equal(WorkflowValueSource.Literal, node.Frame.Source);

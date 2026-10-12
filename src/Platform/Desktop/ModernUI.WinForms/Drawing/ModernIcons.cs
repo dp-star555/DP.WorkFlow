@@ -74,7 +74,11 @@ public enum ModernIconKind
     /// <summary>垂直等距分布。</summary>
     DistributeVertical,
     /// <summary>刷新（顺时针圆弧箭头）。</summary>
-    Refresh
+    Refresh,
+    /// <summary>链接（两节斜向链环），如数据绑定。</summary>
+    Link,
+    /// <summary>编辑（铅笔），如直接填写的固定值。</summary>
+    Edit
 }
 
 /// <summary>Specifies where a button icon is placed relative to its text.</summary>
@@ -332,6 +336,28 @@ internal static class ModernIconRenderer
                 pen.StartCap = LineCap.Round;
                 pen.EndCap = LineCap.Round;
                 graphics.DrawArc(pen, RectangleF.Inflate(bounds, -strokeWidth, -strokeWidth), -75, 285);
+                break;
+            case ModernIconKind.Link:
+            {
+                // 两节沿右上方向的圆角链环，中段互相咬合。
+                foreach (var center in new[] { Point(.36f, .64f), Point(.64f, .36f) })
+                {
+                    float length = width * .5f, thickness = height * .26f;
+                    using var link = new GraphicsPath();
+                    var box = new RectangleF(center.X - length / 2, center.Y - thickness / 2, length, thickness);
+                    link.AddArc(box.Left, box.Top, thickness, thickness, 90, 180);
+                    link.AddArc(box.Right - thickness, box.Top, thickness, thickness, 270, 180);
+                    link.CloseFigure();
+                    using var rotate = new Matrix();
+                    rotate.RotateAt(-45, center);
+                    link.Transform(rotate);
+                    graphics.DrawPath(pen, link);
+                }
+                break;
+            }
+            case ModernIconKind.Edit:
+                graphics.DrawPolygon(pen, [Point(.16f, .84f), Point(.22f, .62f), Point(.66f, .18f), Point(.82f, .34f), Point(.38f, .78f)]);
+                graphics.DrawLine(pen, Point(.56f, .28f), Point(.72f, .44f));
                 break;
             case ModernIconKind.Refresh:
             {

@@ -130,7 +130,7 @@ public sealed class WorkflowPropertyPanelIntegrationTests
             foreach (var row in Descendants(panel).Where(control => control.Tag is System.ComponentModel.PropertyDescriptor descriptor
                          && descriptor.Name is nameof(InputLayoutNode.Literal) or nameof(InputLayoutNode.Binding)))
             {
-                var source = Descendants(row).OfType<ModernUI.WinForms.ModernSelect>().Single();
+                var source = Descendants(row).OfType<ModernUI.WinForms.ModernButton>().Single(button => button.AccessibleName is "来源：绑定" or "来源：固定值");
                 var layout = Assert.IsType<TableLayoutPanel>(source.Parent);
                 var value = layout.GetControlFromPosition(1, 0);
                 Assert.NotNull(value);

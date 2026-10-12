@@ -35,11 +35,14 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     private string? _modernSchemaKey;
     // 各输入属性当前的来源/绑定形态；只有它变化时只重建该行编辑器，不重建整张表格。
     private Dictionary<string, string> _modernInputStates = new(StringComparer.Ordinal);
+    // 输入来源图标按钮的悬停说明。
+    private readonly ToolTip _sourceTips = new() { InitialDelay = 400 };
 
     /// <summary>初始化节点属性编辑面板。</summary>
     public WorkflowPropertyPanel()
     {
         InitializeComponent();
+        Disposed += (_, _) => _sourceTips.Dispose();
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
 
         // 属性表必须显式使用宿主深色主题；通用递归配色无法改变其自绘卡片调色板。
@@ -611,8 +614,8 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     }
 
     /// <summary>
-    /// 创建 WorkflowInput&lt;T&gt; 编辑器：左侧选择 Literal/Binding，右侧显示固定值编辑器
-    /// 或强类型树形绑定按钮。切换到绑定模式时立即打开绑定选择窗口。
+    /// 创建 WorkflowInput&lt;T&gt; 编辑器：左侧图标按钮表示来源（铅笔为固定值，链环为绑定），点击切换；
+    /// 右侧显示固定值编辑器或强类型树形绑定按钮。切换到绑定时立即打开绑定选择窗口。
     /// </summary>
     private Control CreateWorkflowInputEditor(WorkflowPropertyEntry entry)
     {
@@ -628,15 +631,23 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             Padding = Padding.Empty
         };
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var source = EditorCombo();
-        var sources = Enum.GetValues<WorkflowValueSource>().Cast<object>().ToArray();
-        // 来源列按最长选项文字加下拉箭头与留白定宽，其余宽度全部给值编辑器；按比例分列时窄面板里来源下拉被截断。
-        int sourceWidth = sources.Max(item => TextRenderer.MeasureText(item.ToString(), source.Font).Width) + LogicalToDeviceUnits(44);
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, sourceWidth));
+        // 来源只占一个图标宽度，其余宽度全部给值编辑器。
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LogicalToDeviceUnits(34)));
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        source.Items.AddRange(sources);
-        source.SelectedItem = entry.GetInputSource();
-        source.Margin = new Padding(0, 0, 3, 0);
+        bool bound = entry.GetInputSource() == WorkflowValueSource.Binding;
+        var source = new ModernButton
+        {
+            Text = string.Empty,
+            Icon = bound ? ModernIconKind.Link : ModernIconKind.Edit,
+            IconSize = 16,
+            ButtonType = bound ? ModernButtonType.Primary : ModernButtonType.Default,
+            Dock = DockStyle.Fill,
+            MinimumSize = new Size(0, 24),
+            Theme = ModernTheme.Dark,
+            Margin = new Padding(0, 0, 3, 0),
+            AccessibleName = bound ? "来源：绑定" : "来源：固定值"
+        };
+        _sourceTips.SetToolTip(source, bound ? "绑定上游输出（点击改为固定值）" : "固定值（点击改为绑定上游输出）");
         panel.Controls.Add(source, 0, 0);
 
         bool IsCurrentEditor() => !panel.IsDisposed && generation == _inputEditorGeneration
@@ -647,7 +658,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         {
             var candidates = _model!.GetBindingCandidates(entry);
             var current = entry.GetInputBinding();
-            // 绑定选择打开树形窗口，外观与左侧来源下拉框保持一致：左对齐文本 + 右侧展开箭头。
+            // 绑定选择打开树形窗口，按下拉样式显示：左对齐文本 + 右侧展开箭头。
             var button = EditorButton(candidates.FirstOrDefault(item => item.ToBindingKey() == current)?.DisplayPath
                 ?? current?.ToString()
                 ?? "选择绑定…");
@@ -674,8 +685,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             if (editable)
                 text.InnerTextBox.Validated += (_, _) =>
                 {
-                    if (!IsCurrentEditor() || text.IsDisposed || entry.GetInputSource() != WorkflowValueSource.Literal
-                        || source.SelectedItem is not WorkflowValueSource.Literal) return;
+                    if (!IsCurrentEditor() || text.IsDisposed || entry.GetInputSource() != WorkflowValueSource.Literal) return;
                     if (text.Text == Convert.ToString(entry.GetInputLiteral(), System.Globalization.CultureInfo.InvariantCulture)) return;
                     TryEdit(() => _model!.SetWorkflowInput(entry, WorkflowValueSource.Literal, text.Text, null));
                 };
@@ -683,28 +693,24 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         }
         valueEditor.Margin = Padding.Empty;
         panel.Controls.Add(valueEditor, 1, 0);
-        source.SelectedValueChanged += (_, _) =>
+        source.Click += (_, _) =>
         {
             if (!IsCurrentEditor()) return;
-            if (source.SelectedItem is not WorkflowValueSource selected || selected == entry.GetInputSource())
-                return;
-            if (selected == WorkflowValueSource.Literal)
-                TryEdit(() => _model!.SetWorkflowInput(entry, selected, entry.GetInputLiteral(), null), rebuild: true);
-            else
+            if (entry.GetInputSource() == WorkflowValueSource.Binding)
             {
-                var candidates = _model!.GetBindingCandidates(entry);
-                if (candidates.Count == 0)
-                {
-                    EditError?.Invoke(this, "当前节点没有可用的强类型绑定候选。");
-                    Rebuild();
-                    return;
-                }
-                using var dialog = new WorkflowBindingSelectorDialog(candidates, entry.GetInputBinding());
-                if (dialog.ShowDialog(this) == DialogResult.OK && dialog.SelectedCandidate is { } candidate && IsCurrentEditor())
-                    TryEdit(() => _model.SetWorkflowInput(entry, selected, null, candidate.ToBindingKey()), rebuild: true);
-                else
-                    Rebuild();
+                TryEdit(() => _model!.SetWorkflowInput(entry, WorkflowValueSource.Literal, entry.GetInputLiteral(), null), rebuild: true);
+                return;
             }
+            var candidates = _model!.GetBindingCandidates(entry);
+            if (candidates.Count == 0)
+            {
+                EditError?.Invoke(this, "当前节点没有可用的强类型绑定候选。");
+                return;
+            }
+            // 取消选择时来源保持固定值，按钮不变，不需要重建。
+            using var dialog = new WorkflowBindingSelectorDialog(candidates, entry.GetInputBinding());
+            if (dialog.ShowDialog(this) == DialogResult.OK && dialog.SelectedCandidate is { } candidate && IsCurrentEditor())
+                TryEdit(() => _model.SetWorkflowInput(entry, WorkflowValueSource.Binding, null, candidate.ToBindingKey()), rebuild: true);
         };
         return panel;
     }
