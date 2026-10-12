@@ -68,6 +68,37 @@ public sealed class WorkflowBindingAnalyzerTests
     }
 
     [Fact]
+    public void Compile_LoopFromTheEndBackBeforeParallelKeepsMergeAndBindings()
+    {
+        // 起点 → 取图 → 并行（两个分支）→ 汇聚 → 消费 → 回到取图：首尾回环后流程没有终点，汇聚点仍要识别出来。
+        var start = new DelayNodeModel { Id = "Start", Title = "起点" };
+        var acquire = new DelayNodeModel { Id = "Acquire", Title = "取图" };
+        var parallel = new ParallelAllNodeModel { Id = "Parallel", Title = "并行" };
+        var source = new DecisionNodeModel { Id = "Source", Title = "来源" };
+        var other = new DelayNodeModel { Id = "Other", Title = "另一分支" };
+        var merge = new WaitAllInputsCompletedNodeModel { Id = "Merge", Title = "汇聚" };
+        var consumer = BoundDecision("Consumer", new WorkflowBindingKey(source.Id, "Value"));
+        var document = CreateDocument(
+            start, acquire, parallel, source, other, merge, consumer,
+            Connect(start.Id, WorkflowPorts.Success, acquire.Id),
+            Connect(acquire.Id, WorkflowPorts.Success, parallel.Id),
+            Connect(parallel.Id, WorkflowPorts.Branch, source.Id),
+            Connect(parallel.Id, WorkflowPorts.Branch, other.Id),
+            Connect(source.Id, WorkflowPorts.True, merge.Id),
+            Connect(source.Id, WorkflowPorts.False, merge.Id),
+            Connect(other.Id, WorkflowPorts.Success, merge.Id),
+            Connect(merge.Id, WorkflowPorts.Success, consumer.Id),
+            Connect(consumer.Id, WorkflowPorts.True, acquire.Id),
+            Connect(consumer.Id, WorkflowPorts.False, acquire.Id));
+        document.EntryNodeId = start.Id;
+        var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
+
+        var analysis = new WorkflowBindingAnalyzer(catalog).Analyze(document);
+        Assert.DoesNotContain(analysis.Diagnostics, item => item.Code is "WF021" or "WFB002");
+        _ = new WorkflowCompiler(catalog).Compile(document);
+    }
+
+    [Fact]
     public void Analyze_SourceGuaranteedByParallelMergeIsAvailableAfterMerge()
     {
         var parallel = new ParallelAllNodeModel { Id = "Parallel", Title = "并行" };

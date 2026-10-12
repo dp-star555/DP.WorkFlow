@@ -75,11 +75,10 @@ public sealed partial class WorkflowDesignerSession
         {
             var analysis = new WorkflowBindingAnalyzer(Catalog).Analyze(Document, ResolveAnalysisEntry());
             return _dataLinks = analysis.Usages
-                .Where(usage => !usage.Binding.IsPublicData
-                    && exposed.TryGetValue(usage.Binding.NodeId, out var members)
-                    && members.Contains(RootMember(usage.Binding.MemberPath)))
-                .Select(usage => new WorkflowDataLink(usage.Binding.NodeId, RootMember(usage.Binding.MemberPath),
-                    usage.ConsumerNodeId, usage.ConfigurationPath))
+                .Where(usage => !usage.Binding.IsPublicData && exposed.ContainsKey(usage.Binding.NodeId))
+                .Select(usage => (Usage: usage, Member: ExposedMember(exposed[usage.Binding.NodeId], usage.Binding.MemberPath)))
+                .Where(link => link.Member is not null)
+                .Select(link => new WorkflowDataLink(link.Usage.Binding.NodeId, link.Member!, link.Usage.ConsumerNodeId, link.Usage.ConfigurationPath))
                 .Distinct()
                 .ToArray();
         }
@@ -142,6 +141,16 @@ public sealed partial class WorkflowDesignerSession
     {
         if (!Catalog.TryGet(node.Node.NodeType, out var descriptor) || descriptor!.OutputType is not { } type)
             return Array.Empty<WorkflowOutputMember>();
+        // 输出成员随配置变化的节点（如测量组）：顶层成员，以及按键寻址的子结果下一层成员（如“左边 · 拟合直线”）。
+        if (node.Node is IWorkflowDynamicOutputNode dynamic)
+        {
+            var described = dynamic.DescribeOutputs();
+            var paths = described.Select(member => member.Path).ToHashSet(StringComparer.Ordinal);
+            return described
+                .Where(member => member.Path != "$" && (!member.Path.Contains('.') || IsKeyedChild(member.Path, paths)))
+                .Select(member => new WorkflowOutputMember(member.Path, member.DisplayName == member.Path ? Resolve(type, member.Path) : member.DisplayName, member.Type))
+                .ToArray();
+        }
         type = Nullable.GetUnderlyingType(type) ?? type;
         if (IsSimpleOutput(type))
             return new[] { new WorkflowOutputMember("$", "值", type) };
@@ -165,11 +174,20 @@ public sealed partial class WorkflowDesignerSession
     private string ResolveAnalysisEntry() =>
         !string.IsNullOrWhiteSpace(Document.EntryNodeId) ? Document.EntryNodeId : Canvas.Nodes[0].Node.Id;
 
-    private static string RootMember(string memberPath)
+    // 绑定路径对应的数据端口：已显示的成员中与路径相同或作为其前缀的最长一个。
+    private static string? ExposedMember(ICollection<string> exposed, string memberPath) => exposed
+        .Where(member => memberPath == member || memberPath.StartsWith(member + ".", StringComparison.Ordinal))
+        .MaxBy(member => member.Length);
+
+    // 动态节点按键寻址的子结果（如 Items.m1a2b3c4d）下一层的成员：形如“顶层.键.成员”，且“顶层.键”在说明里。
+    private static bool IsKeyedChild(string path, ISet<string> described)
     {
-        var dot = memberPath.IndexOf('.');
-        return dot < 0 ? memberPath : memberPath[..dot];
+        var parts = path.Split('.');
+        return parts.Length == 3 && described.Contains(parts[0] + "." + parts[1]);
     }
+
+    private static string Resolve(Type type, string path) =>
+        type.GetProperty(path, BindingFlags.Instance | BindingFlags.Public) is { } property ? WorkflowOutputDisplayNames.Resolve(property) : path;
 
     private static bool IsSimpleOutput(Type type) => type.IsPrimitive || type.IsEnum || type == typeof(string)
         || type == typeof(decimal) || type == typeof(DateTime) || type == typeof(DateTimeOffset)

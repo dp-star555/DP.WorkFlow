@@ -217,6 +217,49 @@ public sealed class ParallelWorkflowTests
         Assert.True(siblingCanceled);
     }
 
+    [Fact]
+    public async Task RunAsync_LoopBackBeforeParallel_ReentersTheScopeEachPass()
+    {
+        // 取图 → 并行（A、B）→ 汇聚 → 计数 → 判断：未满 3 次回到取图，满 3 次结束。
+        var document = new WorkflowDocument { Name = "首尾回环" };
+        var canvas = document.CanvasProjection;
+        var nodes = new IWorkflowNodeModel[]
+        {
+            new ActionNodeModel { Id = "Acquire", Title = "取图", FunctionKey = "Acquire" },
+            new ParallelAllNodeModel { Id = "Parallel", Title = "并行" },
+            new ActionNodeModel { Id = "BranchA", Title = "分支A", FunctionKey = "BranchA" },
+            new ActionNodeModel { Id = "BranchB", Title = "分支B", FunctionKey = "BranchB" },
+            new WaitAllInputsCompletedNodeModel { Id = "Merge", Title = "汇聚" },
+            new ActionNodeModel { Id = "Count", Title = "计数", FunctionKey = "Count" },
+            new DecisionNodeModel { Id = "Again", Title = "再来", ConditionSource = E_DecisionConditionSource.Binding,
+                Condition = WorkflowInput<bool>.FromBinding(new WorkflowBindingKey("Count", "$")) },
+            new EndNodeModel { Id = "End", Title = "结束" }
+        };
+        foreach (var node in nodes) canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        canvas.Connections.Add(Connect("Acquire", WorkflowPorts.Success, "Parallel"));
+        canvas.Connections.Add(Connect("Parallel", WorkflowPorts.Branch, "BranchA"));
+        canvas.Connections.Add(Connect("Parallel", WorkflowPorts.Branch, "BranchB"));
+        canvas.Connections.Add(Connect("BranchA", WorkflowPorts.Success, "Merge"));
+        canvas.Connections.Add(Connect("BranchB", WorkflowPorts.Success, "Merge"));
+        canvas.Connections.Add(Connect("Merge", WorkflowPorts.Success, "Count"));
+        canvas.Connections.Add(Connect("Count", WorkflowPorts.Success, "Again"));
+        canvas.Connections.Add(Connect("Again", WorkflowPorts.True, "Acquire"));
+        canvas.Connections.Add(Connect("Again", WorkflowPorts.False, "End"));
+        int acquired = 0, branches = 0, counted = 0;
+        var actions = new WorkflowActionRegistry()
+            .Register("Acquire", (_, _) => { Interlocked.Increment(ref acquired); return ValueTask.FromResult<object?>(null); })
+            .Register("BranchA", (_, _) => { Interlocked.Increment(ref branches); return ValueTask.FromResult<object?>(null); })
+            .Register("BranchB", (_, _) => { Interlocked.Increment(ref branches); return ValueTask.FromResult<object?>(null); })
+            .Register("Count", (_, _) => ValueTask.FromResult<object?>(Interlocked.Increment(ref counted) < 3));
+        var engine = CreateEngine(document, new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions), "Acquire");
+
+        var result = await engine.RunAsync();
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal((3, 6, 3), (acquired, branches, counted));
+        Assert.Empty(engine.GetRuntimeSnapshot().ParallelScopes);
+    }
+
     private static WorkflowEngine CreateEngine(
         WorkflowDocument document,
         IServiceProvider services,

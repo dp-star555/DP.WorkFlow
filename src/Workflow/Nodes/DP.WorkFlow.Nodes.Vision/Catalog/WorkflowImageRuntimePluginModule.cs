@@ -43,6 +43,8 @@ public static class WorkflowImageNodes
             .Register(WorkflowNodeDescriptor.Create<FitVisionRobustLineNodeModel, RobustLineResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<FindVisionLineNodeModel, VisionFindLineResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<FindVisionCircleNodeModel, VisionFindCircleResult>(ports: ports))
+            .Register(WorkflowNodeDescriptor.Create<FindVisionRectangleNodeModel, VisionFindRectangleResult>(ports: ports))
+            .Register(WorkflowNodeDescriptor.Create<MeasureVisionGroupNodeModel, VisionMeasureGroupResult>(ports: ports))
             .Register(WorkflowNodeDescriptor.Create<LocateVisionTemplatePoseNodeModel, TemplatePoseResult>(ports: ports));
     }
 
@@ -78,6 +80,16 @@ public static class WorkflowImageNodes
             .Register(new FitVisionRobustLineNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IRobustLineFitter>())
             .Register(new FindVisionLineNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<ICaliperMeasurer>(), WorkflowRuntimeCapabilityRequirement.Require<IRobustLineFitter>())
             .Register(new FindVisionCircleNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<ICaliperMeasurer>(), WorkflowRuntimeCapabilityRequirement.Require<IRobustCircleFitter>())
+            .Register(new FindVisionRectangleNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<ICaliperMeasurer>(), WorkflowRuntimeCapabilityRequirement.Require<IRobustLineFitter>())
+            .Register(new MeasureVisionGroupNodeHandler(), node =>
+            {
+                // 只要求实际用到的拟合能力：没有找圆项时不要求圆拟合。
+                var kinds = ((MeasureVisionGroupNodeModel)node).Items.Where(i => i.Enabled).Select(i => i.Kind).ToHashSet();
+                var requirements = new List<WorkflowRuntimeCapabilityRequirement> { WorkflowRuntimeCapabilityRequirement.Require<ICaliperMeasurer>() };
+                if (kinds.Contains(EVisionMeasureKind.Line) || kinds.Contains(EVisionMeasureKind.Rectangle)) requirements.Add(WorkflowRuntimeCapabilityRequirement.Require<IRobustLineFitter>());
+                if (kinds.Contains(EVisionMeasureKind.Circle)) requirements.Add(WorkflowRuntimeCapabilityRequirement.Require<IRobustCircleFitter>());
+                return requirements;
+            })
             .Register(new LocateVisionTemplatePoseNodeHandler(), node => new[] { ((LocateVisionTemplatePoseNodeModel)node).TemplateSource == EWorkflowVisionTemplateSource.Resource
                 ? WorkflowRuntimeCapabilityRequirement.Require<IPreparedVisionTemplateMatcher>() : WorkflowRuntimeCapabilityRequirement.Require<ITemplatePoseLocator>() });
     }

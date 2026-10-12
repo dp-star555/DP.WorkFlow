@@ -353,8 +353,90 @@ public sealed class FindVisionCircleNodeModel : FindVisionShapeNodeModel
     }
 }
 
+/// <summary>沿期望矩形四边找矩形：每条边排布“卡尺数量”把卡尺、垂直于边扫描，每边鲁棒拟合直线，相邻两边求交得到角点。</summary>
+[WorkflowNode("Vision.FindRectangle", DisplayName = "找矩形", Category = WorkflowVisionCategories.Measurement,
+    Description = "沿期望矩形四边各排布多把卡尺找边缘点，每边鲁棒拟合直线，相邻边求交得到四个角点、中心、宽高和角度。")]
+public sealed class FindVisionRectangleNodeModel : FindVisionShapeNodeModel
+{
+    private const string BoxMessage = "请在图像页绘制一个矩形ROI作为期望矩形（可旋转；只能有一个，且不能是排除ROI）。";
+    /// <summary>四条边的名称，与卡尺、结果中各边的顺序一致（顺时针，图像Y向下）。</summary>
+    public static IReadOnlyList<string> SideNames { get; } = Array.AsReadOnly(new[] { "上边", "右边", "下边", "左边" });
+    /// <summary>新建时带一个占位期望矩形，首次拿到图像时自动居中。</summary>
+    public FindVisionRectangleNodeModel() => Regions = new() { PlaceholderRoi() };
+    /// <inheritdoc/>
+    public override string NodeType => "Vision.FindRectangle";
+    /// <inheritdoc/>
+    protected override WorkflowVisionRoi PlaceholderRoi() => new()
+    { Id = DefaultRoiId, Shape = EWorkflowVisionRoiShape.Rectangle, CenterX = 320, CenterY = 240, Width = 200, Height = 140 };
+    /// <inheritdoc/>
+    protected override WorkflowVisionRoi DefaultRoi(int imageWidth, int imageHeight) => new()
+    {
+        Id = DefaultRoiId, Shape = EWorkflowVisionRoiShape.Rectangle, CenterX = imageWidth / 2d, CenterY = imageHeight / 2d,
+        Width = Math.Round(Math.Max(SearchLength + 8, imageWidth * .4)), Height = Math.Round(Math.Max(SearchLength + 8, imageHeight * .4))
+    };
+    /// <inheritdoc/>
+    [Browsable(false)]
+    public override VisionAlgorithmSelection FitterAlgorithm { get; set; } = new() { ImplementationId = "managed.robust-line" };
+    /// <inheritdoc/>
+    protected override Type FitterContract => typeof(IRobustLineFitter);
+    /// <summary>垂直于边的搜索长度；绑定坐标系时为业务单位。</summary>
+    [WorkflowProperty("搜索长度", "每把卡尺垂直于边的扫描长度，以期望边为中心内外各一半；原图像素，绑定坐标系时为业务单位。", Category = "卡尺")]
+    public double SearchLength { get; set; } = 20;
+    /// <summary>扫描方向。</summary>
+    [WorkflowProperty("扫描方向", "由内向外：从矩形内部扫向外部；极性按扫描方向判断，暗矩形亮背景的边为“由暗到亮”。", Category = "卡尺")]
+    public EVisionFindCircleDirection Direction { get; set; }
+
+    /// <inheritdoc/>
+    public override IReadOnlyList<string> ValidateConfiguration()
+    {
+        var errors = base.ValidateConfiguration().ToList();
+        if (!double.IsFinite(SearchLength) || SearchLength <= 0) errors.Add("搜索长度必须为正数。");
+        else
+        {
+            try
+            {
+                var box = ExpectedRectangle();
+                if (SearchLength >= Math.Min(box.Width, box.Height)) errors.Add("搜索长度必须小于期望矩形的短边，否则对边的卡尺会互相越过。");
+            }
+            catch (InvalidOperationException error) { errors.Add(error.Message); }
+        }
+        return errors;
+    }
+
+    internal RectangleGeometry ExpectedRectangle() => SearchRoi<RectangleGeometry>(EWorkflowVisionRoiShape.Rectangle, BoxMessage);
+
+    internal override IReadOnlyList<(PointD Start, PointD End)> Scans(VisionCoordinateSystem? coordinates) =>
+        SideScans(coordinates).SelectMany(side => side).ToArray();
+
+    /// <summary>四条边（上、右、下、左）各自的卡尺扫描线；卡尺落在每条边各等分段中点，不压角。</summary>
+    internal IReadOnlyList<IReadOnlyList<(PointD Start, PointD End)>> SideScans(VisionCoordinateSystem? coordinates)
+    {
+        var box = ExpectedRectangle();
+        double scale = coordinates?.SimilarityScale ?? 1, angle = box.Angle + (coordinates?.RotationRadians ?? 0);
+        var center = ToImage(box.Center, coordinates);
+        double halfWidth = box.Width * scale / 2, halfHeight = box.Height * scale / 2, half = SearchLength * scale / 2;
+        double sign = Direction == EVisionFindCircleDirection.Outward ? 1 : -1;
+        // 宽度方向 u、高度方向 v（图像Y向下）；每条边：边中点、沿边方向、向外法向、边长。
+        var u = (X: Math.Cos(angle), Y: Math.Sin(angle)); var v = (X: -u.Y, Y: u.X);
+        var sides = new[]
+        {
+            (Middle: Offset(center, v, -halfHeight), Along: u, Out: (X: -v.X, Y: -v.Y), Length: 2 * halfWidth),
+            (Middle: Offset(center, u, halfWidth), Along: v, Out: u, Length: 2 * halfHeight),
+            (Middle: Offset(center, v, halfHeight), Along: (X: -u.X, Y: -u.Y), Out: v, Length: 2 * halfWidth),
+            (Middle: Offset(center, u, -halfWidth), Along: (X: -v.X, Y: -v.Y), Out: (X: -u.X, Y: -u.Y), Length: 2 * halfHeight)
+        };
+        return sides.Select(side => (IReadOnlyList<(PointD, PointD)>)Enumerable.Range(0, CaliperCount).Select(i =>
+        {
+            var at = Offset(side.Middle, side.Along, -side.Length / 2 + side.Length * (i + .5) / CaliperCount);
+            return (Offset(at, side.Out, -sign * half), Offset(at, side.Out, sign * half));
+        }).ToArray()).ToArray();
+
+        static PointD Offset(PointD point, (double X, double Y) direction, double distance) => new(point.X + direction.X * distance, point.Y + direction.Y * distance);
+    }
+}
+
 /// <summary>找线结果：拟合直线、各卡尺边缘点及显示图形。</summary>
-public sealed class VisionFindLineResult : IVisionGeometryFact
+public sealed class VisionFindLineResult : IVisionGeometryFact, IVisionDisplayFact
 {
     internal VisionFindLineResult(RobustLineResult fit, VisionShapeProbe probe, IReadOnlyList<int> inliers) { Fit = fit; Probe = probe; InlierIndices = inliers; }
     /// <summary>参与拟合的计算点在 <see cref="EdgePoints"/> 中的序号（已排除“忽略点数”剔除的点）。</summary>
@@ -404,7 +486,11 @@ public sealed class VisionFindLineResult : IVisionGeometryFact
     /// <summary>内点距离RMS，原图像素。</summary>
     public double RmsError => Fit.RmsError;
     /// <inheritdoc/>
-    public IReadOnlyList<Geometry> DisplayGeometry => Probe.Display(new ContourGeometry(new[] { Fit.A, Fit.B }));
+    public IReadOnlyList<Geometry> DisplayGeometry => VisionDisplay.Geometries(DisplayItems);
+    /// <inheritdoc/>
+    [Browsable(false)]
+    public IReadOnlyList<VisionDisplayItem> DisplayItems => Probe.DisplayItems(
+        VisionDisplayItem.Segment(Fit.A, Fit.B, EVisionDisplayRole.Result, FormattableString.Invariant($"{AngleDegrees:F2}°")), InlierIndices);
     /// <inheritdoc/>
     public string Summary => FormattableString.Invariant(
         $"找线：{FoundCount}/{CaliperCount} 把卡尺找到边缘，计算点 {InlierCount}，忽略点 {OutlierCount}，RMS {RmsError:F3}px，角度 {AngleDegrees:F2}°{WidthNote}{Probe.OutsideNote}");
@@ -412,7 +498,7 @@ public sealed class VisionFindLineResult : IVisionGeometryFact
 }
 
 /// <summary>找圆结果：拟合圆、各卡尺边缘点及显示图形。</summary>
-public sealed class VisionFindCircleResult : IVisionGeometryFact
+public sealed class VisionFindCircleResult : IVisionGeometryFact, IVisionDisplayFact
 {
     internal VisionFindCircleResult(RobustCircleResult fit, VisionShapeProbe probe, IReadOnlyList<int> inliers) { Fit = fit; Probe = probe; InlierIndices = inliers; }
     /// <summary>参与拟合的计算点在 <see cref="EdgePoints"/> 中的序号（已排除“忽略点数”剔除的点）。</summary>
@@ -459,11 +545,102 @@ public sealed class VisionFindCircleResult : IVisionGeometryFact
     /// <summary>内点径向距离RMS，原图像素。</summary>
     public double RmsError => Fit.RmsError;
     /// <inheritdoc/>
-    public IReadOnlyList<Geometry> DisplayGeometry => Probe.Display(new EllipseGeometry(Fit.Center, Fit.Radius, Fit.Radius));
+    public IReadOnlyList<Geometry> DisplayGeometry => VisionDisplay.Geometries(DisplayItems);
+    /// <inheritdoc/>
+    [Browsable(false)]
+    public IReadOnlyList<VisionDisplayItem> DisplayItems => Probe.DisplayItems(
+        new VisionDisplayItem(new EllipseGeometry(Fit.Center, Fit.Radius, Fit.Radius), EVisionDisplayRole.Result, FormattableString.Invariant($"R {Radius:F3}")), InlierIndices);
     /// <inheritdoc/>
     public string Summary => FormattableString.Invariant(
         $"找圆：{FoundCount}/{CaliperCount} 把卡尺找到边缘，计算点 {InlierCount}，忽略点 {OutlierCount}，半径 {Radius:F3}px，RMS {RmsError:F3}px{WidthNote}{Probe.OutsideNote}");
     private string WidthNote => MeanWidth is { } mean ? FormattableString.Invariant($"，平均宽度 {mean:F3}px（{MinimumWidth:F3}..{MaximumWidth:F3}）") : "";
+}
+
+/// <summary>找矩形结果：四条边的找线结果、四个角点、中心、宽高与角度。</summary>
+public sealed class VisionFindRectangleResult : IVisionGeometryFact, IVisionDisplayFact
+{
+    internal VisionFindRectangleResult(IReadOnlyList<VisionFindLineResult> sides, IReadOnlyList<PointD> corners, VisionCoordinateSystem? coordinates)
+    {
+        Sides = sides; _corners = corners; _coordinates = coordinates;
+    }
+    private readonly IReadOnlyList<PointD> _corners;
+    private readonly VisionCoordinateSystem? _coordinates;
+    /// <summary>上、右、下、左四条边的找线结果（各自的拟合直线、边缘点、计算点/忽略点）。</summary>
+    public IReadOnlyList<VisionFindLineResult> Sides { get; }
+    /// <inheritdoc/>
+    public string FrameId => Sides[0].FrameId;
+    /// <summary>四条边的拟合直线（上、右、下、左），可直接连接距离、交点等几何节点。</summary>
+    public IReadOnlyList<VisionLine> SideLines => Sides.Select(s => s.MeasuredLine).ToArray();
+    /// <summary>四个角点：左上、右上、右下、左下（按期望矩形的方向），带来源。</summary>
+    public IReadOnlyList<VisionPoint> Corners => _corners.Select(p => new VisionPoint(FrameId, p, _coordinates)).ToArray();
+    /// <summary>中心（四个角点的平均），带来源。</summary>
+    public VisionPoint RectangleCenter => new(FrameId, Center, _coordinates);
+    /// <summary>中心X，原图像素。</summary>
+    public double CenterX => Center.X;
+    /// <summary>中心Y，原图像素。</summary>
+    public double CenterY => Center.Y;
+    /// <summary>宽度（上下两边长度的平均），原图像素。</summary>
+    public double Width => (Distance(_corners[0], _corners[1]) + Distance(_corners[3], _corners[2])) / 2;
+    /// <summary>高度（左右两边长度的平均），原图像素。</summary>
+    public double Height => (Distance(_corners[0], _corners[3]) + Distance(_corners[1], _corners[2])) / 2;
+    /// <summary>业务单位宽度；未绑定坐标系时为空。</summary>
+    public double? LocalWidth => _coordinates is { } c ? Width / c.SimilarityScale : null;
+    /// <summary>业务单位高度；未绑定坐标系时为空。</summary>
+    public double? LocalHeight => _coordinates is { } c ? Height / c.SimilarityScale : null;
+    /// <summary>宽度方向角（度，从原图X轴起顺时针，(-180, 180]），取上下两边方向的平均。</summary>
+    public double AngleDegrees
+    {
+        get
+        {
+            double x = _corners[1].X - _corners[0].X + _corners[2].X - _corners[3].X, y = _corners[1].Y - _corners[0].Y + _corners[2].Y - _corners[3].Y;
+            return Math.Atan2(y, x) * 180 / Math.PI;
+        }
+    }
+    /// <summary>四个内角与 90° 的最大偏差（度），反映矩形的垂直度。</summary>
+    public double MaximumCornerError => Enumerable.Range(0, 4).Max(i =>
+    {
+        var (prev, at, next) = (_corners[(i + 3) % 4], _corners[i], _corners[(i + 1) % 4]);
+        double ax = prev.X - at.X, ay = prev.Y - at.Y, bx = next.X - at.X, by = next.Y - at.Y;
+        double cos = (ax * bx + ay * by) / Math.Max(1e-12, Math.Sqrt(ax * ax + ay * ay) * Math.Sqrt(bx * bx + by * by));
+        return Math.Abs(Math.Acos(Math.Clamp(cos, -1, 1)) * 180 / Math.PI - 90);
+    });
+    /// <summary>卡尺总数（四边合计）。</summary>
+    public int CaliperCount => Sides.Sum(s => s.CaliperCount);
+    /// <summary>找到边缘的卡尺数。</summary>
+    public int FoundCount => Sides.Sum(s => s.FoundCount);
+    /// <summary>内点数。</summary>
+    public int InlierCount => Sides.Sum(s => s.InlierCount);
+    /// <summary>被忽略的点数。</summary>
+    public int OutlierCount => Sides.Sum(s => s.OutlierCount);
+    /// <summary>四边内点距离RMS的最大值，原图像素。</summary>
+    public double RmsError => Sides.Max(s => s.RmsError);
+    /// <inheritdoc/>
+    public IReadOnlyList<Geometry> DisplayGeometry => VisionDisplay.Geometries(DisplayItems);
+    /// <inheritdoc/>
+    [Browsable(false)]
+    public IReadOnlyList<VisionDisplayItem> DisplayItems
+    {
+        get
+        {
+            var items = new List<VisionDisplayItem>
+            {
+                new(new ContourGeometry(_corners, closed: true), EVisionDisplayRole.Result, FormattableString.Invariant($"{Width:F2}×{Height:F2}")),
+                VisionDisplayItem.Point(Center, detail: FormattableString.Invariant($"中心 ({CenterX:F4},{CenterY:F4})；角度 {AngleDegrees:F3}°"))
+            };
+            // 各边的扫描线、计算点/忽略点与边缘对宽度线；各边的拟合直线已由矩形轮廓表示，不重复画。
+            foreach (var side in Sides) items.AddRange(side.DisplayItems.Skip(1));
+            for (int i = 0; i < 4; i++)
+                items.Add(VisionDisplayItem.Point(_corners[i], detail: FormattableString.Invariant($"{CornerNames[i]}角点 ({_corners[i].X:F4},{_corners[i].Y:F4})")));
+            return items;
+        }
+    }
+    /// <inheritdoc/>
+    public string Summary => FormattableString.Invariant(
+        $"找矩形：{FoundCount}/{CaliperCount} 把卡尺找到边缘，计算点 {InlierCount}，忽略点 {OutlierCount}，宽 {Width:F3}px，高 {Height:F3}px，角度 {AngleDegrees:F3}°，中心 ({CenterX:F3},{CenterY:F3})，最大直角偏差 {MaximumCornerError:F3}°，最大RMS {RmsError:F3}px")
+        + string.Concat(Sides.Select(s => s.Probe.OutsideNote).Distinct());
+    private static readonly string[] CornerNames = { "左上", "右上", "右下", "左下" };
+    private PointD Center => new(_corners.Average(p => p.X), _corners.Average(p => p.Y));
+    private static double Distance(PointD a, PointD b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
 }
 
 /// <summary>一次卡尺排布的扫描线和各卡尺选中的边缘点。</summary>
@@ -494,10 +671,21 @@ internal sealed class VisionShapeProbe(string frameId, IReadOnlyList<(PointD Sta
     public string OutsideNote => (outside == 0 ? "" : $"；{outside} 把卡尺超出图像未测量")
         + (clipped == 0 ? "" : $"；{clipped} 把卡尺部分超出图像，只在图内部分取点");
     public IReadOnlyList<VisionPoint> Points(VisionCoordinateSystem? coordinates) => Edges.Select(p => new VisionPoint(frameId, p, coordinates)).ToArray();
-    // 第一项为拟合图形（承载摘要），随后是各卡尺扫描线和边缘点。
-    public IReadOnlyList<Geometry> Display(Geometry fitted) => new[] { fitted }
-        .Concat(Scans.Select(s => (Geometry)new ContourGeometry(new[] { s.Start, s.End })))
-        .Concat(Edges.Select(p => (Geometry)new EllipseGeometry(p, 1.5, 1.5))).ToArray();
+    // 拟合线/圆为结果，各卡尺扫描线为输入，计算点/忽略点为标记，边缘对模式另画宽度测量线；点击点和宽度线给出坐标与宽度。
+    public IReadOnlyList<VisionDisplayItem> DisplayItems(VisionDisplayItem fitted, IReadOnlyList<int> inliers)
+    {
+        var flags = InlierFlags(inliers);
+        var items = new List<VisionDisplayItem> { fitted };
+        items.AddRange(Scans.Select(s => VisionDisplayItem.Segment(s.Start, s.End, EVisionDisplayRole.Input)));
+        for (int i = 0; i < Pairs.Count; i++)
+            items.Add(VisionDisplayItem.Segment(Pairs[i].First, Pairs[i].Second, EVisionDisplayRole.Measurement,
+                detail: FormattableString.Invariant($"边缘对宽度 {Pairs[i].Width:F4}px")));
+        for (int i = 0; i < Edges.Count; i++)
+            items.Add(VisionDisplayItem.Point(Edges[i], flags[i] ? EVisionDisplayRole.Accepted : EVisionDisplayRole.Rejected,
+                detail: FormattableString.Invariant($"{(flags[i] ? "计算点" : "忽略点")} ({Edges[i].X:F4},{Edges[i].Y:F4})")
+                    + (i < Pairs.Count ? FormattableString.Invariant($"；宽度 {Pairs[i].Width:F4}px") : "")));
+        return items;
+    }
 }
 
 /// <summary>拟合时按残差剔除指定数量的点（对应 VisionPro 找线/找圆的“忽略点数”）。</summary>
@@ -536,14 +724,17 @@ public static class VisionFitIgnoring
 /// <summary>按节点排布卡尺、逐把取边缘点；部分超出图像的卡尺只测图内部分，图内部分不足时跳过并计数。</summary>
 internal static class VisionShapeFinding
 {
+    /// <param name="node">节点。</param><param name="context">执行上下文。</param><param name="frame">输入帧。</param>
+    /// <param name="coordinates">本帧坐标系。</param><param name="token">取消。</param>
+    /// <param name="scans">只测这些卡尺（如找矩形的一条边）；为空时测节点全部卡尺。</param>
     internal static VisionShapeProbe Probe(FindVisionShapeNodeModel node, IWorkflowNodeExecutionContext context, ImageFrame frame,
-        VisionCoordinateSystem? coordinates, CancellationToken token)
+        VisionCoordinateSystem? coordinates, CancellationToken token, IReadOnlyList<VisionCaliperScan>? scans = null)
     {
         var errors = node.ValidateConfiguration();
         if (errors.Count > 0) throw new InvalidOperationException(string.Join("；", errors));
         double scale = coordinates?.SimilarityScale ?? 1, step = node.BandSampleStep * scale;
         if (step < .1 || step > 10) throw new InvalidOperationException("垂直采样间隔换算到原图须在0.1..10像素。");
-        var scans = node.CaliperScans(coordinates);
+        scans ??= node.CaliperScans(coordinates);
         var edges = new List<PointD>(); var pairs = new List<VisionFoundEdgePair>(); int outside = 0, clipped = 0;
         bool pairMode = node.EdgeMode == EVisionCaliperEdgeMode.Pair;
         foreach (var scan in scans)
@@ -727,6 +918,67 @@ public static class VisionSectorCaliper
     }
 }
 
+/// <summary>找线、找圆、找矩形的测量过程；单个节点和测量组共用，拟合槽位名由调用方指定。</summary>
+internal static class VisionShapeMeasure
+{
+    internal static VisionFindLineResult Line(FindVisionShapeNodeModel node, IWorkflowNodeExecutionContext context, ImageFrame frame,
+        VisionCoordinateSystem? coordinates, CancellationToken token, string fitterSlot = "fitter", IReadOnlyList<VisionCaliperScan>? scans = null,
+        string failure = "找线失败")
+    {
+        var probe = VisionShapeFinding.Probe(node, context, frame, coordinates, token, scans);
+        if (probe.Edges.Count < node.MinimumInliers)
+            throw new InvalidOperationException($"{failure}：只有 {probe.Edges.Count} 把卡尺找到边缘，至少需要 {node.MinimumInliers} 个点。");
+        var (fit, inliers) = VisionFitIgnoring.FitIgnoring(probe.Edges, node.IgnoreCount, node.MinimumInliers,
+            points => WorkflowVisionAlgorithmInvocation.Invoke(context, fitterSlot, node.FitterAlgorithm, "managed.robust-line",
+                (IRobustLineFitter fitter) => fitter.Fit(frame.FrameId, points, node.DistanceThreshold * (coordinates?.SimilarityScale ?? 1), 256, node.MinimumInliers, token),
+                token),
+            fit => fit.InlierIndices, (fit, p) => VisionFitIgnoring.LineDistance(fit.A, fit.B, p));
+        if (coordinates is not null) fit = fit.InCoordinates(coordinates);
+        return new VisionFindLineResult(fit, probe, inliers);
+    }
+
+    internal static VisionFindCircleResult Circle(FindVisionCircleNodeModel node, IWorkflowNodeExecutionContext context, ImageFrame frame,
+        VisionCoordinateSystem? coordinates, CancellationToken token, string fitterSlot = "fitter")
+    {
+        var probe = VisionShapeFinding.Probe(node, context, frame, coordinates, token);
+        if (probe.Edges.Count < node.MinimumInliers)
+            throw new InvalidOperationException($"找圆失败：只有 {probe.Edges.Count} 把卡尺找到边缘，至少需要 {node.MinimumInliers} 个点。");
+        var (fit, inliers) = VisionFitIgnoring.FitIgnoring(probe.Edges, node.IgnoreCount, node.MinimumInliers,
+            points => WorkflowVisionAlgorithmInvocation.Invoke(context, fitterSlot, node.FitterAlgorithm, "managed.robust-circle",
+                (IRobustCircleFitter fitter) => fitter.Fit(frame.FrameId, points, node.DistanceThreshold * (coordinates?.SimilarityScale ?? 1), 256, node.MinimumInliers, token),
+                token),
+            fit => fit.InlierIndices,
+            (fit, p) => Math.Abs(Math.Sqrt((p.X - fit.Center.X) * (p.X - fit.Center.X) + (p.Y - fit.Center.Y) * (p.Y - fit.Center.Y)) - fit.Radius));
+        if (coordinates is not null) fit = fit.InCoordinates(coordinates);
+        return new VisionFindCircleResult(fit, probe, inliers);
+    }
+
+    internal static VisionFindRectangleResult Rectangle(FindVisionRectangleNodeModel node, IWorkflowNodeExecutionContext context, ImageFrame frame,
+        VisionCoordinateSystem? coordinates, CancellationToken token, string fitterSlot = "fitter")
+    {
+        var all = node.CaliperScans(coordinates);
+        var sides = new VisionFindLineResult[4];
+        for (int side = 0; side < 4; side++)
+            sides[side] = Line(node, context, frame, coordinates, token, fitterSlot, all.Skip(side * node.CaliperCount).Take(node.CaliperCount).ToArray(),
+                $"找矩形失败：{FindVisionRectangleNodeModel.SideNames[side]}");
+        // 角点：左上 = 左∩上，右上 = 上∩右，右下 = 右∩下，左下 = 下∩左。
+        var corners = new[] { Corner(sides[3], sides[0], "左上"), Corner(sides[0], sides[1], "右上"), Corner(sides[1], sides[2], "右下"), Corner(sides[2], sides[3], "左下") };
+        return new VisionFindRectangleResult(sides, corners, coordinates);
+    }
+
+    private static PointD Corner(VisionFindLineResult a, VisionFindLineResult b, string name)
+    {
+        var (p, q, r, t) = (a.Fit.A, a.Fit.B, b.Fit.A, b.Fit.B);
+        double ux = q.X - p.X, uy = q.Y - p.Y, vx = t.X - r.X, vy = t.Y - r.Y;
+        double cross = ux * vy - uy * vx, norms = Math.Sqrt(ux * ux + uy * uy) * Math.Sqrt(vx * vx + vy * vy);
+        // 相邻两边夹角小于约 6° 时交点极不稳定，按失败处理而不输出远处的角点。
+        if (norms < 1e-12 || Math.Abs(cross) / norms < .1)
+            throw new InvalidOperationException($"找矩形失败：{name}角处的两条边接近平行，无法求角点；请检查搜索范围是否压在同一条边上。");
+        double s = ((r.X - p.X) * vy - (r.Y - p.Y) * vx) / cross;
+        return new PointD(p.X + s * ux, p.Y + s * uy);
+    }
+}
+
 /// <summary>找线：卡尺取点后鲁棒拟合直线。</summary>
 public sealed class FindVisionLineNodeHandler : WorkflowNodeHandler<FindVisionLineNodeModel>
 {
@@ -734,17 +986,7 @@ public sealed class FindVisionLineNodeHandler : WorkflowNodeHandler<FindVisionLi
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(FindVisionLineNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
-        var coordinates = node.ResolveCoordinates(frame, context);
-        var probe = VisionShapeFinding.Probe(node, context, frame, coordinates, cancellationToken);
-        if (probe.Edges.Count < node.MinimumInliers)
-            throw new InvalidOperationException($"找线失败：只有 {probe.Edges.Count} 把卡尺找到边缘，至少需要 {node.MinimumInliers} 个点。");
-        var (fit, inliers) = VisionFitIgnoring.FitIgnoring(probe.Edges, node.IgnoreCount, node.MinimumInliers,
-            points => WorkflowVisionAlgorithmInvocation.Invoke(context, "fitter", node.FitterAlgorithm, "managed.robust-line",
-                (IRobustLineFitter fitter) => fitter.Fit(frame.FrameId, points, node.DistanceThreshold * (coordinates?.SimilarityScale ?? 1), 256, node.MinimumInliers, cancellationToken),
-                cancellationToken),
-            fit => fit.InlierIndices, (fit, p) => VisionFitIgnoring.LineDistance(fit.A, fit.B, p));
-        if (coordinates is not null) fit = fit.InCoordinates(coordinates);
-        var result = new VisionFindLineResult(fit, probe, inliers);
+        var result = VisionShapeMeasure.Line(node, context, frame, node.ResolveCoordinates(frame, context), cancellationToken);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
     }
 }
@@ -756,18 +998,19 @@ public sealed class FindVisionCircleNodeHandler : WorkflowNodeHandler<FindVision
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(FindVisionCircleNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
-        var coordinates = node.ResolveCoordinates(frame, context);
-        var probe = VisionShapeFinding.Probe(node, context, frame, coordinates, cancellationToken);
-        if (probe.Edges.Count < node.MinimumInliers)
-            throw new InvalidOperationException($"找圆失败：只有 {probe.Edges.Count} 把卡尺找到边缘，至少需要 {node.MinimumInliers} 个点。");
-        var (fit, inliers) = VisionFitIgnoring.FitIgnoring(probe.Edges, node.IgnoreCount, node.MinimumInliers,
-            points => WorkflowVisionAlgorithmInvocation.Invoke(context, "fitter", node.FitterAlgorithm, "managed.robust-circle",
-                (IRobustCircleFitter fitter) => fitter.Fit(frame.FrameId, points, node.DistanceThreshold * (coordinates?.SimilarityScale ?? 1), 256, node.MinimumInliers, cancellationToken),
-                cancellationToken),
-            fit => fit.InlierIndices,
-            (fit, p) => Math.Abs(Math.Sqrt((p.X - fit.Center.X) * (p.X - fit.Center.X) + (p.Y - fit.Center.Y) * (p.Y - fit.Center.Y)) - fit.Radius));
-        if (coordinates is not null) fit = fit.InCoordinates(coordinates);
-        var result = new VisionFindCircleResult(fit, probe, inliers);
+        var result = VisionShapeMeasure.Circle(node, context, frame, node.ResolveCoordinates(frame, context), cancellationToken);
+        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
+    }
+}
+
+/// <summary>找矩形：四条边各自卡尺取点、鲁棒拟合直线，相邻边求交得到角点。</summary>
+public sealed class FindVisionRectangleNodeHandler : WorkflowNodeHandler<FindVisionRectangleNodeModel>
+{
+    /// <inheritdoc/>
+    protected override ValueTask<NodeExecutionResult> ExecuteAsync(FindVisionRectangleNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+    {
+        var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
+        var result = VisionShapeMeasure.Rectangle(node, context, frame, node.ResolveCoordinates(frame, context), cancellationToken);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
     }
 }
