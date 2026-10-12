@@ -41,7 +41,10 @@ public sealed class WorkflowVisionPreview : IDisposable
     public void Dispose() => Frame.Dispose();
 }
 
-/// <summary>有界运行帧仓和最新预览源。作为 <see cref="IWorkflowRunResourceOwner"/> 在根运行开始时释放上一轮仓内租约，使结果查看窗口结束后自然回收；准备阶段只校验，不清空。UI已Retain的快照不受影响。</summary>
+/// <summary>
+/// 有界运行帧仓和最新预览源。作为 <see cref="IWorkflowRunResourceOwner"/> 在根运行开始时释放上一轮仓内租约，使结果查看窗口结束后自然回收；准备阶段只校验，不清空。UI已Retain的快照不受影响。
+/// 经 <see cref="StageOutput"/> 登记的输出帧在同一节点的新输出取代它时提前释放仓内租约，环形流程因此不会随循环次数累积帧。
+/// </summary>
 public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkflowVisionPreviewSource, IWorkflowNodeOutputProjectionSink, IWorkflowRunPreparationService, IWorkflowRunResourceOwner, IDisposable
 {
     private readonly object _gate = new();
@@ -55,8 +58,8 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
 
     /// <summary>创建结果仓，可组合已有视觉运行准备服务；达到预算明确失败，不释放仍被下游借用的输出。</summary>
     /// <param name="next">可选后续准备服务。</param>
-    /// <param name="maximumBytes">单次运行采集像素总预算。</param>
-    /// <param name="maximumFrames">单次运行输出帧数上限。</param>
+    /// <param name="maximumBytes">仓内同时持有的像素总预算；被新输出取代的帧随即释放，不再计入。</param>
+    /// <param name="maximumFrames">仓内同时持有的帧数上限；被新输出取代的帧随即释放，不再计入。</param>
     public WorkflowVisionFrameScope(IWorkflowRunPreparationService? next = null, long maximumBytes = 512L * 1024 * 1024, int maximumFrames = 1024)
     {
         if (maximumBytes < 1 || maximumFrames < 1) throw new ArgumentOutOfRangeException(nameof(maximumBytes));
@@ -86,7 +89,21 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
     /// <param name="frame">本次执行的帧，必须与事实同帧。</param>
     /// <param name="facts">可选的同帧算法事实。</param>
     /// <returns>提交后发布的投影；宿主没有注册帧作用域时为空。</returns>
-    public static IWorkflowNodeOutputProjection? Stage(IWorkflowNodeExecutionContext context, ImageFrame frame, object? facts = null)
+    public static IWorkflowNodeOutputProjection? Stage(IWorkflowNodeExecutionContext context, ImageFrame frame, object? facts = null) =>
+        Stage(context, frame, facts, ownsFrame: false);
+
+    /// <summary>
+    /// 登记以帧作为节点输出的执行（采集、预处理）。<paramref name="output"/> 必须是本节点经 <see cref="Retain"/> 取得、
+    /// 并作为输出返回的租约：输出被同一节点的新输出取代后不会再被绑定读到，仓随即释放该租约。
+    /// 节点结束后仍要使用该帧的操作（例如后台保存）必须自行 <c>Retain</c> 独立租约。
+    /// </summary>
+    /// <param name="context">节点执行上下文。</param>
+    /// <param name="output">作为节点输出的仓内帧租约。</param>
+    /// <returns>提交后发布预览、取代后释放租约的投影；宿主没有注册帧作用域时为空。</returns>
+    public static IWorkflowNodeOutputProjection? StageOutput(IWorkflowNodeExecutionContext context, ImageFrame output) =>
+        Stage(context, output, null, ownsFrame: true);
+
+    private static IWorkflowNodeOutputProjection? Stage(IWorkflowNodeExecutionContext context, ImageFrame frame, object? facts, bool ownsFrame)
     {
         if (facts is null && context.Node is AnalyzeVisionFrameNodeModel and not PreprocessVisionImageNodeModel)
             throw new InvalidOperationException("视觉分析能力返回了空结果。");
@@ -106,7 +123,7 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
         if (identity is not null && !string.Equals(identity, frame.FrameId, StringComparison.Ordinal))
             throw new InvalidOperationException("视觉算法事实与输入帧身份不一致，禁止提交或叠加到另一张图像。");
         if (context.Services.GetService(typeof(IWorkflowVisionFrameScope)) is WorkflowVisionFrameScope scope)
-            return new VisionPreviewProjection(scope, context.Node.Id, frame, facts);
+            return new VisionPreviewProjection(scope, context.Node.Id, frame, facts, ownsFrame);
         return null;
     }
 
@@ -178,6 +195,21 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
         {
             if (_disposed) return;
             Clear();
+        }
+    }
+
+    /// <summary>释放一份仓内帧租约；该帧不在仓内（例如已随上一轮退役）时不做任何事。</summary>
+    /// <param name="frame">此前由 <see cref="Retain"/> 返回的租约。</param>
+    private void Release(ImageFrame frame)
+    {
+        lock (_gate)
+        {
+            if (_disposed) return;
+            var index = _frames.FindIndex(item => ReferenceEquals(item, frame));
+            if (index < 0) return;
+            _frames.RemoveAt(index);
+            _bytes -= frame.Image.Info.ByteLength;
+            frame.Dispose();
         }
     }
 
@@ -297,19 +329,28 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
         lock (_gate) { if (_disposed) return; _disposed = true; Clear(); }
     }
 
-    /// <summary>预览投影；借用帧作用域已拥有的帧，不额外持有租约，因此未提交时无需清理。</summary>
+    /// <summary>
+    /// 预览投影；借用帧作用域已拥有的帧，不额外持有租约，因此未提交时无需清理。
+    /// 帧是节点输出本身时，输出被取代后由本投影释放仓内租约；分析节点借用的输入帧归上游节点所有，不在此释放。
+    /// </summary>
     private sealed class VisionPreviewProjection : IWorkflowNodeOutputProjection
     {
         private readonly WorkflowVisionFrameScope _scope;
         private readonly string _nodeId;
         private readonly ImageFrame _frame;
         private readonly object? _facts;
+        private readonly bool _ownsFrame;
 
-        internal VisionPreviewProjection(WorkflowVisionFrameScope scope, string nodeId, ImageFrame frame, object? facts)
+        internal VisionPreviewProjection(WorkflowVisionFrameScope scope, string nodeId, ImageFrame frame, object? facts, bool ownsFrame)
         {
-            _scope = scope; _nodeId = nodeId; _frame = frame; _facts = facts;
+            _scope = scope; _nodeId = nodeId; _frame = frame; _facts = facts; _ownsFrame = ownsFrame;
         }
 
         public void Commit(long executionSequence) => _scope.Publish(_nodeId, _frame, _facts, executionSequence);
+
+        public void Retire()
+        {
+            if (_ownsFrame) _scope.Release(_frame);
+        }
     }
 }

@@ -1,7 +1,14 @@
+using System.Collections.Concurrent;
+
 namespace DP.WorkFlow;
 
 public sealed partial class WorkflowEngine
 {
+    // 仍保留在运行历史中的输出所登记的投影；输出退出历史时由投影释放派生资源。
+    private readonly ConcurrentDictionary<long, IWorkflowNodeOutputProjection> _outputProjections = new();
+    // 子流程节点本次执行的子运行剩余投影；节点输出提交后挂到该输出上，随它被取代而释放。
+    private readonly ConcurrentDictionary<(long TokenId, string NodeId), IReadOnlyList<IWorkflowNodeOutputProjection>> _childOutputProjections = new();
+
     /// <summary>沿节点选择的输出端口推进一个 Token，必要时派发并等待结构化并行。</summary>
     /// <param name="startNodeId">该路径的入口节点 ID。</param>
     /// <param name="stopBeforeNodeId">并行分支边界；到达该汇聚节点前返回且不执行它。</param>
@@ -116,8 +123,11 @@ public sealed partial class WorkflowEngine
                 (draft, writeMode) => RecordRunEvent(draft, writeMode),
                 ReportRecordingDegraded,
                 (plan, childContext, childCancellation) =>
-                    RunChildWorkflowAsync(node, identity, plan, childContext, childCancellation), PlanPath, BindingScopeId);
+                    RunChildWorkflowAsync(node, identity, plan, childContext, childCancellation), PlanPath, BindingScopeId,
+                childContext => OpenChildWorkflowSession(node, identity, childContext));
             var operationKey = (token.TokenId, node.Id);
+            // 上一次执行失败时留下的子运行投影不属于本次输出。
+            _childOutputProjections.TryRemove(operationKey, out _);
             NodeExecutionResult result;
             if (handler is IWorkflowNodeOperationFactory factory)
             {
@@ -153,12 +163,17 @@ public sealed partial class WorkflowEngine
             cancellationToken.ThrowIfCancellationRequested();
             executionContext.CommitDataChanges();
             RecordDataChangesCommitted(node, identity, executionContext);
-            var committedOutput = Context.SetNodeOutput(node.Id, identity, result.Output);
+            var committedOutput = Context.SetNodeOutput(node.Id, identity, result.Output, out var superseded);
             RecordOutputCommitted(node, identity, committedOutput);
             // 输出已正式写入运行状态，此时才发布派生投影（例如Vision预览）；
             // 取消、失败或提交失败的执行不会走到这里，界面因此看不到未被调度承认的结果。
             result.Projection?.Commit(committedOutput.ExecutionSequence);
-            if (executionContext.ChangedVariableKeys.Count > 0)
+            if (ComposeOutputProjection(result.Projection, operationKey) is { } outputProjection)
+                _outputProjections[committedOutput.ExecutionSequence] = outputProjection;
+            // 新输出已发布，被它取代的上一次输出不会再被读到，释放其资源（环形流程的内存因此不随循环次数增长）。
+            RetireOutputs(superseded);
+            // 变量键只供命名入口重执行回退；该能力限于无环串行计划，其他计划不记录，避免循环中无限累计。
+            if (executionContext.ChangedVariableKeys.Count > 0 && _plan.IsAcyclic && _plan.ParallelScopes.Count == 0)
                 _committedVariableKeys[committedOutput.ExecutionSequence] = executionContext.ChangedVariableKeys;
             if (node is IWorkflowRecoveryEntryNode entry && token.ScopeIds.Count == 0)
                 _recoveryEntries[entry.RecoveryEntryKey] = committedOutput;
@@ -241,6 +256,92 @@ public sealed partial class WorkflowEngine
             message,
             new Dictionary<string, object?> { ["SelectedPort"] = WorkflowPorts.Failed, ["Message"] = fault.Message }));
         PublishTraceEntry(receipt, node, identity, "NodeFaultRouted", message);
+    }
+
+    /// <summary>合并节点自身投影与本次执行中子运行剩余的投影；两者都没有时为空。</summary>
+    private IWorkflowNodeOutputProjection? ComposeOutputProjection(
+        IWorkflowNodeOutputProjection? own,
+        (long TokenId, string NodeId) operationKey)
+    {
+        if (!_childOutputProjections.TryRemove(operationKey, out var children) || children.Count == 0)
+            return own;
+        return new CompositeOutputProjection(own is null ? children : children.Prepend(own).ToArray());
+    }
+
+    /// <summary>移交本次运行仍保留的输出投影并清空登记；父引擎据此在子流程节点输出被取代时释放子运行资源。</summary>
+    internal IReadOnlyList<IWorkflowNodeOutputProjection> DetachOutputProjections()
+    {
+        var detached = _outputProjections.Values.ToArray();
+        _outputProjections.Clear();
+        return detached;
+    }
+
+    /// <summary>接管子运行剩余投影：子流程成功时挂到本次节点输出上，失败时没有输出可引用，立即释放。</summary>
+    private void AdoptChildOutputProjections(
+        string parentNodeId,
+        long parentTokenId,
+        IReadOnlyList<IWorkflowNodeOutputProjection> projections,
+        bool succeeded)
+    {
+        if (projections.Count == 0)
+            return;
+        if (succeeded)
+        {
+            _childOutputProjections.AddOrUpdate((parentTokenId, parentNodeId), projections,
+                (_, existing) => existing.Concat(projections).ToArray());
+            return;
+        }
+        RetireChildOutputProjections(parentNodeId, projections);
+    }
+
+    /// <summary>立即释放子运行剩余投影；它们的输出不会再被读取。</summary>
+    private void RetireChildOutputProjections(string parentNodeId, IReadOnlyList<IWorkflowNodeOutputProjection> projections)
+    {
+        if (projections.Count > 0)
+            RetireProjection(parentNodeId, new CompositeOutputProjection(projections));
+    }
+
+    /// <summary>输出退出运行历史后通知其投影释放派生资源；释放失败只降级记录，不影响运行。</summary>
+    /// <param name="outputs">已退出历史的输出。</param>
+    private void RetireOutputs(IReadOnlyList<WorkflowNodeOutput> outputs)
+    {
+        foreach (var output in outputs)
+        {
+            if (_outputProjections.TryRemove(output.ExecutionSequence, out var projection))
+                RetireProjection(output.NodeId, projection);
+        }
+    }
+
+    private void RetireProjection(string nodeId, IWorkflowNodeOutputProjection projection)
+    {
+        try
+        {
+            projection.Retire();
+        }
+        catch (Exception exception)
+        {
+            ReportRecordingDegraded($"释放节点 {nodeId} 被取代输出的资源失败：{exception.Message}");
+        }
+    }
+
+    /// <summary>子流程节点输出携带的子运行投影集合；发布已在子运行中完成，这里只负责一起释放。</summary>
+    private sealed class CompositeOutputProjection(IReadOnlyList<IWorkflowNodeOutputProjection> parts) : IWorkflowNodeOutputProjection
+    {
+        public void Commit(long executionSequence)
+        {
+        }
+
+        public void Retire()
+        {
+            List<Exception>? failures = null;
+            foreach (var part in parts)
+            {
+                try { part.Retire(); }
+                catch (Exception exception) { (failures ??= new List<Exception>()).Add(exception); }
+            }
+            if (failures is not null)
+                throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
+        }
     }
 
     private TimeSpan GetNodeElapsed(string nodeId)

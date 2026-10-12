@@ -23,4 +23,13 @@ public interface IWorkflowChildExecutionContext
         WorkflowExecutionPlan definition,
         WorkflowContext childContext,
         CancellationToken cancellationToken);
+
+    /// <summary>打开可反复运行当前复合节点子定义的会话；会话只创建一个子引擎，每圈调用一次。</summary>
+    /// <param name="definition">当前复合节点的编译后子定义。</param>
+    /// <param name="childContext">通过 <see cref="CreateChildScope"/> 创建、在整个会话期间复用的上下文。</param>
+    /// <returns>调用方负责释放的会话。</returns>
+    IWorkflowChildWorkflowSession OpenChildWorkflowSession(
+        WorkflowExecutionPlan definition,
+        WorkflowContext childContext) =>
+        throw new NotSupportedException("当前运行时不支持反复运行子流程。");
 }

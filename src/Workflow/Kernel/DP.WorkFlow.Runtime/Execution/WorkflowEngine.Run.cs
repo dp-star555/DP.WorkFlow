@@ -73,7 +73,16 @@ public sealed partial class WorkflowEngine
                 terminalMessage = _terminalMessage;
             }
             // 终态事件和 Flush 失败只影响 RecordingHealth，不改写已经确定的 Workflow 终态。
-            await CompleteRecordingAsync(terminalState, terminalMessage).ConfigureAwait(false);
+            if (_deferRecordingCompletion)
+            {
+                // 循环块的每一圈不等待记录写出，下一圈立即开始；只保留一份在途收尾，
+                // 写出跟不上循环速度时才等待上一圈写完，避免积压的记录无限增长。
+                if (_pendingRecordingCompletion is { IsCompleted: false } previous)
+                    await previous.ConfigureAwait(false);
+                _pendingRecordingCompletion = CompleteRecordingAsync(terminalState, terminalMessage);
+            }
+            else
+                await CompleteRecordingAsync(terminalState, terminalMessage).ConfigureAwait(false);
             PublishSnapshot(terminalMessage);
             Volatile.Write(ref _isRunning, 0);
         }
@@ -157,10 +166,15 @@ public sealed partial class WorkflowEngine
             _activeChildWorkflows.Clear();
             _latestChildWorkflowByParentNode.Clear();
             _startedRecoveryCases.Clear();
+            // 上一轮剩余输出的资源由所有者在根运行开始时退役；子运行结束后由父引擎接管（见 DetachOutputProjections）。
+            _outputProjections.Clear();
+            _childOutputProjections.Clear();
             _totalNodeExecutions = 0;
             _tokenSequence = 0;
             _runStopwatch = Stopwatch.StartNew();
-            _manualPauseRequested = false;
+            // 子引擎的人工暂停由父引擎在运行前传入（包括循环块两圈之间），不能被新一轮运行清除。
+            if (_parentRunId is null)
+                _manualPauseRequested = false;
             _state = E_WorkflowExecutionState.Running;
             Context.BeginRun(RunState);
             changedState = ApplyPauseStateLocked() ?? _state;

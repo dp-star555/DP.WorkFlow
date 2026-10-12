@@ -63,7 +63,7 @@ internal static class VisionFrameAcquisition
             return Output(converted, context, EWorkflowVisionPixelFormat.Original, token);
         }
         var retained = context.GetRequiredCapability<IWorkflowVisionFrameScope>().Retain(frame);
-        var projection = WorkflowVisionFrameScope.Stage(context, retained);
+        var projection = WorkflowVisionFrameScope.StageOutput(context, retained);
         return NodeExecutionResult.Continue(output: retained, projection: projection);
     }
 }

@@ -122,8 +122,11 @@ public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
         return _runState.TryGetLatestNodeOutput(nodeId, out output);
     }
 
-    /// <summary>导出本次运行的全部节点输出执行实例。</summary>
-    /// <returns>按全局执行序号排列的输出历史快照，包括同一节点的重复执行。</returns>
+    /// <summary>导出本次运行仍保留的节点输出执行实例。</summary>
+    /// <returns>
+    /// 按全局执行序号排列的输出历史快照。同一节点在同一路径上重复执行时只保留最新一次，
+    /// 被取代的旧输出不再保留；恢复失效的输出仍保留。
+    /// </returns>
     public IReadOnlyList<WorkflowNodeOutput> ExportNodeOutputs() => _runState.NodeOutputs;
 
     /// <summary>创建使用同一服务容器、默认不继承父变量且隔离节点输出的子流程上下文。</summary>
@@ -178,10 +181,17 @@ public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
     internal WorkflowNodeOutput SetNodeOutput(
         string nodeId,
         WorkflowExecutionIdentity identity,
-        object? value)
+        object? value) => SetNodeOutput(nodeId, identity, value, out _);
+
+    /// <summary>记录节点执行实例的标准输出，并返回因此退出历史的旧输出。</summary>
+    internal WorkflowNodeOutput SetNodeOutput(
+        string nodeId,
+        WorkflowExecutionIdentity identity,
+        object? value,
+        out IReadOnlyList<WorkflowNodeOutput> superseded)
     {
         ValidateKey(nodeId);
-        return _runState.CommitNodeOutput(nodeId, identity, value);
+        return _runState.CommitNodeOutput(nodeId, identity, value, out superseded);
     }
 
     /// <summary>从最新到最旧查找对指定消费执行实例可见的节点输出。</summary>
@@ -208,9 +218,12 @@ public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
 
     /// <summary>标记并行作用域全部分支已经到达共同汇聚点。</summary>
     /// <param name="scopeId">先前注册的运行时作用域 ID；不存在时保持幂等。</param>
-    internal void CompleteParallelScope(long scopeId)
+    internal void CompleteParallelScope(long scopeId) => CompleteParallelScope(scopeId, out _);
+
+    /// <summary>标记并行作用域完成，并返回因此退出历史的旧分支输出。</summary>
+    internal void CompleteParallelScope(long scopeId, out IReadOnlyList<WorkflowNodeOutput> superseded)
     {
-        _runState.CompleteParallelScope(scopeId);
+        _runState.CompleteParallelScope(scopeId, out superseded);
     }
 
     private static void ValidateKey(string key)
