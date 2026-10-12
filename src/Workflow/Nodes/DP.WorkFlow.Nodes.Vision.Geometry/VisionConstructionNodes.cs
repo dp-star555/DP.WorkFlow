@@ -292,7 +292,8 @@ public static class VisionConstruction
         double acute = Math.Abs(signed) > 90 ? 180 - Math.Abs(signed) : Math.Abs(signed);
         if (acute < Math.Max(minimumAngleDegrees, 1e-9))
             throw new InvalidOperationException(FormattableString.Invariant($"两条直线近乎平行（夹角 {acute:F4}°，小于 {minimumAngleDegrees:G}°），交点不稳定。"));
-        var point = LineIntersection(a, b) ?? throw new InvalidOperationException("两条直线平行，没有交点。");
+        var point = LineIntersection(a, b) ?? throw new InvalidOperationException(
+            FormattableString.Invariant($"两条直线近乎平行（夹角 {acute:F4}°），交点超出 ±{CoordinateLimit:G} 像素的坐标范围。"));
         return new VisionLineIntersectionResult(new VisionPoint(a.FrameId, point, coordinates), a, b, acute);
     }
 
@@ -303,8 +304,9 @@ public static class VisionConstruction
     {
         var coordinates = Common(a.CoordinateSystem, b.CoordinateSystem, a.FrameId, b.FrameId);
         var signed = SignedAngle(a, b);
+        // 平行或近乎平行时交点在坐标范围外，夹角仍然有效，交点为空。
         var point = LineIntersection(a, b);
-        return new VisionLineAngleResult(a, b, mode, signed, point is { } p && Math.Abs(p.X) < 1e9 && Math.Abs(p.Y) < 1e9 ? new VisionPoint(a.FrameId, p, coordinates) : null);
+        return new VisionLineAngleResult(a, b, mode, signed, point is { } p ? new VisionPoint(a.FrameId, p, coordinates) : null);
     }
 
     /// <summary>无限直线与圆的交点；不相交时抛出。</summary>
@@ -375,14 +377,18 @@ public static class VisionConstruction
         return angle <= -180 ? angle + 360 : angle;
     }
 
+    /// <summary>视觉点坐标的上限（原图像素）；与 <see cref="PointD"/> 的取值范围一致。</summary>
+    private const double CoordinateLimit = 1e7;
+
+    // 平行，或交点超出视觉点坐标范围（近乎平行时交点在极远处）时返回 null；先判断再构造 PointD，避免其参数越界异常。
     private static PointD? LineIntersection(VisionLine a, VisionLine b)
     {
         PointD p = a.A.ImagePosition, q = b.A.ImagePosition;
         double rx = a.B.ImagePosition.X - p.X, ry = a.B.ImagePosition.Y - p.Y, sx = b.B.ImagePosition.X - q.X, sy = b.B.ImagePosition.Y - q.Y;
         double cross = rx * sy - ry * sx;
         if (Math.Abs(cross) <= 1e-12 * Math.Sqrt((rx * rx + ry * ry) * (sx * sx + sy * sy))) return null;
-        double t = ((q.X - p.X) * sy - (q.Y - p.Y) * sx) / cross;
-        return new PointD(p.X + t * rx, p.Y + t * ry);
+        double t = ((q.X - p.X) * sy - (q.Y - p.Y) * sx) / cross, x = p.X + t * rx, y = p.Y + t * ry;
+        return double.IsFinite(x) && double.IsFinite(y) && Math.Abs(x) <= CoordinateLimit && Math.Abs(y) <= CoordinateLimit ? new PointD(x, y) : null;
     }
 
     private static VisionCoordinateSystem? Common(VisionCoordinateSystem? a, VisionCoordinateSystem? b, string frameA, string frameB)
