@@ -151,7 +151,7 @@ public sealed class MeasureVisionGroupNodeModel : AnalyzeVisionFrameNodeModel, I
         if (!Enabled.Any()) errors.Add("至少启用一个测量项。");
         foreach (var item in Enabled)
         {
-            if (item.Shape is not { } shape) { errors.Add($"测量项 {item.Name}：缺少{Describe(item.Kind)}配置。"); continue; }
+            if (item.Shape is not { } shape) { errors.Add($"测量项 {item.Name}：缺少{KindName(item.Kind)}配置。"); continue; }
             using var _ = Share(shape);
             // 输入图像、坐标系由测量组统一提供，这里只报告测量项自身的配置问题。
             errors.AddRange(shape.ValidateConfiguration().Except(base.ValidateConfiguration()).Select(e => $"测量项 {item.Name}：{e}"));
@@ -188,7 +188,9 @@ public sealed class MeasureVisionGroupNodeModel : AnalyzeVisionFrameNodeModel, I
         return members;
     }
 
-    internal static string Describe(EVisionMeasureKind kind) => kind switch
+    /// <summary>测量类型的中文名。</summary>
+    /// <param name="kind">类型。</param>
+    public static string KindName(EVisionMeasureKind kind) => kind switch
     {
         EVisionMeasureKind.Circle => "找圆", EVisionMeasureKind.Rectangle => "找矩形", _ => "找线"
     };

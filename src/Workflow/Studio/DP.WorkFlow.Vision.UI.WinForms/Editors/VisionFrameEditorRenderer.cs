@@ -20,6 +20,8 @@ public sealed class VisionFrameEditorRenderer : IWorkflowWinFormsNodeEditorPageR
     {
         if (page.Model is VisionFrameEditorPageModel model && new VisionRoiListModel(model) is { IsAvailable: true } roi)
             yield return new WorkflowWinFormsNodeEditorSidePanel("Roi", "ROI列表", new VisionRoiListControl(roi));
+        if (page.Model is VisionFrameEditorPageModel { MeasureGroup: not null } group)
+            yield return new WorkflowWinFormsNodeEditorSidePanel("MeasureItems", "测量项", new VisionMeasureItemListControl(group));
     }
 }
 
@@ -124,7 +126,7 @@ internal sealed class VisionFrameEditorControl : UserControl
             foreach (var choice in VisionCaliperLayoutChoice.All) _toolIcons.Images.Add(choice.IconKey, CaliperIcon(choice.Layout));
             _shape.ImageList = _toolIcons; _shape.ImageKeyMember = nameof(VisionCaliperLayoutChoice.IconKey);
             _shape.Items.AddRange(layouts.Cast<object>().ToArray());
-            _shape.Enabled = layouts.Count > 1;
+            _shape.Enabled = model.CanSwitchCaliperLayout;
             _shape.SelectedIndexChanged += (_, _) =>
             {
                 if (_syncing || _shape.SelectedItem is not VisionCaliperLayoutChoice choice) return;
@@ -166,7 +168,7 @@ internal sealed class VisionFrameEditorControl : UserControl
             var caption = model.Pick(_canvas.Viewport.ToImage(new PointD(e.X, e.Y)), 5 / _canvas.Viewport.Scale);
             if (caption is not null) _status.Text = caption;
         };
-        if (model.Caliper is { } caliper) AttachCaliper(caliper);
+        if (model.Caliper is not null || model.MeasureGroup is not null) AttachCaliper();
         _source.SelectedIndexChanged += (_, _) => RefreshPreview();
         _timer.Tick += (_, _) => RefreshPreview();
         VisibleChanged += (_, _) => { if (Visible) _timer.Start(); else _timer.Stop(); };
@@ -319,18 +321,21 @@ internal sealed class VisionFrameEditorControl : UserControl
     }
 
     /// <summary>卡尺图上编辑：拖动起点/终点/带宽方块/采样带内部（圆弧另有圆心与半径），松开后通知参数页刷新。</summary>
-    private void AttachCaliper(IVisionCanvasGizmo caliper)
+    // 图上编辑器随测量组的选中项变化，事件里总是取当前的编辑器。
+    private void AttachCaliper()
     {
         double Unit() => 1 / Math.Max(1e-9, _canvas.Viewport.Scale);
         PointD ToImage(MouseEventArgs e) => _canvas.Viewport.ToImage(new PointD(e.X, e.Y));
         _canvas.MouseDown += (_, e) =>
         {
+            if (_model.Caliper is not { } caliper) return;
             if (e.Button != MouseButtons.Left || !VisionFrameEditorPageModel.ShowsEditableOverlays(View)) return;
             var point = ToImage(e);
             if (caliper.Hit(point, Unit()) is { } handle) { caliper.BeginDrag(handle, point, Unit()); _canvas.Capture = true; }
         };
         _canvas.MouseMove += (_, e) =>
         {
+            if (_model.Caliper is not { } caliper) return;
             var point = ToImage(e);
             if (caliper.IsDragging)
             {
@@ -348,6 +353,7 @@ internal sealed class VisionFrameEditorControl : UserControl
         };
         _canvas.MouseUp += (_, _) =>
         {
+            if (_model.Caliper is not { } caliper) return;
             if (caliper.EndDrag()) { _model.NotifyConfigurationChanged(); _model.InvalidatePreview(); RefreshPreview(); }
         };
     }

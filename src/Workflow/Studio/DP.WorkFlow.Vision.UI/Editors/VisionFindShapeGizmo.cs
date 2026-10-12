@@ -28,9 +28,16 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
     private string _dragOriginKey = string.Empty;
     private (double X, double Y) _dragCaliperNormal;
 
-    /// <summary>为找线/找圆节点创建图上编辑器。</summary>
-    /// <param name="node">节点窗口中的隔离编辑副本。</param>
-    public VisionFindShapeGizmo(FindVisionShapeNodeModel node) => _node = node ?? throw new ArgumentNullException(nameof(node));
+    private readonly Func<WorkflowVisionCoordinateBinding?> _binding;
+
+    /// <summary>为找线/找圆/找矩形节点（或测量组中的一个测量项）创建图上编辑器。</summary>
+    /// <param name="node">节点窗口中的隔离编辑副本，或测量项的配置。</param>
+    /// <param name="binding">坐标系绑定来源；为空时取 <paramref name="node"/> 自己的绑定（测量组的测量项由组提供）。</param>
+    public VisionFindShapeGizmo(FindVisionShapeNodeModel node, Func<WorkflowVisionCoordinateBinding?>? binding = null)
+    {
+        _node = node ?? throw new ArgumentNullException(nameof(node));
+        _binding = binding ?? (() => _node.Coordinates);
+    }
 
     /// <inheritdoc/>
     public VisionCoordinateSystem? Coordinates { get => _coordinates; set => _coordinates = value; }
@@ -88,7 +95,7 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
     private WorkflowVisionRoi? Roi => _node.Regions is { Count: 1 } regions && regions[0] is { Enabled: true, Exclude: false } roi
         && roi.Shape == (IsCircle ? EWorkflowVisionRoiShape.Ellipse : EWorkflowVisionRoiShape.Rectangle) ? roi : null;
 
-    private bool Bound => _node.Coordinates is not null;
+    private bool Bound => _binding() is not null;
     private VisionCoordinateSystem? Similarity => Bound && _coordinates is { IsSimilarity: true } system ? system : null;
     private double Scale => Similarity?.SimilarityScale ?? 1;
     private double Rotation => Similarity?.RotationRadians ?? 0;

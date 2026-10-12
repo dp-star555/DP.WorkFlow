@@ -75,9 +75,10 @@ public sealed partial class VisionFrameEditorPageModel
     public bool IsRunning => Volatile.Read(ref _running) != 0;
 
     /// <summary>
-    /// “卡尺”下拉的可选布局：卡尺测量可在线/扇环之间切换；找线、找圆、找矩形各自固定一种布局；没有卡尺的节点为空（隐藏下拉）。
+    /// “卡尺”下拉的可选布局：卡尺测量可在线/扇环之间切换；找线、找圆、找矩形各自固定一种布局；
+    /// 测量组列出全部布局并显示选中项的布局（新增项在“测量项”列表里按类型添加）；没有卡尺的节点为空（隐藏下拉）。
     /// </summary>
-    public IReadOnlyList<VisionCaliperLayoutChoice> CaliperLayouts => Caliper switch
+    public IReadOnlyList<VisionCaliperLayoutChoice> CaliperLayouts => MeasureGroup is not null ? VisionCaliperLayoutChoice.All : Caliper switch
     {
         VisionCaliperGizmo => new[] { VisionCaliperLayoutChoice.Line, VisionCaliperLayoutChoice.Annulus },
         VisionFindShapeGizmo when _node is FindVisionCircleNodeModel => new[] { VisionCaliperLayoutChoice.Annulus },
@@ -87,9 +88,20 @@ public sealed partial class VisionFrameEditorPageModel
     };
 
     /// <summary>当前卡尺布局；没有卡尺时为空。</summary>
-    public VisionCaliperLayoutChoice? CaliperLayout => Caliper is VisionCaliperGizmo caliper
+    public VisionCaliperLayoutChoice? CaliperLayout => MeasureGroup is { } group
+        ? group.Items.FirstOrDefault(i => i.Id == SelectedMeasureItemId)?.Kind switch
+        {
+            EVisionMeasureKind.Line => VisionCaliperLayoutChoice.Line,
+            EVisionMeasureKind.Circle => VisionCaliperLayoutChoice.Annulus,
+            EVisionMeasureKind.Rectangle => VisionCaliperLayoutChoice.Rectangle,
+            _ => null
+        }
+        : Caliper is VisionCaliperGizmo caliper
         ? caliper.Shape == EVisionCaliperShape.Arc ? VisionCaliperLayoutChoice.Annulus : VisionCaliperLayoutChoice.Line
         : CaliperLayouts.FirstOrDefault();
+
+    /// <summary>卡尺下拉是否可以切换（只有卡尺测量节点可以）。</summary>
+    public bool CanSwitchCaliperLayout => Caliper is VisionCaliperGizmo && MeasureGroup is null;
 
     /// <summary>切换卡尺布局（只有卡尺测量节点可切换），保持在图上的位置；变化时返回 true 并通知参数页。</summary>
     /// <param name="layout">目标布局。</param>

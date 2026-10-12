@@ -86,6 +86,8 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         if (!templateEditorOnly && node is MeasureVisionCaliperNodeModel caliper) Caliper = new VisionCaliperGizmo(caliper);
         if (!templateEditorOnly && node is FindVisionShapeNodeModel find) Caliper = new VisionFindShapeGizmo(find);
         _node = node ?? throw new ArgumentNullException(nameof(node)); _frames = frames; _reader = reader;
+        if (!templateEditorOnly && node is MeasureVisionGroupNodeModel group && group.Items.FirstOrDefault(i => i.Shape is not null) is { } first)
+            SelectMeasureItemCore(first.Id);
         Editor = new RoiEditor();
         if (node is AnalyzeVisionFrameNodeModel { Coordinates: not null }) { /* 等待同帧定位后显示局部ROI，不在原图上误画局部数值。 */ }
         else if (node is AnalyzeVisionFrameNodeModel { Regions.Count: > 0 } regionNode)
@@ -139,7 +141,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         => templateEditor ? 4 : hasResult || !editable ? 1 : 0;
 
     /// <summary>卡尺节点的图上编辑器；其他节点为空。</summary>
-    public IVisionCanvasGizmo? Caliper { get; }
+    public IVisionCanvasGizmo? Caliper { get; private set; }
 
     /// <summary>当前缩放下 1 个屏幕像素对应的原图像素；由画布在缩放变化时设置，用于固定控制点的屏幕大小。</summary>
     public double ImagePixelsPerScreenPixel
@@ -336,13 +338,22 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
                 _lastKey = null;
                 _configurationChanged?.Invoke();
             }
+            // 测量组：未绑定坐标系时，新建测量项的占位搜索范围按首张图像居中。
+            if (view is 0 or 1 && MeasureGroup is { Coordinates: null } placeholders
+                && placeholders.Items.Select(i => i.Shape?.FitPlaceholderSearchRoi(frame.Image.Info.Width, frame.Image.Info.Height) == true).ToArray().Any(changed => changed))
+            {
+                _lastKey = null;
+                _configurationChanged?.Invoke();
+            }
+            _lastFrameSize = (frame.Image.Info.Width, frame.Image.Info.Height);
             UpdateCoordinatePreview(frame, view);
             // 绑定坐标系的卡尺按本帧坐标系换算到原图显示和拖动；没有同帧定位时不显示。
             if (Caliper is not null) Caliper.Coordinates = CoordinateEditingReady ? _displayCoordinates : null;
             var analysis = _node as AnalyzeVisionFrameNodeModel;
             using var maskPreview = analysis?.Mask.Binding is { IsPublicData: false } maskBinding ? _frames?.Capture(maskBinding.NodeId) : null;
-            string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}:{Caliper?.Key}:{_imagePixelsPerScreenPixel:0.###}:{_trialVersion}:{trial is not null}:{manualInput is not null}";
+            string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}:{Caliper?.Key}:{_imagePixelsPerScreenPixel:0.###}:{_trialVersion}:{trial is not null}:{manualInput is not null}:{MeasureKey}";
             if (_lastKey == key) return null;
+            NotifyMeasureResults(current?.Sequence);
             var facts = view == 1 ? trial is not null ? trial.Facts : current?.Facts : null;
             _lastKey = key; // 失败的显示包不在定时器中反复分配；切换来源或新帧才重试。
             var shown = Visuals(facts, Describe(facts, frame), _imagePixelsPerScreenPixel).Take(10001).ToArray();
@@ -367,6 +378,8 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
                 { maskStatus = " 无法预览掩膜：" + error.Message; }
             }
             layers.Add(new CanvasLayer("facts", ELayerKind.Annotation, visuals));
+            if (MeasureGroup is not null && ShowsEditableOverlays(view))
+                layers.Add(new CanvasLayer("measure-items", ELayerKind.Annotation, OtherMeasureItemVisuals(), 5, name: "测量项"));
             if (Caliper is { IsEditable: true } && ShowsEditableOverlays(view))
                 layers.Add(new CanvasLayer("caliper", ELayerKind.Annotation, Caliper.Visuals(_imagePixelsPerScreenPixel), 10, name: "卡尺"));
             var overlay = new GeometryOverlay(frame.FrameId, layers);

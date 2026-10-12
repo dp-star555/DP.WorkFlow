@@ -23,6 +23,8 @@ public sealed class VisionFrameEditorRenderer : IWorkflowWpfNodeEditorPageRender
     {
         if (page.Model is VisionFrameEditorPageModel model && new VisionRoiListModel(model) is { IsAvailable: true } roi)
             yield return new WorkflowWpfNodeEditorSidePanel("Roi", "ROI列表", new VisionRoiListControl(roi));
+        if (page.Model is VisionFrameEditorPageModel { MeasureGroup: not null } group)
+            yield return new WorkflowWpfNodeEditorSidePanel("MeasureItems", "测量项", new VisionMeasureItemListControl(group));
     }
 }
 
@@ -124,7 +126,7 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
         if (layouts.Count > 0)
         {
             _shape.ItemsSource = layouts.Select(ShapeItem).ToArray();
-            _shape.IsEnabled = layouts.Count > 1;
+            _shape.IsEnabled = model.CanSwitchCaliperLayout;
             _shape.SelectionChanged += (_, _) =>
             {
                 if (_syncing || (_shape.SelectedItem as ComboBoxItem)?.Tag is not VisionCaliperLayoutChoice choice) return;
@@ -166,7 +168,7 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
             var caption = model.Pick(_canvas.Viewport.ToImage(new PointD(p.X, p.Y)), 5 / _canvas.Viewport.Scale);
             if (caption is not null) _status.Text = caption;
         };
-        if (model.Caliper is { } caliper) AttachCaliper(caliper);
+        if (model.Caliper is not null || model.MeasureGroup is not null) AttachCaliper();
         _source.SelectionChanged += (_, _) => RefreshPreview();
         _timer.Tick += OnTick;
         Loaded += (_, _) => { if (!_disposed) { _timer.Start(); RefreshPreview(); } };
@@ -246,7 +248,8 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
 
     private void OnTick(object? sender, EventArgs e) => RefreshPreview();
     /// <summary>卡尺图上编辑：拖动起点/终点/带宽方块/采样带内部，松开后通知参数页刷新。</summary>
-    private void AttachCaliper(IVisionCanvasGizmo caliper)
+    // 图上编辑器随测量组的选中项变化，事件里总是取当前的编辑器。
+    private void AttachCaliper()
     {
         double Unit() => 1 / Math.Max(1e-9, _canvas.Viewport.Scale);
         PointD ToImage(System.Windows.Input.MouseEventArgs e)
@@ -256,12 +259,14 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
         }
         _canvas.PreviewMouseLeftButtonDown += (_, e) =>
         {
+            if (_model.Caliper is not { } caliper) return;
             if (!VisionFrameEditorPageModel.ShowsEditableOverlays(View)) return;
             var point = ToImage(e);
             if (caliper.Hit(point, Unit()) is { } handle) { caliper.BeginDrag(handle, point, Unit()); _canvas.CaptureMouse(); }
         };
         _canvas.PreviewMouseMove += (_, e) =>
         {
+            if (_model.Caliper is not { } caliper) return;
             var point = ToImage(e);
             if (caliper.IsDragging)
             {
@@ -279,6 +284,7 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
         };
         _canvas.PreviewMouseLeftButtonUp += (_, _) =>
         {
+            if (_model.Caliper is not { } caliper) return;
             if (!caliper.IsDragging) return;
             var changed = caliper.EndDrag();
             _canvas.ReleaseMouseCapture();

@@ -56,12 +56,17 @@ public static class VisionCoordinateRebinding
             var image = from?.LocalToImage.Map(new Coordinate2D(x, y)) ?? new Coordinate2D(x, y);
             return to?.ImageToLocal.Map(image) ?? image;
         }
-        List<WorkflowVisionRoi>? regions = node.RangeCapability != EWorkflowVisionRange.Region ? null : node.Regions.Select(r =>
+        List<WorkflowVisionRoi> Map(IEnumerable<WorkflowVisionRoi> source) => source.Select(r =>
         {
             var geometry = r.ToGeometry();
             var image = from?.ToImageGeometry(geometry) ?? geometry;
             return MapRegion(new RoiDefinition(r.Id, to?.ToLocalGeometry(image) ?? image, r.Exclude ? ERoiPurpose.Exclude : ERoiPurpose.Include, r.Enabled));
         }).ToList();
+        List<WorkflowVisionRoi>? regions = node.RangeCapability != EWorkflowVisionRange.Region ? null : Map(node.Regions);
+        // 测量组：每个测量项的搜索范围和长度参数按同样规则换算，先全部算好再写入。
+        var items = node is MeasureVisionGroupNodeModel group
+            ? group.Items.Where(i => i.Shape is not null).Select(i => (Shape: i.Shape!, Regions: Map(i.Shape!.Regions))).ToArray()
+            : Array.Empty<(FindVisionShapeNodeModel Shape, List<WorkflowVisionRoi> Regions)>();
         if (node is MeasureVisionCaliperNodeModel { Shape: EVisionCaliperShape.Arc } arc)
         {
             double ratio = fromScale / toScale;
@@ -88,24 +93,26 @@ public static class VisionCoordinateRebinding
             caliper.MinimumSeparation *= ratio; caliper.BandSampleStep *= ratio; caliper.ScanStep *= ratio; caliper.MinimumPairWidth *= ratio; caliper.MaximumPairWidth *= ratio;
         }
         if (node is FitVisionRobustLineNodeModel fit) fit.DistanceThreshold *= fromScale / toScale;
-        if (node is FindVisionShapeNodeModel shape)
-        {
-            // 搜索ROI随 Regions 换算；这里换算卡尺与拟合的长度参数（含找圆、找矩形的搜索长度），找圆的起始角随坐标系方向调整。
-            double ratio = fromScale / toScale;
-            shape.BandSampleStep *= ratio; shape.MinimumSeparation *= ratio; shape.DistanceThreshold *= ratio; shape.MinimumPairWidth *= ratio; shape.MaximumPairWidth *= ratio;
-            if (shape is FindVisionRectangleNodeModel rectangle) rectangle.SearchLength *= ratio;
-            if (shape is FindVisionCircleNodeModel circle)
-            {
-                circle.SearchLength *= ratio;
-                circle.StartAngle += ((from?.RotationRadians ?? 0) - (to?.RotationRadians ?? 0)) * 180 / Math.PI;
-            }
-        }
+        foreach (var (itemShape, itemRegions) in items) { ScaleShape(itemShape, from, to, fromScale / toScale); itemShape.Regions = itemRegions; }
+        if (node is FindVisionShapeNodeModel shape) ScaleShape(shape, from, to, fromScale / toScale);
         if (regions is not null) node.Regions = regions;
+    }
+
+    // 搜索ROI随 Regions 换算；这里换算卡尺与拟合的长度参数（含找圆、找矩形的搜索长度），找圆的起始角随坐标系方向调整。
+    private static void ScaleShape(FindVisionShapeNodeModel shape, VisionCoordinateSystem? from, VisionCoordinateSystem? to, double ratio)
+    {
+        shape.BandSampleStep *= ratio; shape.MinimumSeparation *= ratio; shape.DistanceThreshold *= ratio; shape.MinimumPairWidth *= ratio; shape.MaximumPairWidth *= ratio;
+        if (shape is FindVisionRectangleNodeModel rectangle) rectangle.SearchLength *= ratio;
+        if (shape is FindVisionCircleNodeModel circle)
+        {
+            circle.SearchLength *= ratio;
+            circle.StartAngle += ((from?.RotationRadians ?? 0) - (to?.RotationRadians ?? 0)) * 180 / Math.PI;
+        }
     }
 
     // 卡尺、鲁棒拟合与找线找圆用单一尺度换算距离参数，要求相似变换；其它节点不需要尺度。
     private static double SimilarityScaleOrOne(this VisionCoordinateSystem system, AnalyzeVisionFrameNodeModel node) =>
-        node is MeasureVisionCaliperNodeModel or FitVisionRobustLineNodeModel or FindVisionShapeNodeModel ? system.SimilarityScale : 1;
+        node is MeasureVisionCaliperNodeModel or FitVisionRobustLineNodeModel or FindVisionShapeNodeModel or MeasureVisionGroupNodeModel ? system.SimilarityScale : 1;
 
     private static WorkflowVisionPreview CaptureInput(AnalyzeVisionFrameNodeModel node, IWorkflowVisionPreviewSource frames)
     {
