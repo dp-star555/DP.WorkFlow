@@ -118,6 +118,32 @@ public sealed class WorkflowNodeEditorModelTests
     }
 
     [Fact]
+    public async Task SubWorkflowNodeEditor_OpensNodeAddedToChildCanvasAndAppliesIntoParentDraft()
+    {
+        var block = new BlockNodeModel { Id = "Block", Title = "子流程" };
+        var session = new WorkflowDesignerSession(Document(block), new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes());
+        await using var model = new WorkflowNodeEditorModel(session, block.Id, block.Id);
+        var page = Assert.IsType<WorkflowSubWorkflowEditorPageModel>(model.Pages.Single(item => item.PageId == "SubWorkflow").Model);
+        // 空子流程打开后再放入开始节点和新节点：入口只出现在子会话文档上。
+        var start = page.Session.AddNode("Start", 72, 72);
+        var added = page.Session.AddNode("Action", 300, 72);
+
+        await using (var child = model.CreateSubWorkflowNodeEditor(page, added.Node.Id))
+        {
+            Assert.Equal(start.Node.Id, child.EntryNodeId);
+            Assert.Contains(child.Pages, item => item.PageId == "Properties");
+            child.EditingNode.Title = "子节点修改";
+            child.ApplyChanges();
+        }
+
+        // 下一层应用只写回本窗口草稿，正式节点要等本窗口应用。
+        Assert.Equal("子节点修改", added.Node.Title);
+        Assert.Empty(block.SubDocument.Graph.Nodes);
+        model.ApplyChanges();
+        Assert.Contains(block.SubDocument.Graph.Nodes, item => item.Id == added.Node.Id && item.Title == "子节点修改");
+    }
+
+    [Fact]
     public async Task HigherPriorityPluginPage_ReplacesBuiltInCapabilityPageBySlot()
     {
         var node = new CSharpScriptNodeModel { Id = "Script", Title = "脚本" };
