@@ -628,10 +628,13 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             Padding = Padding.Empty
         };
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
         var source = EditorCombo();
-        source.Items.AddRange(Enum.GetValues<WorkflowValueSource>().Cast<object>().ToArray());
+        var sources = Enum.GetValues<WorkflowValueSource>().Cast<object>().ToArray();
+        // 来源列按最长选项文字加下拉箭头与留白定宽，其余宽度全部给值编辑器；按比例分列时窄面板里来源下拉被截断。
+        int sourceWidth = sources.Max(item => TextRenderer.MeasureText(item.ToString(), source.Font).Width) + LogicalToDeviceUnits(44);
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, sourceWidth));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        source.Items.AddRange(sources);
         source.SelectedItem = entry.GetInputSource();
         source.Margin = new Padding(0, 0, 3, 0);
         panel.Controls.Add(source, 0, 0);
@@ -746,6 +749,8 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     private ModernSelect EditorCombo() => new()
     {
         Dock = DockStyle.Fill,
+        // ModernSelect 默认最小宽 120：单元格更窄时会伸进相邻单元格并盖住右侧控件；宽度交给所在单元格决定。
+        MinimumSize = new Size(0, 24),
         Theme = ModernTheme.Dark,
         DropDownAnimationDuration = 0
     };

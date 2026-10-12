@@ -105,8 +105,7 @@ public sealed partial class ModernPropertyGrid
         try
         {
             editor = CreateEditor(property);
-            editor.Dock = DockStyle.Fill;
-            editor.Margin = Padding.Empty;
+            FitEditor(editor);
             row.Controls.Remove(existing);
             existing.Dispose();
             row.Controls.Add(editor, 1, 0);
@@ -117,6 +116,15 @@ public sealed partial class ModernPropertyGrid
         finally { row.ResumeLayout(); }
         if (hadFocus && editor.Visible) editor.Focus();
         return true;
+    }
+
+    // 编辑器填满值列；去掉控件自带的最小宽度（下拉、输入框各有 80~120 的默认值），
+    // 否则面板较窄时编辑器会伸出值列，盖住单位标签或越过行边界。最小高度保留。
+    private static void FitEditor(Control editor)
+    {
+        editor.Dock = DockStyle.Fill;
+        editor.Margin = Padding.Empty;
+        editor.MinimumSize = new Size(0, editor.MinimumSize.Height);
     }
 
     private bool MatchesSearch(PropertyDescriptor property, string search)
@@ -318,8 +326,7 @@ public sealed partial class ModernPropertyGrid
         var editor = CreateEditor(property);
         _editors[property.Name] = editor;
         _rows[presentation.PropertyKey] = row;
-        editor.Dock = DockStyle.Fill;
-        editor.Margin = Padding.Empty;
+        FitEditor(editor);
         row.Controls.Add(name, 0, 0);
         row.Controls.Add(editor, 1, 0);
         if (!string.IsNullOrEmpty(unit))
