@@ -90,6 +90,8 @@ internal sealed class LabelWorkbenchControl : UserControl
     private DP.LabelInspection.RegionRulesControl? _rules;
     private WorkflowLabelInspectionResources? _resources;
     private ImageFrame? _actual;
+    // 当前显示的图是否处于配置帧坐标（上游预览的配置帧原图，或按定位对齐到配置帧的图）；绑定标签坐标系时只有这样的图能存为参考图。
+    private bool _configFrameShown;
     private bool _loading;
     private Task? _loadingTask;
     private bool _syncing;
@@ -102,7 +104,7 @@ internal sealed class LabelWorkbenchControl : UserControl
     private static readonly LabelInspectionEditorCommand[] Commands =
     {
         new("LoadSample", "配置样张", "1. 配方与样张", "加载配置样张…", "选一张图作配置底图；资源根目录外的图片复制到根目录下samples\\。绑定标签坐标系时请改用图像上方的“载入上游预览”。"),
-        new("SaveReference", "参考图", "1. 配方与样张", "保存为参考图", "把当前配置图保存到资源根并填入“参考图”。目录模式使用唯一新文件，避免覆盖已发布版本的参考资产。"),
+        new("SaveReference", "参考图", "1. 配方与样张", "保存为参考图", "把当前图保存到资源根并填入“参考图”，配方随之为模板模式：固定内容ROI与它逐像素比较。须是良品；绑定标签坐标系时须先点图像上方“载入上游预览”（配置帧坐标）。清空“参考图”并重载资源即回到自由模式。目录模式使用唯一新文件，避免覆盖已发布版本的参考资产。"),
         new("ImportRecipe", "导入配方", "1. 配方与样张", "导入配方…", "导入SDK原生配方JSON，保留检测项目、约束及库修订。"),
         new("ExportRecipe", "导出配方", "1. 配方与样张", "导出配方…", "把当前配方（含未应用的工作台修改）导出为JSON文件。"),
         new("ReloadResources", "重载资源", "1. 配方与样张", "重载资源", "修改资源路径或外部文件后，重新装配试检测引擎与字库。"),
@@ -281,11 +283,21 @@ internal sealed class LabelWorkbenchControl : UserControl
                 + "适用于重做模板、修改模板参考点或坐标系构建方式后，ROI整体偏移的情况。",
                 "重设参考位姿", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
         await LoadUpstreamAsync(resetReference: true);
+        if (!_configFrameShown || string.IsNullOrWhiteSpace(_model.Node.ReferenceImagePath)) return;
+        // 旧参考图是在旧配置帧下保存的，参考位姿换了以后固定内容区会整体错位。
+        if (MessageBox.Show(this, "当前参考图是在旧配置帧下保存的，与新的参考位姿不一致，固定内容区比对会错位。" + Environment.NewLine + Environment.NewLine
+                + "是否把本帧保存为新的参考图？请确认本帧标签是良品（无缺墨、污点、遮挡）。",
+                "更新参考图", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            await SaveReferenceAsync();
+        else
+            _status.Text += " 注意：参考图仍是旧配置帧，固定内容区会错位，请换一帧良品后点“保存为参考图”。";
     }
 
     private async Task LoadUpstreamAsync(bool resetReference)
     {
         var model = _model;
+        CaptureDraft();
+        _configFrameShown = false;
         var binding = model.Node.Frame.Binding;
         if (binding is not { IsPublicData: false } key) throw new InvalidOperationException("请先绑定上游图像；公开数据输入请在参数页“加载配置样张”。");
         using var preview = _previews?.Capture(key.NodeId) ?? throw new InvalidOperationException("没有本轮上游图像预览，请先运行采图节点或在参数页加载配置样张。");
@@ -303,6 +315,7 @@ internal sealed class LabelWorkbenchControl : UserControl
             // 本帧成为配置帧，原图原样载入；已有ROI坐标不变，它们若画在别的图上，需要在本帧上核对。
             model.SetReferencePose(system.LocalToImage, system.SourceIdentity);
             if (!await LoadAsync(preview.Frame)) return;
+            _configFrameShown = true;
             _status.Text = hadRecipe
                 ? "已以本帧定位为参考位姿并按原图显示，ROI坐标不变：请核对ROI是否落在本帧标签上，不在时拖动调整；运行时ROI随标签相对本帧移动。"
                 : "已载入原图并以本帧定位为参考位姿；直接在原图上画ROI，运行时ROI随标签相对本帧的位移/旋转/缩放移动。";
@@ -313,6 +326,7 @@ internal sealed class LabelWorkbenchControl : UserControl
         var recipe = model.Serializer.Deserialize(node.RecipeJson);
         using var aligned = placement.Rectify(preview.Frame, recipe.Width, recipe.Height);
         if (!await LoadAsync(aligned)) return;
+        _configFrameShown = true;
         // 参考位姿记录后定位来源变了（重做模板、改参考点或构建方式），同一张图的局部→原图也会变，ROI会整体偏移。
         bool sourceChanged = node.ReferenceSource.Length != 0 && node.ReferenceSource != system.SourceIdentity;
         _status.Text = $"本帧标签相对配置帧旋转 {placement.RotationDegrees:0.#}°、平移 ({placement.Tx:0.#}, {placement.Ty:0.#})，已对齐到配置帧显示，ROI坐标不变；超出原图的部分为黑色。"
@@ -339,6 +353,7 @@ internal sealed class LabelWorkbenchControl : UserControl
             if (_rules is not null) _rules.Enabled = false;
         }
         else if (!await LoadAsync(display)) return;
+        _configFrameShown = result.Placement is not null;
         _workbench.ShowReport(result.Report);
         _workbench.DisplayMode = DP.LabelInspection.WorkbenchDisplayMode.Result;
         _status.Text = $"本次运行（{result.FrameId}）：{result.Summary}" + (result.RecipeId is null ? "" : $"；{result.RecipeId}@{result.RecipeVersion}")
@@ -359,7 +374,10 @@ internal sealed class LabelWorkbenchControl : UserControl
         if (_loadingTask is not null || _loading || _workbench.IsInspectionRunning) return "请等待当前装配/试检测结束。";
         if (_displayingRun && id is "SaveReference" or "PublishCatalogRecipe" or "Thresholds" or "TaskData" or "FieldBindings")
             return "运行报告只读，请先载入目录配方或配置图。";
-        return id == "SaveReference" && _actual is null ? "请先载入上游预览或配置样张。" : "";
+        if (id != "SaveReference") return "";
+        if (_actual is null) return "请先载入上游预览或配置样张。";
+        return _model.Node.LabelCoordinates.Binding is not null && !_configFrameShown
+            ? "已绑定标签坐标系：参考图须在配置帧坐标下，请先点图像上方“载入上游预览”。" : "";
     }
 
     /// <summary>参数页按钮：忙时拒绝；异常交给参数页提示。</summary>
@@ -386,7 +404,9 @@ internal sealed class LabelWorkbenchControl : UserControl
                 // 资源根目录外的样张复制到根目录下 samples\，流程随资源目录一起部署时样张也在。
                 var relative = LabelInspectionEditorPageModel.ImportIntoRoot(Root, dialog.FileName);
                 using var frame = await WorkflowLabelInspectionResources.ReadImageAsync(Root, relative, _lifetime.Token);
-                await LoadAsync(frame);
+                CaptureDraft();
+                if (!await LoadAsync(frame)) return;
+                _configFrameShown = false;
                 model.SetAuthorImagePath(relative);
                 if (!string.Equals(Path.GetFullPath(Path.Combine(Root, relative)), Path.GetFullPath(dialog.FileName), StringComparison.OrdinalIgnoreCase))
                     _status.Text = $"样张不在资源根目录内，已复制到 {relative}。";
@@ -395,18 +415,11 @@ internal sealed class LabelWorkbenchControl : UserControl
             case "SaveReference":
             {
                 if (_actual is null) throw new InvalidOperationException("请先载入上游预览或配置样张。");
-                // 模板模式需要与配方同尺寸的参考图；绑定标签坐标系时就是配置帧原图。
-                var relative = model.Node.UsesRecipeCatalog
-                    ? $"label-reference-{Uri.EscapeDataString(model.Node.Id)}-{Guid.NewGuid():N}.png"
-                    : $"label-reference-{model.Node.Id}.png";
-                var info = _actual.Image.Info;
-                var pixels = new byte[info.ByteLength]; _actual.Image.CopyTo(0, pixels, 0, pixels.Length);
-                var snapshot = new PixelSnapshot(info.Width, info.Height, info.Layout == EPixelLayout.Gray8 ? EImagePixelFormat.Gray8 : EImagePixelFormat.Bgr24, pixels);
-                Directory.CreateDirectory(Root);
-                await File.WriteAllBytesAsync(Path.Combine(Root, relative), new OpenCvImageCodec().EncodePng(snapshot), _lifetime.Token);
-                model.SetReferenceImagePath(relative);
-                await LoadAsync(_actual);
-                _status.Text = $"参考图已保存为 {relative}；模板模式下用于比对。";
+                if (model.Node.LabelCoordinates.Binding is not null && !_configFrameShown)
+                    throw new InvalidOperationException("已绑定标签坐标系：参考图须在配置帧坐标下，请先点图像上方“载入上游预览”。");
+                if (MessageBox.Show(this, "把当前图保存为参考图，配方切换为模板模式：固定内容ROI将与它逐像素比较，模板平移对齐也以它为基准。" + Environment.NewLine + Environment.NewLine
+                        + "请确认这张标签是良品（无缺墨、污点、遮挡）。", "保存参考图", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+                await SaveReferenceAsync();
                 return;
             }
             case "ImportRecipe":
@@ -429,8 +442,7 @@ internal sealed class LabelWorkbenchControl : UserControl
                 return;
             }
             case "ReloadResources":
-                // 先捕获正在编辑的ROI/项目，不能用旧节点JSON把未确认的工作台改动覆盖掉。
-                if (CaptureRecipe() is { } recipe) model.SetRecipe(recipe);
+                CaptureDraft();
                 if (_actual is not null) await LoadAsync(_actual);
                 else if (!string.IsNullOrWhiteSpace(model.Node.AuthorImagePath)) await LoadAuthorAsync();
                 else await AttachLibrariesAsync();
@@ -562,8 +574,7 @@ internal sealed class LabelWorkbenchControl : UserControl
         if (!string.IsNullOrWhiteSpace(node.RecognitionModelPath)) paths.Add(("OCR识别模型", node.RecognitionModelPath));
         if (!string.IsNullOrWhiteSpace(node.AnomalyBackbonePath)) paths.Add(("异常检测骨干", node.AnomalyBackbonePath));
         if (includeAuthor && !string.IsNullOrWhiteSpace(node.AuthorImagePath)) paths.Add(("配置样张", node.AuthorImagePath));
-        if (node.HasRecipe && _model.Serializer.Deserialize(node.RecipeJson).Mode == EInspectionMode.Template)
-            paths.Add(("参考图", node.ReferenceImagePath));
+        if (!string.IsNullOrWhiteSpace(node.ReferenceImagePath)) paths.Add(("参考图", node.ReferenceImagePath));
         foreach (var (name, path) in paths)
         {
             if (WorkflowLabelInspectionResources.TryResolvePath(Root, path, out _, out var error)) continue;
@@ -578,6 +589,7 @@ internal sealed class LabelWorkbenchControl : UserControl
         if (string.IsNullOrWhiteSpace(_model.Node.AuthorImagePath)) throw new InvalidOperationException("请选择配置样张或载入上游预览。");
         if (!ValidateResourcePaths(_model.Node, includeAuthor: true)) return false;
         using var frame = await WorkflowLabelInspectionResources.ReadImageAsync(Root, _model.Node.AuthorImagePath, _lifetime.Token);
+        _configFrameShown = false;
         return await LoadAsync(frame);
     }
     private async Task GuardAsync(Func<Task> action)
@@ -605,6 +617,7 @@ internal sealed class LabelWorkbenchControl : UserControl
                     EAlignmentMode.AssumeAligned, Array.Empty<InspectionRegion>())
                 : _model.Serializer.Deserialize(node.RecipeJson);
             if (recipe.Width != input.Image.Info.Width || recipe.Height != input.Image.Info.Height) throw new InvalidDataException("配置图与配方尺寸不一致。");
+            recipe = WithReferenceMode(recipe, node.ReferenceImagePath);
             node.RecipeJson = _model.Serializer.Serialize(recipe);
             candidate = await WorkflowLabelInspectionResources.CreateForEditingAsync(node, _baseDirectory(), _lifetime.Token, _cacheRuntime?.AnomalyImplementations);
             _lifetime.Token.ThrowIfCancellationRequested();
@@ -630,8 +643,48 @@ internal sealed class LabelWorkbenchControl : UserControl
         using var request = _workbench.CreateRequest();
         var current = request.Recipe;
         string name = string.IsNullOrWhiteSpace(_model.Node.RecipeJson) ? "标签检测" : _model.Serializer.Deserialize(_model.Node.RecipeJson).Name;
-        return new InspectionRecipe(name, current.Width, current.Height, current.Mode, current.Alignment,
-            current.Regions, current.Options, current.Bindings);
+        return WithReferenceMode(new InspectionRecipe(name, current.Width, current.Height, current.Mode, current.Alignment,
+            current.Regions, current.Options, current.Bindings), _model.Node.ReferenceImagePath);
+    }
+
+    /// <summary>填写了“参考图”即模板模式，留空为自由模式（配置页不另设参考模式开关）；对齐方式不变。</summary>
+    private static InspectionRecipe WithReferenceMode(InspectionRecipe recipe, string referencePath)
+    {
+        var mode = string.IsNullOrWhiteSpace(referencePath) ? EInspectionMode.Free : EInspectionMode.Template;
+        return recipe.Mode == mode ? recipe : new InspectionRecipe(recipe.Name, recipe.Width, recipe.Height, mode, recipe.Alignment,
+            recipe.Regions, recipe.Options, recipe.Bindings);
+    }
+
+    /// <summary>重新装配前把工作台上尚未确认的ROI/项目写回草稿，不能用旧节点JSON覆盖它们；还没有ROI也没有配方时不生成空配方。</summary>
+    private void CaptureDraft()
+    {
+        if (CaptureRecipe() is { } draft && (draft.Regions.Count > 0 || _model.Node.HasRecipe)) _model.SetRecipe(draft);
+    }
+
+    /// <summary>
+    /// 把当前图存为参考图并按模板模式重载，使参考图立即参与试检测。调用方负责确认来源（配置帧坐标）与良品。
+    /// </summary>
+    private async Task SaveReferenceAsync()
+    {
+        var model = _model;
+        var actual = _actual ?? throw new InvalidOperationException("请先载入上游预览或配置样张。");
+        CaptureDraft();
+        // 模板模式需要与配方同尺寸的参考图；绑定标签坐标系时就是配置帧坐标下的图。
+        var relative = model.Node.UsesRecipeCatalog
+            ? $"label-reference-{Uri.EscapeDataString(model.Node.Id)}-{Guid.NewGuid():N}.png"
+            : $"label-reference-{model.Node.Id}.png";
+        var info = actual.Image.Info;
+        var pixels = new byte[info.ByteLength]; actual.Image.CopyTo(0, pixels, 0, pixels.Length);
+        var snapshot = new PixelSnapshot(info.Width, info.Height, info.Layout == EPixelLayout.Gray8 ? EImagePixelFormat.Gray8 : EImagePixelFormat.Bgr24, pixels);
+        Directory.CreateDirectory(Root);
+        await File.WriteAllBytesAsync(Path.Combine(Root, relative), new OpenCvImageCodec().EncodePng(snapshot), _lifetime.Token);
+        model.SetReferenceImagePath(relative);
+        if (CaptureRecipe() is { } recipe) model.SetRecipe(recipe);
+        bool configFrame = _configFrameShown;
+        if (!await LoadAsync(actual)) return;
+        _configFrameShown = configFrame;
+        _status.Text = $"参考图已保存为 {relative}，配方为模板模式：固定内容ROI与它逐像素比较。"
+            + (model.Node.LabelCoordinates.Binding is null ? "产线图须与它同尺寸、标签摆位一致。" : "重设参考位姿后需重新保存参考图。");
     }
     private ValueTask ReleaseAsync()
     {
