@@ -414,8 +414,17 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         _ => 0xFFFFCC00
     };
 
+    // 颜色优先级：显式颜色 > 判定状态 > 角色；状态同时改几何和标签的颜色。
+    private static uint ItemColor(VisionDisplayItem item) => item.Argb ?? item.Tone switch
+    {
+        EVisionDisplayTone.Ok => 0xFF22C55E,
+        EVisionDisplayTone.Warning => 0xFFF59E0B,
+        EVisionDisplayTone.Ng => 0xFFEF4444,
+        _ => RoleColor(item.Role)
+    };
+
     /// <summary>
-    /// 把结果的显示项画成图层：几何按角色着色，标记点画成约 10 屏幕像素的 ×，图上只写显示项的短标签；
+    /// 把结果的显示项画成图层：几何按显式颜色、判定状态、角色的顺序着色，标记点画成约 10 屏幕像素的 ×，图上只写显示项的短标签；
     /// 点击说明取显示项自带说明，没有时为结果摘要。只有显示几何的旧结果按“主结果”画。
     /// </summary>
     private static IEnumerable<(Visual Visual, string Detail)> Visuals(object? facts, string summary, double unit)
@@ -430,7 +439,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         for (int i = 0; i < items.Count; i++)
         {
             var item = items[i];
-            var (color, detail) = (RoleColor(item.Role), item.Detail ?? summary);
+            var (color, detail) = (ItemColor(item), item.Detail ?? summary);
             if (item.Marker is { } p)
             {
                 yield return (new Visual($"item-{i}", new ContourGeometry(new[] { new PointD(p.X - r, p.Y - r), new PointD(p.X + r, p.Y + r) }), color, item.Label), detail);
