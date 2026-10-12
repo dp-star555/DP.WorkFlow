@@ -78,6 +78,8 @@ public sealed class VisionMeasureGroupTests
         Assert.Contains(result.DisplayItems, d => d.Label == "空白边 未找到" && d.Tone == EVisionDisplayTone.Ng);
         Assert.Equal(5, result.DisplayItems.Count(d => d.Tone == EVisionDisplayTone.Ng && d.Role == EVisionDisplayRole.Input));
         Assert.Contains("失败：空白边", result.Summary);
+        Assert.Contains(result.ResultRows, r => r.Key == "测量项 · 空白边" && ((string)r.Value!).StartsWith("未找到：找线失败", StringComparison.Ordinal));
+        Assert.Contains(result.ResultRows, r => r.Key == "测量项 · 外框" && ((string)r.Value!).StartsWith("找矩形：", StringComparison.Ordinal));
         // 测量项配置不保存输入图像：测量结束后恢复为空。
         Assert.Null(node.Items[0].Rectangle!.Frame.Binding);
     }

@@ -77,7 +77,7 @@ public sealed class WorkflowDynamicOutputTests
     {
         public override string NodeType => "Test.Group";
         public List<string> Keys { get; set; } = new();
-        public IReadOnlyList<WorkflowOutputMember> DescribeOutputs() =>
+        public IReadOnlyList<WorkflowBindableMember> DescribeOutputs() =>
             WorkflowOutputMembers.OfType(typeof(GroupOutput), maxDepth: 1).Where(m => !m.Path.StartsWith("Items", StringComparison.Ordinal))
                 .Concat(Keys.SelectMany(k => WorkflowOutputMembers.OfType(typeof(ItemValue), "Items." + k, k + " · ", 1))).ToArray();
     }

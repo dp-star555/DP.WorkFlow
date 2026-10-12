@@ -135,6 +135,7 @@ public static class WorkflowVisionOutputNames
         ["FailedNames"] = "失败项",
         ["Error"] = "失败原因",
         ["Value"] = "测量结果",
+        ["ResultRows"] = "逐项结果",
         ["Sides"] = "各边",
         ["SideLines"] = "各边直线",
         ["Corners"] = "角点",

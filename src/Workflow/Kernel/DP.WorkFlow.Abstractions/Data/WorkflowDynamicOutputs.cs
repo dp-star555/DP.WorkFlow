@@ -17,11 +17,18 @@ public interface IWorkflowKeyedOutput
     string DescribeMissingKey(string key) => $"不存在键 {key}。";
 }
 
+/// <summary>结果页额外显示的逐项结果行（例如测量组每个测量项一行）。</summary>
+public interface IWorkflowResultRows
+{
+    /// <summary>名称与值；值为空表示没有结果。</summary>
+    IReadOnlyList<KeyValuePair<string, object?>> ResultRows { get; }
+}
+
 /// <summary>节点当前配置下一个可绑定的输出成员。</summary>
 /// <param name="Path">点分隔成员路径；<c>$</c> 表示整个输出。</param>
 /// <param name="Type">成员的静态类型（去除 Nullable 包装）。</param>
 /// <param name="DisplayName">显示名，例如“左边 · 拟合直线”。</param>
-public sealed record WorkflowOutputMember(string Path, Type Type, string DisplayName);
+public sealed record WorkflowBindableMember(string Path, Type Type, string DisplayName);
 
 /// <summary>
 /// 输出成员随配置变化的节点（例如测量组：每个测量项都有自己的成员）。编译期绑定校验、绑定候选和设计器数据端口
@@ -30,7 +37,7 @@ public sealed record WorkflowOutputMember(string Path, Type Type, string Display
 public interface IWorkflowDynamicOutputNode
 {
     /// <summary>列出当前配置下全部可绑定成员，包括 <c>$</c> 根值和静态成员。</summary>
-    IReadOnlyList<WorkflowOutputMember> DescribeOutputs();
+    IReadOnlyList<WorkflowBindableMember> DescribeOutputs();
 }
 
 /// <summary>节点输出成员的设计期描述：动态节点以其自身说明为准，其余节点按静态输出类型反射。</summary>
@@ -42,14 +49,14 @@ public static class WorkflowOutputMembers
     /// <param name="type">根类型。</param><param name="path">根路径，默认 <c>$</c>。</param>
     /// <param name="displayPrefix">显示名前缀，例如“左边 · ”；给出时各级成员用中文显示名（<see cref="WorkflowOutputDisplayNames"/>）拼接，为空时显示名就是路径。</param>
     /// <param name="maxDepth">递归层数。</param>
-    public static IEnumerable<WorkflowOutputMember> OfType(Type type, string path = "$", string? displayPrefix = null, int maxDepth = 3)
+    public static IEnumerable<WorkflowBindableMember> OfType(Type type, string path = "$", string? displayPrefix = null, int maxDepth = 3)
     {
         ArgumentNullException.ThrowIfNull(type);
         return Walk(type, path, "", 0);
 
-        IEnumerable<WorkflowOutputMember> Walk(Type current, string currentPath, string relative, int depth)
+        IEnumerable<WorkflowBindableMember> Walk(Type current, string currentPath, string relative, int depth)
         {
-            yield return new WorkflowOutputMember(currentPath, current, displayPrefix is null ? currentPath : displayPrefix + (relative.Length == 0 ? "" : relative));
+            yield return new WorkflowBindableMember(currentPath, current, displayPrefix is null ? currentPath : displayPrefix + (relative.Length == 0 ? "" : relative));
             if (depth >= maxDepth || IsSimple(current))
                 yield break;
             foreach (var property in current.GetProperties(Public)
@@ -67,11 +74,11 @@ public static class WorkflowOutputMembers
 
     /// <summary>节点当前可绑定的全部成员。</summary>
     /// <param name="node">节点配置。</param><param name="outputType">描述器声明的静态输出类型，可为空。</param>
-    public static IReadOnlyList<WorkflowOutputMember> Describe(IWorkflowNodeModel node, Type? outputType)
+    public static IReadOnlyList<WorkflowBindableMember> Describe(IWorkflowNodeModel node, Type? outputType)
     {
         ArgumentNullException.ThrowIfNull(node);
         if (node is IWorkflowDynamicOutputNode dynamic) return dynamic.DescribeOutputs();
-        return outputType is null ? Array.Empty<WorkflowOutputMember>() : OfType(outputType).ToArray();
+        return outputType is null ? Array.Empty<WorkflowBindableMember>() : OfType(outputType).ToArray();
     }
 
     /// <summary>

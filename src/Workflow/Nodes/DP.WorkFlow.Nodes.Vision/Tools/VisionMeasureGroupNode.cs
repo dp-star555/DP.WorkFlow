@@ -173,14 +173,14 @@ public sealed class MeasureVisionGroupNodeModel : AnalyzeVisionFrameNodeModel, I
     }
 
     /// <inheritdoc/>
-    public IReadOnlyList<WorkflowOutputMember> DescribeOutputs()
+    public IReadOnlyList<WorkflowBindableMember> DescribeOutputs()
     {
         // 整组成员（不展开测量项集合），再逐个启用项展开：信封成员 + 该类型结果的成员。
         var members = WorkflowOutputMembers.OfType(typeof(VisionMeasureGroupResult), maxDepth: 1).ToList();
         foreach (var item in Enabled.Where(i => VisionMeasureItem.IsValidId(i.Id)))
         {
             string path = "Items." + item.Id, prefix = item.Name + " · ";
-            members.Add(new WorkflowOutputMember(path, typeof(VisionMeasureItemResult), item.Name));
+            members.Add(new WorkflowBindableMember(path, typeof(VisionMeasureItemResult), item.Name));
             members.AddRange(WorkflowOutputMembers.OfType(typeof(VisionMeasureItemResult), path, prefix, 1).Skip(1)
                 .Where(m => !m.Path.EndsWith(".Value", StringComparison.Ordinal)));
             members.AddRange(WorkflowOutputMembers.OfType(item.ResultType, path, prefix, 2).Skip(1));
@@ -258,7 +258,7 @@ public sealed class VisionMeasureItemResults : IReadOnlyList<VisionMeasureItemRe
 }
 
 /// <summary>测量组结果。</summary>
-public sealed class VisionMeasureGroupResult : IVisionGeometryFact, IVisionDisplayFact
+public sealed class VisionMeasureGroupResult : IVisionGeometryFact, IVisionDisplayFact, IWorkflowResultRows
 {
     private readonly IReadOnlyList<VisionDisplayItem> _failedDisplay;
     internal VisionMeasureGroupResult(string frameId, IReadOnlyList<VisionMeasureItemResult> items, IReadOnlyList<VisionDisplayItem> failedDisplay)
@@ -294,6 +294,10 @@ public sealed class VisionMeasureGroupResult : IVisionGeometryFact, IVisionDispl
             return items;
         }
     }
+    /// <summary>结果页每个测量项一行：找到时为该项的摘要，失败时为原因。</summary>
+    [Browsable(false)]
+    public IReadOnlyList<KeyValuePair<string, object?>> ResultRows => Items.Select(i => new KeyValuePair<string, object?>(
+        "测量项 · " + i.Name, i.Value is IVisionGeometryFact fact ? fact.Summary : "未找到：" + i.Error)).ToArray();
     /// <inheritdoc/>
     public string Summary => $"测量组：{FoundCount}/{Items.Count} 项找到" + (FailedCount == 0 ? "" : $"，失败：{FailedNames}") + "。"
         + string.Concat(Items.Select(i => i.Value is IVisionGeometryFact fact ? $" [{i.Name}] {fact.Summary}" : $" [{i.Name}] {i.Error}"));
