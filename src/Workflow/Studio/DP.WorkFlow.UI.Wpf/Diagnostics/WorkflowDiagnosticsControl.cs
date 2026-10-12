@@ -56,6 +56,18 @@ public sealed class WorkflowDiagnosticsControl : UserControl
         set => SetValue(EntryNodeIdProperty, value);
     }
 
+    private bool _followsDocumentEntry;
+
+    /// <summary>
+    /// 是否按会话文档的当前入口检查，不需要设置 <see cref="EntryNodeId"/>；
+    /// 用于节点窗口中正在编辑的子画布，子画布可能稍后才放入启动节点。
+    /// </summary>
+    public bool FollowsDocumentEntry
+    {
+        get => _followsDocumentEntry;
+        set { _followsDocumentEntry = value; RecreateModel(); }
+    }
+
     public bool CanRun => _model?.CanRun == true;
     private IWorkflowDiagnosticProvider? _provider;
     private WorkflowDesignerNavigator? _navigator;
@@ -79,7 +91,12 @@ public sealed class WorkflowDiagnosticsControl : UserControl
     private void RecreateModel()
     {
         DisposeModel();
-        if (Session is not null && !string.IsNullOrWhiteSpace(EntryNodeId))
+        if (Session is not null && _followsDocumentEntry)
+        {
+            _model = new WorkflowDiagnosticsModel(Session);
+            _model.Changed += OnModelChanged;
+        }
+        else if (Session is not null && !string.IsNullOrWhiteSpace(EntryNodeId))
         {
             _model = new WorkflowDiagnosticsModel(Session, EntryNodeId, _provider, _navigator);
             _model.Changed += OnModelChanged;

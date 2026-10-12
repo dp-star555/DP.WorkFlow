@@ -80,15 +80,15 @@ public sealed class WorkflowAlgorithmPluginTests
         using var rig = new Rig();
         var a = new BlockNodeModel { Id = "a", SubDocument = Document(rig.Node("same", "fixture.add", 3)) };
         var b = new BlockNodeModel { Id = "b", SubDocument = Document(rig.Node("same", "fixture.multiply", 5)) };
-        a.OutputMappings.Add(new BlockOutputMapping { TargetVariableName = "A", Source = E_BlockOutputSource.ChildNodeBinding, ChildBinding = new WorkflowBindingKey("same", "$") });
-        b.OutputMappings.Add(new BlockOutputMapping { TargetVariableName = "B", Source = E_BlockOutputSource.ChildNodeBinding, ChildBinding = new WorkflowBindingKey("same", "$") });
+        a.Outputs.Add(new WorkflowSubflowOutput { Name = "A", Source = new WorkflowBindingKey("same", "$") });
+        b.Outputs.Add(new WorkflowSubflowOutput { Name = "B", Source = new WorkflowBindingKey("same", "$") });
         var document = Document(a); document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = b });
         document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = "a", FromPort = WorkflowPorts.Success, ToNodeId = "b", ToPort = WorkflowPorts.Input });
         using var host = rig.Host(document, out var context);
 
         Assert.True((await host.RunAsync()).Success);
-        Assert.True(context.TryGetVariable<int>("A", out var first)); Assert.Equal(13, first);
-        Assert.True(context.TryGetVariable<int>("B", out var second)); Assert.Equal(50, second);
+        Assert.Equal(13, WorkflowBindingResolver.ResolveLatest<int>(context, new WorkflowBindingKey("a", "A")));
+        Assert.Equal(50, WorkflowBindingResolver.ResolveLatest<int>(context, new WorkflowBindingKey("b", "B")));
     }
 
     [Fact]

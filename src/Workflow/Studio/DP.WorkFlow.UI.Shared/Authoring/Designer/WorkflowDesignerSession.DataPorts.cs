@@ -144,6 +144,9 @@ public sealed partial class WorkflowDesignerSession
         // 输出成员随配置变化的节点（如测量组）：顶层成员，以及按键寻址的子结果下一层成员（如“左边 · 拟合直线”）。
         if (node.Node is IWorkflowDynamicOutputNode dynamic)
         {
+            // 复合节点的输出类型跟随子画布中的来源，读取前按当前文档刷新。
+            if (node.Node is IWorkflowSubflowNode)
+                WorkflowSubflowInterfaces.Refresh(Document, Catalog);
             var described = dynamic.DescribeOutputs();
             var paths = described.Select(member => member.Path).ToHashSet(StringComparer.Ordinal);
             return described

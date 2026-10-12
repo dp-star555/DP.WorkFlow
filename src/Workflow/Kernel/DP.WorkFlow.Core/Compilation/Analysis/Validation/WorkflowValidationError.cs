@@ -21,7 +21,14 @@ public sealed record WorkflowValidationError(
     string Code,
     string Message,
     string? NodeId = null,
-    WorkflowValidationSeverity Severity = WorkflowValidationSeverity.Error);
+    WorkflowValidationSeverity Severity = WorkflowValidationSeverity.Error)
+{
+    /// <summary>
+    /// 问题所在文档相对于被编译文档的子画布路径：<c>$</c> 表示当前文档，
+    /// <c>$/循环块1</c> 表示该复合节点的子画布（各段经过 URI 编码）。
+    /// </summary>
+    public string PlanPath { get; init; } = "$";
+}
 
 /// <summary>
 /// 工作流图结构校验器。

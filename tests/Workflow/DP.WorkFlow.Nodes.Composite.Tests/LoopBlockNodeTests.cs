@@ -43,8 +43,8 @@ public sealed class LoopBlockNodeTests
             .Register("Init", (_, _) => ValueTask.FromResult<object?>(null))
             .Register("Work", (context, _) =>
             {
-                // 每圈从输入映射的值开始，看不到上一圈写入的变量。
-                Assert.True(context.TryGetVariable<int>("Limit", out var limit));
+                // 每圈收到相同的输入，看不到上一圈写入的变量。
+                var limit = Assert.IsType<int>(context.SubflowInputs["Limit"]);
                 Assert.False(context.TryGetVariable<int>("Previous", out _));
                 cycles++;
                 context.SetVariable("Previous", cycles);
@@ -52,16 +52,15 @@ public sealed class LoopBlockNodeTests
                 return ValueTask.FromResult<object?>(null);
             });
         var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
-        context.SetVariable("Limit", 3);
         var (engine, loop) = CreateEngine(ChildDocument(withEnd: true), context, configured =>
         {
             configured.Iterations = 0;
             configured.ExitVariableName = "Stop";
-            configured.InputMappings.Add(new BlockInputMapping
+            configured.Inputs.Add(new WorkflowSubflowInput
             {
-                TargetVariableName = "Limit",
-                Source = E_BlockInputSource.ParentVariable,
-                ParentVariableName = "Limit"
+                Name = "Limit",
+                ValueType = E_WorkflowSubflowValueType.Integer,
+                Value = 3
             });
         });
 

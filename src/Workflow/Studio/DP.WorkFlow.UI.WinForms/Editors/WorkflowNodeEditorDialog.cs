@@ -43,7 +43,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     private WorkflowNodeEditorModel? _model;
     private IReadOnlyDictionary<string, IWorkflowWinFormsNodeEditorPageRenderer> _renderers =
         new Dictionary<string, IWorkflowWinFormsNodeEditorPageRenderer>(StringComparer.Ordinal);
-    private Action<IWorkflowBlockMappingNode>? _editMappings;
     private bool _releasingPages, _pagesReleased;
 
     // 在窗口仍有UI消息循环时等待页面停止；Designer.Dispose的同步兜底不能等待仍需UI线程的原生试运行。
@@ -79,19 +78,16 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     /// <summary>使用节点编辑模型和平台扩展渲染器初始化运行时窗口。</summary>
     public WorkflowNodeEditorDialog(
         WorkflowNodeEditorModel model,
-        IEnumerable<IWorkflowWinFormsNodeEditorPageRenderer>? renderers = null,
-        Action<IWorkflowBlockMappingNode>? editMappings = null)
+        IEnumerable<IWorkflowWinFormsNodeEditorPageRenderer>? renderers = null)
         : this()
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _renderers = CreateRendererIndex(renderers);
         ValidatePageRenderers(model.Pages, _renderers);
-        _editMappings = editMappings;
         Text = model.PropertyEditorKey == null ? $"节点信息 - {model.Node.Title}"
             : $"{model.Pages.Single(p => p.PropertyEditorKey == model.PropertyEditorKey).Title} - {model.Node.Title}";
 
-        var hasSpecialContent = model.Pages.Any(page => page.Kind is not (WorkflowNodeEditorPageKind.Properties
-            or WorkflowNodeEditorPageKind.Diagnostics or WorkflowNodeEditorPageKind.Results));
+        var hasSpecialContent = model.Pages.Any(page => !IsSidePage(page));
         // 默认尺寸应能完整放入常见的 1366×768 工作区，并给宿主任务栏保留空间。
         ClientSize = hasSpecialContent ? new Size(1040, 680) : new Size(720, 640);
         MinimumSize = hasSpecialContent ? new Size(760, 520) : new Size(620, 480);
@@ -167,10 +163,7 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             return editor;
         }
         var visible = Model.Pages.Where(page => page.PropertyEditorKey == null).ToArray();
-        var specialPages = visible
-            .Where(page => page.Kind is not (WorkflowNodeEditorPageKind.Properties
-                or WorkflowNodeEditorPageKind.Diagnostics or WorkflowNodeEditorPageKind.Results))
-            .ToArray();
+        var specialPages = visible.Where(page => !IsSidePage(page)).ToArray();
 
         // 先创建主体页面：其页面模型可能在控件连接后才为参数页贡献操作按钮（IWorkflowNodeEditorPropertyContributor）。
         var sidePanels = new List<WorkflowWinFormsNodeEditorSidePanel>();
@@ -185,6 +178,9 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         {
             Panel(visible.Single(page => page.Kind == WorkflowNodeEditorPageKind.Properties))
         };
+        // 复合节点的“输入输出”页紧跟参数页。
+        if (visible.FirstOrDefault(page => page.Kind == WorkflowNodeEditorPageKind.SubflowInterface) is { } subflowInterface)
+            panels.Add(Panel(subflowInterface));
         panels.AddRange(sidePanels);
         if (visible.FirstOrDefault(page => page.Kind == WorkflowNodeEditorPageKind.Results) is { } results)
             panels.Add(Panel(results));
@@ -225,6 +221,10 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         WorkflowWinFormsNodeEditorSidePanel Panel(WorkflowNodeEditorPageDescriptor page) =>
             new(page.PageId, page.Title, CreatePageControl(page));
     }
+
+    /// <summary>显示在左侧分页中的页面；其余页面（子画布、脚本、图像等）放在右侧主体区。</summary>
+    private static bool IsSidePage(WorkflowNodeEditorPageDescriptor page) => page.Kind is WorkflowNodeEditorPageKind.Properties
+        or WorkflowNodeEditorPageKind.Diagnostics or WorkflowNodeEditorPageKind.Results or WorkflowNodeEditorPageKind.SubflowInterface;
 
     /// <summary>只有一页时直接显示内容，多页时使用 ModernTabControl 分页。</summary>
     private static Control CreateSidePanels(IReadOnlyList<WorkflowWinFormsNodeEditorSidePanel> panels)
@@ -286,6 +286,10 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             WorkflowNodeEditorPageKind.Script => CreateScript((WorkflowScriptEditorPageModel)page.Model),
             WorkflowNodeEditorPageKind.Diagnostics => CreateDiagnostics((WorkflowScriptEditorPageModel)page.Model),
             WorkflowNodeEditorPageKind.Results => new WorkflowNodeResultsControl((WorkflowNodeResultPageModel)page.Model),
+            WorkflowNodeEditorPageKind.SubflowInterface => new WorkflowSubflowInterfaceControl((WorkflowSubflowInterfacePageModel)page.Model)
+            {
+                Dock = DockStyle.Fill
+            },
             _ => throw new InvalidOperationException($"WinForms 不支持节点详情页类型 {page.Kind}：{page.PageId}。")
         };
     }
@@ -300,8 +304,7 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             Session = page.Session,
             EntryNodeId = page.EntryNodeId,
             Dock = DockStyle.Fill,
-            HideScriptProperty = Model.EditingNode is IWorkflowScriptNode,
-            HideSpecialActions = Model.Pages.Any(item => item.Kind is not (WorkflowNodeEditorPageKind.Properties or WorkflowNodeEditorPageKind.Results))
+            HideScriptProperty = Model.EditingNode is IWorkflowScriptNode
         };
         panel.EditError += (_, message) => MessageBox.Show(this, message, "参数错误", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         panel.PropertyActionRequested += (_, request) =>
@@ -310,13 +313,12 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             try
             {
                 child = Model.CreatePropertyEditor(request.EditorKey);
-                using var dialog = new WorkflowNodeEditorDialog(child, _renderers.Values, _editMappings);
+                using var dialog = new WorkflowNodeEditorDialog(child, _renderers.Values);
                 dialog.ShowDialog(this);
             }
             catch (Exception ex) { MessageBox.Show(this, ex.Message, "属性编辑失败", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
             finally { if (child != null) child.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
         };
-        if (_editMappings is not null) panel.BlockMappingEditRequested += (_, block) => _editMappings(block);
         return panel;
     }
 
@@ -333,14 +335,19 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         layout.Click += (_, _) => page.Session.AutoLayout();
         toolbar.Controls.Add(fit);
         toolbar.Controls.Add(layout);
-        if (Model.Node is IWorkflowBlockMappingNode block && _editMappings is not null)
+        // 子画布自己的诊断：检查正在编辑的草稿，双击选中子画布内的问题节点。
+        var diagnostics = new WorkflowDiagnosticsControl
         {
-            var mappings = ToolbarButton("输入/输出映射");
-            mappings.Click += (_, _) => _editMappings(block);
-            toolbar.Controls.Add(mappings);
-        }
+            FollowsDocumentEntry = true,
+            Session = page.Session,
+            Dock = DockStyle.Bottom,
+            Height = 140
+        };
         var canvas = new Panel { Dock = DockStyle.Fill };
+        // 停靠按添加的逆序处理：工具栏、诊断、分隔条先停靠，画布最后填满剩余区域。
         canvas.Controls.Add(designer);
+        canvas.Controls.Add(new Splitter { Dock = DockStyle.Bottom, Height = 4 });
+        canvas.Controls.Add(diagnostics);
         canvas.Controls.Add(toolbar);
 
         // 子画布与主工作台一致：左侧工具箱双击添加到画布中心，或直接拖放到画布。
@@ -372,16 +379,8 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         try
         {
             child = Model.CreateSubWorkflowNodeEditor(page, node.Id);
-            var entryNodeId = child.EntryNodeId;
-            WorkflowNodeEditorDialog? dialog = null;
-            dialog = new WorkflowNodeEditorDialog(child, _renderers.Values, block =>
-            {
-                // 嵌套复合节点的映射属于子画布会话，不能交给宿主按顶层会话处理。
-                using var mappings = new WorkflowBlockMappingEditorModel(page.Session, block.Id);
-                using var mappingDialog = new WorkflowBlockMappingEditorDialog(mappings, entryNodeId);
-                _ = mappingDialog.ShowDialog(dialog);
-            });
-            using (dialog) dialog.ShowDialog(this);
+            using var dialog = new WorkflowNodeEditorDialog(child, _renderers.Values);
+            dialog.ShowDialog(this);
         }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "无法打开节点详情", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         finally { if (child != null) child.DisposeAsync().AsTask().GetAwaiter().GetResult(); }

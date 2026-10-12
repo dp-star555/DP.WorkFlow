@@ -235,7 +235,6 @@ partial class WorkflowStudioControl
         propertyPanel.Dock = DockStyle.Fill;
         propertyPanel.ForeColor = Color.FromArgb(226, 232, 240);
         propertyPanel.HideScriptProperty = false;
-        propertyPanel.HideSpecialActions = false;
         propertyPanel.Location = new Point(0, 0);
         propertyPanel.Name = "propertyPanel";
         propertyPanel.Session = null;

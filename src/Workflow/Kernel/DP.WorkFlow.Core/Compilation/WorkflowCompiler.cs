@@ -31,6 +31,8 @@ public sealed class WorkflowCompiler
     public WorkflowExecutionPlan Compile(WorkflowDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
+        // 子流程接口的类型跟随来源，编译前按当前文档解析并注入启动节点和复合节点。
+        WorkflowSubflowInterfaces.Refresh(document, _catalog);
         return CompileCore(
             document,
             new HashSet<WorkflowDocument>(ReferenceEqualityComparer.Instance));
@@ -44,13 +46,16 @@ public sealed class WorkflowCompiler
         ArgumentNullException.ThrowIfNull(document);
         if (!ancestors.Add(document))
             throw new InvalidOperationException("检测到子文档循环引用，无法编译复合流程。");
+        // 子画布独立于当前文档编译：当前文档有错时也照常检查，一次报全所有子画布的问题。
+        ChildCompilation? children = null;
+        ChildCompilation Children() => children ??= CompileChildren(document, ancestors);
         var startNodeId = document.EntryNodeId;
         var diagnostics = _validator.Validate(document).ToList();
         var blockingErrors = diagnostics
             .Where(item => item.Severity == WorkflowValidationSeverity.Error)
             .ToArray();
         if (blockingErrors.Length > 0)
-            throw new WorkflowCompilationException(blockingErrors);
+            throw Failure(blockingErrors, Children());
 
         var graph = WorkflowGraphIndex.Create(document.Graph);
         var nodes = graph.Nodes.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
@@ -58,6 +63,11 @@ public sealed class WorkflowCompiler
             throw new ArgumentException($"起始节点不存在：{startNodeId}。", nameof(startNodeId));
 
         diagnostics.AddRange(WorkflowNodeConfigurationValidator.Validate(nodes.Values));
+        foreach (var composite in nodes.Values.OfType<IWorkflowSubflowNode>())
+        {
+            var outputType = _catalog is not null && _catalog.TryGet(composite.NodeType, out var descriptor) ? descriptor!.OutputType : null;
+            diagnostics.AddRange(WorkflowSubflowInterfaces.Validate(composite, outputType));
+        }
         foreach (var entries in nodes.Values.Where(node => node is IWorkflowRecoveryEntryNode)
                      .GroupBy(node => ((IWorkflowRecoveryEntryNode)node).RecoveryEntryKey, StringComparer.Ordinal))
         {
@@ -78,7 +88,7 @@ public sealed class WorkflowCompiler
             .Where(item => item.Severity == WorkflowValidationSeverity.Error)
             .ToArray();
         if (parallelErrors.Length > 0)
-            throw new WorkflowCompilationException(parallelErrors);
+            throw Failure(parallelErrors, Children());
 
         var reachableNodeIds = graph.CollectReachable(startNodeId);
         foreach (var nodeId in nodes.Keys.Where(nodeId => !reachableNodeIds.Contains(nodeId)))
@@ -90,7 +100,6 @@ public sealed class WorkflowCompiler
                 WorkflowValidationSeverity.Warning));
         }
 
-        var childPlans = new Dictionary<string, WorkflowExecutionPlan>(StringComparer.Ordinal);
         foreach (var composite in nodes.Values.OfType<IWorkflowSubDocumentNode>())
         {
             var childEntryNodeId = composite.SubDocument.EntryNodeId;
@@ -99,10 +108,10 @@ public sealed class WorkflowCompiler
                 diagnostics.AddRange(
                     new WorkflowBindingAnalyzer(_catalog).AnalyzeSubDocumentDeclarations(composite, childEntryNodeId));
             }
-            childPlans[composite.Id] = CompileCore(
-                composite.SubDocument,
-                new HashSet<WorkflowDocument>(ancestors, ReferenceEqualityComparer.Instance));
         }
+        var childResult = Children();
+        diagnostics.AddRange(childResult.Diagnostics);
+        var childPlans = childResult.Plans;
 
         var finalErrors = diagnostics
             .Where(item => item.Severity == WorkflowValidationSeverity.Error)
@@ -119,6 +128,52 @@ public sealed class WorkflowCompiler
             childPlans,
             diagnostics);
     }
+
+    /// <summary>编译当前文档中全部复合节点的子画布，收集各自的计划和带子画布路径的诊断。</summary>
+    private ChildCompilation CompileChildren(WorkflowDocument document, HashSet<WorkflowDocument> ancestors)
+    {
+        var plans = new Dictionary<string, WorkflowExecutionPlan>(StringComparer.Ordinal);
+        var diagnostics = new List<WorkflowValidationError>();
+        foreach (var composite in document.Graph.Nodes.OfType<IWorkflowSubDocumentNode>())
+        {
+            try
+            {
+                var plan = CompileCore(
+                    composite.SubDocument,
+                    new HashSet<WorkflowDocument>(ancestors, ReferenceEqualityComparer.Instance));
+                plans[composite.Id] = plan;
+                diagnostics.AddRange(plan.Diagnostics.Select(item => Nest(item, composite.Id)));
+            }
+            catch (WorkflowCompilationException exception)
+            {
+                diagnostics.AddRange(exception.Errors.Select(item => Nest(item, composite.Id)));
+            }
+            catch (ArgumentException exception)
+            {
+                diagnostics.Add(new WorkflowValidationError("WF016", $"子画布无法编译：{exception.Message}")
+                {
+                    PlanPath = Nest("$", composite.Id)
+                });
+            }
+        }
+        return new ChildCompilation(plans, diagnostics);
+    }
+
+    /// <summary>当前文档的错误连同全部子画布的错误一起报告。</summary>
+    private static WorkflowCompilationException Failure(
+        IEnumerable<WorkflowValidationError> errors,
+        ChildCompilation children) =>
+        new(errors.Concat(children.Diagnostics.Where(item => item.Severity == WorkflowValidationSeverity.Error)).ToArray());
+
+    private static WorkflowValidationError Nest(WorkflowValidationError item, string compositeId) =>
+        item with { PlanPath = Nest(item.PlanPath, compositeId) };
+
+    private static string Nest(string childPath, string compositeId) =>
+        "$/" + Uri.EscapeDataString(compositeId) + childPath[1..];
+
+    private sealed record ChildCompilation(
+        Dictionary<string, WorkflowExecutionPlan> Plans,
+        IReadOnlyList<WorkflowValidationError> Diagnostics);
 
 }
 

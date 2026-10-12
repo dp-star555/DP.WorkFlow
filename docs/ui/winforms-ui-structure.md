@@ -419,7 +419,6 @@ Padding / Margin / Dock
 - 集合表格。
 - JSON 复杂对象。
 - 脚本快捷编辑。
-- Block 映射快捷入口。
 - 输出端口可见性。
 
 具体参数行无法固定放入 Designer，因为节点类型和属性数量运行时才知道。
@@ -460,38 +459,21 @@ Designer 负责布局，普通 `.cs` 负责：
 
 ---
 
-## 10. Block 映射窗口
+## 10. 复合节点“输入输出”页
 
 文件：
 
 ```text
-src/Workflow/Studio/DP.WorkFlow.UI.WinForms/Properties/
-├─ WorkflowBlockMappingEditorDialog.cs
-├─ WorkflowBlockMappingEditorDialog.Designer.cs
-└─ WorkflowBlockMappingEditorDialog.resx
+src/Workflow/Studio/DP.WorkFlow.UI.WinForms/Editors/WorkflowSubflowInterfaceControl.cs
+src/Workflow/Studio/DP.WorkFlow.UI.Shared/Editors/WorkflowSubflowInterfacePageModel.cs
 ```
 
-结构：
+子流程块、循环块的节点窗口左侧分页为“参数 | 输入输出 | 运行结果”。“输入输出”页包含两张表：
 
-```text
-Block 映射窗口
-├─ 输入映射 Tab
-│  └─ DataGridView
-├─ 输出映射 Tab
-│  └─ DataGridView
-└─ 确定/取消
-```
+- 输入：名称、来源（选择父画布中的节点输出，或使用手动值）、类型（绑定时跟随来源、只读；手动值时选择整数/小数/布尔/文本）、值、删除。
+- 输出：名称、来源（选择子画布中的节点输出）、类型（跟随来源）、删除。
 
-运行时动态生成列：
-
-- 来源类型。
-- 固定值。
-- 父变量。
-- 子变量。
-- 父节点绑定。
-- 子节点绑定。
-
----
+修改写入节点窗口的编辑副本，随“应用/确定”一并提交，取消则丢弃。子画布页下方的诊断随之刷新。
 
 ## 11. C# using 管理窗口
 

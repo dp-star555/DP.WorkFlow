@@ -54,7 +54,6 @@ public sealed partial class WorkflowStudioControl : UserControl
         Designer.InteractionError += (_, message) => InteractionError?.Invoke(this, message);
         Designer.NodeEditRequested += OnDesignerNodeEditRequested;
         Properties.EditError += (_, message) => InteractionError?.Invoke(this, message);
-        Properties.BlockMappingEditRequested += OnBlockMappingEditRequested;
         Properties.PropertyActionRequested += OnPropertyActionRequested;
         Load += (_, _) =>
         {
@@ -318,7 +317,6 @@ public sealed partial class WorkflowStudioControl : UserControl
         {
             Toolbox.NodeTypeActivated -= OnNodeTypeActivated;
             Designer.NodeEditRequested -= OnDesignerNodeEditRequested;
-            Properties.BlockMappingEditRequested -= OnBlockMappingEditRequested;
             if (_session is not null)
                 _session.Changed -= OnSessionChanged;
             if (_navigator is not null)
@@ -411,15 +409,6 @@ public sealed partial class WorkflowStudioControl : UserControl
         Session.AddNode(item.NodeType, center.X - 90, center.Y - 30);
     }
 
-    private void OnBlockMappingEditRequested(object? sender, IWorkflowBlockMappingNode block)
-    {
-        if (Session is null || string.IsNullOrWhiteSpace(EntryNodeId))
-            return;
-        using var model = new WorkflowBlockMappingEditorModel(Session, block.Id);
-        using var dialog = new WorkflowBlockMappingEditorDialog(model, EntryNodeId);
-        _ = dialog.ShowDialog(this);
-    }
-
     private async void OnPropertyActionRequested(object? sender, WorkflowPropertyActionRequest request)
     {
         if (Session == null || string.IsNullOrWhiteSpace(EntryNodeId)) return;
@@ -446,9 +435,7 @@ public sealed partial class WorkflowStudioControl : UserControl
             var model = new WorkflowNodeEditorModel(
                 Session, EntryNodeId, node.Id, NodeEditorExtensions.GetPageProviders(),
                 Properties.ChoiceProvider, Properties.AdditionalProperties);
-            using var dialog = new WorkflowNodeEditorDialog(
-                model, NodeEditorExtensions.GetRenderers(),
-                block => OnBlockMappingEditRequested(this, block));
+            using var dialog = new WorkflowNodeEditorDialog(model, NodeEditorExtensions.GetRenderers());
             _ = dialog.ShowDialog(this);
             NodeEditRequested?.Invoke(this, node);
         }

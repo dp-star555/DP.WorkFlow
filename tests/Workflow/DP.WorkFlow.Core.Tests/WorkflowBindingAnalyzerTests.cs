@@ -129,6 +129,71 @@ public sealed class WorkflowBindingAnalyzerTests
             candidate => candidate.SourceNodeId == source.Id && candidate.MemberPath == "Value");
     }
 
+    [Fact]
+    public void Analyze_BindingsInsideSubDocumentAreNotValidatedAgainstParentCanvas()
+    {
+        var source = new DecisionNodeModel { Id = "ChildSource", Title = "子流程来源" };
+        var consumer = BoundDecision("ChildConsumer", new WorkflowBindingKey(source.Id, "Value"));
+        var child = CreateDocument(source, consumer, Connect(source.Id, WorkflowPorts.True, consumer.Id));
+        child.EntryNodeId = source.Id;
+        var composite = new CompositeNode { Id = "Composite", Title = "子流程", SubDocument = child };
+        var parent = CreateDocument(composite);
+        parent.EntryNodeId = composite.Id;
+        var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
+
+        var parentAnalysis = new WorkflowBindingAnalyzer(catalog).Analyze(parent);
+        var childAnalysis = new WorkflowBindingAnalyzer(catalog).Analyze(child);
+
+        // 子画布的绑定只在子文档内分析：父画布没有 ChildSource 也不报 WFB001。
+        Assert.DoesNotContain(parentAnalysis.Diagnostics, item => item.Code == "WFB001");
+        Assert.DoesNotContain(childAnalysis.Diagnostics, item => item.Severity == WorkflowValidationSeverity.Error);
+    }
+
+    [Fact]
+    public void Compile_ReportsParentAndSubDocumentErrorsTogether_WithSubDocumentPath()
+    {
+        var childConsumer = BoundDecision("ChildConsumer", new WorkflowBindingKey("Nope", "Value"));
+        var child = CreateDocument(childConsumer);
+        child.EntryNodeId = childConsumer.Id;
+        var composite = new CompositeNode { Id = "Composite", Title = "子流程", SubDocument = child };
+        var parentConsumer = BoundDecision("ParentConsumer", new WorkflowBindingKey("Missing", "Value"));
+        var parent = CreateDocument(composite, parentConsumer, Connect(composite.Id, WorkflowPorts.Success, parentConsumer.Id));
+        parent.EntryNodeId = composite.Id;
+        var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
+
+        var exception = Assert.Throws<WorkflowCompilationException>(() => new WorkflowCompiler(catalog).Compile(parent));
+
+        // 父画布有错时子画布照常检查，两边的错误一次报全；子画布的错误带上所在路径。
+        Assert.Contains(exception.Errors, error => error.NodeId == parentConsumer.Id && error.PlanPath == "$");
+        Assert.Contains(exception.Errors, error => error.NodeId == childConsumer.Id && error.PlanPath == "$/Composite");
+    }
+
+    [Fact]
+    public void Compile_SubDocumentWarningsAreReportedWithSubDocumentPath()
+    {
+        var entry = new DecisionNodeModel { Id = "ChildEntry", Title = "入口" };
+        var island = new DecisionNodeModel { Id = "Island", Title = "孤立节点" };
+        var child = CreateDocument(entry, island);
+        child.EntryNodeId = entry.Id;
+        var composite = new CompositeNode { Id = "Composite", Title = "子流程", SubDocument = child };
+        var parent = CreateDocument(composite);
+        parent.EntryNodeId = composite.Id;
+        var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
+
+        var plan = new WorkflowCompiler(catalog).Compile(parent);
+
+        var warning = Assert.Single(plan.Diagnostics, item => item.Code == "WF101");
+        Assert.Equal(island.Id, warning.NodeId);
+        Assert.Equal("$/Composite", warning.PlanPath);
+    }
+
+    private sealed class CompositeNode : WorkflowNodeModel, IWorkflowSubDocumentNode
+    {
+        public override string NodeType => "AnalyzerTest.Composite";
+
+        public WorkflowDocument SubDocument { get; set; } = new();
+    }
+
     private static DecisionNodeModel BoundDecision(string id, WorkflowBindingKey binding) => new()
     {
         Id = id,

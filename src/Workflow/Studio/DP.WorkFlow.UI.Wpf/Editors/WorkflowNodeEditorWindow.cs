@@ -45,22 +45,18 @@ public sealed class WorkflowNodeEditorWindow : Window
     private readonly ContentControl _host;
     private readonly ListBox _navigation;
     private readonly IReadOnlyDictionary<string, IWorkflowWpfNodeEditorPageRenderer> _renderers;
-    private readonly Action<IWorkflowBlockMappingNode>? _editMappings;
 
     /// <summary>初始化节点综合编辑窗口并创建对应页面。</summary>
     public WorkflowNodeEditorWindow(
         WorkflowNodeEditorModel model,
-        IEnumerable<IWorkflowWpfNodeEditorPageRenderer>? renderers = null,
-        Action<IWorkflowBlockMappingNode>? editMappings = null)
+        IEnumerable<IWorkflowWpfNodeEditorPageRenderer>? renderers = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _renderers = CreateRendererIndex(renderers);
         ValidatePageRenderers(model.Pages, _renderers);
-        _editMappings = editMappings;
         Title = model.PropertyEditorKey == null ? $"节点信息 - {model.Node.Title}"
             : $"{model.Pages.Single(p => p.PropertyEditorKey == model.PropertyEditorKey).Title} - {model.Node.Title}";
-        var hasSpecialContent = model.Pages.Any(page => page.Kind is not (WorkflowNodeEditorPageKind.Properties
-            or WorkflowNodeEditorPageKind.Diagnostics or WorkflowNodeEditorPageKind.Results));
+        var hasSpecialContent = model.Pages.Any(page => !IsSidePage(page));
         // 脚本窗口要适配常见的 1366×768 工作区，不能默认超出屏幕高度。
         Width = hasSpecialContent ? 1060 : 740;
         Height = hasSpecialContent ? 720 : 680;
@@ -132,15 +128,15 @@ public sealed class WorkflowNodeEditorWindow : Window
         if (_model.PropertyEditorKey is { } key)
             return CreatePageElement(_model.Pages.Single(p => p.PropertyEditorKey == key));
         var visible = _model.Pages.Where(page => page.PropertyEditorKey == null).ToArray();
-        var specialPages = visible
-            .Where(page => page.Kind is not (WorkflowNodeEditorPageKind.Properties
-                or WorkflowNodeEditorPageKind.Diagnostics or WorkflowNodeEditorPageKind.Results))
-            .ToArray();
+        var specialPages = visible.Where(page => !IsSidePage(page)).ToArray();
 
         var panels = new List<WorkflowWpfNodeEditorSidePanel>
         {
             Panel(visible.Single(page => page.Kind == WorkflowNodeEditorPageKind.Properties))
         };
+        // 复合节点的“输入输出”页紧跟参数页。
+        if (visible.FirstOrDefault(page => page.Kind == WorkflowNodeEditorPageKind.SubflowInterface) is { } subflowInterface)
+            panels.Add(Panel(subflowInterface));
         var specialHost = new Grid();
         for (var index = 0; index < specialPages.Length; index++)
         {
@@ -199,6 +195,10 @@ public sealed class WorkflowNodeEditorWindow : Window
         }
     }
 
+    /// <summary>显示在左侧分页中的页面；其余页面（子画布、脚本、图像等）放在右侧主体区。</summary>
+    private static bool IsSidePage(WorkflowNodeEditorPageDescriptor page) => page.Kind is WorkflowNodeEditorPageKind.Properties
+        or WorkflowNodeEditorPageKind.Diagnostics or WorkflowNodeEditorPageKind.Results or WorkflowNodeEditorPageKind.SubflowInterface;
+
     /// <summary>创建Page Element。</summary>
     private FrameworkElement CreatePageElement(WorkflowNodeEditorPageDescriptor page)
     {
@@ -217,6 +217,7 @@ public sealed class WorkflowNodeEditorWindow : Window
             WorkflowNodeEditorPageKind.Script => CreateScript((WorkflowScriptEditorPageModel)page.Model),
             WorkflowNodeEditorPageKind.Diagnostics => CreateDiagnostics((WorkflowScriptEditorPageModel)page.Model),
             WorkflowNodeEditorPageKind.Results => CreateResults((WorkflowNodeResultPageModel)page.Model),
+            WorkflowNodeEditorPageKind.SubflowInterface => new WorkflowSubflowInterfaceControl((WorkflowSubflowInterfacePageModel)page.Model),
             _ => throw new InvalidOperationException($"WPF 不支持节点详情页类型 {page.Kind}：{page.PageId}。")
         };
     }
@@ -297,8 +298,7 @@ public sealed class WorkflowNodeEditorWindow : Window
             AdditionalProperties = WorkflowNodeEditorPropertyContributors.Compose(page.AdditionalProperties, _model.Pages),
             Session = page.Session,
             EntryNodeId = page.EntryNodeId,
-            HideScriptProperty = _model.EditingNode is IWorkflowScriptNode,
-            HideSpecialActions = _model.Pages.Any(item => item.Kind is not (WorkflowNodeEditorPageKind.Properties or WorkflowNodeEditorPageKind.Results))
+            HideScriptProperty = _model.EditingNode is IWorkflowScriptNode
         };
         panel.PropertyActionRequested += async (_, request) =>
         {
@@ -306,14 +306,13 @@ public sealed class WorkflowNodeEditorWindow : Window
             try
             {
                 child = _model.CreatePropertyEditor(request.EditorKey);
-                var dialog = new WorkflowNodeEditorWindow(child, _renderers.Values, _editMappings) { Owner = this };
+                var dialog = new WorkflowNodeEditorWindow(child, _renderers.Values) { Owner = this };
                 dialog.ShowDialog();
             }
             catch (Exception ex) { MessageBox.Show(this, ex.Message, "属性编辑失败", MessageBoxButton.OK, MessageBoxImage.Warning); }
             finally { if (child != null) await child.DisposeAsync(); }
         };
         panel.EditError += (_, message) => MessageBox.Show(this, message, "参数错误", MessageBoxButton.OK, MessageBoxImage.Warning);
-        if (_editMappings is not null) panel.BlockMappingEditRequested += (_, block) => _editMappings(block);
         return panel;
     }
 
@@ -330,18 +329,27 @@ public sealed class WorkflowNodeEditorWindow : Window
         layout.Click += (_, _) => page.Session.AutoLayout();
         toolbar.Children.Add(fit);
         toolbar.Children.Add(layout);
-        if (_model.Node is IWorkflowBlockMappingNode block && _editMappings is not null)
-        {
-            var mappings = Button("输入/输出映射");
-            mappings.Click += (_, _) => _editMappings(block);
-            toolbar.Children.Add(mappings);
-        }
         var canvas = new Grid();
         canvas.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         canvas.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        canvas.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        canvas.RowDefinitions.Add(new RowDefinition { Height = new GridLength(140), MinHeight = 60 });
         canvas.Children.Add(toolbar);
         Grid.SetRow(designer, 1);
         canvas.Children.Add(designer);
+        // 子画布自己的诊断：检查正在编辑的草稿，双击选中子画布内的问题节点。
+        var diagnosticsSplitter = new GridSplitter
+        {
+            Height = 5,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ResizeDirection = GridResizeDirection.Rows,
+            Background = new SolidColorBrush(Color.FromRgb(51, 51, 55))
+        };
+        Grid.SetRow(diagnosticsSplitter, 2);
+        canvas.Children.Add(diagnosticsSplitter);
+        var diagnostics = new WorkflowDiagnosticsControl { FollowsDocumentEntry = true, Session = page.Session };
+        Grid.SetRow(diagnostics, 3);
+        canvas.Children.Add(diagnostics);
 
         // 子画布与主工作台一致：左侧工具箱双击添加到画布中心，或直接拖放到画布。
         var toolbox = new WorkflowToolboxControl { Session = page.Session };
@@ -370,14 +378,7 @@ public sealed class WorkflowNodeEditorWindow : Window
         try
         {
             child = _model.CreateSubWorkflowNodeEditor(page, node.Id);
-            var entryNodeId = child.EntryNodeId;
-            WorkflowNodeEditorWindow? dialog = null;
-            dialog = new WorkflowNodeEditorWindow(child, _renderers.Values, block =>
-            {
-                // 嵌套复合节点的映射属于子画布会话，不能交给宿主按顶层会话处理。
-                using var mappings = new WorkflowBlockMappingEditorModel(page.Session, block.Id);
-                _ = new WorkflowBlockMappingEditorWindow(mappings, entryNodeId) { Owner = dialog }.ShowDialog();
-            }) { Owner = this };
+            var dialog = new WorkflowNodeEditorWindow(child, _renderers.Values) { Owner = this };
             dialog.ShowDialog();
         }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "无法打开节点详情", MessageBoxButton.OK, MessageBoxImage.Warning); }

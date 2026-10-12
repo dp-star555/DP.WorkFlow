@@ -44,7 +44,7 @@
 | 节点静态子引擎缓存 | 父 `WorkflowEngine.ChildWorkflows` | InProgress | 完成 | 完成 | 生命周期和快照由父引擎监管 |
 | Block 共享父 Context | `CreateChildScope` | Completed | 完成 | 完成 | 默认不继承父变量，仅共享宿主能力和信号域 |
 | Block 内嵌 JSON | Schema 4 `SubDocument` | Completed | 完成 | 完成 | 独立入口、递归往返和循环引用保护 |
-| Block 隐式共享 Context | `InputMappings/OutputMappings` | InProgress | 完成 | 完成 | 父子作用域显式数据契约 |
+| Block 隐式共享 Context | `Inputs/Outputs`（子流程接口） | InProgress | 完成 | 完成 | 父子作用域显式数据契约 |
 | `ValueCompareNodeModel` | 同名新版模型与 Handler | InProgress | 完成 | 完成 | InvariantCulture 和一致容差边界 |
 | `StringCompareNodeModel` | 同名新版模型与 Handler | InProgress | 完成 | 完成 | Ordinal 比较及安全 Like |
 | `CompareNodeResult` | 不可变 record | InProgress | 完成 | 完成 | 统一比较输出结构 |
