@@ -334,6 +334,24 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
     public WorkflowNodeEditorModel CreatePropertyEditor(string key) => new(EditingSession, EntryNodeId, EditingNode.Id,
         _providers, _choiceProvider, _additionalProperties, key) { _parent = this };
 
+    /// <summary>
+    /// 为本窗口子流程画布中的节点打开下一层节点窗口。子画布本身属于本窗口的编辑副本，
+    /// 因而下一层“应用”只写回本窗口草稿，随本窗口确认或取消一起生效。
+    /// </summary>
+    /// <param name="page">本窗口的子流程页面。</param>
+    /// <param name="nodeId">子画布中的节点标识。</param>
+    public WorkflowNodeEditorModel CreateSubWorkflowNodeEditor(WorkflowSubWorkflowEditorPageModel page, string nodeId)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        // 打开页面后才放入的开始节点只反映在子会话文档上，页面构造时解析的入口可能仍为空。
+        var entryNodeId = !string.IsNullOrWhiteSpace(page.Session.Document.EntryNodeId)
+            ? page.Session.Document.EntryNodeId
+            : page.EntryNodeId;
+        if (string.IsNullOrWhiteSpace(entryNodeId))
+            throw new InvalidOperationException("子流程缺少开始节点，无法打开节点详情。");
+        return new(page.Session, entryNodeId, nodeId, _providers, _choiceProvider, _additionalProperties);
+    }
+
     // 从节点窗口打开的独立属性窗口（如模板制作/选择）：应用时先写回节点窗口的编辑副本，再直接提交到正式节点，
     // 不需要再点节点窗口的“应用”；节点窗口的属性面板随编辑会话变化自动刷新。
     private WorkflowNodeEditorModel? _parent;

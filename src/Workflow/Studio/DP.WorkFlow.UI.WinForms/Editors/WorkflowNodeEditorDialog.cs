@@ -324,6 +324,8 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     private Control CreateSubWorkflow(WorkflowSubWorkflowEditorPageModel page)
     {
         var designer = new WorkflowDesignerControl { Session = page.Session, Dock = DockStyle.Fill };
+        // 子画布与主工作台一致：双击节点打开其节点窗口。
+        designer.NodeEditRequested += (_, node) => OpenSubWorkflowNode(page, node);
         var toolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, Padding = new Padding(5) };
         var fit = ToolbarButton("适合画布");
         var layout = ToolbarButton("自动布局");
@@ -361,6 +363,28 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         split.Panel1.Controls.Add(toolbox);
         split.Panel2.Controls.Add(canvas);
         return split;
+    }
+
+    /// <summary>在本窗口之上打开子画布节点的节点窗口；应用写回子画布草稿，随本窗口确认或取消。</summary>
+    private void OpenSubWorkflowNode(WorkflowSubWorkflowEditorPageModel page, IWorkflowNodeModel node)
+    {
+        WorkflowNodeEditorModel? child = null;
+        try
+        {
+            child = Model.CreateSubWorkflowNodeEditor(page, node.Id);
+            var entryNodeId = child.EntryNodeId;
+            WorkflowNodeEditorDialog? dialog = null;
+            dialog = new WorkflowNodeEditorDialog(child, _renderers.Values, block =>
+            {
+                // 嵌套复合节点的映射属于子画布会话，不能交给宿主按顶层会话处理。
+                using var mappings = new WorkflowBlockMappingEditorModel(page.Session, block.Id);
+                using var mappingDialog = new WorkflowBlockMappingEditorDialog(mappings, entryNodeId);
+                _ = mappingDialog.ShowDialog(dialog);
+            });
+            using (dialog) dialog.ShowDialog(this);
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "无法打开节点详情", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+        finally { if (child != null) child.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
     }
 
     private ModernUI.WinForms.ModernButton ToolbarButton(string text) => new()
