@@ -49,8 +49,8 @@ public sealed class BlockNodeHandler : WorkflowNodeHandler<BlockNodeModel>
             mappedOutputs));
     }
 
-    private static void ApplyInputs(
-        BlockNodeModel node,
+    internal static void ApplyInputs(
+        IWorkflowBlockMappingNode node,
         IWorkflowNodeExecutionContext parentContext,
         WorkflowContext childContext)
     {
@@ -81,8 +81,8 @@ public sealed class BlockNodeHandler : WorkflowNodeHandler<BlockNodeModel>
             childContext.SetVariable(pair.Key, pair.Value);
     }
 
-    private static IReadOnlyDictionary<string, object> ResolveOutputs(
-        BlockNodeModel node,
+    internal static IReadOnlyDictionary<string, object> ResolveOutputs(
+        IWorkflowBlockMappingNode node,
         WorkflowContext childContext)
     {
         var values = new Dictionary<string, object>(StringComparer.Ordinal);
@@ -106,7 +106,7 @@ public sealed class BlockNodeHandler : WorkflowNodeHandler<BlockNodeModel>
         return values;
     }
 
-    private static void ValidateMappings(BlockNodeModel node)
+    internal static void ValidateMappings(IWorkflowBlockMappingNode node)
     {
         ValidateTargetNames(node.InputMappings.Select(mapping => mapping.TargetVariableName), "输入");
         ValidateTargetNames(node.OutputMappings.Select(mapping => mapping.TargetVariableName), "输出");

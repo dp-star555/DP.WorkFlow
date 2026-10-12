@@ -518,8 +518,11 @@ ParallelAll
 src/Workflow/Kernel/DP.WorkFlow.Core/Documents/IWorkflowSubDocumentNode.cs
 src/Workflow/Nodes/DP.WorkFlow.Nodes.Composite/Block/BlockNode.cs
 src/Workflow/Nodes/DP.WorkFlow.Nodes.Composite/Block/BlockNodeHandler.cs
+src/Workflow/Nodes/DP.WorkFlow.Nodes.Composite/LoopBlock/LoopBlockNode.cs
 src/Workflow/Kernel/DP.WorkFlow.Runtime/Execution/WorkflowEngine.cs
 ```
+
+循环块（`LoopBlock`）复用 Block 的子画布和映射，按圈反复运行子流程，用于长期循环扫描；详见 `docs/nodes/node-data-flow-model.md` 的“循环块”一节。
 
 子流程数据关系：
 

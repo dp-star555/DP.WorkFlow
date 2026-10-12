@@ -30,6 +30,9 @@ public sealed partial class WorkflowEngine
     internal string PlanPath { get; set; } = "$";
     internal Guid BindingScopeId { get; set; }
     private Guid? _parentRunId;
+    // 循环块子引擎每圈结束时不等待运行记录写出；会话结束时再等待最后一份收尾。
+    private bool _deferRecordingCompletion;
+    private Task _pendingRecordingCompletion = Task.CompletedTask;
     private WorkflowExecutionIdentity? _parentExecution;
     private string? _currentNodeId;
     private string? _terminalMessage;

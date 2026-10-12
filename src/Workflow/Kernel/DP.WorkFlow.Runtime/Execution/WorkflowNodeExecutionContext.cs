@@ -7,6 +7,7 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     private readonly Action<WorkflowRunEventDraft, WorkflowEventWriteMode> _eventRecorder;
     private readonly Action<string> _degradedReporter;
     private readonly Func<WorkflowExecutionPlan, WorkflowContext, CancellationToken, Task<WorkflowRunResult>> _childRunner;
+    private readonly Func<WorkflowContext, IWorkflowChildWorkflowSession>? _childSessionOpener;
     private readonly WorkflowExecutionPlan? _childDefinition;
     private readonly WorkflowNodeInputMap _inputMap;
     private readonly Dictionary<string, object> _pendingVariableWrites = new(StringComparer.Ordinal);
@@ -26,6 +27,7 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     /// <param name="childRunner">在父引擎监管下启动子引擎的委托。</param>
     /// <param name="planPath">当前编译子计划路径。</param>
     /// <param name="bindingScopeId">已经准备的绑定作用域。</param>
+    /// <param name="childSessionOpener">在父引擎监管下打开可反复运行子定义的会话的委托。</param>
     public WorkflowNodeExecutionContext(
         WorkflowContext context,
         IWorkflowNodeModel node,
@@ -36,7 +38,8 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
         Action<WorkflowRunEventDraft, WorkflowEventWriteMode> eventRecorder,
         Action<string> degradedReporter,
         Func<WorkflowExecutionPlan, WorkflowContext, CancellationToken, Task<WorkflowRunResult>> childRunner,
-        string planPath = "$", Guid bindingScopeId = default)
+        string planPath = "$", Guid bindingScopeId = default,
+        Func<WorkflowContext, IWorkflowChildWorkflowSession>? childSessionOpener = null)
     {
         _context = context;
         Node = node;
@@ -48,6 +51,7 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
         _eventRecorder = eventRecorder;
         _degradedReporter = degradedReporter;
         _childRunner = childRunner;
+        _childSessionOpener = childSessionOpener;
         // 执行计划每次返回新的节点快照，因此引用映射必须按本次执行建立，不进入全局状态。
         _inputMap = inputLayout.Bind(node);
     }
@@ -266,6 +270,11 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
         WorkflowContext childContext,
         CancellationToken cancellationToken) =>
         _childRunner(definition, childContext, cancellationToken);
+
+    public IWorkflowChildWorkflowSession OpenChildWorkflowSession(
+        WorkflowExecutionPlan definition,
+        WorkflowContext childContext) =>
+        (_childSessionOpener ?? throw new NotSupportedException("当前运行时不支持反复运行子流程。"))(childContext);
 
     internal IReadOnlyList<string> ChangedVariableKeys =>
         _pendingVariableWrites.Keys.Concat(_pendingVariableRemovals).Distinct(StringComparer.Ordinal).ToArray();

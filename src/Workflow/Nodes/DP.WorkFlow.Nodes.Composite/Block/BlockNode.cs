@@ -30,11 +30,18 @@ public sealed class BlockNodeModel : WorkflowNodeModel, IWorkflowBlockMappingNod
     public int ChildNodeCount => SubDocument.Graph.Nodes.Count;
 
     /// <inheritdoc />
-    public IEnumerable<WorkflowDeclaredBinding> GetDeclaredBindings()
+    public IEnumerable<WorkflowDeclaredBinding> GetDeclaredBindings() => DeclareMappingBindings(this);
+
+    /// <summary>声明输入映射引用的父流程绑定和输出映射引用的子流程绑定，供编译期校验。</summary>
+    /// <param name="node">带显式映射的复合节点。</param>
+    /// <returns>映射中的全部绑定声明。</returns>
+    internal static IEnumerable<WorkflowDeclaredBinding> DeclareMappingBindings(IWorkflowBlockMappingNode node)
     {
-        for (var index = 0; index < InputMappings.Count; index++)
+        var inputMappings = node.InputMappings;
+        var outputMappings = node.OutputMappings;
+        for (var index = 0; index < inputMappings.Count; index++)
         {
-            var mapping = InputMappings[index];
+            var mapping = inputMappings[index];
             if (mapping.Source == E_BlockInputSource.ParentNodeBinding && mapping.ParentBinding.HasValue)
             {
                 yield return new WorkflowDeclaredBinding(
@@ -43,9 +50,9 @@ public sealed class BlockNodeModel : WorkflowNodeModel, IWorkflowBlockMappingNod
                     $"InputMappings[{index}].ParentBinding");
             }
         }
-        for (var index = 0; index < OutputMappings.Count; index++)
+        for (var index = 0; index < outputMappings.Count; index++)
         {
-            var mapping = OutputMappings[index];
+            var mapping = outputMappings[index];
             if (mapping.Source == E_BlockOutputSource.ChildNodeBinding && mapping.ChildBinding.HasValue)
             {
                 yield return new WorkflowDeclaredBinding(

@@ -123,7 +123,8 @@ public sealed partial class WorkflowEngine
                 (draft, writeMode) => RecordRunEvent(draft, writeMode),
                 ReportRecordingDegraded,
                 (plan, childContext, childCancellation) =>
-                    RunChildWorkflowAsync(node, identity, plan, childContext, childCancellation), PlanPath, BindingScopeId);
+                    RunChildWorkflowAsync(node, identity, plan, childContext, childCancellation), PlanPath, BindingScopeId,
+                childContext => OpenChildWorkflowSession(node, identity, childContext));
             var operationKey = (token.TokenId, node.Id);
             // 上一次执行失败时留下的子运行投影不属于本次输出。
             _childOutputProjections.TryRemove(operationKey, out _);
@@ -290,7 +291,14 @@ public sealed partial class WorkflowEngine
                 (_, existing) => existing.Concat(projections).ToArray());
             return;
         }
-        RetireProjection(parentNodeId, new CompositeOutputProjection(projections));
+        RetireChildOutputProjections(parentNodeId, projections);
+    }
+
+    /// <summary>立即释放子运行剩余投影；它们的输出不会再被读取。</summary>
+    private void RetireChildOutputProjections(string parentNodeId, IReadOnlyList<IWorkflowNodeOutputProjection> projections)
+    {
+        if (projections.Count > 0)
+            RetireProjection(parentNodeId, new CompositeOutputProjection(projections));
     }
 
     /// <summary>输出退出运行历史后通知其投影释放派生资源；释放失败只降级记录，不影响运行。</summary>

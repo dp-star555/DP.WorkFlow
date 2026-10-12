@@ -12,7 +12,7 @@ public sealed class WorkflowCompositeRuntimePluginModuleTests
             .Freeze();
 
         Assert.True(composition.IsFrozen);
-        Assert.Single(nodes.Snapshot());
+        Assert.Equal(2, nodes.Snapshot().Count);
         Assert.All(nodes.Snapshot().Values, descriptor =>
             Assert.NotNull(handlers.Resolve(descriptor.Factory())));
     }
