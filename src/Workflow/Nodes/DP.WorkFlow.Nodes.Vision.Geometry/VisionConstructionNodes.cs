@@ -136,7 +136,7 @@ public sealed class ProjectVisionPointToLineNodeModel : WorkflowVisionGeometryNo
 }
 
 /// <summary>线线交点结果。</summary>
-public sealed class VisionLineIntersectionResult : IVisionGeometryFact
+public sealed class VisionLineIntersectionResult : IVisionGeometryFact, IVisionDisplayFact
 {
     internal VisionLineIntersectionResult(VisionPoint point, VisionLine a, VisionLine b, double angle)
     { Point = point; LineA = a; LineB = b; AngleDegrees = angle; }
@@ -158,15 +158,18 @@ public sealed class VisionLineIntersectionResult : IVisionGeometryFact
     [DisplayName("坐标系")] public VisionCoordinateSystem? CoordinateSystem => Point.CoordinateSystem;
     /// <inheritdoc/>
     [DisplayName("显示图形")]
-    public IReadOnlyList<Geometry> DisplayGeometry => VisionConstruction.LinesTo(Point.ImagePosition, LineA, LineB)
-        .Append(VisionConstruction.Marker(Point.ImagePosition)).ToArray();
+    public IReadOnlyList<Geometry> DisplayGeometry => VisionDisplay.Geometries(DisplayItems);
+    /// <summary>两条输入直线（含到交点的延长线）和交点，交点标注夹角。</summary>
+    [Browsable(false), DisplayName("显示项")]
+    public IReadOnlyList<VisionDisplayItem> DisplayItems => VisionConstruction.LinesTo(Point.ImagePosition, LineA, LineB)
+        .Append(VisionDisplayItem.Point(Point.ImagePosition, EVisionDisplayRole.Result, FormattableString.Invariant($"{AngleDegrees:F2}°"))).ToArray();
     /// <inheritdoc/>
     [DisplayName("摘要")]
     public string Summary => FormattableString.Invariant($"线线交点 原图({X:F3}, {Y:F3})；夹角 {AngleDegrees:F3}°");
 }
 
 /// <summary>两线夹角结果。</summary>
-public sealed class VisionLineAngleResult : IVisionGeometryFact
+public sealed class VisionLineAngleResult : IVisionGeometryFact, IVisionDisplayFact
 {
     internal VisionLineAngleResult(VisionLine a, VisionLine b, EVisionLineAngleMode mode, double signed, VisionPoint? intersection)
     {
@@ -200,10 +203,20 @@ public sealed class VisionLineAngleResult : IVisionGeometryFact
     [DisplayName("直线2")] public VisionLine LineB { get; }
     /// <inheritdoc/>
     [DisplayName("显示图形")]
-    public IReadOnlyList<Geometry> DisplayGeometry => (Intersection is { } point
-            ? VisionConstruction.LinesTo(point.ImagePosition, LineA, LineB).Append(VisionConstruction.Marker(point.ImagePosition))
-            : new Geometry[] { VisionConstruction.Segment(LineA), VisionConstruction.Segment(LineB) })
-        .ToArray();
+    public IReadOnlyList<Geometry> DisplayGeometry => VisionDisplay.Geometries(DisplayItems);
+    /// <summary>两条输入直线；有交点时画到交点并在交点标注角度，平行时角度标在直线1上。</summary>
+    [Browsable(false), DisplayName("显示项")]
+    public IReadOnlyList<VisionDisplayItem> DisplayItems
+    {
+        get
+        {
+            var label = FormattableString.Invariant($"{AngleDegrees:F2}°");
+            return (Intersection is { } point
+                    ? VisionConstruction.LinesTo(point.ImagePosition, LineA, LineB).Append(VisionDisplayItem.Point(point.ImagePosition, EVisionDisplayRole.Result, label))
+                    : new[] { VisionConstruction.Segment(LineA, label), VisionConstruction.Segment(LineB) })
+                .ToArray();
+        }
+    }
     /// <inheritdoc/>
     [DisplayName("摘要")]
     public string Summary => FormattableString.Invariant(
@@ -211,12 +224,12 @@ public sealed class VisionLineAngleResult : IVisionGeometryFact
 }
 
 /// <summary>线圆或圆圆交点结果：0（不相交时节点故障）、1（相切）或 2 个交点。</summary>
-public sealed class VisionCurveIntersectionResult : IVisionGeometryFact
+public sealed class VisionCurveIntersectionResult : IVisionGeometryFact, IVisionDisplayFact
 {
-    internal VisionCurveIntersectionResult(string kind, IReadOnlyList<VisionPoint> points, IReadOnlyList<Geometry> inputs)
+    internal VisionCurveIntersectionResult(string kind, IReadOnlyList<VisionPoint> points, IReadOnlyList<VisionDisplayItem> inputs)
     { _kind = kind; Points = points; _inputs = inputs; }
     private readonly string _kind;
-    private readonly IReadOnlyList<Geometry> _inputs;
+    private readonly IReadOnlyList<VisionDisplayItem> _inputs;
     /// <inheritdoc/>
     [DisplayName("图像标识")] public string FrameId => Points[0].FrameId;
     /// <summary>全部交点（1 或 2 个），顺序见 <see cref="First"/>。</summary>
@@ -235,7 +248,11 @@ public sealed class VisionCurveIntersectionResult : IVisionGeometryFact
     [DisplayName("坐标系")] public VisionCoordinateSystem? CoordinateSystem => Points[0].CoordinateSystem;
     /// <inheritdoc/>
     [DisplayName("显示图形")]
-    public IReadOnlyList<Geometry> DisplayGeometry => _inputs.Concat(Points.Select(p => VisionConstruction.Marker(p.ImagePosition))).ToArray();
+    public IReadOnlyList<Geometry> DisplayGeometry => VisionDisplay.Geometries(DisplayItems);
+    /// <summary>输入的线和圆，以及交点（两个交点时标注 1、2）。</summary>
+    [Browsable(false), DisplayName("显示项")]
+    public IReadOnlyList<VisionDisplayItem> DisplayItems => _inputs.Concat(Points.Select((p, i) =>
+        VisionDisplayItem.Point(p.ImagePosition, EVisionDisplayRole.Result, Tangent ? null : (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)))).ToArray();
     /// <inheritdoc/>
     [DisplayName("摘要")]
     public string Summary => _kind + (Tangent ? "：相切，1 个交点 " : "：2 个交点 ")
@@ -243,7 +260,7 @@ public sealed class VisionCurveIntersectionResult : IVisionGeometryFact
 }
 
 /// <summary>点到线垂足结果。</summary>
-public sealed class VisionPerpendicularFootResult : IVisionGeometryFact
+public sealed class VisionPerpendicularFootResult : IVisionGeometryFact, IVisionDisplayFact
 {
     internal VisionPerpendicularFootResult(VisionPoint point, VisionPoint foot, VisionLine line, EVisionLineDistanceMode mode)
     {
@@ -270,9 +287,12 @@ public sealed class VisionPerpendicularFootResult : IVisionGeometryFact
     [DisplayName("坐标系")] public VisionCoordinateSystem? CoordinateSystem => Foot.CoordinateSystem;
     /// <inheritdoc/>
     [DisplayName("显示图形")]
-    public IReadOnlyList<Geometry> DisplayGeometry => VisionConstruction.LinesTo(Foot.ImagePosition, Line)
-        .Append(new ContourGeometry(new[] { Point.ImagePosition, Foot.ImagePosition }))
-        .Append(VisionConstruction.Marker(Point.ImagePosition)).Append(VisionConstruction.Marker(Foot.ImagePosition)).ToArray();
+    public IReadOnlyList<Geometry> DisplayGeometry => VisionDisplay.Geometries(DisplayItems);
+    /// <summary>输入直线（含到垂足的延长线）、输入点到垂足的测量线（标注距离）、输入点与垂足。</summary>
+    [Browsable(false), DisplayName("显示项")]
+    public IReadOnlyList<VisionDisplayItem> DisplayItems => VisionConstruction.LinesTo(Foot.ImagePosition, Line)
+        .Append(VisionDisplayItem.Segment(Point.ImagePosition, Foot.ImagePosition, EVisionDisplayRole.Measurement, FormattableString.Invariant($"{Distance:F3} px")))
+        .Append(VisionDisplayItem.Point(Point.ImagePosition, EVisionDisplayRole.Input)).Append(VisionDisplayItem.Point(Foot.ImagePosition)).ToArray();
     /// <inheritdoc/>
     [DisplayName("摘要")]
     public string Summary => FormattableString.Invariant(
@@ -327,7 +347,7 @@ public static class VisionConstruction
         var points = (half == 0 ? new[] { t0 } : new[] { t0 - half, t0 + half })
             .Select(t => new VisionPoint(line.FrameId, new PointD(p.X + ux * t, p.Y + uy * t), coordinates)).ToArray();
         return new VisionCurveIntersectionResult("线圆交点", points,
-            new Geometry[] { Segment(line), new EllipseGeometry(c, r, r) }.Concat(LinesTo(points[0].ImagePosition, line)).ToArray());
+            new[] { new VisionDisplayItem(new EllipseGeometry(c, r, r), EVisionDisplayRole.Input) }.Concat(LinesTo(points[0].ImagePosition, line)).ToArray());
     }
 
     /// <summary>两圆交点；分离、内含或同心时抛出。</summary>
@@ -352,7 +372,8 @@ public static class VisionConstruction
             ? new[] { new PointD(mx, my) }
             : new[] { new PointD(mx - uy * half, my + ux * half), new PointD(mx + uy * half, my - ux * half) };
         var points = positions.Select(p => new VisionPoint(a.FrameId, p, coordinates)).ToArray();
-        return new VisionCurveIntersectionResult("圆圆交点", points, new Geometry[] { new EllipseGeometry(c1, r1, r1), new EllipseGeometry(c2, r2, r2) });
+        return new VisionCurveIntersectionResult("圆圆交点", points, new[] { new VisionDisplayItem(new EllipseGeometry(c1, r1, r1), EVisionDisplayRole.Input),
+            new VisionDisplayItem(new EllipseGeometry(c2, r2, r2), EVisionDisplayRole.Input) });
     }
 
     /// <summary>点到无限直线或有限线段的垂足。</summary>
@@ -406,22 +427,21 @@ public static class VisionConstruction
         && a.LocalToImage.M21 == b.LocalToImage.M21 && a.LocalToImage.M22 == b.LocalToImage.M22
         && a.LocalToImage.Tx == b.LocalToImage.Tx && a.LocalToImage.Ty == b.LocalToImage.Ty;
 
-    internal static Geometry Segment(VisionLine line) => new ContourGeometry(new[] { line.A.ImagePosition, line.B.ImagePosition });
+    internal static VisionDisplayItem Segment(VisionLine line, string? label = null) =>
+        VisionDisplayItem.Segment(line.A.ImagePosition, line.B.ImagePosition, EVisionDisplayRole.Input, label);
 
-    /// <summary>画出直线本身，并在点落在线段外时补一段延长线到该点。</summary>
-    internal static IEnumerable<Geometry> LinesTo(PointD point, params VisionLine[] lines)
+    /// <summary>输入直线本身，并在点落在线段外时补一段延长线到该点。</summary>
+    internal static IEnumerable<VisionDisplayItem> LinesTo(PointD point, params VisionLine[] lines)
     {
         foreach (var line in lines)
         {
             yield return Segment(line);
             PointD a = line.A.ImagePosition, b = line.B.ImagePosition;
             double dx = b.X - a.X, dy = b.Y - a.Y, t = ((point.X - a.X) * dx + (point.Y - a.Y) * dy) / (dx * dx + dy * dy);
-            if (t < 0) yield return new ContourGeometry(new[] { a, point });
-            else if (t > 1) yield return new ContourGeometry(new[] { b, point });
+            if (t < 0) yield return VisionDisplayItem.Segment(a, point, EVisionDisplayRole.Input);
+            else if (t > 1) yield return VisionDisplayItem.Segment(b, point, EVisionDisplayRole.Input);
         }
     }
-
-    internal static Geometry Marker(PointD point) => new EllipseGeometry(point, 3, 3);
 }
 
 /// <summary>线线交点。</summary>

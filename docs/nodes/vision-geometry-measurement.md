@@ -88,6 +88,24 @@ CreatePoint的Space和X/Y保持显式配置，绑定/解除定位不会猜测并
 
 卡尺/鲁棒拟合要求正方向相似变换；非等比、剪切或镜像不会以单一尺度冒充。面积ROI及点线几何支持一般可逆仿射。同定义更换来源保留已保存局部ROI，不重复逆变换。
 
+## 结果显示约定
+
+所有 Vision 节点的“图像与测量范围”画布用同一套渲染：结果类型实现 `IVisionDisplayFact`，按绘制顺序给出 `VisionDisplayItem`（几何或标记点、显示角色、可选图上短标签、可选点击说明），画布只按角色配色，不再按结果类型分支。
+
+| 角色 | 用途 | 颜色 |
+|---|---|---|
+| Result | 主结果：拟合线/圆、交点、匹配框、垂足 | 黄 |
+| Input | 参与计算的线/圆、延长线、卡尺扫描线 | 灰蓝 |
+| Measurement | 距离、宽度测量线 | 青 |
+| Accepted / Rejected | 计算点 / 忽略点 | 绿 / 红 |
+| Model | 模板模型轮廓 | 紫 |
+| Region | 区域、连通域 | 绿（区域） |
+| AxisX / AxisY | 坐标轴 | 红 / 绿 |
+
+- 标记点按屏幕像素画成约 10px 的 ×，缩放时大小不变。
+- 图上只写短标签（不超过 64 字，如“5.000 image-px”“90.00°”“分数 0.998”“#3”）；完整摘要在状态栏，点击图形显示该项的说明，没有单独说明时为结果摘要。
+- `IVisionGeometryFact.DisplayGeometry` 由显示项统一导出（`VisionDisplay.Geometries`），新结果只需写 `DisplayItems`；只实现 `IVisionGeometryFact` 的外部结果按 Result 角色显示。
+
 ## 可直接复核的示例
 
 在DP.WorkFlow目录构建后启动：

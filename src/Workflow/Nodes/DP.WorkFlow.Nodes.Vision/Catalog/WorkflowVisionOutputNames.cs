@@ -14,6 +14,12 @@ public static class WorkflowVisionOutputNames
         ["Status"] = "完成状态",
         ["Summary"] = "摘要",
         ["DisplayGeometry"] = "显示图形",
+        ["DisplayItems"] = "显示项",
+        ["Geometry"] = "几何",
+        ["Marker"] = "标记点",
+        ["Role"] = "显示角色",
+        ["Label"] = "图上标签",
+        ["Detail"] = "点击说明",
         ["CoordinateSystem"] = "坐标系",
         ["Found"] = "是否找到",
         ["Score"] = "匹配分数",
@@ -30,6 +36,8 @@ public static class WorkflowVisionOutputNames
         ["ReferencePoint"] = "参考点",
         ["ReferenceToImage"] = "参考坐标映射",
         ["MatchGeometry"] = "匹配轮廓",
+        ["ModelContours"] = "模型轮廓(模板坐标)",
+        ["ModelGeometry"] = "模型轮廓",
         ["Bounds"] = "外接矩形",
         ["Count"] = "数量",
         ["Blobs"] = "Blob 列表",
@@ -141,7 +149,7 @@ public static class WorkflowVisionOutputNames
             typeof(ImageFrame), typeof(BlobAnalysisResult), typeof(BlobObservation), typeof(BlobShapeFeatures), typeof(ColorAnalysisResult),
             typeof(TemplatePoseResult), typeof(AffineCalibration), typeof(Coordinate2D),
             typeof(RegionAnalysisResult), typeof(CaliperResult), typeof(VisionCaliperMeasurement), typeof(VisionCaliperEdge), typeof(VisionCaliperEdgePair), typeof(VisionFindLineResult), typeof(VisionFindCircleResult), typeof(VisionCaliperScan), typeof(VisionFoundEdgePair), typeof(RobustCircleResult), typeof(RobustLineResult), typeof(VisionPoint), typeof(VisionLine),
-            typeof(GeometricDistanceResult), typeof(VisionCoordinateSystemResult), typeof(VisionCoordinateDefinition)
+            typeof(GeometricDistanceResult), typeof(VisionCoordinateSystemResult), typeof(VisionCoordinateDefinition), typeof(VisionDisplayItem)
         })
             WorkflowOutputDisplayNames.Register(type, Names);
         return true;

@@ -354,7 +354,7 @@ public sealed class FindVisionCircleNodeModel : FindVisionShapeNodeModel
 }
 
 /// <summary>找线结果：拟合直线、各卡尺边缘点及显示图形。</summary>
-public sealed class VisionFindLineResult : IVisionGeometryFact
+public sealed class VisionFindLineResult : IVisionGeometryFact, IVisionDisplayFact
 {
     internal VisionFindLineResult(RobustLineResult fit, VisionShapeProbe probe, IReadOnlyList<int> inliers) { Fit = fit; Probe = probe; InlierIndices = inliers; }
     /// <summary>参与拟合的计算点在 <see cref="EdgePoints"/> 中的序号（已排除“忽略点数”剔除的点）。</summary>
@@ -404,7 +404,11 @@ public sealed class VisionFindLineResult : IVisionGeometryFact
     /// <summary>内点距离RMS，原图像素。</summary>
     public double RmsError => Fit.RmsError;
     /// <inheritdoc/>
-    public IReadOnlyList<Geometry> DisplayGeometry => Probe.Display(new ContourGeometry(new[] { Fit.A, Fit.B }));
+    public IReadOnlyList<Geometry> DisplayGeometry => VisionDisplay.Geometries(DisplayItems);
+    /// <inheritdoc/>
+    [Browsable(false)]
+    public IReadOnlyList<VisionDisplayItem> DisplayItems => Probe.DisplayItems(
+        VisionDisplayItem.Segment(Fit.A, Fit.B, EVisionDisplayRole.Result, FormattableString.Invariant($"{AngleDegrees:F2}°")), InlierIndices);
     /// <inheritdoc/>
     public string Summary => FormattableString.Invariant(
         $"找线：{FoundCount}/{CaliperCount} 把卡尺找到边缘，计算点 {InlierCount}，忽略点 {OutlierCount}，RMS {RmsError:F3}px，角度 {AngleDegrees:F2}°{WidthNote}{Probe.OutsideNote}");
@@ -412,7 +416,7 @@ public sealed class VisionFindLineResult : IVisionGeometryFact
 }
 
 /// <summary>找圆结果：拟合圆、各卡尺边缘点及显示图形。</summary>
-public sealed class VisionFindCircleResult : IVisionGeometryFact
+public sealed class VisionFindCircleResult : IVisionGeometryFact, IVisionDisplayFact
 {
     internal VisionFindCircleResult(RobustCircleResult fit, VisionShapeProbe probe, IReadOnlyList<int> inliers) { Fit = fit; Probe = probe; InlierIndices = inliers; }
     /// <summary>参与拟合的计算点在 <see cref="EdgePoints"/> 中的序号（已排除“忽略点数”剔除的点）。</summary>
@@ -459,7 +463,11 @@ public sealed class VisionFindCircleResult : IVisionGeometryFact
     /// <summary>内点径向距离RMS，原图像素。</summary>
     public double RmsError => Fit.RmsError;
     /// <inheritdoc/>
-    public IReadOnlyList<Geometry> DisplayGeometry => Probe.Display(new EllipseGeometry(Fit.Center, Fit.Radius, Fit.Radius));
+    public IReadOnlyList<Geometry> DisplayGeometry => VisionDisplay.Geometries(DisplayItems);
+    /// <inheritdoc/>
+    [Browsable(false)]
+    public IReadOnlyList<VisionDisplayItem> DisplayItems => Probe.DisplayItems(
+        new VisionDisplayItem(new EllipseGeometry(Fit.Center, Fit.Radius, Fit.Radius), EVisionDisplayRole.Result, FormattableString.Invariant($"R {Radius:F3}")), InlierIndices);
     /// <inheritdoc/>
     public string Summary => FormattableString.Invariant(
         $"找圆：{FoundCount}/{CaliperCount} 把卡尺找到边缘，计算点 {InlierCount}，忽略点 {OutlierCount}，半径 {Radius:F3}px，RMS {RmsError:F3}px{WidthNote}{Probe.OutsideNote}");
@@ -494,10 +502,21 @@ internal sealed class VisionShapeProbe(string frameId, IReadOnlyList<(PointD Sta
     public string OutsideNote => (outside == 0 ? "" : $"；{outside} 把卡尺超出图像未测量")
         + (clipped == 0 ? "" : $"；{clipped} 把卡尺部分超出图像，只在图内部分取点");
     public IReadOnlyList<VisionPoint> Points(VisionCoordinateSystem? coordinates) => Edges.Select(p => new VisionPoint(frameId, p, coordinates)).ToArray();
-    // 第一项为拟合图形（承载摘要），随后是各卡尺扫描线和边缘点。
-    public IReadOnlyList<Geometry> Display(Geometry fitted) => new[] { fitted }
-        .Concat(Scans.Select(s => (Geometry)new ContourGeometry(new[] { s.Start, s.End })))
-        .Concat(Edges.Select(p => (Geometry)new EllipseGeometry(p, 1.5, 1.5))).ToArray();
+    // 拟合线/圆为结果，各卡尺扫描线为输入，计算点/忽略点为标记，边缘对模式另画宽度测量线；点击点和宽度线给出坐标与宽度。
+    public IReadOnlyList<VisionDisplayItem> DisplayItems(VisionDisplayItem fitted, IReadOnlyList<int> inliers)
+    {
+        var flags = InlierFlags(inliers);
+        var items = new List<VisionDisplayItem> { fitted };
+        items.AddRange(Scans.Select(s => VisionDisplayItem.Segment(s.Start, s.End, EVisionDisplayRole.Input)));
+        for (int i = 0; i < Pairs.Count; i++)
+            items.Add(VisionDisplayItem.Segment(Pairs[i].First, Pairs[i].Second, EVisionDisplayRole.Measurement,
+                detail: FormattableString.Invariant($"边缘对宽度 {Pairs[i].Width:F4}px")));
+        for (int i = 0; i < Edges.Count; i++)
+            items.Add(VisionDisplayItem.Point(Edges[i], flags[i] ? EVisionDisplayRole.Accepted : EVisionDisplayRole.Rejected,
+                detail: FormattableString.Invariant($"{(flags[i] ? "计算点" : "忽略点")} ({Edges[i].X:F4},{Edges[i].Y:F4})")
+                    + (i < Pairs.Count ? FormattableString.Invariant($"；宽度 {Pairs[i].Width:F4}px") : "")));
+        return items;
+    }
 }
 
 /// <summary>拟合时按残差剔除指定数量的点（对应 VisionPro 找线/找圆的“忽略点数”）。</summary>
