@@ -7,6 +7,8 @@
 
 Block 使用显式 InputMappings 和 OutputMappings 在父子作用域间传值。输入支持固定值、父变量和父节点绑定；输出支持子变量和子节点绑定。映射目标重复、缺失来源或 null 值均明确失败，不再隐式共享可变 Context。
 
+> 更新：映射表已由子流程接口替代。复合节点声明命名输入（`WorkflowSubflowInput`，来源为父画布节点输出或手动值）和命名输出（`WorkflowSubflowOutput`，来源为子画布节点输出）；子画布通过启动节点成员读取输入，父画布通过复合节点成员读取输出。显式数据契约和作用域隔离的原则不变。
+
 ValueCompare 和 StringCompare 使用 `WorkflowInput<T>`。数值、日期转换固定使用 InvariantCulture；字符串使用 Ordinal/OrdinalIgnoreCase。浮点容差同时定义相等与大小边界，Like 使用带超时的 NonBacktracking 正则。
 
 ## 原因

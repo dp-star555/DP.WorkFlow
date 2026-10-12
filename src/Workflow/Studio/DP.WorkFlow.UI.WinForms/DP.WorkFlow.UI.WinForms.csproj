@@ -24,8 +24,6 @@
     <Compile Update="Properties\CSharpUsingManagerDialog.Designer.cs"><DependentUpon>CSharpUsingManagerDialog.cs</DependentUpon></Compile>
     <Compile Update="Properties\WorkflowBindingSelectorDialog.cs"><SubType>Form</SubType></Compile>
     <Compile Update="Properties\WorkflowBindingSelectorDialog.Designer.cs"><DependentUpon>WorkflowBindingSelectorDialog.cs</DependentUpon></Compile>
-    <Compile Update="Properties\WorkflowBlockMappingEditorDialog.cs"><SubType>Form</SubType></Compile>
-    <Compile Update="Properties\WorkflowBlockMappingEditorDialog.Designer.cs"><DependentUpon>WorkflowBlockMappingEditorDialog.cs</DependentUpon></Compile>
     <Compile Update="Properties\WorkflowNodeEditorDialog.cs"><SubType>Form</SubType></Compile>
     <Compile Update="Properties\WorkflowNodeEditorDialog.Designer.cs"><DependentUpon>WorkflowNodeEditorDialog.cs</DependentUpon></Compile>
     <Compile Update="Properties\WorkflowPropertyPanel.cs"><SubType>UserControl</SubType></Compile>

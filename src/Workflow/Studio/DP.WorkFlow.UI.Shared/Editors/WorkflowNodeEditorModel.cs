@@ -14,7 +14,9 @@ public enum WorkflowNodeEditorPageKind
     /// <summary>由宿主页面提供器定义的扩展页。</summary>
     Custom,
     /// <summary>节点最近一次运行状态与输出的只读结果页。</summary>
-    Results
+    Results,
+    /// <summary>复合节点子流程接口（输入/输出）编辑页，显示在左侧分页中。</summary>
+    SubflowInterface
 }
 
 /// <summary>描述一个与具体桌面 UI 技术无关的节点编辑页面。</summary>
@@ -113,6 +115,8 @@ public sealed class WorkflowSubWorkflowEditorPageModel : IDisposable
     {
         ParentSession = parentSession;
         Node = node;
+        // 子画布启动节点的输入成员来自复合节点的接口，打开前按父画布解析并注入。
+        WorkflowSubflowInterfaces.Refresh(parentSession.Document, parentSession.Catalog);
         Session = new WorkflowDesignerSession(node.SubDocument, parentSession.Catalog, parentSession.PublicDataCatalog);
         Session.Changed += OnChildSessionChanged;
         EntryNodeId = ResolveEntryNodeId();

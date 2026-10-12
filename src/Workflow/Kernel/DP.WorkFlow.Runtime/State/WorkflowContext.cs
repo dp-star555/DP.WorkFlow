@@ -32,6 +32,17 @@ public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
     /// <summary>获取与局部变量和节点输出分离的公共数据仓。</summary>
     public IWorkflowPublicDataStore PublicData => _publicData;
 
+    /// <summary>所在复合节点传入本子流程的输入值，按输入名称索引；子画布的启动节点把它们作为输出。</summary>
+    public IReadOnlyDictionary<string, object?> SubflowInputs { get; private set; } = WorkflowSubflowValues.EmptyInputs;
+
+    /// <summary>设置子流程输入；由复合节点在运行子流程前调用。</summary>
+    /// <param name="inputs">按输入名称索引的值。</param>
+    public void SetSubflowInputs(IReadOnlyDictionary<string, object?> inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        SubflowInputs = new Dictionary<string, object?>(inputs, StringComparer.Ordinal);
+    }
+
     /// <summary>设置或替换非空流程作用域局部变量。</summary>
     /// <param name="key">区分大小写的稳定变量键，首尾空白不会自动裁剪。</param>
     /// <param name="value">供后续节点或子流程复制使用的非空值。</param>

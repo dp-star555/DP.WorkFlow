@@ -163,14 +163,8 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         }
     }
 
-    /// <summary>专用展示区域已承载 Block 等操作时隐藏重复快捷按钮。</summary>
-    public bool HideSpecialActions { get; set; }
-
     /// <summary>属性转换或绑定提交失败时发生。</summary>
     public event EventHandler<string>? EditError;
-
-    /// <summary>请求打开 Block 映射集合编辑器时发生。</summary>
-    public event EventHandler<IWorkflowBlockMappingNode>? BlockMappingEditRequested;
 
     /// <summary>当 Session 或流程入口变化时释放旧检查器并创建新的共享属性模型。</summary>
     private void RecreateModel()
@@ -225,12 +219,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
                 return;
             }
 
-            if (!HideSpecialActions && _model.SelectedNode is IWorkflowBlockMappingNode block)
-            {
-                var mappingButton = ActionBarButton("编辑输入/输出映射…");
-                mappingButton.Click += (_, _) => BlockMappingEditRequested?.Invoke(this, block);
-                _modernActions.Controls.Add(mappingButton);
-            }
             AddModernOutputPortEditors();
             _modernActions.Visible = _modernActions.Controls.Count > 0;
             var schemaKey = CreateModernSchemaKey();
@@ -768,15 +756,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         Dock = DockStyle.Fill,
         Theme = ModernTheme.Dark,
         Margin = Padding.Empty
-    };
-
-    /// <summary>参数表上方操作栏按钮，按文本宽度定尺寸。</summary>
-    private ModernButton ActionBarButton(string text) => new()
-    {
-        Text = text,
-        Theme = _modernGrid.Theme,
-        Size = new Size(TextRenderer.MeasureText(text, Font).Width + 32, 30),
-        Margin = new Padding(0, 2, 6, 2)
     };
 
     /// <summary>为编辑窗口添加统一风格的确定/取消按钮。</summary>

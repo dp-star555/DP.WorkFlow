@@ -108,6 +108,8 @@ public sealed class WorkflowBindingAnalyzer
         ArgumentNullException.ThrowIfNull(document);
         if (string.IsNullOrWhiteSpace(entryNodeId))
             throw new ArgumentException("绑定分析入口不能为空。", nameof(entryNodeId));
+        // 复合节点的输出成员跟随子画布中的来源，分析前按当前文档刷新。
+        WorkflowSubflowInterfaces.Refresh(document, _catalog);
         var graph = WorkflowGraphIndex.Create(document.Graph);
         var structuralDiagnostics = new List<WorkflowValidationError>();
         var parallelScopes = WorkflowParallelScopeAnalyzer.Analyze(graph, structuralDiagnostics);
@@ -229,6 +231,7 @@ public sealed class WorkflowBindingAnalyzer
         ArgumentNullException.ThrowIfNull(document);
         if (_catalog is null)
             return Array.Empty<WorkflowBindingCandidate>();
+        WorkflowSubflowInterfaces.Refresh(document, _catalog);
         return document.Graph.Nodes
             .OrderBy(node => node.Id, StringComparer.Ordinal)
             .SelectMany(node =>

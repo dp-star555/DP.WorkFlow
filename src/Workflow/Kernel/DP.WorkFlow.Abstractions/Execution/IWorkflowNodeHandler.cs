@@ -11,6 +11,9 @@ public interface IWorkflowNodeExecutionContext
     /// <summary>稳定的编译计划路径。</summary>
     string PlanPath => "$";
 
+    /// <summary>所在复合节点传入本子流程的输入值，按输入名称索引；不在子流程中时为空。</summary>
+    IReadOnlyDictionary<string, object?> SubflowInputs => WorkflowSubflowValues.EmptyInputs;
+
     /// <summary>获取当前节点。</summary>
     IWorkflowNodeModel Node { get; }
 

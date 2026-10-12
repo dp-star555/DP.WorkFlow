@@ -31,6 +31,8 @@ public sealed class WorkflowCompiler
     public WorkflowExecutionPlan Compile(WorkflowDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
+        // 子流程接口的类型跟随来源，编译前按当前文档解析并注入启动节点和复合节点。
+        WorkflowSubflowInterfaces.Refresh(document, _catalog);
         return CompileCore(
             document,
             new HashSet<WorkflowDocument>(ReferenceEqualityComparer.Instance));
@@ -61,6 +63,11 @@ public sealed class WorkflowCompiler
             throw new ArgumentException($"起始节点不存在：{startNodeId}。", nameof(startNodeId));
 
         diagnostics.AddRange(WorkflowNodeConfigurationValidator.Validate(nodes.Values));
+        foreach (var composite in nodes.Values.OfType<IWorkflowSubflowNode>())
+        {
+            var outputType = _catalog is not null && _catalog.TryGet(composite.NodeType, out var descriptor) ? descriptor!.OutputType : null;
+            diagnostics.AddRange(WorkflowSubflowInterfaces.Validate(composite, outputType));
+        }
         foreach (var entries in nodes.Values.Where(node => node is IWorkflowRecoveryEntryNode)
                      .GroupBy(node => ((IWorkflowRecoveryEntryNode)node).RecoveryEntryKey, StringComparer.Ordinal))
         {

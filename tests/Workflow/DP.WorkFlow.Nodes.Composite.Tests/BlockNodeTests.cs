@@ -10,20 +10,18 @@ public sealed class BlockNodeTests
         var invoked = 0;
         var actions = new WorkflowActionRegistry().Register("ChildAction", (context, _) =>
         {
-            Assert.True(context.TryGetVariable<int>("Input", out var input));
-            invoked += input;
+            invoked += Assert.IsType<int>(context.SubflowInputs["Input"]);
             context.SetVariable("ChildOnly", true);
             return ValueTask.FromResult<object?>("child-output");
         });
         var services = new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions);
         var context = new WorkflowContext(services);
-        context.SetVariable("Input", 3);
         var (engine, block) = CreateEngine(CreateChildDocument(), context, configuredBlock =>
-            configuredBlock.InputMappings.Add(new BlockInputMapping
+            configuredBlock.Inputs.Add(new WorkflowSubflowInput
             {
-                TargetVariableName = "Input",
-                Source = E_BlockInputSource.ParentVariable,
-                ParentVariableName = "Input"
+                Name = "Input",
+                ValueType = E_WorkflowSubflowValueType.Integer,
+                Value = 3
             }));
         var completed = new List<string>();
         engine.NodeCompleted += node => completed.Add(node.Id);
@@ -68,42 +66,62 @@ public sealed class BlockNodeTests
     }
 
     [Fact]
-    public async Task RunAsync_AppliesExplicitInputAndOutputMappings()
+    public async Task RunAsync_ChildNodesBindStartInputs_AndParentReadsNamedOutputs()
     {
-        var actions = new WorkflowActionRegistry().Register("Map", (actionContext, _) =>
+        var actions = new WorkflowActionRegistry()
+            .Register("Produce", (_, _) => ValueTask.FromResult<object?>(new NumericOutput(21)))
+            .Register("Map", (actionContext, _) =>
+                ValueTask.FromResult<object?>(new NumericOutput(Assert.IsType<long>(actionContext.SubflowInputs["Value"]) * 2)));
+        var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
+        // 子画布：启动节点 → 判断（绑定 启动节点.Enabled）→ 映射。
+        var childStart = new StartNodeModel { Id = "ChildStart", Title = "开始" };
+        var gate = new DecisionNodeModel
         {
-            Assert.True(actionContext.TryGetVariable<long>("ChildInput", out var input));
-            return ValueTask.FromResult<object?>(new NumericOutput(input * 2));
-        });
-        var context = new WorkflowContext(
-            new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
-        context.SetVariable("ParentInput", 21L);
-        var child = CreateChildDocument(
-            new ActionNodeModel { Id = "Map", Title = "映射", FunctionKey = "Map" });
-        var (engine, block) = CreateEngine(child, context, configuredBlock =>
+            Id = "Gate",
+            Title = "开关",
+            ConditionSource = E_DecisionConditionSource.Binding,
+            Condition = WorkflowInput<bool>.FromBinding(new WorkflowBindingKey(childStart.Id, "Enabled"))
+        };
+        var map = new ActionNodeModel { Id = "Map", Title = "映射", FunctionKey = "Map" };
+        var child = new WorkflowDocument { Name = "Child", EntryNodeId = childStart.Id };
+        foreach (var node in new IWorkflowNodeModel[] { childStart, gate, map })
+            child.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        child.CanvasProjection.Connections.Add(Connect(childStart.Id, gate.Id));
+        child.CanvasProjection.Connections.Add(new WorkflowConnectionModel
         {
-            configuredBlock.InputMappings.Add(new BlockInputMapping
-            {
-                TargetVariableName = "ChildInput",
-                Source = E_BlockInputSource.ParentVariable,
-                ParentVariableName = "ParentInput"
-            });
-            configuredBlock.OutputMappings.Add(new BlockOutputMapping
-            {
-                TargetVariableName = "ParentResult",
-                Source = E_BlockOutputSource.ChildNodeBinding,
-                ChildBinding = new WorkflowBindingKey("Map", "Value")
-            });
+            FromNodeId = gate.Id, FromPort = WorkflowPorts.True, ToNodeId = map.Id, ToPort = WorkflowPorts.Input
         });
+        // 父画布：启动节点 → 产生 → 块（输入 Value 绑定 产生.Value，Enabled 手动 true；输出 Doubled 来自 映射.Value）。
+        var block = new BlockNodeModel { Id = "Block", Title = "子流程", SubDocument = child };
+        block.Inputs.Add(new WorkflowSubflowInput { Name = "Value", Source = new WorkflowBindingKey("Producer", "Value") });
+        block.Inputs.Add(new WorkflowSubflowInput { Name = "Enabled", ValueType = E_WorkflowSubflowValueType.Boolean, Value = true });
+        block.Outputs.Add(new WorkflowSubflowOutput { Name = "Doubled", Source = new WorkflowBindingKey(map.Id, "Value") });
+        var parentStart = new StartNodeModel { Id = "ParentStart", Title = "开始" };
+        var producer = new ActionNodeModel { Id = "Producer", Title = "产生", FunctionKey = "Produce" };
+        var parent = new WorkflowDocument { Name = "Parent", EntryNodeId = parentStart.Id };
+        foreach (var node in new IWorkflowNodeModel[] { parentStart, producer, block })
+            parent.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        parent.CanvasProjection.Connections.Add(Connect(parentStart.Id, producer.Id));
+        parent.CanvasProjection.Connections.Add(Connect(producer.Id, block.Id));
+        var catalog = CreateCatalog();
+        var definition = new WorkflowCompiler(catalog).Compile(parent);
+        var handlers = new WorkflowNodeHandlerCatalog()
+            .RegisterCompositeNodeHandlers()
+            .Register(new StartNodeHandler())
+            .Register(new ActionNodeHandler())
+            .Register(new DecisionNodeHandler());
 
-        var result = await engine.RunAsync();
+        var result = await new WorkflowEngine(definition, handlers, context).RunAsync();
 
         Assert.True(result.Success, result.Message);
-        Assert.True(context.TryGetVariable<long>("ParentResult", out var mapped));
-        Assert.Equal(42L, mapped);
+        // 手动输入的类型由用户选择；子画布启动节点因此有一个布尔成员，判断节点可以绑定它。
+        Assert.Contains(childStart.SubflowInputs, member => member.Path == "Enabled" && member.Type == typeof(bool));
+        Assert.Contains(block.SubflowOutputs, member => member.Path == "Doubled");
+        Assert.Equal(42L, WorkflowBindingResolver.ResolveLatest<long>(context, new WorkflowBindingKey(block.Id, "Doubled")));
         Assert.True(context.TryGetNodeOutput(block.Id, out var blockRaw));
         var blockOutput = Assert.IsType<BlockNodeOutput>(blockRaw!.Value);
-        Assert.Equal(42L, blockOutput.MappedOutputs["ParentResult"]);
+        Assert.True(blockOutput.TryGetKeyedValue("Doubled", out var doubled));
+        Assert.Equal(42L, doubled);
     }
 
     [Fact]
@@ -112,14 +130,35 @@ public sealed class BlockNodeTests
         var child = CreateChildDocument();
         var exception = Assert.Throws<WorkflowCompilationException>(() => CreateEngine(
             child,
-            configure: block => block.OutputMappings.Add(new BlockOutputMapping
+            configure: block => block.Outputs.Add(new WorkflowSubflowOutput
             {
-                TargetVariableName = "Result",
-                Source = E_BlockOutputSource.ChildNodeBinding,
-                ChildBinding = new WorkflowBindingKey("MissingChild", "Value")
+                Name = "Result",
+                Source = new WorkflowBindingKey("MissingChild", "Value")
             })));
 
         Assert.Contains(exception.Errors, error => error.Code == "WFB001");
+    }
+
+    [Fact]
+    public void Compile_InvalidInterfaceIsReportedOnTheBlock()
+    {
+        var exception = Assert.Throws<WorkflowCompilationException>(() => CreateEngine(
+            CreateChildDocument(),
+            configure: block =>
+            {
+                block.Inputs.Add(new WorkflowSubflowInput { Name = "Count", ValueType = E_WorkflowSubflowValueType.Integer, Value = "abc" });
+                block.Outputs.Add(new WorkflowSubflowOutput { Name = "Result", Source = new WorkflowBindingKey("ChildAction", "$") });
+                block.Outputs.Add(new WorkflowSubflowOutput { Name = "Result", Source = new WorkflowBindingKey("ChildAction", "$") });
+                block.Outputs.Add(new WorkflowSubflowOutput { Name = "Elapsed", Source = new WorkflowBindingKey("ChildAction", "$") });
+                block.Outputs.Add(new WorkflowSubflowOutput { Name = "Empty" });
+            }));
+
+        Assert.All(exception.Errors.Where(error => error.Code.StartsWith("WFS", StringComparison.Ordinal)),
+            error => Assert.Equal("Block", error.NodeId));
+        Assert.Contains(exception.Errors, error => error.Code == "WFS002");
+        Assert.Contains(exception.Errors, error => error.Code == "WFS003");
+        Assert.Contains(exception.Errors, error => error.Code == "WFS004");
+        Assert.Contains(exception.Errors, error => error.Code == "WFS005");
     }
 
     [Fact]
@@ -172,23 +211,13 @@ public sealed class BlockNodeTests
             Id = "Block",
             Title = "子流程",
             SubDocument = CreateChildDocument(),
-            InputMappings = new List<BlockInputMapping>
+            Inputs = new List<WorkflowSubflowInput>
             {
-                new()
-                {
-                    TargetVariableName = "ChildInput",
-                    Source = E_BlockInputSource.ParentVariable,
-                    ParentVariableName = "ParentInput"
-                }
+                new() { Name = "Count", ValueType = E_WorkflowSubflowValueType.Integer, Value = 5 }
             },
-            OutputMappings = new List<BlockOutputMapping>
+            Outputs = new List<WorkflowSubflowOutput>
             {
-                new()
-                {
-                    TargetVariableName = "ParentResult",
-                    Source = E_BlockOutputSource.ChildNodeBinding,
-                    ChildBinding = new WorkflowBindingKey("ChildAction", "Value")
-                }
+                new() { Name = "Result", Source = new WorkflowBindingKey("ChildAction", "Value") }
             }
         };
         var canvasDocument = new WorkflowDocument { Name = "Parent" };
@@ -206,10 +235,15 @@ public sealed class BlockNodeTests
         Assert.Equal("ChildStart", loadedBlock.SubDocument.EntryNodeId);
         Assert.Equal(3, loadedBlock.SubDocument.Graph.Nodes.Count);
         Assert.Equal(2, loadedBlock.SubDocument.Graph.ControlConnections.Count);
-        Assert.Equal("ParentInput", Assert.Single(loadedBlock.InputMappings).ParentVariableName);
-        Assert.Equal(
-            new WorkflowBindingKey("ChildAction", "Value"),
-            Assert.Single(loadedBlock.OutputMappings).ChildBinding);
+        var loadedInput = Assert.Single(loadedBlock.Inputs);
+        Assert.Equal("Count", loadedInput.Name);
+        Assert.Null(loadedInput.Source);
+        Assert.Equal(E_WorkflowSubflowValueType.Integer, loadedInput.ValueType);
+        Assert.True(loadedInput.TryGetManualValue(out var count, out _));
+        Assert.Equal(5, count);
+        var loadedOutput = Assert.Single(loadedBlock.Outputs);
+        Assert.Equal("Result", loadedOutput.Name);
+        Assert.Equal(new WorkflowBindingKey("ChildAction", "Value"), loadedOutput.Source);
         Assert.Contains("SubDocument", json);
         Assert.DoesNotContain("SubCanvas", json);
     }

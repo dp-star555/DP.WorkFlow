@@ -128,9 +128,15 @@ public sealed class WorkflowSubWorkflowEditorPageProvider : IWorkflowNodeEditorP
     {
         if (context.Node is not IWorkflowSubDocumentNode node)
             yield break;
+        var subWorkflow = new WorkflowSubWorkflowEditorPageModel(context.Session, node);
         yield return new WorkflowNodeEditorPageDescriptor(
-            "SubWorkflow", "流程", WorkflowNodeEditorPageKind.SubWorkflow, 200,
-            new WorkflowSubWorkflowEditorPageModel(context.Session, node), "Workflow");
+            "SubWorkflow", "流程", WorkflowNodeEditorPageKind.SubWorkflow, 200, subWorkflow, "Workflow");
+        if (node is IWorkflowSubflowNode subflow)
+        {
+            yield return new WorkflowNodeEditorPageDescriptor(
+                "SubflowInterface", "输入输出", WorkflowNodeEditorPageKind.SubflowInterface, 150,
+                new WorkflowSubflowInterfacePageModel(context.Session, context.EntryNodeId, subflow, subWorkflow));
+        }
     }
 }
 

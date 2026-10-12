@@ -8,7 +8,7 @@ namespace DP.WorkFlow;
 /// 每圈是一次独立的子运行，执行次数上限、恢复次数和运行记录按圈计算，上一圈的输出和资源在下一圈开始前释放。
 /// </summary>
 [WorkflowNode("LoopBlock", DisplayName = "循环块", Category = "Control", Description = "反复运行一个隔离的子流程画布，按次数或退出变量结束。")]
-public sealed class LoopBlockNodeModel : WorkflowNodeModel, IWorkflowBlockMappingNode, IWorkflowBindingDeclarationProvider
+public sealed class LoopBlockNodeModel : WorkflowNodeModel, IWorkflowSubflowNode, IWorkflowDynamicOutputNode, IWorkflowBindingDeclarationProvider
 {
     /// <inheritdoc />
     public override string NodeType => "LoopBlock";
@@ -23,11 +23,18 @@ public sealed class LoopBlockNodeModel : WorkflowNodeModel, IWorkflowBlockMappin
         set => _subDocument = value ?? throw new ArgumentNullException(nameof(value));
     }
 
-    /// <summary>获取父作用域到子变量的显式输入映射；每圈开始时以相同的值写入子流程。</summary>
-    public IList<BlockInputMapping> InputMappings { get; set; } = new List<BlockInputMapping>();
+    /// <summary>获取或设置子流程输入；进入循环时解析一次，每圈都以相同的值传入。</summary>
+    [Browsable(false)]
+    public IList<WorkflowSubflowInput> Inputs { get; set; } = new List<WorkflowSubflowInput>();
 
-    /// <summary>获取子作用域到父变量的显式输出映射；退出循环时从最后一圈取值。</summary>
-    public IList<BlockOutputMapping> OutputMappings { get; set; } = new List<BlockOutputMapping>();
+    /// <summary>获取或设置子流程输出；退出循环时从最后一圈取值。</summary>
+    [Browsable(false)]
+    public IList<WorkflowSubflowOutput> Outputs { get; set; } = new List<WorkflowSubflowOutput>();
+
+    /// <inheritdoc />
+    [JsonIgnore]
+    [Browsable(false)]
+    public IReadOnlyList<WorkflowBindableMember> SubflowOutputs { get; set; } = Array.Empty<WorkflowBindableMember>();
 
     /// <summary>获取或设置子流程运行的圈数；0 表示一直循环。</summary>
     [WorkflowProperty("循环次数", "子流程运行的圈数；0 表示一直循环，直到退出变量为真、子流程失败或流程停止。", Category = "循环")]
@@ -42,7 +49,11 @@ public sealed class LoopBlockNodeModel : WorkflowNodeModel, IWorkflowBlockMappin
     public int ChildNodeCount => SubDocument.Graph.Nodes.Count;
 
     /// <inheritdoc />
-    public IEnumerable<WorkflowDeclaredBinding> GetDeclaredBindings() => BlockNodeModel.DeclareMappingBindings(this);
+    public IReadOnlyList<WorkflowBindableMember> DescribeOutputs() =>
+        WorkflowSubflowInterfaces.DescribeCompositeOutputs(this, typeof(LoopBlockNodeOutput));
+
+    /// <inheritdoc />
+    public IEnumerable<WorkflowDeclaredBinding> GetDeclaredBindings() => WorkflowSubflowInterfaces.DeclareBindings(this);
 }
 
 /// <summary>按圈运行循环块子流程，直到达到次数、退出变量为真、子流程失败或被取消。</summary>
@@ -61,13 +72,11 @@ public sealed class LoopBlockNodeHandler : WorkflowNodeHandler<LoopBlockNodeMode
         if (context is not IWorkflowChildExecutionContext childExecution)
             throw new InvalidOperationException("当前运行时不支持受监管的子流程执行。");
 
-        BlockNodeHandler.ValidateMappings(node);
         var exitVariable = string.IsNullOrWhiteSpace(node.ExitVariableName) ? null : node.ExitVariableName.Trim();
         var definition = childExecution.GetChildWorkflowExecutionPlan();
         var childContext = childExecution.CreateChildScope();
-        // 父流程在循环期间停在本节点，输入值不会变化：只解析一次，每圈写入相同的值。
-        BlockNodeHandler.ApplyInputs(node, context, childContext);
-        var inputs = childContext.ExportVariables();
+        // 父流程在循环期间停在本节点，输入值不会变化：只解析一次，每圈由启动节点以相同的值提供。
+        childContext.SetSubflowInputs(WorkflowSubflowRuntime.ResolveInputs(node, context));
         context.Trace("RunLoop", $"循环运行子流程入口 {definition.EntryNodeId}。", new Dictionary<string, object?>
         {
             ["Iterations"] = node.Iterations,
@@ -83,7 +92,7 @@ public sealed class LoopBlockNodeHandler : WorkflowNodeHandler<LoopBlockNodeMode
             while (true)
             {
                 if (cycles > 0)
-                    ResetVariables(childContext, inputs);
+                    ClearVariables(childContext);
                 var result = await session.RunCycleAsync(cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!result.Success)
@@ -100,13 +109,11 @@ public sealed class LoopBlockNodeHandler : WorkflowNodeHandler<LoopBlockNodeMode
                     break;
                 }
             }
-            // 最后一圈的输出可能被映射到父变量（例如图像帧），其资源随本节点输出的生命周期释放。
+            // 最后一圈的输出可能作为本节点的输出被读取（例如图像帧），其资源随本节点输出的生命周期释放。
             session.KeepLastCycleOutputs();
         }
 
-        var mappedOutputs = BlockNodeHandler.ResolveOutputs(node, childContext);
-        foreach (var pair in mappedOutputs)
-            context.SetVariable(pair.Key, pair.Value);
+        var outputs = WorkflowSubflowRuntime.ResolveOutputs(node, childContext);
         var elapsed = DateTimeOffset.UtcNow - started;
         context.Trace("LoopCompleted", $"循环结束：{exitReason}，共 {cycles} 圈。", new Dictionary<string, object?>
         {
@@ -114,30 +121,68 @@ public sealed class LoopBlockNodeHandler : WorkflowNodeHandler<LoopBlockNodeMode
             ["ExitReason"] = exitReason,
             ["LastChildRunId"] = childContext.CurrentRunId,
             ["ElapsedMs"] = elapsed.TotalMilliseconds,
-            ["MappedOutputCount"] = mappedOutputs.Count
+            ["OutputCount"] = node.Outputs.Count
         });
         return NodeExecutionResult.Continue(output: new LoopBlockNodeOutput(
             cycles,
             exitReason,
             childContext.CurrentRunId,
             elapsed,
-            mappedOutputs));
+            outputs));
     }
 
-    /// <summary>圈与圈之间不传递数据：清除上一圈的子流程变量，恢复为输入映射的值。</summary>
-    private static void ResetVariables(WorkflowContext childContext, IReadOnlyDictionary<string, object> inputs)
+    /// <summary>圈与圈之间不传递数据：清除上一圈写入的子流程变量。</summary>
+    private static void ClearVariables(WorkflowContext childContext)
     {
         foreach (var key in childContext.ExportVariables().Keys)
             childContext.RemoveVariable(key);
-        foreach (var pair in inputs)
-            childContext.SetVariable(pair.Key, pair.Value);
     }
 }
 
-/// <summary>循环块退出后提交的输出。</summary>
-public sealed record LoopBlockNodeOutput(
-    [property: DisplayName("完成圈数")] int CompletedCycles,
-    [property: DisplayName("退出原因")] string ExitReason,
-    [property: DisplayName("最后一圈运行标识")] Guid LastChildRunId,
-    [property: DisplayName("耗时")] TimeSpan Elapsed,
-    [property: DisplayName("映射输出")] IReadOnlyDictionary<string, object> MappedOutputs);
+/// <summary>循环块退出后提交的输出；子流程接口中的各项输出取自最后一圈，按名称读取（例如“循环块1.结果”）。</summary>
+public sealed class LoopBlockNodeOutput : IWorkflowKeyedOutput, IWorkflowResultRows
+{
+    private readonly WorkflowSubflowValues _outputs;
+
+    /// <summary>创建循环块输出。</summary>
+    /// <param name="completedCycles">完成圈数。</param>
+    /// <param name="exitReason">退出原因。</param>
+    /// <param name="lastChildRunId">最后一圈的子流程运行标识。</param>
+    /// <param name="elapsed">整个循环的耗时。</param>
+    /// <param name="outputs">最后一圈的各项输出。</param>
+    public LoopBlockNodeOutput(int completedCycles, string exitReason, Guid lastChildRunId, TimeSpan elapsed, WorkflowSubflowValues outputs)
+    {
+        CompletedCycles = completedCycles;
+        ExitReason = exitReason;
+        LastChildRunId = lastChildRunId;
+        Elapsed = elapsed;
+        _outputs = outputs ?? throw new ArgumentNullException(nameof(outputs));
+    }
+
+    /// <summary>完成圈数。</summary>
+    [DisplayName("完成圈数")]
+    public int CompletedCycles { get; }
+
+    /// <summary>退出原因。</summary>
+    [DisplayName("退出原因")]
+    public string ExitReason { get; }
+
+    /// <summary>最后一圈的子流程运行标识。</summary>
+    [DisplayName("最后一圈运行标识")]
+    public Guid LastChildRunId { get; }
+
+    /// <summary>整个循环的耗时。</summary>
+    [DisplayName("耗时")]
+    public TimeSpan Elapsed { get; }
+
+    /// <inheritdoc />
+    [DisplayName("各项输出")]
+    [JsonIgnore]
+    public IReadOnlyList<KeyValuePair<string, object?>> ResultRows => _outputs.ResultRows;
+
+    /// <inheritdoc />
+    public bool TryGetKeyedValue(string key, out object? value) => _outputs.TryGetKeyedValue(key, out value);
+
+    /// <inheritdoc />
+    public string DescribeMissingKey(string key) => $"循环块没有名为 {key} 的输出。";
+}

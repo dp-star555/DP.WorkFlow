@@ -58,6 +58,8 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
 
     public IWorkflowNodeModel Node { get; }
 
+    public IReadOnlyDictionary<string, object?> SubflowInputs => _context.SubflowInputs;
+
     public string PlanPath { get; }
 
     public Guid BindingScopeId { get; }

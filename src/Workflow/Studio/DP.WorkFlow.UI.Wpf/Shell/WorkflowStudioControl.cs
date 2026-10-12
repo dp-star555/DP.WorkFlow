@@ -128,7 +128,6 @@ public sealed class WorkflowStudioControl : UserControl
         Designer.InteractionError += (_, message) => InteractionError?.Invoke(this, message);
         Designer.NodeEditRequested += OnDesignerNodeEditRequested;
         Properties.EditError += (_, message) => InteractionError?.Invoke(this, message);
-        Properties.BlockMappingEditRequested += OnBlockMappingEditRequested;
         Properties.PropertyActionRequested += OnPropertyActionRequested;
         Designer.SizeChanged += (_, _) => QueueAutoFit();
         Unloaded += (_, _) =>
@@ -448,18 +447,6 @@ public sealed class WorkflowStudioControl : UserControl
         UpdateNavigation();
     }
 
-    private void OnBlockMappingEditRequested(object? sender, IWorkflowBlockMappingNode block)
-    {
-        if (Session is null || string.IsNullOrWhiteSpace(EntryNodeId))
-            return;
-        using var model = new WorkflowBlockMappingEditorModel(Session, block.Id);
-        var window = new WorkflowBlockMappingEditorWindow(model, EntryNodeId)
-        {
-            Owner = Window.GetWindow(this)
-        };
-        _ = window.ShowDialog();
-    }
-
     private async void OnPropertyActionRequested(object? sender, WorkflowPropertyActionRequest request)
     {
         if (Session == null || string.IsNullOrWhiteSpace(EntryNodeId)) return;
@@ -486,9 +473,7 @@ public sealed class WorkflowStudioControl : UserControl
             var model = new WorkflowNodeEditorModel(
                 Session, EntryNodeId, node.Id, NodeEditorExtensions.GetPageProviders(),
                 Properties.ChoiceProvider, Properties.AdditionalProperties);
-            var dialog = new WorkflowNodeEditorWindow(
-                model, NodeEditorExtensions.GetRenderers(),
-                block => OnBlockMappingEditRequested(this, block))
+            var dialog = new WorkflowNodeEditorWindow(model, NodeEditorExtensions.GetRenderers())
             {
                 Owner = Window.GetWindow(this)
             };

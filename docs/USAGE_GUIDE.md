@@ -357,42 +357,43 @@ var block = new BlockNodeModel
 
 父文档编译时会递归编译 `SubDocument`，并检查子文档循环引用。
 
-### 8.2 输入映射
+### 8.2 子流程输入
 
-输入映射将父作用域数据写入子 Context：
-
-- Literal；
-- 父变量；
-- 父节点绑定。
+在 Block（或 LoopBlock）上声明命名输入。来源可以是父画布中位于 Block 之前的节点输出（类型自动跟随来源），也可以是手动值（整数、小数、布尔、文本）：
 
 ```csharp
-block.InputMappings.Add(new BlockInputMapping
+block.Inputs.Add(new WorkflowSubflowInput
 {
-    TargetVariableName = "PartId",
-    Source = E_BlockInputSource.ParentVariable,
-    ParentVariableName = "CurrentPartId"
+    Name = "PartId",
+    Source = new WorkflowBindingKey("ReadPart", "Value")
+});
+block.Inputs.Add(new WorkflowSubflowInput
+{
+    Name = "Count",
+    ValueType = E_WorkflowSubflowValueType.Integer,
+    Value = 3
 });
 ```
 
-### 8.3 输出映射
+子画布中的节点绑定启动节点的同名成员读取，例如 `new WorkflowBindingKey("ChildStart", "PartId")`；节点处理器也可以通过 `context.SubflowInputs["PartId"]` 读取。
 
-输出映射将子流程结果写回父变量：
+### 8.3 子流程输出
 
-- 子变量；
-- 子节点绑定。
+输出的来源是子画布中的节点输出：
 
 ```csharp
-block.OutputMappings.Add(new BlockOutputMapping
+block.Outputs.Add(new WorkflowSubflowOutput
 {
-    TargetVariableName = "InspectPassed",
-    Source = E_BlockOutputSource.ChildNodeBinding,
-    ChildBinding = new WorkflowBindingKey("ChildDecision", "Value")
+    Name = "InspectPassed",
+    Source = new WorkflowBindingKey("ChildDecision", "Value")
 });
 ```
 
-子 Context 默认不复制父变量，并隔离 NodeOutputs。进入和返回子流程的数据都必须通过 InputMapping/OutputMapping 显式声明。
+父画布中的下游节点绑定 `InspectBlock.InspectPassed` 读取，类型跟随子画布中的来源。输出名称不能与 Block 自带的输出成员（如 `ChildRunId`、`Elapsed`）重名。
 
-双 UI 属性面板在选中 Block 后提供“编辑输入/输出映射…”入口。双击 Block 会弹出节点窗口，在其中的子画布里编辑子流程，左侧工具箱可双击或拖放添加节点。
+子 Context 不复制父变量，并隔离 NodeOutputs。进入和返回子流程的数据都必须通过输入输出显式声明；名称非法、重名、手动值无法转换、输出未选择来源都会在编译时报告到 Block 上（WFS001～WFS005）。
+
+双击 Block 打开节点窗口：左侧“输入输出”页编辑上述输入和输出，“子画布”页编辑子流程，左侧工具箱可双击或拖放添加节点。
 
 ---
 
@@ -881,7 +882,7 @@ host.Configure(rootDocument, context);
 
 ### Block 子流程写入的变量在父流程看不到
 
-这是默认隔离行为。添加 `BlockOutputMapping` 显式导出。
+这是默认隔离行为。在节点窗口“输入输出”页添加输出（`WorkflowSubflowOutput`），父流程通过 `Block.输出名称` 读取。
 
 ### Pause 后移除 Hold 仍未继续
 

@@ -20,7 +20,7 @@ public static class WorkflowStandardNodes
     {
         ArgumentNullException.ThrowIfNull(catalog);
         return catalog
-            .Register(WorkflowNodeDescriptor.Create<StartNodeModel>(
+            .Register(WorkflowNodeDescriptor.Create<StartNodeModel, WorkflowSubflowValues>(
                 ports: new[] { WorkflowPortDescriptor.Output() }))
             .Register(WorkflowNodeDescriptor.Create<ActionNodeModel>(
                 ports: new[] { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output() }))

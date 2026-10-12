@@ -103,8 +103,6 @@ public sealed class WorkflowPropertyPanel : UserControl
         }
     }
 
-    /// <summary>专用展示区域已承载 Block 等操作时隐藏重复快捷按钮。</summary>
-    public bool HideSpecialActions { get; set; }
 
     /// <summary>
     /// 获取或设置候选值提供者。宿主用它把机器配置（例如已发布的逻辑图像源）注入参数面板；
@@ -124,8 +122,6 @@ public sealed class WorkflowPropertyPanel : UserControl
     /// <summary>获取或设置 Edit Error 成员。</summary>
     public event EventHandler<string>? EditError;
 
-    /// <summary>获取或设置 Block Mapping Edit Requested 成员。</summary>
-    public event EventHandler<IWorkflowBlockMappingNode>? BlockMappingEditRequested;
 
     private static void OnConfigurationChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs e) =>
         ((WorkflowPropertyPanel)dependencyObject).RecreateModel();
@@ -188,19 +184,6 @@ public sealed class WorkflowPropertyPanel : UserControl
                 .Where(MatchesSearch)
                 .ToArray();
             _content.Children.Add(CreateColumnHeader());
-            if (!HideSpecialActions && _model.SelectedNode is IWorkflowBlockMappingNode block)
-            {
-                var mappingButton = new Button
-                {
-                    Content = "编辑输入/输出映射…",
-                    Margin = new Thickness(0, 0, 0, 6),
-                    Padding = new Thickness(8),
-                    Foreground = Foreground,
-                    Background = Brush(30, 64, 94)
-                };
-                mappingButton.Click += (_, _) => BlockMappingEditRequested?.Invoke(this, block);
-                _content.Children.Add(mappingButton);
-            }
             AddOutputPortVisibilityEditors();
             foreach (var category in visibleEntries.GroupBy(entry => entry.Category, StringComparer.Ordinal))
             {

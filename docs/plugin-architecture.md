@@ -111,7 +111,7 @@ studio.LoadNodeEditorPlugins(pluginDirectory, loader);
   → WinForms Control / WPF FrameworkElement
 ```
 
-`Order` 只控制显示顺序，`Priority` 只控制同一 `PageId` 的替换。二者不得混用。自定义页面必须直接提供强类型 Model 和显式 `RendererKey`；平台 Renderer 同时声明 `ModelType`，不再通过弱类型包装对象传递数据。缺少当前平台 Renderer 或 ModelType 不匹配时，节点工作台在创建任何页面控件前失败。页面始终编辑 `EditingNode`；确定时作为一次事务提交，取消时丢弃。Block 映射入口只依赖 `IWorkflowBlockMappingNode`，平台 Studio 不引用具体 Composite 节点程序集。
+`Order` 只控制显示顺序，`Priority` 只控制同一 `PageId` 的替换。二者不得混用。自定义页面必须直接提供强类型 Model 和显式 `RendererKey`；平台 Renderer 同时声明 `ModelType`，不再通过弱类型包装对象传递数据。缺少当前平台 Renderer 或 ModelType 不匹配时，节点工作台在创建任何页面控件前失败。页面始终编辑 `EditingNode`；确定时作为一次事务提交，取消时丢弃。复合节点的“输入输出”页只依赖 `IWorkflowSubflowNode`，平台 Studio 不引用具体 Composite 节点程序集。
 
 ## 当前内置插件
 
