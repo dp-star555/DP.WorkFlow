@@ -10,14 +10,14 @@ public sealed partial class WorkflowEngine
         CancellationToken cancellationToken)
     {
         return RunTrackedChildAsync(parentNode, parentExecution, _boundPlan.GetChildPlan(parentNode.Id),
-            childContext, _options, null, false, cancellationToken);
+            childContext, _options, null, false, cancellationToken, adoptOutputs: true);
     }
 
     private async Task<WorkflowRunResult> RunTrackedChildAsync(
         IWorkflowNodeModel parentNode, WorkflowExecutionIdentity parentExecution,
         WorkflowBoundExecutionPlan boundPlan, WorkflowContext childContext,
         WorkflowExecutionOptions options, string? excludedHold, bool prepare,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool adoptOutputs = false)
     {
         var key = $"{parentNode.Id}:{parentExecution.TokenId}:{parentExecution.NodeExecutionCount}"
             + (excludedHold is null ? string.Empty : ":Recovery");
@@ -64,6 +64,10 @@ public sealed partial class WorkflowEngine
             }
             var result = await childEngine.RunAsync(cancellationToken).ConfigureAwait(false);
             UpdateChildSnapshot(childEngine.GetRuntimeSnapshot(result.Message));
+            // 子运行的映射输出可能引用其节点输出（例如图像帧），资源随父节点本次输出的生命周期释放。
+            if (adoptOutputs)
+                AdoptChildOutputProjections(parentNode.Id, parentExecution.TokenId,
+                    childEngine.DetachOutputProjections(), result.Success);
             return result;
         }
         finally

@@ -73,7 +73,9 @@ public sealed partial class WorkflowEngine
 
         lock (_stateSync)
             _parallelScopes.Remove(runtimeScopeId);
-        Context.CompleteParallelScope(runtimeScopeId);
+        Context.CompleteParallelScope(runtimeScopeId, out var superseded);
+        // 循环中的并行每轮使用新的分支 Token；作用域汇聚后上一轮的分支输出不会再被读到。
+        RetireOutputs(superseded);
         var parentIdentity = new WorkflowExecutionIdentity(
             _runId,
             parentToken.TokenId,

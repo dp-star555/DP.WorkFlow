@@ -57,7 +57,7 @@ public sealed class PreprocessVisionImageNodeHandler : WorkflowNodeHandler<Prepr
         using var frame = new ImageFrame(Guid.NewGuid().ToString("N"), pixels);
         cancellationToken.ThrowIfCancellationRequested();
         var output = context.GetRequiredCapability<IWorkflowVisionFrameScope>().Retain(frame);
-        var projection = WorkflowVisionFrameScope.Stage(context, output);
+        var projection = WorkflowVisionFrameScope.StageOutput(context, output);
         return ValueTask.FromResult(NodeExecutionResult.Continue(output: output, projection: projection));
     }
 }

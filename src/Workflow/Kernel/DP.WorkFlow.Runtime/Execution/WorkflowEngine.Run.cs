@@ -157,6 +157,9 @@ public sealed partial class WorkflowEngine
             _activeChildWorkflows.Clear();
             _latestChildWorkflowByParentNode.Clear();
             _startedRecoveryCases.Clear();
+            // 上一轮剩余输出的资源由所有者在根运行开始时退役；子运行结束后由父引擎接管（见 DetachOutputProjections）。
+            _outputProjections.Clear();
+            _childOutputProjections.Clear();
             _totalNodeExecutions = 0;
             _tokenSequence = 0;
             _runStopwatch = Stopwatch.StartNew();

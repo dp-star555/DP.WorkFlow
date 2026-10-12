@@ -222,7 +222,7 @@ foreach (var output in context.ExportNodeOutputs())
 }
 ```
 
-`TryGetNodeOutput` 只适合监视和兼容代码。流程内部应使用强类型绑定，让 Runtime 按 Run、Token 和 Scope 检查可见性。
+`ExportNodeOutputs` 只包含仍保留的输出：同一节点在同一路径上重复执行时只保留最新一次。`TryGetNodeOutput` 只适合监视和兼容代码。流程内部应使用强类型绑定，让 Runtime 按 Run、Token 和 Scope 检查可见性。
 
 ---
 
