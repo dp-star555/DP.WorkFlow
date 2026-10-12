@@ -1,6 +1,6 @@
 # 视觉节点盘点与带来源几何测量
 
-更新于2026-10-06。按实际注册入口和部署包盘点：15种内置节点，读码1种、单行文字识别1种、几何及坐标9种，共26种注册类型，全部在工具箱中显示。算法实现与节点模板分别部署；几何计算加入现有托管模块managed.geometry，鲁棒圆拟合为managed.robust-circle，没有增加功能×引擎组合DLL。独立业务坐标的完整构建、ROI绑定和兼容规则见[坐标系统](vision-coordinate-systems.md)。
+更新于2026-10-12。按实际注册入口和部署包盘点：15种内置节点，读码1种、单行文字识别1种、几何及坐标14种，共31种注册类型，全部在工具箱中显示。算法实现与节点模板分别部署；几何计算加入现有托管模块managed.geometry，鲁棒圆拟合为managed.robust-circle，没有增加功能×引擎组合DLL。独立业务坐标的完整构建、ROI绑定和兼容规则见[坐标系统](vision-coordinate-systems.md)。
 
 ## 当前能力和缺口
 
@@ -13,7 +13,7 @@
 | 边缘测量（4） | MeasureCaliper、FitRobustLine、FindLine、FindCircle | 业务边缘配对、边缘对宽度测量 |
 | 手眼标定（2） | SolveCalibration、MapCoordinate | 带单位和来源的物理标定、畸变、标定设备身份/有效期管理 |
 | 独立业务节点（2） | ReadBarcode（过滤、排序、期望个数、文本输出）、RecognizeTextLine（可旋转文字框，跟随定位） | 真实OCR模型现场精度复核 |
-| 新几何包（9） | 下表全部节点 | 角度测量、点到圆等圆相关距离 |
+| 新几何包（14） | 下表全部节点 | 点到圆等圆相关距离、圆弧/椭圆交点 |
 
 计数是NodeType数量，不是算法接口数量。引擎层还有未接入Workflow的字符分割、字符比对、空白/固定区域质量、条码印刷质量、块异常检测等算法；它们不等于已有对应工具箱节点。OpenCV没有IBarcodeReader实现，读码使用ZXing；两种块异常检测实现属于同一能力。已取消的整图OCR/切字/打印质量节点未恢复。
 
@@ -32,6 +32,13 @@
 | Vision.MeasurePointDistance | 两个VisionPoint → GeometricDistanceResult | 同帧、共同坐标来源的点到点距离 |
 | Vision.MeasurePointLineDistance | 点＋线＋Space＋Mode → GeometricDistanceResult | 无限直线垂足或有限线段最近点 |
 | Vision.MeasureLineDistance | 两条线＋Space＋Mode → GeometricDistanceResult | 无限直线或有限线段最短距离 |
+| Vision.IntersectLines | 两条线＋最小夹角 → VisionLineIntersectionResult | 无限直线（延长线）交点 Point/X/Y 及锐角夹角；夹角小于“最小夹角”视为近乎平行，节点故障 |
+| Vision.MeasureLineAngle | 两条线＋角度方式 → VisionLineAngleResult | 同时输出锐角 0..90°、方向夹角 0..180°（按各线 A→B）、有向角 -180..180°（顺时针为正）；“角度”按所选方式取值；平行时交点为空 |
+| Vision.IntersectLineCircle | 线＋圆（RobustCircleResult，绑定找圆“拟合结果”）→ VisionCurveIntersectionResult | 1 个（相切）或 2 个交点，交点1沿直线 A→B 在前；不相交时节点故障 |
+| Vision.IntersectCircles | 两个圆 → VisionCurveIntersectionResult | 1 或 2 个交点，交点1在从圆1圆心看向圆2圆心的右侧（图像中顺时针侧）；分离、内含、同心时节点故障 |
+| Vision.ProjectPointToLine | 点＋线＋投影模式 → VisionPerpendicularFootResult | 垂足 Foot/X/Y 与距离；有限线段模式超出端点时取最近端点 |
+
+交点、夹角和垂足节点为纯托管计算，不占用几何算法槽位；全部在原图像素中计算（相交关系不随坐标系变化），结果点保留输入的共同坐标来源，可直接接后续距离、构建坐标系或点转换节点。圆按原图像素圆心与半径参与计算。
 
 既有结果新增投影：BlobAnalysisResult.MeasuredCentroids、VisionCaliperMeasurement.MeasuredEdges（直线/圆弧卡尺）、RobustLineResult.MeasuredA/MeasuredB/MeasuredLine、EdgeMeasurementResult.MeasuredA/MeasuredB/MeasuredLine，以及两种模板定位的MeasuredCenter。圆模型的MeasuredLine为空，不能将圆参数当直线。旧Centroid、Position、A/B和裸Coordinate2D保持原有语义。
 

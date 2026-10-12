@@ -313,6 +313,38 @@ public sealed class VisionGeometryPluginPipelineTests
     }
 
     [Fact]
+    public async Task ConstructionNodes_IntersectMeasureAngleAndProject_FromDeployedPackage()
+    {
+        using var rig = new Rig();
+        // line-a 为 y=0（p0→p1），line-c 为 x=5 的竖线；q0=(0,5)。
+        var intersect = rig.Node("Vision.IntersectLines", "intersect-ac"); Set(intersect, "LineA", Input<VisionLine>("line-a")); Set(intersect, "LineB", Input<VisionLine>("line-c"));
+        var angle = rig.Node("Vision.MeasureLineAngle", "angle-ac"); Set(angle, "LineA", Input<VisionLine>("line-a")); Set(angle, "LineB", Input<VisionLine>("line-c"));
+        var foot = rig.Node("Vision.ProjectPointToLine", "foot"); Set(foot, "Point", Input<VisionPoint>("q0")); Set(foot, "Line", Input<VisionLine>("line-c"));
+        var parallel = rig.Node("Vision.IntersectLines", "parallel"); Set(parallel, "LineA", Input<VisionLine>("line-a")); Set(parallel, "LineB", Input<VisionLine>("line-b"));
+        var document = rig.Document(new AcquireVisionImageNodeModel { Id = "source", FilePath = rig.ScenePath },
+            rig.Point("p0", 0, 0), rig.Point("p1", 10, 0), rig.Point("q0", 0, 5), rig.Point("q1", 10, 5), rig.Point("r0", 5, -5), rig.Point("r1", 5, 9),
+            rig.Line("line-a", "p0", "p1"), rig.Line("line-b", "q0", "q1"), rig.Line("line-c", "r0", "r1"), intersect, angle, foot);
+        using (var host = rig.Host(document))
+        {
+            var run = await host.RunAsync(); Assert.True(run.Success, run.Message);
+            // 结果类型位于插件程序集，测试宿主不引用它，按成员名读取。
+            var point = OutputValue(host, "intersect-ac");
+            Assert.Equal(5, Member<double>(point, "X"), 9); Assert.Equal(0, Member<double>(point, "Y"), 9); Assert.Equal(90, Member<double>(point, "AngleDegrees"), 9);
+            Assert.Equal(new PointD(5, 0), Member<VisionPoint>(point, "Point").ImagePosition);
+            Assert.Equal(90, Member<double>(OutputValue(host, "angle-ac"), "AngleDegrees"), 9);
+            var projected = OutputValue(host, "foot");
+            Assert.Equal(new PointD(5, 5), Member<VisionPoint>(projected, "Foot").ImagePosition); Assert.Equal(5, Member<double>(projected, "Distance"), 9);
+        }
+        // 平行线：节点故障，不发布输出。
+        var failing = rig.Document(new AcquireVisionImageNodeModel { Id = "source", FilePath = rig.ScenePath },
+            rig.Point("p0", 0, 0), rig.Point("p1", 10, 0), rig.Point("q0", 0, 5), rig.Point("q1", 10, 5),
+            rig.Line("line-a", "p0", "p1"), rig.Line("line-b", "q0", "q1"), parallel);
+        using var failed = rig.Host(failing);
+        Assert.False((await failed.RunAsync()).Success);
+        Assert.DoesNotContain(failed.Engine!.RunState.NodeOutputs, o => o.NodeId == "parallel");
+    }
+
+    [Fact]
     public void MissingGeometryNodePackage_PreservesRecipeAndRestoresAfterDeployment()
     {
         using var rig = new Rig();
@@ -355,6 +387,9 @@ public sealed class VisionGeometryPluginPipelineTests
         Assert.Equal(1, caliper.BandSampleStep, 9); Assert.Equal(3, caliper.MinimumSeparation, 9);
     }
 
+    private static object OutputValue(WorkflowRuntimeHost host, string id) =>
+        Assert.IsAssignableFrom<IVisionGeometryFact>(host.Engine!.RunState.NodeOutputs.Single(o => o.NodeId == id).Value);
+    private static T Member<T>(object value, string name) => Assert.IsType<T>(value.GetType().GetProperty(name)!.GetValue(value));
     private static T Output<T>(WorkflowRuntimeHost host, string id) => Assert.IsType<T>(host.Engine!.RunState.NodeOutputs.Single(o => o.NodeId == id).Value);
     private static WorkflowInput<T> Input<T>(string id, string member = "$") => WorkflowInput<T>.FromBinding(new WorkflowBindingKey(id, member));
     private static void Set(IWorkflowNodeModel node, string property, object? value) => node.GetType().GetProperty(property)!.SetValue(node, value);
