@@ -6,7 +6,8 @@ namespace DP.WorkFlow.Vision.UI;
 /// <summary>
 /// 找线/找圆在图像上的可视化与拖动编辑，风格与卡尺一致：
 /// 找线画黄色期望直线（拖两端改位置与方向）、青色搜索框与每把卡尺、黄色箭头表示各卡尺的搜索方向；
-/// 找圆画黄色期望圆/圆弧、内外搜索边界与径向卡尺。白色方块调整搜索长度与卡尺宽度，拖动内部整体平移。
+/// 找圆画黄色期望圆/圆弧、内外搜索边界与径向卡尺；找矩形画黄色期望矩形、内外搜索边界与四边卡尺。
+/// 白色方块调整搜索长度与卡尺宽度，拖动内部整体平移。
 /// 卡尺位置直接取节点的 <see cref="FindVisionShapeNodeModel.CaliperScans"/>，与运行时完全一致。
 /// 绑定坐标系时按本帧坐标系换算到原图显示，拖动结果换算回局部单位写回。
 /// </summary>
@@ -25,6 +26,7 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
     private PointD _dragAnchor, _dragCenter, _dragCaliperCenter;
     private double _dragStep;
     private string _dragOriginKey = string.Empty;
+    private (double X, double Y) _dragCaliperNormal;
 
     /// <summary>为找线/找圆节点创建图上编辑器。</summary>
     /// <param name="node">节点窗口中的隔离编辑副本。</param>
@@ -46,8 +48,9 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
         {
             var roi = Roi;
             var circle = _node as FindVisionCircleNodeModel;
+            var rectangle = _node as FindVisionRectangleNodeModel;
             return FormattableString.Invariant(
-                $"find:{roi?.CenterX}:{roi?.CenterY}:{roi?.Width}:{roi?.Height}:{roi?.Angle}:{_node.CaliperCount}:{_node.HalfWidth}:{_node.BandSampleStep}:{(_node as FindVisionLineNodeModel)?.ReverseScan}:{circle?.SearchLength}:{circle?.Direction}:{circle?.StartAngle}:{circle?.SweepAngle}:{_node.Polarity}:{_node.EdgeMode}:{(Bound ? _coordinates?.FrameId : null)}");
+                $"find:{roi?.CenterX}:{roi?.CenterY}:{roi?.Width}:{roi?.Height}:{roi?.Angle}:{_node.CaliperCount}:{_node.HalfWidth}:{_node.BandSampleStep}:{(_node as FindVisionLineNodeModel)?.ReverseScan}:{circle?.SearchLength}:{circle?.Direction}:{circle?.StartAngle}:{circle?.SweepAngle}:{rectangle?.SearchLength}:{rectangle?.Direction}:{_node.Polarity}:{_node.EdgeMode}:{(Bound ? _coordinates?.FrameId : null)}");
         }
     }
 
@@ -59,6 +62,8 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
             if (!IsEditable) return string.Empty;
             var polarity = _node.Polarity switch { ECaliperPolarity.Rising => "暗→亮", ECaliperPolarity.Falling => "亮→暗", _ => "任意" };
             var pair = _node.EdgeMode == EVisionCaliperEdgeMode.Pair ? " · 边缘对" : "";
+            if (IsRectangle)
+                return FormattableString.Invariant($"找矩形 · 每边 {_node.CaliperCount} 把卡尺 · {LineLength:0.#}×{BoxHeight:0.#}px · 搜索长度 {SearchLength:0.#}px · 卡尺宽度 ±{HalfBand:0.##}px · 极性 {polarity}{pair}");
             return IsCircle
                 ? FormattableString.Invariant($"找圆 · {_node.CaliperCount} 把卡尺 · 半径 {Radius:0.#}px · 搜索长度 {SearchLength:0.#}px · 卡尺宽度 ±{HalfBand:0.##}px · 极性 {polarity}{pair}")
                 : FormattableString.Invariant($"找线 · {_node.CaliperCount} 把卡尺 · 长度 {LineLength:0.#}px · 搜索长度 {SearchLength:0.#}px · 卡尺宽度 ±{HalfBand:0.##}px · 极性 {polarity}{pair}");
@@ -70,11 +75,14 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
         ? "还没有搜索范围：先运行一次流程取图，打开后自动生成。"
         : Bound && Similarity is null
             ? _coordinates is null ? "已绑定坐标系，本帧没有坐标系结果，无法显示；请先运行流程。" : "绑定的坐标系不是旋转+等比缩放，请在参数页编辑。"
-            : (Bound ? "按本帧坐标系显示，拖动结果换算为局部单位写回。" : "") + (IsCircle
+            : (Bound ? "按本帧坐标系显示，拖动结果换算为局部单位写回。" : "") + (IsRectangle
+                ? "黄框为期望矩形，青色为四边的卡尺，黄色箭头为搜索方向。拖动框内整体平移，拖动右下角圆点调整宽高，拖动上方圆点旋转，拖动右侧白色方块调整搜索长度，拖动卡尺旁的小方块调整卡尺宽度。"
+                : IsCircle
                 ? "黄色圆为期望圆，青色为各把卡尺，黄色箭头为搜索方向。拖动圆心平移，拖动黄色菱形调整半径，拖动白色方块调整搜索长度，拖动卡尺旁的小方块调整卡尺宽度，拖动起点/终点调整角度范围。"
                 : "黄线为期望直线，青色为各把卡尺，黄色箭头为搜索方向。拖动两端调整位置与方向，拖动白色方块调整搜索长度，拖动卡尺旁的小方块调整卡尺宽度，拖动框内整体平移。");
 
     private bool IsCircle => _node is FindVisionCircleNodeModel;
+    private bool IsRectangle => _node is FindVisionRectangleNodeModel;
 
     // 唯一启用的包含ROI且形状正确时才可编辑（与节点校验一致）。
     private WorkflowVisionRoi? Roi => _node.Regions is { Count: 1 } regions && regions[0] is { Enabled: true, Exclude: false } roi
@@ -90,7 +98,17 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
     private double Angle => (Roi?.Angle ?? 0) + Rotation;
     private double LineLength => (Roi?.Width ?? 0) * Scale;
     private double Radius => (Roi?.Width ?? 0) / 2 * Scale;
-    private double SearchLength => _node is FindVisionCircleNodeModel circle ? circle.SearchLength * Scale : (Roi?.Height ?? 0) * Scale;
+    private double SearchLength => _node switch
+    {
+        FindVisionCircleNodeModel circle => circle.SearchLength * Scale,
+        FindVisionRectangleNodeModel rectangle => rectangle.SearchLength * Scale,
+        _ => (Roi?.Height ?? 0) * Scale
+    };
+    private double BoxHeight => (Roi?.Height ?? 0) * Scale;
+    private (double X, double Y) V => (-Math.Sin(Angle), Math.Cos(Angle));
+    private PointD BoxPoint(double a, double b, double grow = 0) => Offset(Offset(Center, U, a * (LineLength + grow) / 2), V, b * (BoxHeight + grow) / 2);
+    private PointD RotateHandle(double handle) => Offset(Center, V, -(BoxHeight / 2 + SearchLength / 2 + 4 * handle));
+    private PointD RectangleLengthHandle => Offset(Center, U, LineLength / 2 + SearchLength / 2);
     private double HalfBand => _node.HalfWidth * _node.BandSampleStep * Scale;
     private double CircleStartDegrees => ((FindVisionCircleNodeModel)_node).StartAngle + Rotation * 180 / Math.PI;
     private double CircleSweep => ((FindVisionCircleNodeModel)_node).SweepAngle;
@@ -113,7 +131,20 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
         var unit = Math.Max(1e-6, imagePixelsPerScreenPixel);
         var visuals = new List<Visual>();
         var handle = HandleScreenRadius * unit;
-        if (IsCircle)
+        if (IsRectangle)
+        {
+            PointD[] Box(double grow) => new[] { BoxPoint(-1, -1, grow), BoxPoint(1, -1, grow), BoxPoint(1, 1, grow), BoxPoint(-1, 1, grow) };
+            visuals.Add(new Visual("find-outer", new ContourGeometry(Box(SearchLength), closed: true), BoxColor));
+            if (Math.Min(LineLength, BoxHeight) > SearchLength) visuals.Add(new Visual("find-inner", new ContourGeometry(Box(-SearchLength), closed: true), BoxColor));
+            AddCalipers(visuals, unit);
+            visuals.Add(new Visual("find-expected", new ContourGeometry(Box(0), closed: true), AxisColor));
+            var rotate = RotateHandle(handle);
+            visuals.Add(new Visual("find-rotate-arm", new ContourGeometry(new[] { BoxPoint(0, -1, SearchLength), rotate }), AxisColor));
+            visuals.Add(new Visual("find-start", new EllipseGeometry(rotate, handle, handle), HandleColor));
+            visuals.Add(new Visual("find-radius", new EllipseGeometry(BoxPoint(1, 1), handle * 1.2, handle * 1.2), AxisColor));
+            visuals.Add(new Visual("find-length", new RectangleGeometry(RectangleLengthHandle, handle * 1.6, handle * 1.6, Angle), HandleColor));
+        }
+        else if (IsCircle)
         {
             var segments = Math.Clamp((int)Math.Ceiling(Math.Abs(CircleSweep) / 3), 8, 120);
             IEnumerable<PointD> Arc(double radius) => Enumerable.Range(0, segments + 1).Select(i => CirclePoint(radius, (double)i / segments));
@@ -187,6 +218,15 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
         if (!IsEditable) return null;
         var unit = Math.Max(1e-6, imagePixelsPerScreenPixel);
         var tolerance = (HandleScreenRadius + 4) * unit;
+        if (IsRectangle)
+        {
+            if (Distance(point, RotateHandle(HandleScreenRadius * unit)) <= tolerance) return EVisionCaliperHandle.Start;
+            if (Distance(point, BoxPoint(1, 1)) <= tolerance) return EVisionCaliperHandle.Radius;
+            if (Distance(point, RectangleLengthHandle) <= tolerance) return EVisionCaliperHandle.Length;
+            if (WidthHandlePoint(unit) is { } band && Distance(point, band) <= tolerance) return EVisionCaliperHandle.Width;
+            return Math.Abs(Dot(point, Center, U)) <= (LineLength + SearchLength) / 2 && Math.Abs(Dot(point, Center, V)) <= (BoxHeight + SearchLength) / 2
+                ? EVisionCaliperHandle.Body : null;
+        }
         if (IsCircle)
         {
             if (Distance(point, Center) <= tolerance) return EVisionCaliperHandle.Center;
@@ -215,6 +255,8 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
         var scans = Scans();
         _dragCaliperCenter = scans.Count == 0 ? Center
             : new PointD((scans[scans.Count / 2].Start.X + scans[scans.Count / 2].End.X) / 2, (scans[scans.Count / 2].Start.Y + scans[scans.Count / 2].End.Y) / 2);
+        if (scans.Count > 0 && Distance(scans[scans.Count / 2].Start, scans[scans.Count / 2].End) is var length and > 1e-9)
+            _dragCaliperNormal = (-(scans[scans.Count / 2].End.Y - scans[scans.Count / 2].Start.Y) / length, (scans[scans.Count / 2].End.X - scans[scans.Count / 2].Start.X) / length);
     }
 
     /// <inheritdoc/>
@@ -222,7 +264,8 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
     {
         if (_drag is not { } handle || Roi is not { } roi) return false;
         var before = Key;
-        if (IsCircle) DragCircle(handle, point, roi, (FindVisionCircleNodeModel)_node);
+        if (IsRectangle) DragRectangle(handle, point, roi, (FindVisionRectangleNodeModel)_node);
+        else if (IsCircle) DragCircle(handle, point, roi, (FindVisionCircleNodeModel)_node);
         else DragLine(handle, point, roi);
         return Key != before;
     }
@@ -250,6 +293,35 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
                 break;
             case EVisionCaliperHandle.Body:
                 WriteCenter(roi, new PointD(_dragCenter.X + point.X - _dragAnchor.X, _dragCenter.Y + point.Y - _dragAnchor.Y));
+                break;
+        }
+    }
+
+    private void DragRectangle(EVisionCaliperHandle handle, PointD point, WorkflowVisionRoi roi, FindVisionRectangleNodeModel rectangle)
+    {
+        switch (handle)
+        {
+            case EVisionCaliperHandle.Body:
+                WriteCenter(roi, new PointD(_dragCenter.X + point.X - _dragAnchor.X, _dragCenter.Y + point.Y - _dragAnchor.Y));
+                break;
+            case EVisionCaliperHandle.Radius:
+            {
+                // 以中心对称改宽高；短边不小于搜索长度，避免对边的卡尺交叉。
+                double minimum = SearchLength + 2;
+                roi.Width = Round(Math.Max(minimum, 2 * Math.Abs(Dot(point, Center, U))) / Scale);
+                roi.Height = Round(Math.Max(minimum, 2 * Math.Abs(Dot(point, Center, V))) / Scale);
+                break;
+            }
+            case EVisionCaliperHandle.Start:
+                if (Distance(point, Center) < 1) break;
+                // 旋转把手在上边外侧（-V 方向），所以矩形角度 = 指向把手的角度 + 90°。
+                roi.Angle = Math.Round(Math.Atan2(point.Y - Center.Y, point.X - Center.X) + Math.PI / 2 - Rotation, 6);
+                break;
+            case EVisionCaliperHandle.Length:
+                rectangle.SearchLength = Round(Math.Clamp(2 * Math.Abs(Dot(point, Offset(Center, U, LineLength / 2), U)), 4, Math.Max(4, Math.Min(LineLength, BoxHeight) - 1)) / Scale);
+                break;
+            case EVisionCaliperHandle.Width:
+                SetHalfBand(Math.Abs(Dot(point, _dragCaliperCenter, _dragCaliperNormal)));
                 break;
         }
     }

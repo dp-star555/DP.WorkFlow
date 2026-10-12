@@ -81,6 +81,7 @@ public sealed partial class VisionFrameEditorPageModel
     {
         VisionCaliperGizmo => new[] { VisionCaliperLayoutChoice.Line, VisionCaliperLayoutChoice.Annulus },
         VisionFindShapeGizmo when _node is FindVisionCircleNodeModel => new[] { VisionCaliperLayoutChoice.Annulus },
+        VisionFindShapeGizmo when _node is FindVisionRectangleNodeModel => new[] { VisionCaliperLayoutChoice.Rectangle },
         VisionFindShapeGizmo => new[] { VisionCaliperLayoutChoice.Line },
         _ => Array.Empty<VisionCaliperLayoutChoice>()
     };

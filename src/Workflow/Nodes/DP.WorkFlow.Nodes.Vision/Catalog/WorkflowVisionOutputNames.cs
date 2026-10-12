@@ -128,6 +128,13 @@ public static class WorkflowVisionOutputNames
         ["HalfBand"] = "单侧带宽",
         ["EdgePairs"] = "边缘对",
         ["MeasuredCenter"] = "圆心(带来源)",
+        ["RectangleCenter"] = "矩形中心(带来源)",
+        ["Sides"] = "各边",
+        ["SideLines"] = "各边直线",
+        ["Corners"] = "角点",
+        ["LocalWidth"] = "局部宽度",
+        ["LocalHeight"] = "局部高度",
+        ["MaximumCornerError"] = "最大直角偏差(°)",
         ["LocatedCenter"] = "圆心(双坐标)",
         ["Diameter"] = "直径",
         ["Mode"] = "距离模式",
@@ -148,7 +155,7 @@ public static class WorkflowVisionOutputNames
         {
             typeof(ImageFrame), typeof(BlobAnalysisResult), typeof(BlobObservation), typeof(BlobShapeFeatures), typeof(ColorAnalysisResult),
             typeof(TemplatePoseResult), typeof(AffineCalibration), typeof(Coordinate2D),
-            typeof(RegionAnalysisResult), typeof(CaliperResult), typeof(VisionCaliperMeasurement), typeof(VisionCaliperEdge), typeof(VisionCaliperEdgePair), typeof(VisionFindLineResult), typeof(VisionFindCircleResult), typeof(VisionCaliperScan), typeof(VisionFoundEdgePair), typeof(RobustCircleResult), typeof(RobustLineResult), typeof(VisionPoint), typeof(VisionLine),
+            typeof(RegionAnalysisResult), typeof(CaliperResult), typeof(VisionCaliperMeasurement), typeof(VisionCaliperEdge), typeof(VisionCaliperEdgePair), typeof(VisionFindLineResult), typeof(VisionFindCircleResult), typeof(VisionFindRectangleResult), typeof(VisionCaliperScan), typeof(VisionFoundEdgePair), typeof(RobustCircleResult), typeof(RobustLineResult), typeof(VisionPoint), typeof(VisionLine),
             typeof(GeometricDistanceResult), typeof(VisionCoordinateSystemResult), typeof(VisionCoordinateDefinition), typeof(VisionDisplayItem)
         })
             WorkflowOutputDisplayNames.Register(type, Names);

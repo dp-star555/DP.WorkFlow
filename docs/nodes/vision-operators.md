@@ -26,6 +26,7 @@
 | Vision.FitRobustLine | RobustLineResult | 聚合同帧卡尺边缘，确定性RANSAC＋正交TLS，输出内点索引与RMS |
 | Vision.FindLine | VisionFindLineResult | 矩形搜索框内排布N把卡尺（沿框宽度排布、沿高度扫描），每把取首个/最强/末个边缘，鲁棒拟合直线；输出拟合直线、角度、边缘点 |
 | Vision.FindCircle | VisionFindCircleResult | 期望圆周上排布N把径向卡尺（由内向外/由外向内，可只扫圆弧），鲁棒拟合圆；输出圆心、半径、直径、边缘点 |
+| Vision.FindRectangle | VisionFindRectangleResult | 期望矩形（可旋转）四边各排布N把卡尺，垂直于边扫描（由内向外/由外向内），每边鲁棒拟合直线（忽略点数按边计），相邻边求交；输出四个角点、中心、宽高、角度、最大直角偏差、各边直线及各边找线结果。某条边内点不足或相邻边接近平行时失败并指明哪条边/哪个角 |
 | Vision.LocateTemplatePose | TemplatePoseResult | “模板定位”：显式角度／尺度区间，都固定时即平移定位；OpenCV按步长采样，HALCON资源模型原生范围搜索；单个最佳姿态 |
 
 ## 成功/失败出口（检测NG不中止）

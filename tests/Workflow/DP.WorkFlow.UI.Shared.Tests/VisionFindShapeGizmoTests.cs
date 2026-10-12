@@ -162,4 +162,52 @@ public sealed class VisionFindShapeGizmoTests
         Assert.True(node.FitPlaceholderSearchRoi(640, 480));
         Assert.True(gizmo.IsEditable);
     }
+
+    [Fact]
+    public void FindRectangle_ShowsFourSidesAndDragsSizeRotationAndSearchLength()
+    {
+        var node = new FindVisionRectangleNodeModel
+        {
+            CaliperCount = 3, HalfWidth = 2, BandSampleStep = 1, SearchLength = 10,
+            Regions = new() { new() { Id = "search", Shape = EWorkflowVisionRoiShape.Rectangle, CenterX = 100, CenterY = 100, Width = 80, Height = 40 } }
+        };
+        var gizmo = new VisionFindShapeGizmo(node);
+        var visuals = gizmo.Visuals(1);
+        Assert.Equal(12, visuals.Count(v => v.Id.StartsWith("find-caliper", StringComparison.Ordinal)));
+        var expected = Assert.IsType<ContourGeometry>(Assert.Single(visuals, v => v.Id == "find-expected").Geometry);
+        Assert.True(expected.Closed);
+        Assert.Equal((60d, 80d), (expected.Points[0].X, expected.Points[0].Y));
+        Assert.Contains("每边 3 把卡尺", gizmo.Caption);
+
+        // 右下角：宽高以中心对称变为 120×60。
+        Assert.Equal(EVisionCaliperHandle.Radius, gizmo.Hit(new PointD(140, 120), 1));
+        gizmo.BeginDrag(EVisionCaliperHandle.Radius, new PointD(140, 120), 1);
+        gizmo.Drag(new PointD(160, 130));
+        Assert.True(gizmo.EndDrag());
+        var box = node.Regions[0];
+        Assert.Equal((120d, 60d), (box.Width, box.Height));
+
+        // 搜索长度：右边外侧方块拖到离右边 8px → 16。
+        var length = new PointD(160 + 5, 100);
+        Assert.Equal(EVisionCaliperHandle.Length, gizmo.Hit(length, 1));
+        gizmo.BeginDrag(EVisionCaliperHandle.Length, length, 1);
+        gizmo.Drag(new PointD(168, 100));
+        gizmo.EndDrag();
+        Assert.Equal(16, node.SearchLength, 6);
+
+        // 旋转：把手拖到中心正右方 → 矩形转 90°。
+        var rotate = Assert.IsType<EllipseGeometry>(Assert.Single(gizmo.Visuals(1), v => v.Id == "find-start").Geometry).Center;
+        Assert.Equal(EVisionCaliperHandle.Start, gizmo.Hit(rotate, 1));
+        gizmo.BeginDrag(EVisionCaliperHandle.Start, rotate, 1);
+        gizmo.Drag(new PointD(200, 100));
+        gizmo.EndDrag();
+        Assert.Equal(Math.PI / 2, box.Angle, 6);
+
+        // 框内拖动整体平移。
+        Assert.Equal(EVisionCaliperHandle.Body, gizmo.Hit(new PointD(100, 100), 1));
+        gizmo.BeginDrag(EVisionCaliperHandle.Body, new PointD(100, 100), 1);
+        gizmo.Drag(new PointD(90, 110));
+        gizmo.EndDrag();
+        Assert.Equal((90d, 110d), (box.CenterX, box.CenterY));
+    }
 }

@@ -20,6 +20,7 @@
 | Vision.AnalyzeColor | Frame绑定、范围 | ColorAnalysisResult |
 | Vision.FindLine | Frame绑定、矩形搜索框ROI、卡尺与拟合参数 | VisionFindLineResult |
 | Vision.FindCircle | Frame绑定、期望圆ROI、搜索长度、卡尺与拟合参数 | VisionFindCircleResult |
+| Vision.FindRectangle | Frame绑定、期望矩形ROI、搜索长度、扫描方向、每边卡尺数与拟合参数 | VisionFindRectangleResult |
 | Vision.LocateTemplatePose | Frame绑定、模板资源或模板图像绑定、搜索ROI、角度/尺度区间、最小分数 | TemplatePoseResult |
 | Vision.SolveCalibration | 对应点及可选目标旋转轨迹 | AffineCalibration |
 | Vision.MapCoordinate | Calibration绑定、X/Y绑定、RotationRadians | Coordinate2D |

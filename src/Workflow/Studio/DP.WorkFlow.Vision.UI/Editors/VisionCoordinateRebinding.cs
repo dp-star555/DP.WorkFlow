@@ -90,9 +90,10 @@ public static class VisionCoordinateRebinding
         if (node is FitVisionRobustLineNodeModel fit) fit.DistanceThreshold *= fromScale / toScale;
         if (node is FindVisionShapeNodeModel shape)
         {
-            // 搜索ROI随 Regions 换算；这里换算卡尺与拟合的长度参数，找圆的起始角随坐标系方向调整。
+            // 搜索ROI随 Regions 换算；这里换算卡尺与拟合的长度参数（含找圆、找矩形的搜索长度），找圆的起始角随坐标系方向调整。
             double ratio = fromScale / toScale;
             shape.BandSampleStep *= ratio; shape.MinimumSeparation *= ratio; shape.DistanceThreshold *= ratio; shape.MinimumPairWidth *= ratio; shape.MaximumPairWidth *= ratio;
+            if (shape is FindVisionRectangleNodeModel rectangle) rectangle.SearchLength *= ratio;
             if (shape is FindVisionCircleNodeModel circle)
             {
                 circle.SearchLength *= ratio;
