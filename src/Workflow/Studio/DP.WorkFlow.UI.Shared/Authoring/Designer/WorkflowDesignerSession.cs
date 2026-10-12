@@ -832,6 +832,31 @@ public sealed partial class WorkflowDesignerSession
         return true;
     }
 
+    /// <summary>设置连线备注（只用于显示），空白表示清除；记录一次可撤销操作。</summary>
+    /// <param name="connection">目标连接。</param><param name="note">备注，最多 64 字。</param>
+    public bool SetConnectionNote(WorkflowConnectionModel connection, string? note)
+    {
+        ValidateConnection(connection);
+        var value = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+        if (value?.Length > 64) throw new ArgumentException("连线备注最多 64 个字。", nameof(note));
+        if (string.Equals(connection.Note, value, StringComparison.Ordinal)) return false;
+        var old = connection.Note;
+        Execute(new DesignerOperation(() => connection.Note = value, () => connection.Note = old));
+        return true;
+    }
+
+    /// <summary>启用或停用并行分支连线；停用的分支不派发，汇聚节点只等启用的分支。记录一次可撤销操作。</summary>
+    /// <param name="connection">并行节点 Branch 端口的连线。</param><param name="enabled">是否启用。</param>
+    public bool SetConnectionEnabled(WorkflowConnectionModel connection, bool enabled)
+    {
+        ValidateConnection(connection);
+        if (connection.Enabled == enabled) return false;
+        if (!WorkflowDesignerInteraction.CanDisableConnection(this, connection))
+            throw new InvalidOperationException("只有并行节点的分支连线可以停用。");
+        Execute(new DesignerOperation(() => connection.Enabled = enabled, () => connection.Enabled = !enabled));
+        return true;
+    }
+
     /// <summary>删除连接。</summary>
     /// <param name="connection">目标连接。</param>
     public bool RemoveConnection(WorkflowConnectionModel connection)

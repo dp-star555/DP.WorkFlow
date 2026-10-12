@@ -65,7 +65,8 @@ public sealed class WorkflowGraph
             connection.ToNodeId,
             connection.ToPort,
             connection.State,
-            connection.Diagnostic)).ToArray());
+            connection.Diagnostic,
+            connection.Enabled)).ToArray());
 }
 
 /// <summary>Describes one semantic control transition between node ports.</summary>
@@ -75,13 +76,15 @@ public sealed class WorkflowGraph
 /// <param name="ToPort">Target control input key.</param>
 /// <param name="State">Whether the connection currently satisfies both port contracts.</param>
 /// <param name="Diagnostic">Reason retained for a detached connection.</param>
+/// <param name="Enabled">False for a disabled parallel branch; disabled connections are not part of the executable graph.</param>
 public sealed record WorkflowControlConnection(
     string FromNodeId,
     string FromPort,
     string ToNodeId,
     string ToPort,
     WorkflowConnectionState State = WorkflowConnectionState.Active,
-    string? Diagnostic = null);
+    string? Diagnostic = null,
+    bool Enabled = true);
 
 /// <summary>Provides designer layout without exposing node configuration as layout state.</summary>
 public sealed class WorkflowLayout
@@ -116,7 +119,8 @@ public sealed class WorkflowLayout
             connection.FromSide,
             connection.ToSide,
             connection.LabelPosition,
-            connection.Waypoints.ToArray())).ToArray());
+            connection.Waypoints.ToArray(),
+            connection.Note)).ToArray());
 }
 
 /// <summary>Describes designer presentation for one node.</summary>
@@ -144,12 +148,14 @@ public sealed record WorkflowNodeLayout(
 /// <param name="ToSide">Optional target-side override.</param>
 /// <param name="LabelPosition">Normalized label position.</param>
 /// <param name="Waypoints">Manual orthogonal route points.</param>
+/// <param name="Note">Optional display note shown after the port's fixed label.</param>
 public sealed record WorkflowConnectionLayout(
     int ConnectionIndex,
     WorkflowPortSide? FromSide,
     WorkflowPortSide? ToSide,
     double LabelPosition,
-    IReadOnlyList<WorkflowPoint> Waypoints);
+    IReadOnlyList<WorkflowPoint> Waypoints,
+    string? Note = null);
 
 /// <summary>Document-owned mutable state shared with transitional read/write projections.</summary>
 internal sealed class WorkflowDocumentState

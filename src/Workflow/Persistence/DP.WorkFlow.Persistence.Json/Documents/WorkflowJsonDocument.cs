@@ -64,6 +64,13 @@ internal sealed class WorkflowJsonConnection
 
     public double LabelPosition { get; set; } = 0.5;
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Note { get; set; }
+
+    // 旧文件没有该字段，按启用读入；只在停用时写出，保持旧文件格式不变。
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool? Disabled { get; set; }
+
     public WorkflowConnectionState State { get; set; }
 
     public string? Diagnostic { get; set; }

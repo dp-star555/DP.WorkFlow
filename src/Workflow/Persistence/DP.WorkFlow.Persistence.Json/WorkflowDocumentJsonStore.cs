@@ -257,6 +257,8 @@ public sealed class WorkflowDocumentJsonStore
                 FromSide = connection.FromSide,
                 ToSide = connection.ToSide,
                 LabelPosition = connection.LabelPosition,
+                Note = string.IsNullOrWhiteSpace(connection.Note) ? null : connection.Note,
+                Disabled = connection.Enabled ? null : true,
                 State = connection.State,
                 Diagnostic = connection.Diagnostic,
                 Waypoints = connection.Waypoints
@@ -473,6 +475,8 @@ public sealed class WorkflowDocumentJsonStore
                 FromSide = source.FromSide,
                 ToSide = source.ToSide,
                 LabelPosition = Math.Clamp(source.LabelPosition, 0, 1),
+                Note = string.IsNullOrWhiteSpace(source.Note) ? null : source.Note,
+                Enabled = source.Disabled != true,
                 State = source.State,
                 Diagnostic = source.Diagnostic
             };

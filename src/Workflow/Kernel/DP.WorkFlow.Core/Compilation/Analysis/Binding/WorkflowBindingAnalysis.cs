@@ -137,8 +137,12 @@ public sealed class WorkflowBindingAnalyzer
             .ToArray();
         var usages = nodes.Values.SelectMany(ExtractCurrentCanvasUsages).ToArray();
         var diagnostics = new List<WorkflowValidationError>();
+        // 来源只能经由停用的并行分支到达时给出明确说明，而不是笼统的“并非必然完成”。
+        string? DisabledBranch(string nodeId) => graph.IsOnlyBehindDisabledConnection(startNodeId, nodeId, out var connection)
+            ? $"来源节点 {nodeId} 位于并行节点 {connection!.FromNodeId} 已停用的分支（分支入口 {connection.ToNodeId}）中，停用期间没有输出；请启用该分支或改绑其它来源。"
+            : null;
         foreach (var usage in usages)
-            ValidateUsage(usage, nodes, outgoing, dominators, scopeHints, diagnostics);
+            ValidateUsage(usage, nodes, outgoing, dominators, scopeHints, diagnostics, DisabledBranch);
 
         var candidates = nodes.Keys.ToDictionary(
             consumerId => consumerId,
@@ -272,19 +276,26 @@ public sealed class WorkflowBindingAnalyzer
     /// <param name="dominators">每个可达节点的支配节点集合。</param>
     /// <param name="parallelScopes">用于识别汇聚后可见分支输出的并行结构提示。</param>
     /// <param name="diagnostics">接收绑定错误和类型未知警告的集合。</param>
+    /// <param name="disabledBranch">来源只能经由停用分支到达时返回说明，否则为空。</param>
     private void ValidateUsage(
         WorkflowBindingUsage usage,
         IReadOnlyDictionary<string, IWorkflowNodeModel> nodes,
         IReadOnlyDictionary<string, IReadOnlyList<string>> outgoing,
         IReadOnlyDictionary<string, HashSet<string>> dominators,
         IReadOnlyList<ParallelScopeHint> parallelScopes,
-        ICollection<WorkflowValidationError> diagnostics)
+        ICollection<WorkflowValidationError> diagnostics,
+        Func<string, string?>? disabledBranch = null)
     {
         if (usage.Binding.IsPublicData)
             return;
         if (!nodes.TryGetValue(usage.Binding.NodeId, out var sourceNode))
         {
             diagnostics.Add(Error("WFB001", usage, $"绑定来源节点 {usage.Binding.NodeId} 不存在。"));
+            return;
+        }
+        if (disabledBranch?.Invoke(usage.Binding.NodeId) is { } disabled)
+        {
+            diagnostics.Add(Error("WFB006", usage, disabled));
             return;
         }
         if (!IsSourceGuaranteed(usage.Binding.NodeId, usage.ConsumerNodeId, outgoing, dominators, parallelScopes))

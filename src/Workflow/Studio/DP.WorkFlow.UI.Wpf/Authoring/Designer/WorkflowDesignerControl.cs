@@ -157,13 +157,11 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         _pointer = e.GetPosition(this);
         if (e.ChangedButton == MouseButton.Right)
         {
-            var contextConnection = WorkflowDesignerInteraction.HitConnection(_session, _pointer.X, _pointer.Y);
+            var contextConnection = HitConnectionLabel(_pointer.X, _pointer.Y) ?? WorkflowDesignerInteraction.HitConnection(_session, _pointer.X, _pointer.Y);
             if (contextConnection is not null)
             {
-                if (ReferenceEquals(_session.SelectedConnection, contextConnection))
-                    _session.RemoveConnection(contextConnection);
-                else
-                    _session.SelectConnection(contextConnection);
+                _session.SelectConnection(contextConnection);
+                ShowConnectionMenu(contextConnection);
                 e.Handled = true;
                 return;
             }
@@ -415,6 +413,14 @@ public sealed class WorkflowDesignerControl : FrameworkElement
                 e.Handled = true;
                 return;
             }
+            // 双击标签编辑备注；双击连线其它位置仍是添加拐点。
+            if (_session is not null && HitConnectionLabel(position.X, position.Y) is { } labelled)
+            {
+                _session.SelectConnection(labelled);
+                EditConnectionNote(labelled);
+                e.Handled = true;
+                return;
+            }
             if (_session is not null && WorkflowDesignerInteraction.HitConnection(_session, position.X, position.Y) is { } connection)
             {
                 _session.SelectConnection(connection);
@@ -484,11 +490,12 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             if (source.HasValue && target.HasValue)
             {
                 var selected = ReferenceEquals(_session.SelectedConnection, connection);
+                // 停用的并行分支：淡灰虚线，线和下游节点保留，随时可以重新启用。
                 var pen = new Pen(
                     Freeze(new SolidColorBrush(selected
                         ? Color.FromRgb(0, 120, 212)
-                        : (Color.FromRgb(155, 155, 155)))),
-                    selected ? 3 : 2);
+                        : connection.Enabled ? Color.FromRgb(155, 155, 155) : Color.FromRgb(95, 95, 95))),
+                    selected ? 3 : 2) { DashStyle = connection.Enabled ? DashStyles.Solid : DashStyles.Dash };
                 DrawConnectionPath(context, pen, connection, source.Value, target.Value);
                 DrawConnectionLabel(context, connection, source.Value);
                 if (selected)
@@ -653,6 +660,60 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             menu.Items.Add(entry);
         }
         menu.IsOpen = true;
+    }
+
+    // 连线右键菜单：编辑备注、启用/停用并行分支、删除连线。
+    private void ShowConnectionMenu(WorkflowConnectionModel connection)
+    {
+        if (_session is null) return;
+        var session = _session;
+        var menu = new System.Windows.Controls.ContextMenu { PlacementTarget = this, Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
+        menu.Items.Add(new System.Windows.Controls.MenuItem { Header = WorkflowDesignerInteraction.GetConnectionLabel(session, connection), IsEnabled = false });
+        void Item(string header, Action action)
+        {
+            var item = new System.Windows.Controls.MenuItem { Header = header };
+            item.Click += (_, _) => action();
+            menu.Items.Add(item);
+        }
+        Item("编辑备注…", () => EditConnectionNote(connection));
+        if (WorkflowDesignerInteraction.CanDisableConnection(session, connection))
+            Item(connection.Enabled ? "停用分支" : "启用分支", () => Guard(() => session.SetConnectionEnabled(connection, !connection.Enabled)));
+        menu.Items.Add(new System.Windows.Controls.Separator());
+        Item("删除连线", () => session.RemoveConnection(connection));
+        menu.IsOpen = true;
+    }
+
+    // 备注只用于显示；端口的固定语义不可编辑，留空恢复默认。
+    private void EditConnectionNote(WorkflowConnectionModel connection)
+    {
+        if (_session is null) return;
+        var session = _session;
+        var input = new System.Windows.Controls.TextBox { Text = connection.Note ?? "", MaxLength = 64, Margin = new Thickness(0, 6, 0, 10) };
+        var ok = new System.Windows.Controls.Button { Content = "确定", IsDefault = true, Width = 76, Margin = new Thickness(0, 0, 8, 0) };
+        var cancel = new System.Windows.Controls.Button { Content = "取消", IsCancel = true, Width = 76 };
+        var buttons = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(ok); buttons.Children.Add(cancel);
+        var body = new System.Windows.Controls.StackPanel { Margin = new Thickness(12) };
+        body.Children.Add(new System.Windows.Controls.TextBlock
+        {
+            Text = $"固定语义：{WorkflowPorts.GetDisplayName(connection.FromPort)}（不可修改）。备注只用于显示，留空恢复默认。",
+            TextWrapping = TextWrapping.Wrap
+        });
+        body.Children.Add(input); body.Children.Add(buttons);
+        var dialog = new Window
+        {
+            Title = "编辑连线备注", Content = body, Width = 400, SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = Window.GetWindow(this), ShowInTaskbar = false
+        };
+        ok.Click += (_, _) => dialog.DialogResult = true;
+        dialog.Loaded += (_, _) => { input.Focus(); input.SelectAll(); };
+        if (dialog.ShowDialog() == true) Guard(() => session.SetConnectionNote(connection, input.Text));
+    }
+
+    private void Guard(Action action)
+    {
+        try { action(); }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException) { InteractionError?.Invoke(this, exception.Message); }
     }
 
     /// <summary>在节点标题栏右侧绘制执行序号和耗时。</summary>
@@ -976,11 +1037,11 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         var rect = GetConnectionLabelBounds(connection);
         var background = Brush(37, 37, 38);
         var border = Brush(63, 63, 70);
-        var foreground = Brush(0, 120, 212);
+        var foreground = connection.Enabled ? Brush(0, 120, 212) : Brush(140, 140, 140);
         context.DrawRectangle(background, new Pen(border, 1), rect);
         DrawText(
             context,
-            WorkflowPorts.GetDisplayName(connection.FromPort),
+            WorkflowDesignerInteraction.GetConnectionLabelDisplay(_session, connection),
             rect.X + 4,
             rect.Y + 1,
             Math.Max(3, 10 * _session.Zoom),
@@ -997,7 +1058,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             : WorkflowDesignerInteraction.PointAlongPath(
                 WorkflowDesignerInteraction.GetConnectionPath(_session, connection), connection.LabelPosition);
         var size = Math.Max(3, 10 * (_session?.Zoom ?? 1));
-        var width = MeasureTextWidth(WorkflowPorts.GetDisplayName(connection.FromPort), size, FontWeights.SemiBold) + 8;
+        var width = MeasureTextWidth(_session is null ? "" : WorkflowDesignerInteraction.GetConnectionLabelDisplay(_session, connection), size, FontWeights.SemiBold) + 8;
         return new Rect(center.X - width / 2, center.Y - (size + 6) / 2, width, size + 6);
     }
 

@@ -99,6 +99,45 @@ public sealed class WorkflowBindingAnalyzerTests
     }
 
     [Fact]
+    public void Compile_DisabledBranchIsNotPartOfTheScopeAndItsOutputsAreExplained()
+    {
+        var parallel = new ParallelAllNodeModel { Id = "Parallel", Title = "并行" };
+        var source = new DecisionNodeModel { Id = "Source", Title = "来源" };
+        var off = new DecisionNodeModel { Id = "Off", Title = "停用分支" };
+        var merge = new WaitAllInputsCompletedNodeModel { Id = "Merge", Title = "汇聚" };
+        var fromEnabled = BoundDecision("FromEnabled", new WorkflowBindingKey(source.Id, "Value"));
+        var fromDisabled = BoundDecision("FromDisabled", new WorkflowBindingKey(off.Id, "Value"));
+        var disabledBranch = Connect(parallel.Id, WorkflowPorts.Branch, off.Id);
+        disabledBranch.Enabled = false;
+        var document = CreateDocument(
+            parallel, source, off, merge, fromEnabled, fromDisabled,
+            Connect(parallel.Id, WorkflowPorts.Branch, source.Id),
+            disabledBranch,
+            Connect(source.Id, WorkflowPorts.True, merge.Id),
+            Connect(source.Id, WorkflowPorts.False, merge.Id),
+            Connect(off.Id, WorkflowPorts.True, merge.Id),
+            Connect(off.Id, WorkflowPorts.False, merge.Id),
+            Connect(merge.Id, WorkflowPorts.Success, fromEnabled.Id),
+            Connect(fromEnabled.Id, WorkflowPorts.True, fromDisabled.Id));
+        document.EntryNodeId = parallel.Id;
+        var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
+
+        var analysis = new WorkflowBindingAnalyzer(catalog).Analyze(document);
+
+        Assert.DoesNotContain(analysis.Diagnostics, d => d.NodeId == fromEnabled.Id);
+        var error = Assert.Single(analysis.Diagnostics, d => d.NodeId == fromDisabled.Id);
+        Assert.Equal("WFB006", error.Code);
+        Assert.Contains("已停用的分支", error.Message);
+        Assert.DoesNotContain(analysis.GetCandidates(fromDisabled.Id, typeof(bool)), c => c.SourceNodeId == off.Id);
+
+        // 全部停用：WF023；只剩一个启用分支（另一个停用）时并行仍然有效。
+        var enabled = document.CanvasProjection.Connections.Single(c => c.ToNodeId == source.Id && c.FromPort == WorkflowPorts.Branch);
+        enabled.Enabled = false;
+        var exception = Assert.Throws<WorkflowCompilationException>(() => new WorkflowCompiler(catalog, validateBindings: false).Compile(document));
+        Assert.Contains(exception.Errors, e => e.Code == "WF023");
+    }
+
+    [Fact]
     public void Analyze_SourceGuaranteedByParallelMergeIsAvailableAfterMerge()
     {
         var parallel = new ParallelAllNodeModel { Id = "Parallel", Title = "并行" };

@@ -38,6 +38,17 @@ public sealed class WorkflowConnectionModel
     /// <summary>获取或设置连线标签沿路径的归一化位置，0 为起点，1 为终点。</summary>
     public double LabelPosition { get; set; } = 0.5;
 
+    /// <summary>
+    /// 获取或设置连线备注：只用于显示，不影响执行和绑定。端口的固定语义（成立、循环、失败等）始终显示，
+    /// 备注附在其后（如“成立 · 有料”）；并行分支显示为“分支 · 备注”，无备注时按顺序显示“分支1、分支2…”。
+    /// </summary>
+    public string? Note { get; set; }
+
+    /// <summary>
+    /// 获取或设置连线是否启用。目前只有并行节点的分支连线可以停用：停用的分支不派发，汇聚节点只等启用的分支。
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
     /// <summary>获取或设置连接契约状态。</summary>
     public WorkflowConnectionState State { get; set; }
 

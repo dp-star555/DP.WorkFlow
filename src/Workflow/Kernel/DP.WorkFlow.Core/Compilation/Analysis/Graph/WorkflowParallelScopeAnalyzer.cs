@@ -22,11 +22,21 @@ internal static class WorkflowParallelScopeAnalyzer
         foreach (var parallelNode in graph.Nodes.Values.OfType<IWorkflowParallelForkNode>())
         {
             var branches = graph.GetSuccessors(parallelNode.Id, WorkflowPorts.Branch);
-            if (branches.Count < 2)
+            // 停用的分支不派发；分支总数（含停用）仍须至少两个，启用的至少一个。
+            int disabledBranches = graph.DisabledConnections.Count(c => c.FromNodeId == parallelNode.Id && c.FromPort == WorkflowPorts.Branch);
+            if (branches.Count + disabledBranches < 2)
             {
                 diagnostics.Add(new WorkflowValidationError(
                     "WF020",
                     $"并行节点 {parallelNode.Id} 至少需要两个 Branch 目标。",
+                    parallelNode.Id));
+                continue;
+            }
+            if (branches.Count == 0)
+            {
+                diagnostics.Add(new WorkflowValidationError(
+                    "WF023",
+                    $"并行节点 {parallelNode.Id} 的分支已全部停用，至少保留一个启用的分支。",
                     parallelNode.Id));
                 continue;
             }

@@ -316,10 +316,53 @@ public static class WorkflowDesignerInteraction
         WorkflowPortDirection direction) =>
         session.GetPorts(node.Node.Id, direction).Count > 1;
 
-    /// <summary>多输出或非 Success 输出的连接需要显示输出语义标签。</summary>
+    /// <summary>多输出、非 Success 输出、有备注或已停用的连接需要显示标签。</summary>
     public static bool ShouldDrawConnectionLabel(WorkflowDesignerSession session, WorkflowConnectionModel connection) =>
+        HasSemanticLabel(session, connection) || !string.IsNullOrWhiteSpace(connection.Note) || !connection.Enabled;
+
+    private static bool HasSemanticLabel(WorkflowDesignerSession session, WorkflowConnectionModel connection) =>
         session.GetPorts(connection.FromNodeId, WorkflowPortDirection.Output).Count > 1
         || connection.FromPort != WorkflowPorts.Success;
+
+    /// <summary>标签最多显示的字数，超出部分截断为“…”，完整文字见 <see cref="GetConnectionLabel"/>。</summary>
+    public const int MaximumLabelLength = 24;
+
+    /// <summary>
+    /// 连线标签文字：端口的固定语义始终保留，备注附在其后（“成立 · 有料”）；并行分支无备注时按顺序编号（“分支1”），
+    /// 有备注时为“分支 · 备注”；只有一个“成功”出口的连线只显示备注；停用的分支加“（停用）”。
+    /// </summary>
+    /// <param name="session">设计会话。</param><param name="connection">连线。</param>
+    public static string GetConnectionLabel(WorkflowDesignerSession session, WorkflowConnectionModel connection)
+    {
+        ArgumentNullException.ThrowIfNull(session); ArgumentNullException.ThrowIfNull(connection);
+        var semantic = WorkflowPorts.GetDisplayName(connection.FromPort);
+        var note = string.IsNullOrWhiteSpace(connection.Note) ? null : connection.Note.Trim();
+        string text;
+        if (connection.FromPort == WorkflowPorts.Branch)
+            text = note is null ? semantic + BranchNumber(session, connection) : $"{semantic} · {note}";
+        else if (note is null) text = semantic;
+        else text = HasSemanticLabel(session, connection) ? $"{semantic} · {note}" : note;
+        return connection.Enabled ? text : text + "（停用）";
+    }
+
+    /// <summary>画布上显示的标签：过长时截断。</summary>
+    /// <param name="session">设计会话。</param><param name="connection">连线。</param>
+    public static string GetConnectionLabelDisplay(WorkflowDesignerSession session, WorkflowConnectionModel connection)
+    {
+        var text = GetConnectionLabel(session, connection);
+        return text.Length <= MaximumLabelLength ? text : text[..(MaximumLabelLength - 1)] + "…";
+    }
+
+    /// <summary>连线是否可以停用：目前只有并行节点的分支连线。</summary>
+    /// <param name="session">设计会话。</param><param name="connection">连线。</param>
+    public static bool CanDisableConnection(WorkflowDesignerSession session, WorkflowConnectionModel connection) =>
+        connection.FromPort == WorkflowPorts.Branch
+        && session.Canvas.Nodes.FirstOrDefault(n => n.Node.Id == connection.FromNodeId)?.Node is IWorkflowParallelForkNode;
+
+    // 同一并行节点 Branch 端口的连线按画布顺序编号，从 1 开始。
+    private static int BranchNumber(WorkflowDesignerSession session, WorkflowConnectionModel connection) =>
+        session.Canvas.Connections.Where(c => c.FromNodeId == connection.FromNodeId && c.FromPort == WorkflowPorts.Branch)
+            .TakeWhile(c => !ReferenceEquals(c, connection)).Count() + 1;
 
     /// <summary>生成节点执行序号和耗时显示文本；节点尚未执行时返回 null。</summary>
     public static string? GetRuntimeDisplayText(WorkflowDesignerSession session, WorkflowCanvasNode node)
