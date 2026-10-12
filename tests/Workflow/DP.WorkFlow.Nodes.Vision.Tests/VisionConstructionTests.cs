@@ -41,6 +41,12 @@ public sealed class VisionConstructionTests
         var parallel = VisionConstruction.MeasureAngle(Line(0, 0, 10, 0), Line(0, 5, 10, 5), EVisionLineAngleMode.Acute);
         Assert.Equal(0, parallel.AngleDegrees, 9);
         Assert.Null(parallel.Intersection);
+        // 近乎平行（交点在千万像素之外）：夹角照常给出，交点为空，不抛坐标越界异常。
+        var nearly = VisionConstruction.MeasureAngle(Line(0, 0, 1000, 0), Line(0, 5, 1000, 5.00001), EVisionLineAngleMode.Acute);
+        Assert.InRange(nearly.AngleDegrees, 0, 1e-5);
+        Assert.Null(nearly.Intersection);
+        Assert.Contains("近乎平行", Assert.Throws<InvalidOperationException>(() =>
+            VisionConstruction.IntersectLines(Line(0, 0, 1000, 0), Line(0, 5, 1000, 5.00001), 0)).Message);
     }
 
     [Fact]
