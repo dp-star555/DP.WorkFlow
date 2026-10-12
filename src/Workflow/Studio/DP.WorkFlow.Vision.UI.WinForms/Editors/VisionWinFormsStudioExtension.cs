@@ -11,13 +11,15 @@ public sealed class VisionWinFormsStudioExtension : IWorkflowWinFormsStudioExten
     public DP.Vision.Algorithms.IImageFileReader? FileReader { get; init; }
     /// <summary>节点内模板制作使用的引擎和资源上下文。</summary>
     public VisionTemplateEditingRuntime? Templates { get; init; }
+    /// <summary>画布工具栏“运行”使用的单节点试运行器；为空时不显示“运行”。</summary>
+    public WorkflowNodeTrialRunner? NodeRunner { get; init; }
     /// <inheritdoc/>
     public string ExtensionId => "Vision.Studio.WinForms";
     /// <inheritdoc/>
     public void Register(WorkflowWinFormsStudioExtensionCatalog extensions)
     {
         ArgumentNullException.ThrowIfNull(extensions);
-        extensions.RegisterPageProvider(new VisionFrameEditorPageProvider(FrameSource, FileReader, Templates))
+        extensions.RegisterPageProvider(new VisionFrameEditorPageProvider(FrameSource, FileReader, Templates, NodeRunner))
             .RegisterRenderer(new VisionFrameEditorRenderer())
             .RegisterRenderer(new VisionTemplateAuthoringRenderer());
     }

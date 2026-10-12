@@ -86,7 +86,8 @@ public partial class MainWindow : Window
         Studio.AddToolWindow("插件与算法", new WorkflowVisionAlgorithmPanel(_algorithmDiagnostics,
             () => _workspace.Navigator?.RootDocument, () => _workspace.Navigator?.CurrentSession));
         Studio.NodeEditorExtensions.Register(new VisionWpfStudioExtension
-        { FrameSource = _frameScope, FileReader = fileReader, Templates = new VisionTemplateEditingRuntime(algorithmCatalog, _algorithmRuntime, Resources) });
+        { FrameSource = _frameScope, FileReader = fileReader, Templates = new VisionTemplateEditingRuntime(algorithmCatalog, _algorithmRuntime, Resources),
+          NodeRunner = new WorkflowNodeTrialRunner(handlers, () => _runtimeBinding?.RunContext ?? throw new InvalidOperationException("运行上下文尚未创建。")) });
         // 标签节点：WPF 提供配方导入/导出与只读报告；ROI图上编辑与试检测使用 WinForms 配置页。
         Studio.NodeEditorExtensions.Register(new LabelInspectionWpfExtension { FrameSource = _frameScope });
         // 采集节点的"逻辑图像源"从本机已发布的源里选；面阵节点与线扫节点各看各的采集类型。

@@ -7,7 +7,7 @@ namespace DP.WorkFlow.Vision.UI;
 
 /// <summary>新版帧节点共用页面，不依赖厂商原生视口。</summary>
 public sealed class VisionFrameEditorPageProvider(IWorkflowVisionPreviewSource? frames = null, IImageFileReader? reader = null,
-    VisionTemplateEditingRuntime? templates = null) : IWorkflowNodeEditorPageProvider
+    VisionTemplateEditingRuntime? templates = null, WorkflowNodeTrialRunner? runner = null) : IWorkflowNodeEditorPageProvider
 {
     /// <summary>两个平台共享的精确Renderer键。</summary>
     public const string RendererKey = "DP.Vision.FrameEditor";
@@ -21,7 +21,7 @@ public sealed class VisionFrameEditorPageProvider(IWorkflowVisionPreviewSource? 
         if (!CanProvide(context)) yield break;
         yield return new WorkflowNodeEditorPageDescriptor("Image", "图像与测量范围",
             WorkflowNodeEditorPageKind.Custom, 450, new VisionFrameEditorPageModel(context.Node, frames, reader,
-                templates, enableTemplateEditing: false, configurationChanged: context.Session.NotifyNodeConfigurationChanged),
+                templates, enableTemplateEditing: false, configurationChanged: context.Session.NotifyNodeConfigurationChanged, runner: runner),
             IconKey: "Image", RendererKey: RendererKey, Priority: 100);
         if (context.Node is IWorkflowVisionTemplateNode && context.RequestedPropertyEditor == WorkflowPropertyEditorKeys.VisionTemplateEditor)
             yield return new WorkflowNodeEditorPageDescriptor("Template", "模板制作/选择", WorkflowNodeEditorPageKind.Custom, 460,
@@ -76,11 +76,12 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     /// <param name="enableTemplateEditing">是否创建模板制作草稿。</param>
     /// <param name="templateEditorOnly">是否只编辑模板，保留匹配节点搜索范围。</param>
     /// <param name="configurationChanged">图上编辑修改了节点参数后的通知（例如刷新参数页）。</param>
+    /// <param name="runner">“运行本节点”使用的试运行器，可为空。</param>
     public VisionFrameEditorPageModel(IWorkflowNodeModel node, IWorkflowVisionPreviewSource? frames = null, IImageFileReader? reader = null,
         VisionTemplateEditingRuntime? templates = null,
-        bool enableTemplateEditing = true, bool templateEditorOnly = false, Action? configurationChanged = null)
+        bool enableTemplateEditing = true, bool templateEditorOnly = false, Action? configurationChanged = null, WorkflowNodeTrialRunner? runner = null)
     {
-        IsTemplateEditor = templateEditorOnly;
+        IsTemplateEditor = templateEditorOnly; _runner = runner;
         _configurationChanged = configurationChanged;
         if (!templateEditorOnly && node is MeasureVisionCaliperNodeModel caliper) Caliper = new VisionCaliperGizmo(caliper);
         if (!templateEditorOnly && node is FindVisionShapeNodeModel find) Caliper = new VisionFindShapeGizmo(find);
@@ -314,7 +315,10 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             if (view == 0 && _node is AnalyzeVisionFrameNodeModel a && a.Frame.Binding is { IsPublicData: false } input) id = input.NodeId;
             if (view == 2 && _node is LocateVisionTemplatePoseNodeModel p && p.Template.Binding is { IsPublicData: false } poseTemplate) id = poseTemplate.NodeId;
             using var current = view == 3 ? null : _frames?.Capture(id);
-            var frame = view == 3 ? _manual : current?.Frame;
+            // 本窗口运行的结果在下一次流程运行之前代替“结果图像”；选了文件来源时输入图像为手动图像。
+            var trial = view == 1 && _trial is { } t && t.BaseSequence == current?.Sequence ? t : null;
+            var manualInput = view == 0 ? ManualInputLocked : null;
+            var frame = view == 3 ? _manual : trial?.Frame ?? manualInput ?? current?.Frame;
             if (frame is null)
             {
                 CoordinateEditingReady = false;
@@ -337,9 +341,9 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             if (Caliper is not null) Caliper.Coordinates = CoordinateEditingReady ? _displayCoordinates : null;
             var analysis = _node as AnalyzeVisionFrameNodeModel;
             using var maskPreview = analysis?.Mask.Binding is { IsPublicData: false } maskBinding ? _frames?.Capture(maskBinding.NodeId) : null;
-            string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}:{Caliper?.Key}:{_imagePixelsPerScreenPixel:0.###}";
+            string key = $"{view}:{frame.FrameId}:{current?.Sequence}:{maskPreview?.Sequence}:{analysis?.Mask.Source}:{analysis?.Mask.Binding}:{analysis?.FullImage}:{analysis?.X}:{analysis?.Y}:{analysis?.Width}:{analysis?.Height}:{ShowMask}:{Caliper?.Key}:{_imagePixelsPerScreenPixel:0.###}:{_trialVersion}:{trial is not null}:{manualInput is not null}";
             if (_lastKey == key) return null;
-            var facts = view == 1 ? current?.Facts : null;
+            var facts = view == 1 ? trial is not null ? trial.Facts : current?.Facts : null;
             _lastKey = key; // 失败的显示包不在定时器中反复分配；切换来源或新帧才重试。
             var shown = Visuals(facts, Describe(facts, frame), _imagePixelsPerScreenPixel).Take(10001).ToArray();
             var visuals = shown.Select(v => v.Visual).ToArray();
@@ -368,7 +372,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
             var overlay = new GeometryOverlay(frame.FrameId, layers);
             var canvas = new CanvasFrame(frame.FrameId, ++_sequence, frame.Image, overlay);
             _visuals = visuals; _details = shown.ToDictionary(v => v.Visual.Id, v => v.Detail, StringComparer.Ordinal); _lastKey = key;
-            Status = Describe(facts, frame) + maskStatus;
+            Status = (trial?.Text ?? (manualInput is not null ? $"手动图像 {ImageSourceText}；" : "")) + Describe(facts, frame) + maskStatus;
             // 卡尺尺寸说明放在状态栏，图上不画文字标签。
             if (Caliper is not null)
                 Status += ShowsEditableOverlays(view)
@@ -455,7 +459,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
         lock (_gate)
         {
             if (_disposed) return; _disposed = true;
-            _lifetime.Cancel(); _manual?.Dispose(); _manual = null;
+            _lifetime.Cancel(); _manual?.Dispose(); _manual = null; _trial?.Frame.Dispose(); _trial = null;
             Template?.Dispose();
             Editor.DocumentChanged -= OnDocumentChanged; Editor.Cancel();
         }

@@ -134,6 +134,20 @@ public sealed class WorkflowBindingResolver
         return ConvertValue<T>(binding, raw);
     }
 
+    /// <summary>按最近一次运行的 Latest 输出解析输入（固定值照常返回）；只用于编辑器试运行，不校验 Token/Scope 可见性。</summary>
+    internal static T? ResolveLatestInput<T>(WorkflowContext context, WorkflowInput<T> input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var validationError = input.Validate();
+        if (validationError is not null)
+            throw new InvalidOperationException(validationError);
+        if (input.Source == WorkflowValueSource.Literal)
+            return typeof(T) == typeof(object) && input.LiteralValue is JsonElement element
+                ? (T?)(object?)ConvertJsonElement(element)
+                : input.LiteralValue;
+        return ResolveLatest<T>(context, input.Binding!.Value);
+    }
+
     private static object? ConvertJsonElement(JsonElement element) => element.ValueKind switch
     {
         JsonValueKind.Null or JsonValueKind.Undefined => null,
