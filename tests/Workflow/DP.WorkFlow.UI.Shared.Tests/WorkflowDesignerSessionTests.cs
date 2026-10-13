@@ -56,26 +56,40 @@ public sealed class WorkflowDesignerSessionTests
     }
 
     [Fact]
-    public void NodeHeaderLayout_KeepsTitleAndRuntimeOnHeaderRowWithCenteredIndicator()
+    public void NodeHeaderLayout_PlacesIconTitleOrderBadgeAndDurationOnOneRow()
     {
         var layout = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(
-            new WorkflowDesignerRect(100, 50, 180, 64),
+            new WorkflowDesignerRect(100, 50, 240, 72),
             zoom: 1,
-            measuredRuntimeWidth: 60);
+            measuredOrderWidth: 20,
+            measuredDurationWidth: 40);
 
-        Assert.True(layout.TitleBounds.X + layout.TitleBounds.Width <= layout.RuntimeBounds.X);
-        Assert.Equal(60, layout.RuntimeBounds.Width);
-        Assert.Equal(50, layout.TitleBounds.Y);
-        Assert.Equal(layout.TitleBounds.Y, layout.RuntimeBounds.Y);
-        Assert.Equal(WorkflowDesignerGeometry.HeaderHeight, layout.RuntimeBounds.Height);
-        var indicatorCenter = layout.IndicatorBounds.Y + layout.IndicatorBounds.Height / 2;
-        Assert.Equal(50 + WorkflowDesignerGeometry.HeaderHeight / 2, indicatorCenter, 6);
-        Assert.True(layout.IndicatorBounds.X + layout.IndicatorBounds.Width < layout.TitleBounds.X);
+        // 左起：状态点 → 图标 → 标题；右起：耗时 → 序号徽标，互不重叠。
+        Assert.True(layout.IndicatorBounds.X + layout.IndicatorBounds.Width < layout.IconBounds.X);
+        Assert.True(layout.IconBounds.X + layout.IconBounds.Width < layout.TitleBounds.X);
+        Assert.True(layout.TitleBounds.X + layout.TitleBounds.Width <= layout.OrderBounds.X);
+        Assert.True(layout.OrderBounds.X + layout.OrderBounds.Width <= layout.DurationBounds.X);
+        Assert.Equal(240 + 100 - 10, layout.DurationBounds.X + layout.DurationBounds.Width, 6);
+        Assert.Equal(30, layout.OrderBounds.Width);
+        Assert.Equal(40, layout.DurationBounds.Width);
+        // 全部垂直居中在 48 高的标题行内，与正文无关。
+        var headerCenter = 50 + WorkflowDesignerGeometry.HeaderHeight / 2;
+        Assert.Equal(headerCenter, layout.IndicatorBounds.Y + layout.IndicatorBounds.Height / 2, 6);
+        Assert.Equal(headerCenter, layout.IconBounds.Y + layout.IconBounds.Height / 2, 6);
+        Assert.Equal(headerCenter, layout.OrderBounds.Y + layout.OrderBounds.Height / 2, 6);
+        Assert.Equal(WorkflowDesignerGeometry.HeaderHeight, layout.TitleBounds.Height);
         Assert.Equal(WorkflowDesignerGeometry.TitleFontPixels, layout.TitleFontSize);
-        Assert.Equal(WorkflowDesignerGeometry.DetailFontPixels, layout.RuntimeFontSize);
+        Assert.Equal(WorkflowDesignerGeometry.DetailFontPixels, layout.DetailFontSize);
 
-        var crowded = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(new WorkflowDesignerRect(0, 0, 180, 64), 1, 500);
-        Assert.True(crowded.RuntimeBounds.Width <= (180 - 34) * 0.5 + 0.01);
+        // 空间不足时先压缩耗时，序号徽标保持完整（回环时靠序号找最后执行的节点）。
+        var crowded = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(new WorkflowDesignerRect(0, 0, 144, 48), 1, 20, 500);
+        Assert.Equal(30, crowded.OrderBounds.Width);
+        var available = 144 - 10 - crowded.TitleBounds.X;
+        Assert.True(crowded.OrderBounds.Width + crowded.DurationBounds.Width + 6 <= available * 0.5 + 0.01);
+
+        var idle = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(new WorkflowDesignerRect(0, 0, 144, 48), 1, 0, 0);
+        Assert.Equal(0, idle.OrderBounds.Width);
+        Assert.Equal(144 - 10, idle.TitleBounds.X + idle.TitleBounds.Width, 6);
     }
 
     [Fact]
@@ -178,18 +192,38 @@ public sealed class WorkflowDesignerSessionTests
     }
 
     [Fact]
-    public void SidePorts_AreSpacedEvenlyBelowTheHeader()
+    public void SidePorts_SitOnePerRowBelowTheHeader()
+    {
+        var session = CreateSession();
+        var node = session.AddNode("Decision", 96, 96);
+        var outputs = session.GetPorts(node.Node.Id, WorkflowPortDirection.Output);
+        foreach (var port in outputs)
+            session.SetPortSide(node.Node.Id, WorkflowPortDirection.Output, port.Key, WorkflowPortSide.Right);
+
+        var rows = WorkflowDesignerGeometry.GetNodeRows(session, node);
+        Assert.Equal(outputs.Count, rows.SideRows);
+        Assert.Equal(rows.NodeHeight, node.Height);
+        var bounds = WorkflowDesignerGeometry.GetNodeScreenRect(session, node);
+        for (var index = 0; index < outputs.Count; index++)
+        {
+            var point = WorkflowDesignerGeometry.GetPortScreenPoint(session, node, outputs[index], outputs);
+            // 每个侧边端口居中在自己的 24 高正文行里：标题行 48 之后依次 60、84 …
+            Assert.Equal(bounds.Y + (WorkflowDesignerGeometry.HeaderHeight + (rows.TopLabelRows + index + 0.5) * WorkflowDesignerGeometry.RowHeight) * session.Zoom, point.Y, 6);
+            Assert.Equal(bounds.X + bounds.Width, point.X, 6);
+        }
+    }
+
+    [Fact]
+    public void SideOverrideOnNodeWithoutSideRows_StaysInsideTheNode()
     {
         var session = CreateSession();
         var node = session.AddNode("End", 100, 100);
         var ports = session.GetPorts(node.Node.Id, WorkflowPortDirection.Input);
         var point = WorkflowDesignerGeometry.GetPortScreenPoint(session, node, ports[0], ports, WorkflowPortSide.Left);
         var bounds = WorkflowDesignerGeometry.GetNodeScreenRect(session, node);
-        var (top, height) = WorkflowDesignerGeometry.GetSideTrack(bounds, session.Zoom);
 
-        // 单个侧边端口位于标题栏下方正文区的中点，而不是整条边的中点（会压在标题栏边上）。
-        Assert.Equal(top + height / 2, point.Y, 6);
-        Assert.True(point.Y > bounds.Y + Math.Min(bounds.Height * 0.45, WorkflowDesignerGeometry.HeaderHeight * session.Zoom));
+        // 没有侧边端口行时，换到侧边的端点位于节点竖直中点。
+        Assert.Equal(bounds.Y + bounds.Height / 2, point.Y, 6);
     }
 
     [Fact]

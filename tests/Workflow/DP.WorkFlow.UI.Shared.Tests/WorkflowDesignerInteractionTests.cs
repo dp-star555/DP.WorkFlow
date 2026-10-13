@@ -63,8 +63,10 @@ public sealed class WorkflowDesignerInteractionTests
         Assert.Equal(WorkflowPortSide.Bottom, WorkflowDesignerInteraction.NearestSide(rect, 50, 49));
         Assert.True(WorkflowDesignerInteraction.IsNearRect(rect, 140, 25, 42));
         Assert.False(WorkflowDesignerInteraction.IsNearRect(rect, 143, 25, 42));
-        // 左右边锚点位于标题栏下方正文区的中点：标题栏高 min(50×0.45, 32) = 22.5。
-        Assert.Equal(new WorkflowPoint(100, 22.5 + 27.5 / 2), WorkflowDesignerInteraction.GetSideCenter(rect, WorkflowPortSide.Right, 1));
+        // 没有侧边端口行时左右锚点取节点竖直中点；有侧边行时取这些行的中点。
+        Assert.Equal(new WorkflowPoint(100, 25), WorkflowDesignerInteraction.GetSideCenter(rect, WorkflowPortSide.Right, 1));
+        var tall = new WorkflowDesignerRect(0, 0, 96, 120);
+        Assert.Equal(new WorkflowPoint(0, 48 + 24 + 24), WorkflowDesignerInteraction.GetSideCenter(tall, WorkflowPortSide.Left, 1, new WorkflowNodeRows(1, 2, 0, 0)));
         Assert.Equal(new WorkflowPoint(50, 0), WorkflowDesignerInteraction.GetSideCenter(rect, WorkflowPortSide.Top, 1));
     }
 
@@ -151,13 +153,16 @@ public sealed class WorkflowDesignerInteractionTests
     [Fact]
     public void ZoomedOutDrawing_KeepsGridAndShapesProportional()
     {
-        // 缩小后栅格按2的幂合并成粗栅格而不是消失，间距仍是设计栅格的整数倍。
-        foreach (var zoom in new[] { 1.0, .3, .1, .05 })
+        // 细线每格一条、主线每 5 格一条；缩小后先隐藏细线，主线再按 2 的幂合并，间距仍是设计栅格的整数倍。
+        Assert.Equal((24d, 120d), WorkflowDesignerGeometry.GridLineSpacing(1));
+        Assert.Equal(0, WorkflowDesignerGeometry.GridLineSpacing(.3).Minor);
+        foreach (var zoom in new[] { 1.0, .3, .1, .05, .01 })
         {
-            var spacing = WorkflowDesignerGeometry.GridScreenSpacing(zoom);
-            Assert.True(spacing >= 8);
-            var cells = spacing / (WorkflowDesignerGeometry.GridSize * zoom);
-            Assert.Equal(Math.Round(cells), cells, 6);
+            var (minor, major) = WorkflowDesignerGeometry.GridLineSpacing(zoom);
+            Assert.True(minor == 0 || minor >= 8);
+            Assert.True(major >= 8);
+            var cells = major / (WorkflowDesignerGeometry.GridSize * zoom);
+            Assert.Equal(0, cells % WorkflowDesignerGeometry.MajorGridCells, 6);
         }
         // 圆角随缩放等比，任何缩放下都小于节点高度的一半（不会变成胶囊）。
         foreach (var zoom in new[] { .2, .5, 1.0, 2.0 })

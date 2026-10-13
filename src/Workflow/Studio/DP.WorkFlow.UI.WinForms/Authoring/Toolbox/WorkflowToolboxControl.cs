@@ -9,6 +9,7 @@ namespace DP.WorkFlow.UI.WinForms;
 public sealed partial class WorkflowToolboxControl : UserControl
 {
     private WorkflowDesignerSession? _session;
+    private ImageList? _icons;
 
     /// <summary>初始化工作流节点工具箱。</summary>
     public WorkflowToolboxControl()
@@ -51,6 +52,7 @@ public sealed partial class WorkflowToolboxControl : UserControl
     {
         toolboxTreeView.BeginUpdate();
         toolboxTreeView.Nodes.Clear();
+        EnsureIconList();
         if (_session is not null)
         {
             var filter = searchInput.Text.Trim();
@@ -87,10 +89,50 @@ public sealed partial class WorkflowToolboxControl : UserControl
             }
             nodes = category.Nodes;
         }
+        var icon = IconKey(item.ResolveIcon());
         nodes.Add(new TreeNode(item.DisplayName)
         {
             Tag = item,
-            ToolTipText = item.Description ?? item.NodeType
+            ToolTipText = item.Description ?? item.NodeType,
+            ImageKey = icon,
+            SelectedImageKey = icon
         });
+    }
+
+    /// <summary>按当前 DPI 建立图标列表：节点名称左侧显示与画布节点相同的线框图标；DPI 变化时重建。</summary>
+    private void EnsureIconList()
+    {
+        var size = Math.Max(12, (int)Math.Round(16 * DeviceDpi / 96d));
+        if (_icons?.ImageSize.Width == size) return;
+        var previous = _icons;
+        _icons = new ImageList { ColorDepth = ColorDepth.Depth32Bit, ImageSize = new Size(size, size) };
+        toolboxTreeView.ImageList = _icons;
+        previous?.Dispose();
+    }
+
+    /// <summary>把图标绘制进图标列表（每个图标只绘制一次），返回其键。</summary>
+    private string IconKey(WorkflowNodeIcon icon)
+    {
+        if (_icons is null) return icon.Key;
+        if (!_icons.Images.ContainsKey(icon.Key))
+        {
+            var size = _icons.ImageSize.Width;
+            var bitmap = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using (var graphics = Graphics.FromImage(bitmap))
+            {
+                graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var inset = size / 16f;
+                WorkflowDesignerControl.DrawIcon(graphics, icon, new RectangleF(inset, inset, size - 2 * inset, size - 2 * inset), WorkflowDesignerPalette.Icon);
+            }
+            _icons.Images.Add(icon.Key, bitmap);
+        }
+        return icon.Key;
+    }
+
+    /// <inheritdoc />
+    protected override void OnDpiChangedAfterParent(EventArgs e)
+    {
+        base.OnDpiChangedAfterParent(e);
+        RebuildTree();
     }
 }

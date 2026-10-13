@@ -706,6 +706,8 @@ public sealed record ReadSensorOutput(double Value, string Unit);
 
 节点模型只保存可持久化配置，不应引用 WinForms、WPF、Control、Brush、Dispatcher 等 UI 类型。
 
+画布节点标题行和工具箱名称左侧显示同一个线框图标。节点定义可以用 `Icon` 声明：设计器内置的图标键（如 `Icon = "camera"`），或 24×24 视图框的 SVG 路径数据（线框描边，如 `Icon = "M4 12h16M12 4v16"`）。不声明时按节点类型、再按分类前缀选择；宿主或插件也可以调用 `WorkflowNodeIcons.RegisterIcon / MapNodeType / MapCategory` 补充，节点程序集不需要引用任何界面类型。
+
 ### 16.2 定义 Handler
 
 ```csharp

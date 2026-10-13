@@ -30,6 +30,12 @@ public static class WorkflowDesignerInteraction
             .Reverse()
             .FirstOrDefault(node => WorkflowDesignerGeometry.GetNodeScreenRect(session, node).Contains(x, y));
 
+    /// <summary>返回鼠标悬停的最上层节点：范围比节点外扩一个端口拾取半径，移到边上的端口时节点仍算悬停，端口保持放大。</summary>
+    public static WorkflowCanvasNode? HitHoverNode(WorkflowDesignerSession session, double x, double y) =>
+        session.Canvas.Nodes
+            .Reverse()
+            .FirstOrDefault(node => IsNearRect(WorkflowDesignerGeometry.GetNodeScreenRect(session, node), x, y, PortHitRadius));
+
     /// <summary>返回指定屏幕坐标命中的端口及其实际边。</summary>
     /// <param name="session">设计器会话。</param>
     /// <param name="x">屏幕横坐标。</param>
@@ -93,17 +99,17 @@ public static class WorkflowDesignerInteraction
         var bounds = WorkflowDesignerGeometry.GetNodeScreenRect(session, node);
         foreach (var side in Polyfill.GetEnumValues<WorkflowPortSide>())
         {
-            var point = GetSideCenter(bounds, side, session.Zoom, node.ExposedOutputMembers.Count);
+            var point = GetSideCenter(bounds, side, session.Zoom, WorkflowDesignerGeometry.GetNodeRows(session, node));
             if (Math.Pow(point.X - x, 2) + Math.Pow(point.Y - y, 2) <= 36)
                 return new WorkflowPortHit(node, outputs[0], point, side);
         }
         return null;
     }
 
-    /// <summary>返回节点指定边的端口锚点：上下边取中点，左右边取标题栏下方正文区的中点。</summary>
-    public static WorkflowPoint GetSideCenter(WorkflowDesignerRect bounds, WorkflowPortSide side, double zoom, int dataPortCount = 0)
+    /// <summary>返回节点指定边的端口锚点：上下边取中点，左右边取侧边端口行的中点（没有侧边行时取节点竖直中点）。</summary>
+    public static WorkflowPoint GetSideCenter(WorkflowDesignerRect bounds, WorkflowPortSide side, double zoom, WorkflowNodeRows rows = default)
     {
-        var (top, height) = WorkflowDesignerGeometry.GetSideTrack(bounds, zoom, dataPortCount);
+        var (top, height) = WorkflowDesignerGeometry.GetSideTrack(bounds, zoom, rows);
         return side switch
         {
             WorkflowPortSide.Left => new WorkflowPoint(bounds.X, top + height / 2),
@@ -365,12 +371,26 @@ public static class WorkflowDesignerInteraction
     /// <summary>生成节点执行序号和耗时显示文本；节点尚未执行时返回 null。</summary>
     public static string? GetRuntimeDisplayText(WorkflowDesignerSession session, WorkflowCanvasNode node)
     {
+        var order = GetRuntimeOrderText(session, node);
+        return order is null ? null : $"{order}  {GetRuntimeDurationText(session, node)}";
+    }
+
+    /// <summary>执行序号文字（如“#17”）；节点在本轮未执行时为空。回环时序号最大的节点即最后执行的节点。</summary>
+    public static string? GetRuntimeOrderText(WorkflowDesignerSession session, WorkflowCanvasNode node)
+    {
+        var info = session.GetNodeRuntimeInfo(node.Node.Id);
+        return info is not { ExecutionCount: > 0 } ? null : $"#{info.ExecutionSequence}";
+    }
+
+    /// <summary>最近一次执行耗时文字；运行中为截至当前的耗时，未执行时为空。</summary>
+    public static string? GetRuntimeDurationText(WorkflowDesignerSession session, WorkflowCanvasNode node)
+    {
         var info = session.GetNodeRuntimeInfo(node.Node.Id);
         if (info is not { ExecutionCount: > 0 }) return null;
         var elapsed = info.State == E_NodeState.Running && info.StartedAt.HasValue
             ? DateTimeOffset.UtcNow - info.StartedAt.Value
             : info.Elapsed;
-        return $"#{info.ExecutionSequence}  {FormatElapsed(elapsed)}";
+        return FormatElapsed(elapsed);
     }
 
     /// <summary>将运行耗时格式化为合适精度的文本。</summary>

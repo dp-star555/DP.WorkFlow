@@ -32,4 +32,10 @@ public sealed class WorkflowNodeAttribute : Attribute
 
     /// <summary>获取或设置节点图标资源名称。</summary>
     public string? IconResourceName { get; set; }
+
+    /// <summary>
+    /// 获取或设置画布和工具箱显示的图标：设计器内置的图标键（如 "camera"），或 24×24 视图框的 SVG 路径数据（线框描边）。
+    /// 为空时设计器按节点类型和分类选择图标。
+    /// </summary>
+    public string? Icon { get; set; }
 }
