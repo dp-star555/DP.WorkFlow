@@ -86,10 +86,10 @@ public static class WorkflowDesignerGeometry
     /// <summary>主栅格线间隔的格数。</summary>
     public const int MajorGridCells = 5;
 
-    /// <summary>节点边框宽度（屏幕像素）：设计宽度随缩放等比，最细 1 像素。</summary>
+    /// <summary>节点边框宽度（屏幕像素）：设计宽度随缩放变化（缩放限制在 0.5～1.5 之间，放大时不会过粗），最细 1 像素。</summary>
     /// <param name="zoom">当前缩放。</param>
     /// <param name="designWidth">缩放为 1 时的边框宽度，见 <see cref="WorkflowNodeVisualStyle.BorderWidth"/>。</param>
-    public static double NodeBorderWidth(double zoom, double designWidth) => Math.Max(1, Math.Min(designWidth, designWidth * zoom));
+    public static double NodeBorderWidth(double zoom, double designWidth) => Math.Max(1, designWidth * Polyfill.Clamp(zoom, 0.5, 1.5));
 
     /// <summary>端口圆点半径（屏幕像素）：平时为直径 6 的小圆点，悬停节点或拖线时放大便于拾取。</summary>
     /// <param name="zoom">当前缩放。</param>

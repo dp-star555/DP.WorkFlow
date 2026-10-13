@@ -18,6 +18,11 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
     private readonly object _snapshotSync = new();
     private WorkflowRuntimeSnapshot? _pendingSnapshot;
     private bool _snapshotDispatchQueued;
+    // 相邻两次应用快照的最小间隔：快速循环时快照源源不断，若每次应用后立即再排队，
+    // 界面线程的消息队列始终有待处理的分发，鼠标、按钮和重绘都得不到处理。
+    private const int MinimumDispatchIntervalMilliseconds = 50;
+    private readonly System.Diagnostics.Stopwatch _sinceLastDispatch = System.Diagnostics.Stopwatch.StartNew();
+    private Timer? _dispatchDelay;
     private Guid _lastAppliedRunId;
     private long _lastAppliedSequence = -1;
     private bool _disposed;
@@ -194,6 +199,8 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
         {
             _disposed = true;
             _pendingSnapshot = null;
+            _dispatchDelay?.Dispose();
+            _dispatchDelay = null;
         }
         _host.SnapshotChanged -= OnSnapshotChanged;
     }
@@ -211,8 +218,26 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
         QueueSnapshotDispatch();
     }
 
-    /// <summary>保证快照分发任务只排队一次。</summary>
+    /// <summary>保证快照分发任务只排队一次；距上次应用不足最小间隔时延后排队。</summary>
     private void QueueSnapshotDispatch()
+    {
+        var wait = MinimumDispatchIntervalMilliseconds - _sinceLastDispatch.ElapsedMilliseconds;
+        if (wait > 0)
+        {
+            lock (_snapshotSync)
+            {
+                if (_disposed) return;
+                _dispatchDelay ??= new Timer(static state => ((WorkflowStudioRuntimeBinding)state!).PostSnapshotDispatch(), this,
+                    Timeout.Infinite, Timeout.Infinite);
+                _dispatchDelay.Change(wait, Timeout.Infinite);
+            }
+            return;
+        }
+        PostSnapshotDispatch();
+    }
+
+    /// <summary>把快照分发投递到界面同步上下文（没有时用线程池）。</summary>
+    private void PostSnapshotDispatch()
     {
         if (_dispatchContext is not null)
             _dispatchContext.Post(static state => ((WorkflowStudioRuntimeBinding)state!).DispatchPendingSnapshot(), this);
@@ -236,6 +261,7 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
             _pendingSnapshot = null;
         }
         if (snapshot is not null) ApplySnapshot(snapshot);
+        _sinceLastDispatch.Restart();
         lock (_snapshotSync)
         {
             if (_pendingSnapshot is null)

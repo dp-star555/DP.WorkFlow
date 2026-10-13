@@ -19,6 +19,10 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
     private WorkflowStudioRuntimeBinding? _runtimeBinding;
     private IWorkflowRuntimeMonitorSource? _source;
     private IWorkflowRuntimeMonitorSource? _subscribed;
+    // 运行数据变化只置脏标记，由定时器合并刷新：快速循环时每秒可能有上千次变化，逐次重设表格会占满界面线程。
+    private readonly System.Windows.Threading.DispatcherTimer _refreshTimer;
+    private bool _runtimeDirty;
+    private bool _applyingRuntimeData;
 
     /// <summary>初始化工作流运行时监视控件。</summary>
     public WorkflowRuntimeMonitorControl()
@@ -35,8 +39,16 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
         tabs.Items.Add(new TabItem { Header = "输出", Content = _output });
         tabs.Items.Add(new TabItem { Header = "Timing", Content = _timing });
         Content = tabs;
-        _model.Changed += (_, _) => RefreshLists();
-        Unloaded += (_, _) => Subscribe(null);
+        _refreshTimer = new System.Windows.Threading.DispatcherTimer(
+            TimeSpan.FromMilliseconds(250), System.Windows.Threading.DispatcherPriority.Background, (_, _) => FlushRuntimeData(), Dispatcher);
+        _refreshTimer.Stop();
+        _model.Changed += (_, _) => { if (!_applyingRuntimeData) RefreshLists(); };
+        IsVisibleChanged += (_, _) => { if (IsVisible) FlushRuntimeData(); };
+        Unloaded += (_, _) =>
+        {
+            _refreshTimer.Stop();
+            Subscribe(null);
+        };
         Loaded += (_, _) =>
         {
             Subscribe(_source);
@@ -87,27 +99,54 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
     private void OnRuntimeChanged(object? sender, EventArgs e)
     {
         if (Dispatcher.CheckAccess())
-            RefreshRuntimeData();
+            MarkRuntimeDirty();
         else
-            _ = Dispatcher.BeginInvoke(RefreshRuntimeData);
+            _ = Dispatcher.BeginInvoke(MarkRuntimeDirty);
     }
 
-    /// <summary>刷新Lists。</summary>
+    /// <summary>记录运行数据已变化；定时器到期时合并为一次刷新。</summary>
+    private void MarkRuntimeDirty()
+    {
+        _runtimeDirty = true;
+        if (!_refreshTimer.IsEnabled) _refreshTimer.Start();
+    }
+
+    /// <summary>把累计的运行数据变化一次性应用到界面；控件不可见时推迟到重新显示。</summary>
+    private void FlushRuntimeData()
+    {
+        _refreshTimer.Stop();
+        if (!_runtimeDirty || !IsVisible) return;
+        RefreshRuntimeData();
+    }
+
+    /// <summary>刷新Lists；数据未变的表格不重设数据源（重设会重建自动生成的列和全部行）。</summary>
     private void RefreshLists()
     {
-        _tokens.ItemsSource = _model.Tokens;
-        _scopes.ItemsSource = _model.ParallelScopes;
-        _children.ItemsSource = _model.ChildWorkflows;
-        _trace.ItemsSource = _model.TraceEntries;
-        _output.ItemsSource = _model.OutputEntries;
-        _timing.ItemsSource = _model.TimingTrends;
+        static void Set(DataGrid grid, System.Collections.IEnumerable items)
+        {
+            if (!ReferenceEquals(grid.ItemsSource, items)) grid.ItemsSource = items;
+        }
+        Set(_tokens, _model.Tokens);
+        Set(_scopes, _model.ParallelScopes);
+        Set(_children, _model.ChildWorkflows);
+        Set(_trace, _model.TraceEntries);
+        Set(_output, _model.OutputEntries);
+        Set(_timing, _model.TimingTrends);
     }
 
     /// <summary>刷新Runtime Data。</summary>
     private void RefreshRuntimeData()
     {
-        _model.SetSnapshot(_source?.GetSnapshot());
-        _model.SetTraceBatch(_source?.GetTraceBatch());
+        _runtimeDirty = false;
+        // 快照和轨迹各自触发一次模型变化，合并成一次表格刷新。
+        _applyingRuntimeData = true;
+        try
+        {
+            _model.SetSnapshot(_source?.GetSnapshot());
+            _model.SetTraceBatch(_source?.GetTraceBatch());
+        }
+        finally { _applyingRuntimeData = false; }
+        RefreshLists();
     }
 
     /// <summary>创建Trace Panel。</summary>

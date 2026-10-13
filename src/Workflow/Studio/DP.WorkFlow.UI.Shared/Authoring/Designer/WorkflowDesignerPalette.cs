@@ -130,12 +130,12 @@ public static class WorkflowDesignerPalette
     {
         var (border, width) = state switch
         {
-            WorkflowNodeVisualState.Running => (Running, 1.5),
-            WorkflowNodeVisualState.Paused => (Paused, 1.5),
-            WorkflowNodeVisualState.Failed => (Failed, 1.5),
-            _ => (NodeBorder, 1d)
+            WorkflowNodeVisualState.Running => (Running, 2d),
+            WorkflowNodeVisualState.Paused => (Paused, 2d),
+            WorkflowNodeVisualState.Failed => (Failed, 2d),
+            _ => (NodeBorder, 1.5)
         };
-        if (selected) (border, width) = (Selected, 2);
+        if (selected) (border, width) = (Selected, 2.5);
         var indicator = state switch
         {
             WorkflowNodeVisualState.Running or WorkflowNodeVisualState.Completed => Running,
