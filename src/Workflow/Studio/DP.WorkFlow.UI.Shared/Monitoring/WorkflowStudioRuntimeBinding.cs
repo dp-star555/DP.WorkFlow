@@ -112,7 +112,8 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
     public bool HasRun => _host.Engine is { } engine && engine.RunState.RunId != Guid.Empty;
 
     /// <inheritdoc />
-    public WorkflowTraceBatch? GetTraceBatch() => _disposed ? null : _host.Engine?.GetTraceBatch(includeChildRuns: true);
+    public WorkflowTraceBatch? GetTraceBatch(WorkflowTraceCursor? since = null) =>
+        _disposed ? null : _host.Engine?.GetTraceBatch(includeChildRuns: true, since);
 
     /// <inheritdoc />
     public WorkflowRuntimeSnapshot? GetSnapshot() => _disposed ? null : _host.GetSnapshot();

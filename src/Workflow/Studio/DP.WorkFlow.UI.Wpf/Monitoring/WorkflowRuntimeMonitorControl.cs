@@ -23,6 +23,7 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
     private readonly System.Windows.Threading.DispatcherTimer _refreshTimer;
     private bool _runtimeDirty;
     private bool _applyingRuntimeData;
+    private bool _traceReset = true;
 
     /// <summary>初始化工作流运行时监视控件。</summary>
     public WorkflowRuntimeMonitorControl()
@@ -80,6 +81,7 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
             if (ReferenceEquals(_source, value))
                 return;
             _source = value;
+            _traceReset = true;
             Subscribe(value);
             RefreshRuntimeData();
         }
@@ -143,7 +145,10 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
         try
         {
             _model.SetSnapshot(_source?.GetSnapshot());
-            _model.SetTraceBatch(_source?.GetTraceBatch());
+            // 换了来源后整窗读取一次，此后只按游标读取新条目。
+            if (_traceReset) _model.SetTraceBatch(_source?.GetTraceBatch());
+            else _model.AppendTraceBatch(_source?.GetTraceBatch(_model.TraceCursor));
+            _traceReset = false;
         }
         finally { _applyingRuntimeData = false; }
         RefreshLists();

@@ -91,7 +91,22 @@ public sealed record WorkflowChildMonitorItem(
 /// <summary>将不可变 RuntimeSnapshot 投影为双 UI 可直接显示的监视列表。</summary>
 public sealed class WorkflowRuntimeMonitorModel
 {
-    private IReadOnlyList<WorkflowTraceMonitorItem> _allTraceEntries = Array.Empty<WorkflowTraceMonitorItem>();
+    // 本次运行已收到的轨迹（按发生时间排列，最多 TraceCapacity 条）与其中通过筛选的部分；新条目只做增量投影和筛选。
+    private readonly List<WorkflowTraceMonitorItem> _trace = new();
+    private readonly List<WorkflowTraceMonitorItem> _filtered = new();
+    private readonly List<WorkflowTraceMonitorItem> _output = new();
+    private Guid _traceRunId;
+    private int _traceCapacity = 5000;
+
+    /// <summary>界面保留的轨迹条数上限，超出时丢弃最早的条目。</summary>
+    public int TraceCapacity
+    {
+        get => _traceCapacity;
+        set => _traceCapacity = value > 0 ? value : throw new ArgumentOutOfRangeException(nameof(value));
+    }
+
+    /// <summary>已读到的轨迹位置；传给监视来源的 GetTraceBatch，只取此后的新条目。</summary>
+    public WorkflowTraceCursor? TraceCursor { get; private set; }
     /// <summary>获取最近一次应用的运行时快照。</summary>
     public WorkflowRuntimeSnapshot? Snapshot { get; private set; }
 
@@ -178,25 +193,114 @@ public sealed class WorkflowRuntimeMonitorModel
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>更新当前 Run 的有界 Trace 列表。</summary>
+    /// <summary>用完整批次替换 Trace 列表（丢弃此前收到的条目）。</summary>
     /// <param name="batch">轨迹批次。</param>
     public void SetTraceBatch(WorkflowTraceBatch? batch)
     {
+        ClearTrace();
+        if (batch is { Entries.Count: > 0 })
+        {
+            AppendTraceBatch(batch);
+            return;
+        }
+        if (batch is not null)
+        {
+            _traceRunId = batch.RunId;
+            TraceCursor = batch.Cursor;
+        }
+        PublishTrace(rebuildFilter: true);
+    }
+
+    /// <summary>
+    /// 追加增量批次（来源按 <see cref="TraceCursor"/> 只返回的新条目）：只投影和筛选新条目，超出
+    /// <see cref="TraceCapacity"/> 时丢弃最早的条目；批次属于新一轮运行时先清空。空批次表示来源已无运行，清空列表。
+    /// </summary>
+    /// <param name="batch">轨迹批次。</param>
+    public void AppendTraceBatch(WorkflowTraceBatch? batch)
+    {
+        if (batch is null)
+        {
+            if (_trace.Count == 0 && TraceCursor is null) return;
+            ClearTrace();
+            PublishTrace(rebuildFilter: true);
+            return;
+        }
+        if (batch.RunId != _traceRunId)
+        {
+            ClearTrace();
+            _traceRunId = batch.RunId;
+        }
+        TraceCursor = batch.Cursor;
+        if (batch.Entries.Count == 0) return;
+
         // 合并了子运行轨迹的批次按发生时间排列，子运行条目的序号属于各自的子运行，因此按时间而不是序号排序。
-        _allTraceEntries = batch?.Entries
-            .OrderBy(entry => entry.Timestamp)
-            .Select(entry => new WorkflowTraceMonitorItem(
-                entry.Sequence,
-                entry.Timestamp,
-                DescribeNode(entry),
-                entry.TokenId,
-                string.Join(" / ", entry.ScopeIds ?? Array.Empty<long>()),
-                entry.Step,
-                entry.Message ?? string.Empty))
-            .ToArray() ?? Array.Empty<WorkflowTraceMonitorItem>();
-        OutputEntries = _allTraceEntries.Where(item => item.Step == "ScriptOutput").ToArray();
-        if (!IsTracePaused) ApplyTraceFilter();
-        else Changed?.Invoke(this, EventArgs.Empty);
+        var inOrder = true;
+        foreach (var entry in batch.Entries.OrderBy(entry => entry.Timestamp))
+        {
+            var item = Project(entry);
+            inOrder &= Insert(_trace, item);
+            if (item.Step == "ScriptOutput") Insert(_output, item);
+            if (inOrder && !IsTracePaused && Matches(item)) _filtered.Add(item);
+        }
+        var evicted = Math.Max(0, _trace.Count - TraceCapacity);
+        if (evicted > 0)
+        {
+            // 两个列表顺序一致：被丢弃的是 _trace 最前面的条目，_filtered 中对应的也在最前面。
+            var position = 0;
+            while (_filtered.Count > 0 && position < evicted)
+            {
+                if (ReferenceEquals(_filtered[0], _trace[position])) _filtered.RemoveAt(0);
+                position++;
+            }
+            _trace.RemoveRange(0, evicted);
+        }
+        var outputEvicted = Math.Max(0, _output.Count - TraceCapacity);
+        if (outputEvicted > 0) _output.RemoveRange(0, outputEvicted);
+        // 新条目早于已显示的条目（子运行与本层交错到达，很少见）时整体重新筛选，保持时间顺序。
+        PublishTrace(rebuildFilter: !inOrder);
+    }
+
+    private void ClearTrace()
+    {
+        _trace.Clear();
+        _filtered.Clear();
+        _output.Clear();
+        _traceRunId = Guid.Empty;
+        TraceCursor = null;
+    }
+
+    /// <summary>按发生时间插入；追加在末尾时返回 true，插入到中间时返回 false。</summary>
+    private static bool Insert(List<WorkflowTraceMonitorItem> list, WorkflowTraceMonitorItem item)
+    {
+        var index = list.Count;
+        while (index > 0 && list[index - 1].Timestamp > item.Timestamp) index--;
+        list.Insert(index, item);
+        return index == list.Count - 1;
+    }
+
+    private static WorkflowTraceMonitorItem Project(WorkflowTraceEntry entry) => new(
+        entry.Sequence,
+        entry.Timestamp,
+        DescribeNode(entry),
+        entry.TokenId,
+        string.Join(" / ", entry.ScopeIds ?? Array.Empty<long>()),
+        entry.Step,
+        entry.Message ?? string.Empty);
+
+    private void PublishTrace(bool rebuildFilter)
+    {
+        OutputEntries = _output.ToArray();
+        if (IsTracePaused)
+        {
+            Changed?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+        if (rebuildFilter) ApplyTraceFilter();
+        else
+        {
+            TraceEntries = _filtered.ToArray();
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     /// <summary>子流程的进度说明，例如“第3圈 · 找线1”；没有圈序号和当前节点时为空。</summary>
@@ -299,24 +403,27 @@ public sealed class WorkflowRuntimeMonitorModel
         }
     }
 
-    /// <summary>根据当前过滤条件生成可见轨迹列表。</summary>
+    /// <summary>根据当前过滤条件重新生成可见轨迹列表（筛选条件变化、恢复滚动时）。</summary>
     private void ApplyTraceFilter()
     {
-        var query = _allTraceEntries.Where(item =>
-        {
-            var localDate = item.Timestamp.ToLocalTime().Date;
-            return (TraceStartDate is null || localDate >= TraceStartDate.Value)
-                && (TraceEndDate is null || localDate <= TraceEndDate.Value);
-        });
-        if (!string.IsNullOrWhiteSpace(TraceFilter))
-            query = query.Where(item =>
-                item.NodeId.Contains(TraceFilter, StringComparison.OrdinalIgnoreCase)
-                || item.TokenId.ToString(System.Globalization.CultureInfo.InvariantCulture).Contains(TraceFilter, StringComparison.OrdinalIgnoreCase)
-                || item.ScopePath.Contains(TraceFilter, StringComparison.OrdinalIgnoreCase)
-                || item.Step.Contains(TraceFilter, StringComparison.OrdinalIgnoreCase)
-                || item.Message.Contains(TraceFilter, StringComparison.OrdinalIgnoreCase));
-        TraceEntries = query.ToArray();
+        _filtered.Clear();
+        foreach (var item in _trace)
+            if (Matches(item)) _filtered.Add(item);
+        TraceEntries = _filtered.ToArray();
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private bool Matches(WorkflowTraceMonitorItem item)
+    {
+        var localDate = item.Timestamp.ToLocalTime().Date;
+        if ((TraceStartDate is not null && localDate < TraceStartDate.Value) || (TraceEndDate is not null && localDate > TraceEndDate.Value))
+            return false;
+        if (string.IsNullOrWhiteSpace(TraceFilter)) return true;
+        return item.NodeId.Contains(TraceFilter, StringComparison.OrdinalIgnoreCase)
+            || item.TokenId.ToString(System.Globalization.CultureInfo.InvariantCulture).Contains(TraceFilter, StringComparison.OrdinalIgnoreCase)
+            || item.ScopePath.Contains(TraceFilter, StringComparison.OrdinalIgnoreCase)
+            || item.Step.Contains(TraceFilter, StringComparison.OrdinalIgnoreCase)
+            || item.Message.Contains(TraceFilter, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>转义一个符合 CSV 规则的字段。</summary>

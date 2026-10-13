@@ -103,4 +103,53 @@ public sealed class WorkflowRuntimeMonitorModelTests
         Assert.Equal("第3圈 · FindLine", WorkflowRuntimeMonitorModel.DescribeChildProgress(
             new WorkflowChildMonitorItem("Loop", "Child", E_WorkflowExecutionState.Running, TimeSpan.Zero, Guid.NewGuid(), 3, "FindLine")));
     }
+
+    [Fact]
+    public void AppendTraceBatch_AddsOnlyNewEntries_KeepsTimeOrderFilterAndCapacity()
+    {
+        var run = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        WorkflowTraceEntry Entry(long sequence, int milliseconds, string node, string step = "NodeCompleted") =>
+            new(sequence, now.AddMilliseconds(milliseconds), node, "Action", step, null, null) { RunId = run };
+        WorkflowTraceBatch Batch(params WorkflowTraceEntry[] entries) => new(run, entries.Max(entry => entry.Sequence), entries);
+        var model = new WorkflowRuntimeMonitorModel { TraceCapacity = 4 };
+        model.SetTraceFilter("A");
+        var changes = 0;
+        model.Changed += (_, _) => changes++;
+
+        model.AppendTraceBatch(Batch(Entry(1, 0, "A1"), Entry(2, 1, "B1")));
+        model.AppendTraceBatch(Batch(Entry(3, 2, "A2")));
+        Assert.Equal(new[] { "A1", "A2" }, model.TraceEntries.Select(item => item.NodeId));
+        Assert.Equal(2, changes);
+
+        // 子运行的条目晚到但发生得更早：按时间插入到中间。
+        model.AppendTraceBatch(Batch(Entry(4, 1, "A0")));
+        Assert.Equal(new[] { "A1", "A0", "A2" }, model.TraceEntries.Select(item => item.NodeId));
+
+        // 超出容量丢弃最早的条目，筛选结果同步丢弃。
+        model.AppendTraceBatch(Batch(Entry(5, 3, "A3"), Entry(6, 4, "B2")));
+        Assert.Equal(new[] { "A0", "A2", "A3" }, model.TraceEntries.Select(item => item.NodeId));
+
+        // 空的增量批次不触发刷新；新一轮运行清空此前的条目。
+        var before = changes;
+        model.AppendTraceBatch(new WorkflowTraceBatch(run, 6, Array.Empty<WorkflowTraceEntry>()));
+        Assert.Equal(before, changes);
+        model.AppendTraceBatch(new WorkflowTraceBatch(Guid.NewGuid(), 1, new[]
+        {
+            new WorkflowTraceEntry(1, now, "A9", "Action", "NodeStarted", null, null)
+        }));
+        Assert.Equal("A9", Assert.Single(model.TraceEntries).NodeId);
+    }
+
+    [Fact]
+    public void AppendTraceBatch_KeepsCursorFromSource()
+    {
+        var model = new WorkflowRuntimeMonitorModel();
+        var cursor = WorkflowTraceCursor.Empty;
+        model.AppendTraceBatch(new WorkflowTraceBatch(Guid.NewGuid(), 0, Array.Empty<WorkflowTraceEntry>()) { Cursor = cursor });
+        Assert.Same(cursor, model.TraceCursor);
+        model.SetTraceBatch(null);
+        Assert.Null(model.TraceCursor);
+        Assert.Empty(model.TraceEntries);
+    }
 }

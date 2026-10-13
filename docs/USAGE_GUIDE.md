@@ -682,7 +682,20 @@ if (batch is not null)
 }
 ```
 
-Trace 使用有界缓存。双 UI 监视页支持按节点、Token、Scope、步骤和消息筛选，并可将当前筛选结果导出为 UTF-8 CSV。
+Trace 使用有界缓存。周期刷新的监视界面应增量读取：把上次批次的 `Cursor` 传回 `GetTraceBatch(includeChildRuns: true, since: cursor)`，只返回此后新产生的条目（包括子流程、循环块各圈的子运行，每条带 `RunId`，序号在各自运行内递增），开销与新增条目数成正比，而不是与保留窗口大小成正比。
+
+```csharp
+WorkflowTraceCursor? cursor = null;
+// 每次刷新：
+var delta = host.Engine?.GetTraceBatch(includeChildRuns: true, since: cursor);
+if (delta is not null)
+{
+    cursor = delta.Cursor;
+    foreach (var entry in delta.Entries) Append(entry);
+}
+```
+
+双 UI 监视页支持按节点、Token、Scope、步骤和消息筛选，并可将当前筛选结果导出为 UTF-8 CSV。
 
 观察者事件异常由 Runtime 隔离，不会因为监控 UI 抛错而中断工作流。
 

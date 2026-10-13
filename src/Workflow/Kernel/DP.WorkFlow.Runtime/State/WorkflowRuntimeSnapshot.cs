@@ -143,4 +143,50 @@ public sealed record WorkflowRuntimeSnapshot(
 public sealed record WorkflowTraceBatch(
     Guid RunId,
     long LastSequence,
-    IReadOnlyList<WorkflowTraceEntry> Entries);
+    IReadOnlyList<WorkflowTraceEntry> Entries)
+{
+    /// <summary>
+    /// 读到本批次为止的位置；下次把它传给 <see cref="WorkflowEngine.GetTraceBatch(bool, WorkflowTraceCursor?)"/>，
+    /// 只返回此后新产生的条目。
+    /// </summary>
+    public WorkflowTraceCursor Cursor { get; init; } = WorkflowTraceCursor.Empty;
+}
+
+/// <summary>
+/// 增量读取轨迹的位置：每个运行（本层运行、每个子运行）已读到的最后序号。只保留读取时仍可见的运行，
+/// 循环成千上万圈也不会无限增长。不可变，可在线程间传递。
+/// </summary>
+public sealed class WorkflowTraceCursor
+{
+    private readonly IReadOnlyDictionary<Guid, long> _lastSequences;
+
+    private WorkflowTraceCursor(IReadOnlyDictionary<Guid, long> lastSequences) => _lastSequences = lastSequences;
+
+    /// <summary>尚未读取任何条目的位置。</summary>
+    public static WorkflowTraceCursor Empty { get; } = new(new Dictionary<Guid, long>());
+
+    /// <summary>指定运行已读到的最后序号；没有读过为 0。</summary>
+    /// <param name="runId">运行 ID。</param>
+    public long LastSequence(Guid runId) => _lastSequences.TryGetValue(runId, out var sequence) ? sequence : 0;
+
+    /// <summary>条目是否在此位置之后（尚未读过）。</summary>
+    /// <param name="entry">轨迹条目。</param>
+    public bool IsNew(WorkflowTraceEntry entry)
+    {
+        Guard.NotNull(entry);
+        return entry.Sequence > LastSequence(entry.RunId);
+    }
+
+    /// <summary>运行数（测试和诊断用）。</summary>
+    public int RunCount => _lastSequences.Count;
+
+    /// <summary>各运行已读到的最后序号；父引擎据此合并子引擎的读取位置。</summary>
+    internal IEnumerable<KeyValuePair<Guid, long>> Runs => _lastSequences;
+
+    /// <summary>
+    /// 由本次读取可见的各运行及其最后序号建立新位置；本次不可见（已被有界历史丢弃）的运行不再保留。
+    /// </summary>
+    /// <param name="visible">本次可见的运行及其当前最后序号。</param>
+    internal static WorkflowTraceCursor From(IReadOnlyDictionary<Guid, long> visible) =>
+        visible.Count == 0 ? Empty : new WorkflowTraceCursor(visible.ToDictionary(pair => pair.Key, pair => pair.Value));
+}

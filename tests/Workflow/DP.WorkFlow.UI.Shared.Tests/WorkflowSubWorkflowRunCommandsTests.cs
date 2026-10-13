@@ -122,7 +122,7 @@ public sealed class WorkflowSubWorkflowRunCommandsTests
         public List<string> Controls { get; } = new();
         public event EventHandler? StateChanged;
         public void Raise() => StateChanged?.Invoke(this, EventArgs.Empty);
-        public WorkflowTraceBatch? GetTraceBatch() => Trace;
+        public WorkflowTraceBatch? GetTraceBatch(WorkflowTraceCursor? since = null) => Trace;
 
         public Task<WorkflowRunResult> RunNodeAsync(WorkflowDocument document, string nodeId, CancellationToken cancellationToken = default)
         {

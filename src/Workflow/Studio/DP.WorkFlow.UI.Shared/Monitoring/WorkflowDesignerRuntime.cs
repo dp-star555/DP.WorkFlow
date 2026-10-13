@@ -16,7 +16,8 @@ public interface IWorkflowDesignerRuntime
     event EventHandler? StateChanged;
 
     /// <summary>读取包含子运行的合并轨迹；尚未运行时为空。</summary>
-    WorkflowTraceBatch? GetTraceBatch();
+    /// <param name="since">上次读取的位置（<see cref="WorkflowTraceBatch.Cursor"/>）；为空时返回整个保留窗口，否则只返回此后的新条目。</param>
+    WorkflowTraceBatch? GetTraceBatch(WorkflowTraceCursor? since = null);
 
     /// <summary>在最近一次运行中单独再执行一个节点，输入取自该次运行的结果。</summary>
     /// <param name="document">节点所在画布的文档（可含尚未确认的修改）。</param>
@@ -41,7 +42,8 @@ public interface IWorkflowRuntimeMonitorSource
     WorkflowRuntimeSnapshot? GetSnapshot();
 
     /// <summary>当前轨迹；尚未运行时可为空。</summary>
-    WorkflowTraceBatch? GetTraceBatch();
+    /// <param name="since">上次读取的位置（<see cref="WorkflowTraceBatch.Cursor"/>）；为空时返回整个保留窗口，否则只返回此后的新条目。</param>
+    WorkflowTraceBatch? GetTraceBatch(WorkflowTraceCursor? since = null);
 
     /// <summary>快照或轨迹可能变化时发生，可能来自非界面线程。</summary>
     event EventHandler? Changed;
@@ -73,8 +75,8 @@ public sealed class WorkflowSessionRuntimeMonitorSource : IWorkflowRuntimeMonito
     public WorkflowRuntimeSnapshot? GetSnapshot() => _session.RuntimeSnapshot;
 
     /// <inheritdoc />
-    public WorkflowTraceBatch? GetTraceBatch() =>
-        WorkflowTraceScope.ForPath(_session.Runtime?.GetTraceBatch(), _session.RuntimePath);
+    public WorkflowTraceBatch? GetTraceBatch(WorkflowTraceCursor? since = null) =>
+        WorkflowTraceScope.ForPath(_session.Runtime?.GetTraceBatch(since), _session.RuntimePath);
 
     /// <inheritdoc />
     public void Dispose()

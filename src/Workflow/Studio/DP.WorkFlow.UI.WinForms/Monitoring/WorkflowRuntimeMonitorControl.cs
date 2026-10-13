@@ -23,6 +23,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 250 };
     private bool _runtimeDirty;
     private bool _applyingRuntimeData;
+    private bool _traceReset = true;
     private IReadOnlyList<WorkflowTraceMonitorItem> _shownTrace = Array.Empty<WorkflowTraceMonitorItem>();
     private IReadOnlyList<WorkflowTraceMonitorItem> _shownOutput = Array.Empty<WorkflowTraceMonitorItem>();
 
@@ -116,6 +117,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
             if (ReferenceEquals(_source, value)) return;
             if (_source is not null) _source.Changed -= OnRuntimeChanged;
             _source = value;
+            _traceReset = true;
             if (_source is not null) _source.Changed += OnRuntimeChanged;
             RefreshRuntimeData();
         }
@@ -336,7 +338,10 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         try
         {
             _model.SetSnapshot(_source?.GetSnapshot());
-            _model.SetTraceBatch(_source?.GetTraceBatch());
+            // 换了来源后整窗读取一次，此后只按游标读取新条目。
+            if (_traceReset) _model.SetTraceBatch(_source?.GetTraceBatch());
+            else _model.AppendTraceBatch(_source?.GetTraceBatch(_model.TraceCursor));
+            _traceReset = false;
         }
         finally { _applyingRuntimeData = false; }
         RefreshLists();
