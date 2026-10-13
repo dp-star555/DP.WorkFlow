@@ -72,10 +72,16 @@ public sealed class BlockNodeTests
     [Fact]
     public async Task RunAsync_ChildNodesBindStartInputs_AndParentReadsNamedOutputs()
     {
+        var produced = 0;
+        var factor = 2L;
         var actions = new WorkflowActionRegistry()
-            .Register("Produce", (_, _) => ValueTask.FromResult<object?>(new NumericOutput(21)))
+            .Register("Produce", (_, _) =>
+            {
+                produced++;
+                return ValueTask.FromResult<object?>(new NumericOutput(21));
+            })
             .Register("Map", (actionContext, _) =>
-                ValueTask.FromResult<object?>(new NumericOutput(Assert.IsType<long>(actionContext.SubflowInputs["Value"]) * 2)));
+                ValueTask.FromResult<object?>(new NumericOutput(Assert.IsType<long>(actionContext.SubflowInputs["Value"]) * factor)));
         var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
         // 子画布：启动节点 → 判断（绑定 启动节点.Enabled）→ 映射。
         var childStart = new StartNodeModel { Id = "ChildStart", Title = "开始" };
@@ -115,7 +121,8 @@ public sealed class BlockNodeTests
             .Register(new ActionNodeHandler())
             .Register(new DecisionNodeHandler());
 
-        var result = await new WorkflowEngine(definition, handlers, context).RunAsync();
+        var engine = new WorkflowEngine(definition, handlers, context);
+        var result = await engine.RunAsync();
 
         Assert.True(result.Success, result.Message);
         // 手动输入的类型由用户选择；子画布启动节点因此有一个布尔成员，判断节点可以绑定它。
@@ -126,6 +133,13 @@ public sealed class BlockNodeTests
         var blockOutput = Assert.IsType<BlockNodeOutput>(blockRaw!.Value);
         Assert.True(blockOutput.TryGetKeyedValue("Doubled", out var doubled));
         Assert.Equal(42L, doubled);
+
+        // 单独再运行子流程块：输入仍取自上次运行中“产生”的输出，产生节点不再执行。
+        factor = 3;
+        var rerun = await engine.RunNodeAsync(new WorkflowRuntimeBinder(handlers).Bind(new WorkflowCompiler(catalog).Compile(parent)), block.Id);
+        Assert.True(rerun.Success, rerun.Message);
+        Assert.Equal(1, produced);
+        Assert.Equal(63L, WorkflowBindingResolver.ResolveLatest<long>(context, new WorkflowBindingKey(block.Id, "Doubled")));
     }
 
     [Fact]

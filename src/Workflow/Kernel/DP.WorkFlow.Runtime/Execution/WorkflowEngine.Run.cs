@@ -20,6 +20,7 @@ public sealed partial class WorkflowEngine
                 Interlocked.Increment(ref _tokenSequence),
                 Array.Empty<long>(),
                 Array.Empty<long>());
+            _rootTokenId = rootToken.TokenId;
             var nextEntryNodeId = _plan.EntryNodeId;
             _recoveryAttempt = 0;
             while (true)

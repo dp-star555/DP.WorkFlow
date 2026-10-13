@@ -1058,6 +1058,12 @@ public sealed partial class WorkflowDesignerSession
     /// </summary>
     public Func<string, WorkflowNodeOutput?>? NodeOutputProvider { get; set; }
 
+    /// <summary>运行入口：合并轨迹、单独运行节点和运行控制；由运行绑定或父画布设置，未接入运行时为空。</summary>
+    public IWorkflowDesignerRuntime? Runtime { get; set; }
+
+    /// <summary>本画布在运行中的位置：从运行的根画布起经过的复合节点 ID；根画布为空。</summary>
+    public IReadOnlyList<string> RuntimePath { get; set; } = Array.Empty<string>();
+
     /// <summary>
     /// 按运行标识查询节点最近输出（运行标识, 节点标识）；子画布的快照属于子运行，据此读取子流程、循环块内部节点的输出。
     /// 设置后优先于 <see cref="NodeOutputProvider"/>。

@@ -322,54 +322,32 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         return panel;
     }
 
-    /// <summary>创建嵌入式子流程设计器、局部工具栏和节点工具箱。</summary>
+    /// <summary>
+    /// 子画布页与工作台主画布共用画布工作区：同一套工具栏、工具箱、诊断和运行监视。
+    /// 监视的是该复合节点的子运行；“运行”在最近一次运行的基础上单独再执行这个节点。
+    /// </summary>
     private Control CreateSubWorkflow(WorkflowSubWorkflowEditorPageModel page)
     {
-        var designer = new WorkflowDesignerControl { Session = page.Session, Dock = DockStyle.Fill };
+        var workspace = new WorkflowCanvasWorkspaceControl { Dock = DockStyle.Fill };
+        // 子画布自己的诊断：检查正在编辑的草稿，可能稍后才放入启动节点。
+        workspace.Diagnostics.FollowsDocumentEntry = true;
+        workspace.Session = page.Session;
+        var monitor = new WorkflowSessionRuntimeMonitorSource(page.Session);
+        var commands = new WorkflowSubWorkflowRunCommands(page);
+        workspace.RuntimeMonitor.Source = monitor;
+        workspace.RunCommands = commands;
+        workspace.Disposed += (_, _) =>
+        {
+            workspace.RunCommands = null;
+            workspace.RuntimeMonitor.Source = null;
+            commands.Dispose();
+            monitor.Dispose();
+        };
         // 子画布与主工作台一致：双击节点打开其节点窗口。
-        designer.NodeEditRequested += (_, node) => OpenSubWorkflowNode(page, node);
-        var toolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, Padding = new Padding(5) };
-        var fit = ToolbarButton("适合画布");
-        var layout = ToolbarButton("自动布局");
-        fit.Click += (_, _) => page.Session.FitToView(designer.ClientSize.Width, designer.ClientSize.Height);
-        layout.Click += (_, _) => page.Session.AutoLayout();
-        toolbar.Controls.Add(fit);
-        toolbar.Controls.Add(layout);
-        // 子画布自己的诊断：检查正在编辑的草稿，双击选中子画布内的问题节点。
-        var diagnostics = new WorkflowDiagnosticsControl
-        {
-            FollowsDocumentEntry = true,
-            Session = page.Session,
-            Dock = DockStyle.Bottom,
-            Height = 140
-        };
-        var canvas = new Panel { Dock = DockStyle.Fill };
-        // 停靠按添加的逆序处理：工具栏、诊断、分隔条先停靠，画布最后填满剩余区域。
-        canvas.Controls.Add(designer);
-        canvas.Controls.Add(new Splitter { Dock = DockStyle.Bottom, Height = 4 });
-        canvas.Controls.Add(diagnostics);
-        canvas.Controls.Add(toolbar);
-
-        // 子画布与主工作台一致：左侧工具箱双击添加到画布中心，或直接拖放到画布。
-        var toolbox = new WorkflowToolboxControl { Session = page.Session, Dock = DockStyle.Fill };
-        toolbox.NodeTypeActivated += (_, item) =>
-        {
-            var center = WorkflowDesignerGeometry.ScreenToCanvas(page.Session, designer.ClientSize.Width / 2d, designer.ClientSize.Height / 2d);
-            page.Session.AddNode(item.NodeType, center.X - 90, center.Y - 30);
-        };
-        var split = new ModernUI.WinForms.ModernSplitter
-        {
-            // 先给出足够尺寸，避免默认 150px 宽度下设置最小宽度/分隔位置越界。
-            Size = new Size(900, 500),
-            Dock = DockStyle.Fill,
-            FixedPanel = FixedPanel.Panel1,
-            InitialPanel2Size = 0,
-            Panel1MinSize = 150,
-            SplitterDistance = 200
-        };
-        split.Panel1.Controls.Add(toolbox);
-        split.Panel2.Controls.Add(canvas);
-        return split;
+        workspace.Designer.NodeEditRequested += (_, node) => OpenSubWorkflowNode(page, node);
+        workspace.InteractionError += (_, message) =>
+            MessageBox.Show(this, message, "子画布", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        return workspace;
     }
 
     /// <summary>在本窗口之上打开子画布节点的节点窗口；应用写回子画布草稿，随本窗口确认或取消。</summary>
@@ -385,13 +363,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "无法打开节点详情", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         finally { if (child != null) child.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
     }
-
-    private ModernUI.WinForms.ModernButton ToolbarButton(string text) => new()
-    {
-        Text = text,
-        Size = new Size(TextRenderer.MeasureText(text, Font).Width + 32, 30),
-        Margin = new Padding(0, 0, 6, 0)
-    };
 
     /// <summary>创建 Roslyn 脚本编辑器、命令栏和编译诊断列表。</summary>
     private Control CreateScript(WorkflowScriptEditorPageModel page) => new WorkflowCSharpScriptEditorControl

@@ -8,8 +8,9 @@ namespace DP.WorkFlow;
 /// </summary>
 public sealed partial class WorkflowEngine
 {
-    private readonly WorkflowExecutionPlan _plan;
-    private readonly WorkflowBoundExecutionPlan _boundPlan;
+    // 继续运行（RunNodeAsync）可换成重新编译的计划，其余时候只在构造时赋值。
+    private WorkflowExecutionPlan _plan;
+    private WorkflowBoundExecutionPlan _boundPlan;
     private readonly WorkflowExecutionOptions _options;
     private readonly WorkflowOutputValueExtractor _outputValueExtractor;
     private readonly AsyncManualResetEvent _resumeGate = new();

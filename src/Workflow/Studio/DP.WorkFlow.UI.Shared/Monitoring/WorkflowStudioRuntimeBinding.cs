@@ -10,7 +10,7 @@ public enum WorkflowStudioRunTarget
 }
 
 /// <summary>将 RuntimeHost 状态和快照连接到设计器导航器。</summary>
-public sealed class WorkflowStudioRuntimeBinding : IDisposable
+public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWorkflowRuntimeMonitorSource, IDisposable
 {
     private readonly IWorkflowRuntimeHost _host;
     private WorkflowDesignerNavigator _navigator;
@@ -103,6 +103,34 @@ public sealed class WorkflowStudioRuntimeBinding : IDisposable
         return result;
     }
 
+    /// <inheritdoc />
+    public bool HasRun => _host.Engine is { } engine && engine.RunState.RunId != Guid.Empty;
+
+    /// <inheritdoc />
+    public WorkflowTraceBatch? GetTraceBatch() => _disposed ? null : _host.Engine?.GetTraceBatch(includeChildRuns: true);
+
+    /// <inheritdoc />
+    public WorkflowRuntimeSnapshot? GetSnapshot() => _disposed ? null : _host.GetSnapshot();
+
+    /// <inheritdoc />
+    event EventHandler? IWorkflowRuntimeMonitorSource.Changed
+    {
+        add => StateChanged += value;
+        remove => StateChanged -= value;
+    }
+
+    /// <inheritdoc />
+    public async Task<WorkflowRunResult> RunNodeAsync(WorkflowDocument document, string nodeId, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        var running = _host.RunNodeAsync(document, nodeId, cancellationToken);
+        StateChanged?.Invoke(this, EventArgs.Empty);
+        var result = await running;
+        ApplySnapshot(_host.GetSnapshot());
+        StateChanged?.Invoke(this, EventArgs.Empty);
+        return result;
+    }
+
     /// <summary>暂停当前工作流运行。</summary>
     public void Pause()
     {
@@ -135,6 +163,14 @@ public sealed class WorkflowStudioRuntimeBinding : IDisposable
         // 子画布的快照属于子运行：按快照的运行标识向引擎查询，循环块、子流程内部节点的结果因此可见。
         _navigator.RootSession.RunNodeOutputProvider = FindLatestRunOutput;
         _navigator.CurrentSession.RunNodeOutputProvider = FindLatestRunOutput;
+        _navigator.RootSession.Runtime = this;
+        _navigator.CurrentSession.Runtime = this;
+        _navigator.RootSession.RuntimePath = Array.Empty<string>();
+        // 运行当前子画布时它就是运行的根画布；否则它位于根运行的子运行中。
+        if (_navigator.Depth > 0)
+            _navigator.CurrentSession.RuntimePath = RunTarget == WorkflowStudioRunTarget.CurrentCanvas
+                ? Array.Empty<string>()
+                : _navigator.Breadcrumbs.Skip(1).Select(item => item.ParentNodeId!).ToArray();
     }
 
     private WorkflowNodeOutput? FindLatestRunOutput(Guid runId, string nodeId) =>

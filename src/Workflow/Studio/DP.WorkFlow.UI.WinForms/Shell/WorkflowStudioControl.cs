@@ -14,88 +14,48 @@ public sealed partial class WorkflowStudioControl : UserControl
     private WorkflowStudioRuntimeBinding? _runtimeBinding;
     private WorkflowDocumentWorkspace? _workspace;
     private string? _startNodeId;
-    private bool _autoFitPending;
-    private bool _autoFitQueued;
+    private WorkflowStudioRunCommands? _runCommands;
 
     /// <summary>初始化集设计器、工具箱、诊断和运行控制于一体的工作室控件。</summary>
     public WorkflowStudioControl()
     {
         InitializeComponent();
 
-        // 菜单行为依赖当前 Session/Workspace，固定 ToolStripItem 已在 Designer 中声明。
+        // 画布工具栏、工具箱、诊断与运行监视来自共用的画布工作区；这里只加工作台自己的文档命令。
         AddMenuItem(fileMenu, "新建", ModernIconKind.FileNew, NewDocument);
         AddMenuItem(fileMenu, "打开…", ModernIconKind.FolderOpen, OpenDocument);
         AddMenuItem(fileMenu, "保存", ModernIconKind.Save, () => SaveDocument(false));
         AddMenuItem(fileMenu, "另存为…", ModernIconKind.SaveAs, () => SaveDocument(true));
-        AddMenuItem(layoutMenu, "自动布局", ModernIconKind.AutoLayout, () => Session?.AutoLayout());
-        AddMenuItem(layoutMenu, "左对齐", ModernIconKind.AlignLeft, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Left));
-        AddMenuItem(layoutMenu, "右对齐", ModernIconKind.AlignRight, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Right));
-        AddMenuItem(layoutMenu, "顶端对齐", ModernIconKind.AlignTop, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Top));
-        AddMenuItem(layoutMenu, "底端对齐", ModernIconKind.AlignBottom, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Bottom));
-        AddMenuItem(layoutMenu, "水平分布", ModernIconKind.DistributeHorizontal, () => Session?.DistributeSelectedNodes(WorkflowNodeDistribution.Horizontal));
-        AddMenuItem(layoutMenu, "垂直分布", ModernIconKind.DistributeVertical, () => Session?.DistributeSelectedNodes(WorkflowNodeDistribution.Vertical));
-        var theme = ModernTheme.Dark;
-        SetIconOnly(_undoButton, ModernIconKind.Undo, theme.Text, "撤销 (Ctrl+Z)");
-        SetIconOnly(_redoButton, ModernIconKind.Redo, theme.Text, "重做 (Ctrl+Y)");
-        SetIconOnly(fitButton, ModernIconKind.FitWindow, theme.Text, "适合画布");
-        SetIconOnly(_runButton, ModernIconKind.Play, theme.Success, "运行");
-        SetIconOnly(_pauseButton, ModernIconKind.Pause, theme.Warning, "暂停");
-        SetIconOnly(_resumeButton, ModernIconKind.Resume, theme.Success, "继续");
-        SetIconOnly(_stopButton, ModernIconKind.Stop, theme.Error, "停止");
-
-        _undoButton.Click += (_, _) => Session?.Undo();
-        _redoButton.Click += (_, _) => Session?.Redo();
-        _runButton.Click += async (_, _) => await RunWorkflowAsync();
-        _pauseButton.Click += (_, _) => RuntimeBinding?.Pause();
-        _resumeButton.Click += (_, _) => RuntimeBinding?.Resume();
-        _stopButton.Click += (_, _) => RuntimeBinding?.Cancel();
-        fitButton.Click += (_, _) => Session?.FitToView(Designer.ClientSize.Width, Designer.ClientSize.Height);
-        Toolbox.NodeTypeActivated += OnNodeTypeActivated;
-        Designer.InteractionError += (_, message) => InteractionError?.Invoke(this, message);
+        canvasWorkspace.InteractionError += (_, message) => InteractionError?.Invoke(this, message);
+        canvasWorkspace.RunFaulted += (_, message) => RunFaulted?.Invoke(this, message);
         Designer.NodeEditRequested += OnDesignerNodeEditRequested;
         Properties.EditError += (_, message) => InteractionError?.Invoke(this, message);
         Properties.PropertyActionRequested += OnPropertyActionRequested;
-        Load += (_, _) =>
-        {
-            if (toolboxAndEditor.Width > 500)
-                toolboxAndEditor.SplitterDistance = Math.Min(210, toolboxAndEditor.Width - 300);
-            QueueAutoFit();
-        };
-        Designer.SizeChanged += (_, _) => QueueAutoFit();
+        UpdateNavigation();
         WorkflowWinFormsStyle.Apply(this);
     }
 
     /// <summary>向下拉菜单添加带图标的命令项。</summary>
     private void AddMenuItem(ToolStripDropDownItem menu, string text, ModernIconKind icon, Action action)
     {
-        var item = new ToolStripMenuItem(text, CreateIcon(icon, ModernTheme.Dark.Text), (_, _) => action());
+        var item = new ToolStripMenuItem(text, canvasWorkspace.CreateIcon(icon, ModernTheme.Dark.Text), (_, _) => action());
         menu.DropDownItems.Add(item);
     }
 
-    /// <summary>工具栏按钮只显示图标，文字保留为提示与无障碍名称。</summary>
-    private void SetIconOnly(ToolStripItem item, ModernIconKind icon, Color color, string toolTip)
-    {
-        item.Image = CreateIcon(icon, color);
-        item.DisplayStyle = ToolStripItemDisplayStyle.Image;
-        item.AccessibleName = item.Text;
-        item.ToolTipText = toolTip;
-        item.AutoToolTip = false;
-    }
-
-    private Bitmap CreateIcon(ModernIconKind icon, Color color) =>
-        ModernIcons.CreateBitmap(icon, color, _toolbar.LogicalToDeviceUnits(16));
+    /// <summary>获取共用的画布工作区（工具栏、工具箱、画布、诊断、运行监视）。</summary>
+    public WorkflowCanvasWorkspaceControl CanvasWorkspace => canvasWorkspace;
 
     /// <summary>获取画布控件。</summary>
-    public WorkflowDesignerControl Designer => designerControl;
+    public WorkflowDesignerControl Designer => canvasWorkspace.Designer;
 
     /// <summary>获取工具箱控件。</summary>
-    public WorkflowToolboxControl Toolbox => toolboxControl;
+    public WorkflowToolboxControl Toolbox => canvasWorkspace.Toolbox;
 
     /// <summary>获取属性面板。</summary>
     public WorkflowPropertyPanel Properties => propertyPanel;
 
     /// <summary>获取编译诊断面板。</summary>
-    public WorkflowDiagnosticsControl Diagnostics => diagnosticsControl;
+    public WorkflowDiagnosticsControl Diagnostics => canvasWorkspace.Diagnostics;
     /// <summary>
     /// 为领域工具添加弹出窗口入口：在“文件”菜单末尾出现同名菜单项，点击打开窗口。
     /// 关闭窗口只隐藏，面板状态与正在进行的检查都会保留。
@@ -145,7 +105,7 @@ public sealed partial class WorkflowStudioControl : UserControl
     private bool _hasToolWindows;
 
     /// <summary>获取运行监视器。</summary>
-    public WorkflowRuntimeMonitorControl RuntimeMonitor => runtimeMonitorControl;
+    public WorkflowRuntimeMonitorControl RuntimeMonitor => canvasWorkspace.RuntimeMonitor;
 
     /// <summary>获取或设置文档工作区。</summary>
     public WorkflowDocumentWorkspace? Workspace
@@ -182,8 +142,8 @@ public sealed partial class WorkflowStudioControl : UserControl
         {
             if (ReferenceEquals(_runtimeBinding, value))
                 return;
-            if (_runtimeBinding is not null)
-                _runtimeBinding.StateChanged -= OnRuntimeStateChanged;
+            _runCommands?.Dispose();
+            _runCommands = null;
             _runtimeBinding = value;
             RuntimeMonitor.RuntimeBinding = value;
             if (_runtimeBinding is not null)
@@ -195,9 +155,10 @@ public sealed partial class WorkflowStudioControl : UserControl
                         ? WorkflowStudioRunTarget.CurrentCanvas
                         : WorkflowStudioRunTarget.RootWorkflow;
                 }
-                _runtimeBinding.StateChanged += OnRuntimeStateChanged;
+                _runCommands = new WorkflowStudioRunCommands(_runtimeBinding,
+                    () => Navigator?.Depth > 0 ? "运行当前子流程" : "运行");
             }
-            UpdateRuntimeCommands();
+            canvasWorkspace.RunCommands = _runCommands;
         }
     }
 
@@ -232,43 +193,10 @@ public sealed partial class WorkflowStudioControl : UserControl
         {
             if (ReferenceEquals(_session, value))
                 return;
-            if (_session is not null)
-                _session.Changed -= OnSessionChanged;
             _session = value;
-            if (_session is not null)
-                _session.Changed += OnSessionChanged;
-            Designer.Session = value;
-            Toolbox.Session = value;
-            Diagnostics.Session = value;
-            _autoFitPending = value is not null;
-            QueueAutoFit();
-            UpdateCommands();
+            canvasWorkspace.Session = value;
+            UpdateNavigation();
         }
-    }
-
-    /// <inheritdoc />
-    protected override void OnHandleCreated(EventArgs e)
-    {
-        base.OnHandleCreated(e);
-        QueueAutoFit();
-    }
-
-    // 会话绑定可能早于宿主布局；延迟到消息队列再读取画布的最终尺寸。
-    // 仅消费一次待居中请求，后续编辑及窗口尺寸变化不重置用户视口。
-    private void QueueAutoFit()
-    {
-        if (!_autoFitPending || _autoFitQueued || !IsHandleCreated || IsDisposed)
-            return;
-        _autoFitQueued = true;
-        BeginInvoke((Action)(() =>
-        {
-            _autoFitQueued = false;
-            if (IsDisposed || !_autoFitPending || Session is null
-                || Designer.ClientSize.Width <= 0 || Designer.ClientSize.Height <= 0)
-                return;
-            _autoFitPending = false;
-            Session.FitToView(Designer.ClientSize.Width, Designer.ClientSize.Height);
-        }));
     }
 
     /// <summary>获取或设置流程入口，用于属性面板生成绑定候选。</summary>
@@ -315,14 +243,10 @@ public sealed partial class WorkflowStudioControl : UserControl
     {
         if (disposing)
         {
-            Toolbox.NodeTypeActivated -= OnNodeTypeActivated;
             Designer.NodeEditRequested -= OnDesignerNodeEditRequested;
-            if (_session is not null)
-                _session.Changed -= OnSessionChanged;
             if (_navigator is not null)
                 _navigator.CurrentChanged -= OnNavigatorChanged;
-            if (_runtimeBinding is not null)
-                _runtimeBinding.StateChanged -= OnRuntimeStateChanged;
+            _runCommands?.Dispose();
             if (_workspace is not null)
             {
                 _workspace.DocumentChanged -= OnWorkspaceChanged;
@@ -395,20 +319,6 @@ public sealed partial class WorkflowStudioControl : UserControl
         UpdateNavigation();
     }
 
-    /// <summary>处理“Node Type Activated”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="item">目标数据项。</param>
-    private void OnNodeTypeActivated(object? sender, WorkflowToolboxItem item)
-    {
-        if (Session is null)
-            return;
-        var center = WorkflowDesignerGeometry.ScreenToCanvas(
-            Session,
-            Designer.ClientSize.Width / 2d,
-            Designer.ClientSize.Height / 2d);
-        Session.AddNode(item.NodeType, center.X - 90, center.Y - 30);
-    }
-
     private async void OnPropertyActionRequested(object? sender, WorkflowPropertyActionRequest request)
     {
         if (Session == null || string.IsNullOrWhiteSpace(EntryNodeId)) return;
@@ -465,73 +375,13 @@ public sealed partial class WorkflowStudioControl : UserControl
         UpdateNavigation();
     }
 
-    /// <summary>执行 Run DP.WorkFlow 相关处理。</summary>
-    private async Task RunWorkflowAsync()
-    {
-        Diagnostics.RefreshDiagnostics();
-        if (RuntimeBinding is null)
-            return;
-        if (!Diagnostics.CanRun)
-        {
-            InteractionError?.Invoke(this, "当前流程存在配置或编译错误，不能运行。");
-            return;
-        }
-        try
-        {
-            var result = await RuntimeBinding.RunAsync();
-            if (!result.Success && result.State == E_WorkflowExecutionState.Faulted)
-            {
-                // 运行失败只记录：失败节点标红、故障写入运行监控轨迹，切到运行监控页查看，不弹窗。
-                bottomTabs.SelectedTab = runtimePage;
-                RunFaulted?.Invoke(this, $"流程运行失败：{result.Message}");
-            }
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
-        {
-            InteractionError?.Invoke(this, exception.Message);
-        }
-    }
-
-    private void OnRuntimeStateChanged(object? sender, EventArgs e)
-    {
-        if (IsDisposed)
-            return;
-        if (InvokeRequired)
-            BeginInvoke(UpdateRuntimeCommands);
-        else
-            UpdateRuntimeCommands();
-    }
-
-    /// <summary>更新Commands。</summary>
-    private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e) => UpdateCommands();
-
-    /// <summary>更新Commands。</summary>
-    private void UpdateCommands()
-    {
-        _undoButton.Enabled = Session?.CanUndo == true;
-        _redoButton.Enabled = Session?.CanRedo == true;
-        UpdateNavigation();
-        UpdateRuntimeCommands();
-    }
-
-    /// <summary>更新Runtime Commands。</summary>
-    private void UpdateRuntimeCommands()
-    {
-        var state = RuntimeBinding?.State ?? E_WorkflowExecutionState.Idle;
-        _runButton.Enabled = RuntimeBinding is not null && state is not (E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused);
-        _pauseButton.Enabled = state == E_WorkflowExecutionState.Running;
-        _resumeButton.Enabled = state == E_WorkflowExecutionState.Paused;
-        _stopButton.Enabled = state is E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused;
-        _runtimeLabel.Text = state.ToString();
-    }
-
-    /// <summary>更新Navigation。</summary>
+    /// <summary>更新路径文字和运行按钮提示（导航到子画布时运行当前子流程）。</summary>
     private void UpdateNavigation()
     {
         var path = Navigator is null
             ? "Root"
             : string.Join("  /  ", Navigator.Breadcrumbs.Select(item => item.Title));
-        _breadcrumbLabel.Text = Workspace?.IsDirty == true ? path + " *" : path;
-        _runButton.Text = _runButton.ToolTipText = Navigator?.Depth > 0 ? "运行当前子流程" : "运行";
+        canvasWorkspace.BreadcrumbText = Workspace?.IsDirty == true ? path + " *" : path;
+        _runCommands?.Refresh();
     }
 }

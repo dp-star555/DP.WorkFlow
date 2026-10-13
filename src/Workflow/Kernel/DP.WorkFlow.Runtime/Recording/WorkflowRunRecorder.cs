@@ -350,6 +350,21 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
             Interlocked.Increment(ref _emptyDrainCount);
     }
 
+    /// <summary>
+    /// 为同一 Run 的继续运行创建新的记录器：沿用 Run 身份和父子血缘，序号接着本记录器继续，最近窗口一并带入；
+    /// Sink 因此收到同一 Run 中序号连续递增的后续事件。
+    /// </summary>
+    /// <returns>尚未记录任何新事件的记录器；本记录器保持原状。</returns>
+    internal WorkflowRunRecorder CreateContinuation()
+    {
+        var next = new WorkflowRunRecorder(_runId, _workflowName, _windowCapacity, _options, _parentRunId, _parentExecution);
+        lock (_recordSync)
+            next._sequence = _sequence;
+        foreach (var item in _window.OrderBy(item => item.Sequence))
+            next.AppendToWindow(item);
+        return next;
+    }
+
     private void AppendToWindow(WorkflowRunEvent @event)
     {
         _window.Enqueue(@event);
