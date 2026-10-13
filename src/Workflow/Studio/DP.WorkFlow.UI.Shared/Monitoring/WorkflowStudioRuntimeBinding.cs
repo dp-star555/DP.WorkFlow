@@ -132,7 +132,13 @@ public sealed class WorkflowStudioRuntimeBinding : IDisposable
     {
         _navigator.RootSession.NodeOutputProvider = FindLatestOutput;
         _navigator.CurrentSession.NodeOutputProvider = FindLatestOutput;
+        // 子画布的快照属于子运行：按快照的运行标识向引擎查询，循环块、子流程内部节点的结果因此可见。
+        _navigator.RootSession.RunNodeOutputProvider = FindLatestRunOutput;
+        _navigator.CurrentSession.RunNodeOutputProvider = FindLatestRunOutput;
     }
+
+    private WorkflowNodeOutput? FindLatestRunOutput(Guid runId, string nodeId) =>
+        _disposed ? null : _host.Engine?.FindLatestNodeOutput(runId, nodeId);
 
     private WorkflowNodeOutput? FindLatestOutput(string nodeId)
     {

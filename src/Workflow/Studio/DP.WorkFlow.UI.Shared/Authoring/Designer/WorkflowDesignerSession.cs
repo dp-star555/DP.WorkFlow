@@ -1058,12 +1058,20 @@ public sealed partial class WorkflowDesignerSession
     /// </summary>
     public Func<string, WorkflowNodeOutput?>? NodeOutputProvider { get; set; }
 
+    /// <summary>
+    /// 按运行标识查询节点最近输出（运行标识, 节点标识）；子画布的快照属于子运行，据此读取子流程、循环块内部节点的输出。
+    /// 设置后优先于 <see cref="NodeOutputProvider"/>。
+    /// </summary>
+    public Func<Guid, string, WorkflowNodeOutput?>? RunNodeOutputProvider { get; set; }
+
     /// <summary>获取节点在当前运行快照所属运行中的最近一次输出；不属于本画布当前运行的输出不会返回。</summary>
     /// <param name="nodeId">节点标识。</param>
-    public WorkflowNodeOutput? GetLatestNodeOutput(string nodeId) =>
-        _runtimeSnapshot is { } snapshot && NodeOutputProvider?.Invoke(nodeId) is { } output && output.RunId == snapshot.RunId
-            ? output
-            : null;
+    public WorkflowNodeOutput? GetLatestNodeOutput(string nodeId)
+    {
+        if (_runtimeSnapshot is not { } snapshot) return null;
+        var output = RunNodeOutputProvider is { } byRun ? byRun(snapshot.RunId, nodeId) : NodeOutputProvider?.Invoke(nodeId);
+        return output is not null && output.RunId == snapshot.RunId ? output : null;
+    }
 
     /// <summary>获取节点最近运行状态。</summary>
     /// <param name="nodeId">节点标识。</param>

@@ -185,10 +185,12 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         })));
         Replace(childrenListView, _model.ChildWorkflows.Select(item => ((object)item.RunId, new[]
         {
-            item.ParentNodeId, item.WorkflowName, WorkflowRuntimeText.ExecutionState(LocalizationContext, item.State),
+            item.ParentNodeId, item.WorkflowName,
+            WorkflowRuntimeText.ExecutionState(LocalizationContext, item.State)
+                + (WorkflowRuntimeMonitorModel.DescribeChildProgress(item) is { Length: > 0 } progress ? " · " + progress : string.Empty),
             $"{item.Elapsed.TotalMilliseconds.ToString("F0", culture)} ms", item.RunId.ToString("N")
         })));
-        Replace(traceListView, _model.TraceEntries.Select(item => ((object)item.Sequence, new[]
+        Replace(traceListView, _model.TraceEntries.Select(item => ((object)(item.Sequence, item.NodeId), new[]
         {
             item.Sequence.ToString(culture), item.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff", culture),
             item.NodeId, item.TokenId.ToString(culture), item.ScopePath,
@@ -225,7 +227,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     private void RefreshRuntimeData()
     {
         _model.SetSnapshot(_runtimeBinding?.Host.GetSnapshot());
-        _model.SetTraceBatch(_runtimeBinding?.Host.Engine?.GetTraceBatch());
+        _model.SetTraceBatch(_runtimeBinding?.Host.Engine?.GetTraceBatch(includeChildRuns: true));
     }
 
     /// <summary>导出右键所在表格；轨迹表按完整轨迹字段导出，其余表格按当前列导出。</summary>

@@ -21,4 +21,15 @@ public sealed record WorkflowTraceEntry(
     string? Message,
     IReadOnlyDictionary<string, object?>? Data,
     long TokenId = 0,
-    IReadOnlyList<long>? ScopeIds = null);
+    IReadOnlyList<long>? ScopeIds = null)
+{
+    /// <summary>
+    /// 记录来自子运行（子流程、循环块）时，从外到内经过的复合节点；本层流程自身的记录为空。
+    /// </summary>
+    public IReadOnlyList<WorkflowTraceParent>? Parents { get; init; }
+}
+
+/// <summary>子运行记录经过的一层复合节点。</summary>
+/// <param name="NodeId">拥有子画布的复合节点 ID。</param>
+/// <param name="Cycle">循环块的圈序号（从 1 开始）；普通子流程为 0。</param>
+public sealed record WorkflowTraceParent(string NodeId, int Cycle = 0);

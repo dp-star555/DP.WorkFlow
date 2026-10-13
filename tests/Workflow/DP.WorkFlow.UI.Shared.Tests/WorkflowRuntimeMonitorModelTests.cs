@@ -82,4 +82,25 @@ public sealed class WorkflowRuntimeMonitorModelTests
         Assert.Contains("Sequence,Timestamp", writer.ToString(), StringComparison.Ordinal);
         Assert.Contains("\"执行动作\"", writer.ToString(), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void ChildRunTrace_ShowsCompositeNodeAndCycleInNodeColumn()
+    {
+        var model = new WorkflowRuntimeMonitorModel();
+        var now = DateTimeOffset.UtcNow;
+        model.SetTraceBatch(new WorkflowTraceBatch(Guid.NewGuid(), 2, new[]
+        {
+            new WorkflowTraceEntry(2, now.AddMilliseconds(2), "Loop", "LoopBlock", "NodeStarted", null, null),
+            new WorkflowTraceEntry(1, now.AddMilliseconds(5), "FindLine", "Vision.FindLine", "NodeCompleted", null, null)
+            {
+                Parents = new[] { new WorkflowTraceParent("Loop", 3) }
+            }
+        }));
+
+        Assert.Equal(new[] { "Loop", "Loop·第3圈 › FindLine" }, model.TraceEntries.Select(item => item.NodeId));
+        model.SetTraceFilter("第3圈");
+        Assert.Single(model.TraceEntries);
+        Assert.Equal("第3圈 · FindLine", WorkflowRuntimeMonitorModel.DescribeChildProgress(
+            new WorkflowChildMonitorItem("Loop", "Child", E_WorkflowExecutionState.Running, TimeSpan.Zero, Guid.NewGuid(), 3, "FindLine")));
+    }
 }

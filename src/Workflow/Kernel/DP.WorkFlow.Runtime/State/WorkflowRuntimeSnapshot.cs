@@ -53,10 +53,12 @@ public sealed record WorkflowActiveTokenInfo(
 /// <param name="ParentNodeId">拥有该子画布的复合节点 ID。</param>
 /// <param name="ParentExecution">触发本次子流程的父节点执行身份。</param>
 /// <param name="Snapshot">子引擎最近发布的完整运行快照。</param>
+/// <param name="Cycle">循环块当前（或最后）一圈的序号，从 1 开始；普通子流程为 0。</param>
 public sealed record WorkflowChildRuntimeInfo(
     string ParentNodeId,
     WorkflowExecutionIdentity ParentExecution,
-    WorkflowRuntimeSnapshot Snapshot);
+    WorkflowRuntimeSnapshot Snapshot,
+    int Cycle = 0);
 
 /// <summary>表示一次 ParallelAll 派发产生的运行时并行作用域状态。</summary>
 /// <param name="RuntimeScopeId">区别循环中多次进入同一并行节点的作用域实例 ID。</param>

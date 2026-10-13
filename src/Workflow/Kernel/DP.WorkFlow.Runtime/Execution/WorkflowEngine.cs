@@ -23,6 +23,12 @@ public sealed partial class WorkflowEngine
     private readonly Dictionary<string, WorkflowEngine> _activeChildEngines = new(StringComparer.Ordinal);
     private readonly Dictionary<string, WorkflowChildRuntimeInfo> _activeChildWorkflows = new(StringComparer.Ordinal);
     private readonly Dictionary<string, WorkflowChildRuntimeInfo> _latestChildWorkflowByParentNode = new(StringComparer.Ordinal);
+    // 每个父节点最近一次完成的子引擎：子画布据此在运行结束后仍能查询其节点输出，父运行开始时清空。
+    private readonly Dictionary<string, WorkflowEngine> _latestChildEngineByParentNode = new(StringComparer.Ordinal);
+    // 正在运行的子引擎轨迹来源，按子运行键索引；读取轨迹时实时合并。
+    private readonly Dictionary<string, ChildTraceSource> _childTraceSources = new(StringComparer.Ordinal);
+    // 每个父节点已结束的子运行（循环块按圈）轨迹，有界保留，父运行开始时清空。
+    private readonly Dictionary<string, Queue<WorkflowTraceEntry>> _childTraceHistory = new(StringComparer.Ordinal);
     private readonly HashSet<Guid> _startedRecoveryCases = new();
     private volatile IWorkflowRunRecorder? _recorder;
     private Stopwatch? _runStopwatch;

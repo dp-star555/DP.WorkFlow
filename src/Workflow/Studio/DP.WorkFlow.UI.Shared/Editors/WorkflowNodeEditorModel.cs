@@ -111,7 +111,12 @@ public sealed class WorkflowSubWorkflowEditorPageModel : IDisposable
     /// <summary>初始化子工作流编辑页并创建子画布设计会话。</summary>
     /// <param name="parentSession">父工作流设计会话。</param>
     /// <param name="node">目标画布节点或节点模型。</param>
-    public WorkflowSubWorkflowEditorPageModel(WorkflowDesignerSession parentSession, IWorkflowSubDocumentNode node)
+    /// <param name="runtimeSession">
+    /// 接收运行快照的原始会话（复合节点所在画布）；子画布据此显示该节点子运行的实时状态：
+    /// 正在执行的节点、各节点耗时，以及从子画布打开的节点窗口中的运行结果。为空时子画布不显示运行状态。
+    /// </param>
+    public WorkflowSubWorkflowEditorPageModel(WorkflowDesignerSession parentSession, IWorkflowSubDocumentNode node,
+        WorkflowDesignerSession? runtimeSession = null)
     {
         ParentSession = parentSession;
         Node = node;
@@ -120,7 +125,16 @@ public sealed class WorkflowSubWorkflowEditorPageModel : IDisposable
         Session = new WorkflowDesignerSession(node.SubDocument, parentSession.Catalog, parentSession.PublicDataCatalog);
         Session.Changed += OnChildSessionChanged;
         EntryNodeId = ResolveEntryNodeId();
+        RuntimeSession = runtimeSession;
+        if (runtimeSession is not null)
+        {
+            runtimeSession.Changed += OnRuntimeSessionChanged;
+            ApplyRuntimeSnapshot();
+        }
     }
+
+    /// <summary>接收运行快照的原始会话；为空时子画布不显示运行状态。</summary>
+    public WorkflowDesignerSession? RuntimeSession { get; }
 
     /// <summary>获取父工作流设计会话。</summary>
     public WorkflowDesignerSession ParentSession { get; }
@@ -140,8 +154,26 @@ public sealed class WorkflowSubWorkflowEditorPageModel : IDisposable
             ParentSession.NotifyNodeConfigurationChanged();
     }
 
+    private void OnRuntimeSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
+    {
+        if (e.Kind == WorkflowDesignerChangeKind.Runtime)
+            ApplyRuntimeSnapshot();
+    }
+
+    /// <summary>把复合节点本次（或最近一次）子运行的快照交给子画布；循环块每圈刷新。</summary>
+    private void ApplyRuntimeSnapshot()
+    {
+        if (RuntimeSession is not { } runtime) return;
+        Session.RunNodeOutputProvider = runtime.RunNodeOutputProvider;
+        Session.SetRuntimeSnapshot(WorkflowDesignerNavigator.FindChildSnapshot(runtime.RuntimeSnapshot, Node.Id));
+    }
+
     /// <summary>解除事件订阅并释放当前模型持有的资源。</summary>
-    public void Dispose() => Session.Changed -= OnChildSessionChanged;
+    public void Dispose()
+    {
+        Session.Changed -= OnChildSessionChanged;
+        if (RuntimeSession is not null) RuntimeSession.Changed -= OnRuntimeSessionChanged;
+    }
 
     /// <summary>只读解析子文档入口；打开编辑页不得修改节点配置。</summary>
     private string ResolveEntryNodeId()

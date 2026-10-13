@@ -93,6 +93,7 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
         if (info.CompletedAt is { } completed) items.Add(new(StateCategory, "完成时间", FormatTime(completed)));
         items.Add(new(StateCategory, "耗时", WorkflowDesignerInteraction.FormatElapsed(info.Elapsed)));
         if (!string.IsNullOrWhiteSpace(info.Message)) items.Add(new(StateCategory, "消息", info.Message!));
+        AddChildProgress(items);
 
         // 已声明输出类型的节点由 GetMembers 列出全部成员；这里只展开未声明类型的实际输出。
         if ((_portSession ?? _session)!.GetOutputMembers(NodeId).Count > 0) return items;
@@ -104,6 +105,23 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
         }
         AddOutput(items, output.Value);
         return items;
+    }
+
+    /// <summary>复合节点（子流程、循环块）的子运行进度，随状态一起显示：当前圈、正在执行的内部节点和本圈耗时。</summary>
+    private void AddChildProgress(ICollection<WorkflowNodeResultItem> items)
+    {
+        var child = _session?.RuntimeSnapshot is { } snapshot
+            ? snapshot.ActiveChildWorkflows.Values.Where(info => info.ParentNodeId == NodeId)
+                  .OrderByDescending(info => info.Snapshot.Sequence).FirstOrDefault()
+              ?? (snapshot.LatestChildWorkflowByParentNode.TryGetValue(NodeId, out var latest) ? latest : null)
+            : null;
+        if (child is null) return;
+        if (child.Cycle > 0) items.Add(new(StateCategory, "当前圈", child.Cycle.ToString(CultureInfo.InvariantCulture)));
+        if (child.Snapshot.ExecutionState is E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused
+            && !string.IsNullOrEmpty(child.Snapshot.CurrentNodeId))
+            items.Add(new(StateCategory, "正在执行", child.Snapshot.CurrentNodeId!));
+        items.Add(new(StateCategory, child.Cycle > 0 ? "本圈耗时" : "子流程耗时",
+            WorkflowDesignerInteraction.FormatElapsed(child.Snapshot.TotalElapsed)));
     }
 
     /// <summary>

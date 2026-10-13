@@ -84,7 +84,7 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
     private void RefreshRuntimeData()
     {
         _model.SetSnapshot(_runtimeBinding?.Host.GetSnapshot());
-        _model.SetTraceBatch(_runtimeBinding?.Host.Engine?.GetTraceBatch());
+        _model.SetTraceBatch(_runtimeBinding?.Host.Engine?.GetTraceBatch(includeChildRuns: true));
     }
 
     /// <summary>创建Trace Panel。</summary>

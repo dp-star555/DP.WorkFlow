@@ -40,6 +40,10 @@ public sealed class BlockNodeTests
         Assert.NotEqual(snapshot.RunId, child.Snapshot.RunId);
         Assert.True(context.TryGetNodeOutput(block.Id, out var blockOutput));
         Assert.IsType<BlockNodeOutput>(blockOutput!.Value);
+        // 子流程的节点记录合并进父轨迹（标明所属子流程节点），其输出可按子运行标识读取。
+        Assert.Contains(engine.GetTraceBatch(includeChildRuns: true).Entries, entry =>
+            entry.Step == "NodeCompleted" && entry.Parents is [{ NodeId: "Block", Cycle: 0 }]);
+        Assert.Equal("child-output", engine.FindLatestNodeOutput(child.Snapshot.RunId, "ChildAction")?.Value);
     }
 
     [Fact]

@@ -91,13 +91,26 @@ public sealed class WorkflowDesignerNavigator
         for (var index = 1; index < _frames.Count; index++)
         {
             var parentNodeId = _frames[index].ParentNodeId;
-            current = current?.EnumerateChildWorkflows()
-                .Where(info => info.ParentNodeId == parentNodeId)
-                .OrderByDescending(info => info.Snapshot.Sequence)
-                .Select(info => info.Snapshot)
-                .FirstOrDefault();
+            current = FindChildSnapshot(current, parentNodeId);
             _frames[index].Session.SetRuntimeSnapshot(current);
         }
+    }
+
+    /// <summary>
+    /// 取复合节点在父运行快照中对应的子运行快照：正在运行的优先（同一父节点多次活动时取最新），否则取最近一次完成的。
+    /// </summary>
+    /// <param name="parentSnapshot">父画布的运行快照。</param>
+    /// <param name="parentNodeId">拥有子画布的复合节点。</param>
+    /// <returns>子运行快照；该节点尚未运行子流程时为空。</returns>
+    public static WorkflowRuntimeSnapshot? FindChildSnapshot(WorkflowRuntimeSnapshot? parentSnapshot, string? parentNodeId)
+    {
+        if (parentSnapshot is null || parentNodeId is null) return null;
+        var active = parentSnapshot.ActiveChildWorkflows.Values
+            .Where(info => info.ParentNodeId == parentNodeId)
+            .OrderByDescending(info => info.Snapshot.Sequence)
+            .FirstOrDefault();
+        if (active is not null) return active.Snapshot;
+        return parentSnapshot.LatestChildWorkflowByParentNode.TryGetValue(parentNodeId, out var latest) ? latest.Snapshot : null;
     }
 
     /// <summary>只读解析子文档入口；导航本身不得修复或修改文档。</summary>
