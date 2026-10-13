@@ -8,7 +8,7 @@ internal static class WorkflowNodeConfigurationValidator
     /// <summary>Validates custom node rules and every nested <see cref="WorkflowInput{T}"/> configuration.</summary>
     internal static IReadOnlyList<WorkflowValidationError> Validate(IEnumerable<IWorkflowNodeModel> nodes)
     {
-        ArgumentNullException.ThrowIfNull(nodes);
+        Guard.NotNull(nodes);
         var diagnostics = new List<WorkflowValidationError>();
         var scope = nodes.ToArray();
         foreach (var node in scope)

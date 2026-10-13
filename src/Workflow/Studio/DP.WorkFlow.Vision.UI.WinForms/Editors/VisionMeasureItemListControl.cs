@@ -25,7 +25,7 @@ internal sealed class VisionMeasureItemListControl : UserControl
             _grid.Columns[name]!.FillWeight = weight;
         }
         var actions = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Padding = new Padding(2, 2, 2, 6) };
-        foreach (var kind in Enum.GetValues<EVisionMeasureKind>())
+        foreach (var kind in Polyfill.GetEnumValues<EVisionMeasureKind>())
             Action(actions, "+" + MeasureVisionGroupNodeModel.KindName(kind), () => _model.AddMeasureItem(kind));
         _delete = Action(actions, "删除", _model.RemoveSelectedMeasureItem);
         _toggle = Action(actions, "停用", () =>

@@ -39,7 +39,7 @@ public sealed class SignalSetNodeHandler : WorkflowNodeHandler<SignalSetNodeMode
             ["State"] = state,
             ["WriteMode"] = node.WriteMode
         });
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: output));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
 
     internal static IWorkflowSignalService GetService(IWorkflowNodeExecutionContext context, string signalKey)

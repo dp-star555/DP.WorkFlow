@@ -22,6 +22,6 @@ public sealed class JumpToNodeNodeHandler : WorkflowNodeHandler<JumpToNodeNodeMo
         var output = new WarningResolution { ExitAction = E_WarningExitAction.JumpToNode, TargetNodeId = string.IsNullOrWhiteSpace(node.TargetNodeId) ? null : node.TargetNodeId.Trim(), Note = node.Note };
         context.SetVariable(WorkflowRecoveryRuntimeKeys.WarningResolution, output);
         context.Trace("创建恢复决议", "创建跳转节点恢复决议。", new Dictionary<string, object?> { ["TargetNodeId"] = output.TargetNodeId, ["Note"] = node.Note });
-        return ValueTask.FromResult(NodeExecutionResult.Complete(output));
+        return Polyfill.FromResult(NodeExecutionResult.Complete(output));
     }
 }

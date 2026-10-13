@@ -386,6 +386,7 @@ public sealed class RecoveryV1Tests
         }
         private sealed class Move(MotionHandler owner, Axis axis, int target) : IWorkflowNodeOperation
         {
+            public bool CanContinue => true;
             private bool _sent;
             public ValueTask<NodeExecutionResult> ExecuteAsync(IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
             {

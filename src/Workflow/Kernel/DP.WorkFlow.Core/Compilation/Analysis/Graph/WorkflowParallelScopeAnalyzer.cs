@@ -15,8 +15,8 @@ internal static class WorkflowParallelScopeAnalyzer
         WorkflowGraphIndex graph,
         ICollection<WorkflowValidationError> diagnostics)
     {
-        ArgumentNullException.ThrowIfNull(graph);
-        ArgumentNullException.ThrowIfNull(diagnostics);
+        Guard.NotNull(graph);
+        Guard.NotNull(diagnostics);
 
         var scopes = new Dictionary<string, WorkflowParallelScopePlan>(StringComparer.Ordinal);
         foreach (var parallelNode in graph.Nodes.Values.OfType<IWorkflowParallelForkNode>())

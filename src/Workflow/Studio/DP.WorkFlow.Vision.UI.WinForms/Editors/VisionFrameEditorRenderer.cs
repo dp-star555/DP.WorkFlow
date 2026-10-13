@@ -81,7 +81,10 @@ internal sealed class VisionFrameEditorControl : UserControl
             }));
             _load.DropDownItems.Add(new ToolStripMenuItem("打开文件夹…", null, (_, _) =>
             {
-                using var dialog = new FolderBrowserDialog { Description = "加载文件夹中的图像（按文件名排序）", UseDescriptionForTitle = true };
+                using var dialog = new FolderBrowserDialog { Description = "加载文件夹中的图像（按文件名排序）" };
+#if !NETFRAMEWORK
+                dialog.UseDescriptionForTitle = true;
+#endif
                 if (dialog.ShowDialog(this) == DialogResult.OK) Command(async () => { await model.LoadFolderAsync(dialog.SelectedPath); SetView(0); });
             }));
             _toolbar.Items.Add(_load);

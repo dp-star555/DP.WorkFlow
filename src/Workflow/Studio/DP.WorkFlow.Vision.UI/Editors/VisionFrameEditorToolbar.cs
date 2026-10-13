@@ -185,7 +185,7 @@ public sealed partial class VisionFrameEditorPageModel
             long? baseline;
             lock (_gate)
             {
-                ObjectDisposedException.ThrowIf(_disposed, this);
+                Guard.NotDisposed(_disposed, this);
                 using var own = _frames?.Capture(_node.Id);
                 baseline = own?.Sequence;
                 if (ManualInputLocked is { } manual) input = manual.Retain();

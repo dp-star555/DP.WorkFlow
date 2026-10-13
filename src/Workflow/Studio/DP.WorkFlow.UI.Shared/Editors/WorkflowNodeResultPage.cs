@@ -63,7 +63,7 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
     /// <param name="portSession">编辑数据端口开关的会话（节点窗口的隔离编辑副本，确定后才提交）；为空时开关只读。</param>
     public WorkflowNodeResultPageModel(WorkflowDesignerSession? session, string nodeId, WorkflowDesignerSession? portSession = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+        Guard.NotNullOrWhiteSpace(nodeId);
         _session = session;
         _portSession = portSession;
         NodeId = nodeId;

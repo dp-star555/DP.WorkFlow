@@ -10,9 +10,9 @@ public sealed class WorkflowPublicDataChangeSet
         IReadOnlyDictionary<string, object> writes,
         IReadOnlyCollection<string> removals)
     {
-        ArgumentNullException.ThrowIfNull(writes);
-        ArgumentNullException.ThrowIfNull(removals);
-        Writes = new Dictionary<string, object>(writes, StringComparer.Ordinal);
+        Guard.NotNull(writes);
+        Guard.NotNull(removals);
+        Writes = writes.ToDictionary(StringComparer.Ordinal);
         Removals = removals.Distinct(StringComparer.Ordinal).ToArray();
     }
 

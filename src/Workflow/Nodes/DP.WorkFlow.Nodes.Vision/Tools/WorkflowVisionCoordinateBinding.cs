@@ -29,7 +29,7 @@ public sealed class WorkflowVisionCoordinateBinding
     /// <param name="system">本帧坐标。</param><param name="frame">当前图。</param>
     public void Validate(VisionCoordinateSystem system, ImageFrame frame)
     {
-        ArgumentNullException.ThrowIfNull(system);
+        Guard.NotNull(system);
         if (!IsValid) throw new InvalidOperationException("坐标来源绑定无效。");
         system.ValidateFrame(frame);
     }

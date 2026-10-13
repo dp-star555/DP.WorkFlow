@@ -65,8 +65,8 @@ public sealed partial class WorkflowStudioControl : UserControl
     /// <param name="icon">菜单项图标。</param>
     public void AddToolWindow(string title, Control content, ModernIconKind icon = ModernIconKind.Settings)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(title);
-        ArgumentNullException.ThrowIfNull(content);
+        Guard.NotNullOrWhiteSpace(title);
+        Guard.NotNull(content);
         Form? window = null;
         if (!_hasToolWindows)
         {

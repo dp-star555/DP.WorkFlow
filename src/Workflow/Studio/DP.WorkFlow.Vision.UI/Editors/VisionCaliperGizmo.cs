@@ -150,7 +150,7 @@ public sealed class VisionCaliperGizmo : IVisionCanvasGizmo
     private void WriteCenter(PointD image) => (_node.CenterX, _node.CenterY) = ToLocal(image);
 
     private bool IsDrawable => IsEditable && (IsArc
-        ? _node.Radius > 0 && Math.Abs(_node.SweepAngle) > 1e-9 && double.IsFinite(_node.Radius) && double.IsFinite(_node.SweepAngle)
+        ? _node.Radius > 0 && Math.Abs(_node.SweepAngle) > 1e-9 && Polyfill.IsFinite(_node.Radius) && Polyfill.IsFinite(_node.SweepAngle)
         : Length >= 1e-9);
 
     /// <summary>
@@ -160,7 +160,7 @@ public sealed class VisionCaliperGizmo : IVisionCanvasGizmo
     /// <returns>形状发生变化时返回 <see langword="true"/>。</returns>
     public bool SetShape(EVisionCaliperShape shape)
     {
-        if (_node.Shape == shape || !Enum.IsDefined(shape)) return false;
+        if (_node.Shape == shape || !Polyfill.IsDefined(shape)) return false;
         if (shape == EVisionCaliperShape.Arc)
         {
             var (start, end) = (new PointD(_node.StartX, _node.StartY), new PointD(_node.EndX, _node.EndY));
@@ -242,7 +242,7 @@ public sealed class VisionCaliperGizmo : IVisionCanvasGizmo
     {
         var visuals = new List<Visual>();
         double r = ImageRadius, inner = Math.Max(0, r - HalfBand), outer = r + HalfBand;
-        var segments = Math.Clamp((int)Math.Ceiling(Math.Abs(_node.SweepAngle) / 3), 8, 120);
+        var segments = Polyfill.Clamp((int)Math.Ceiling(Math.Abs(_node.SweepAngle) / 3), 8, 120);
         IEnumerable<PointD> Arc(double radius) => Enumerable.Range(0, segments + 1).Select(i => ArcPoint(radius, (double)i / segments));
 
         // 采样带外框：外弧 + 内弧（反向）闭合成环形扇区。
@@ -292,7 +292,7 @@ public sealed class VisionCaliperGizmo : IVisionCanvasGizmo
     {
         if (_node.HalfWidth < 1 || ImageStep <= 0) return;
         var stride = Math.Max(1, (int)Math.Ceiling(4 * unit / ImageStep));
-        var segments = IsArc ? Math.Clamp((int)Math.Ceiling(Math.Abs(_node.SweepAngle) / 3), 8, 120) : 1;
+        var segments = IsArc ? Polyfill.Clamp((int)Math.Ceiling(Math.Abs(_node.SweepAngle) / 3), 8, 120) : 1;
         for (var k = -_node.HalfWidth + 1; k < _node.HalfWidth; k++)
             if (k != 0 && k % stride == 0)
                 visuals.Add(new Visual($"caliper-lane{k}", new ContourGeometry(
@@ -303,7 +303,7 @@ public sealed class VisionCaliperGizmo : IVisionCanvasGizmo
 
     // 间隔把手放在第 K 个采样点上，K 取使其离扫描路径至少 14 屏幕像素的最小值（不超过半宽）。
     private int StepHandleIndex(double unit) =>
-        Math.Clamp((int)Math.Ceiling(14 * unit / Math.Max(1e-9, ImageStep)), 1, Math.Max(1, _node.HalfWidth));
+        Polyfill.Clamp((int)Math.Ceiling(14 * unit / Math.Max(1e-9, ImageStep)), 1, Math.Max(1, _node.HalfWidth));
 
     private PointD StepHandlePoint(double unit) => BandPoint(StepStation, StepHandleIndex(unit) * ImageStep);
 
@@ -482,14 +482,14 @@ public sealed class VisionCaliperGizmo : IVisionCanvasGizmo
     /// </summary>
     private void SetHalfBand(double halfBand, double originStep)
     {
-        var baseStep = Math.Clamp(originStep, MinimumBandStep, MaximumBandStep);
+        var baseStep = Polyfill.Clamp(originStep, MinimumBandStep, MaximumBandStep);
         var target = Math.Min(halfBand, MaximumHalfBand);
         var step = target <= MaximumHalfWidth * baseStep
             ? baseStep
             : Math.Min(MaximumBandStep, Math.Ceiling(target / MaximumHalfWidth * 100) / 100);
         // 间隔限制作用于原图有效间隔；绑定坐标系时按尺度换算回局部单位保存。
         _node.BandSampleStep = Bound ? Round(step / Scale) : step;
-        _node.HalfWidth = Math.Clamp((int)Math.Floor(target / step + .5), 0, MaximumHalfWidth);
+        _node.HalfWidth = Polyfill.Clamp((int)Math.Floor(target / step + .5), 0, MaximumHalfWidth);
         // 圆弧内侧不能越过圆心。
         if (IsArc) while (_node.HalfWidth > 0 && _node.HalfWidth * step > ImageRadius) _node.HalfWidth--;
     }
@@ -500,8 +500,8 @@ public sealed class VisionCaliperGizmo : IVisionCanvasGizmo
     /// </summary>
     private void SetStep(double offset)
     {
-        var step = Math.Clamp(offset / Math.Max(1, _dragStepIndex), MinimumBandStep, MaximumBandStep);
-        var halfWidth = Math.Clamp((int)Math.Floor(_dragHalfBand / step + .5), 1, MaximumHalfWidth);
+        var step = Polyfill.Clamp(offset / Math.Max(1, _dragStepIndex), MinimumBandStep, MaximumBandStep);
+        var halfWidth = Polyfill.Clamp((int)Math.Floor(_dragHalfBand / step + .5), 1, MaximumHalfWidth);
         if (IsArc) while (halfWidth > 1 && halfWidth * step > ImageRadius) halfWidth--;
         _node.BandSampleStep = Bound ? Round(step / Scale) : Math.Round(step, 2);
         _node.HalfWidth = halfWidth;

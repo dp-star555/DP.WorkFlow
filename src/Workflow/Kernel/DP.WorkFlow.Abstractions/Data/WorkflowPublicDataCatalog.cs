@@ -46,7 +46,7 @@ public sealed class WorkflowPublicDataCatalog
     public WorkflowPublicDataCatalog Register(string key, Type valueType, string? displayName = null, string category = "公共数据")
     {
         if (string.IsNullOrWhiteSpace(key)) throw new ArgumentException("公共数据键不能为空。", nameof(key));
-        ArgumentNullException.ThrowIfNull(valueType);
+        Guard.NotNull(valueType);
         var normalized = key.Trim();
         var descriptor = new WorkflowPublicDataDescriptor(normalized, valueType,
             string.IsNullOrWhiteSpace(displayName) ? normalized : displayName.Trim(),

@@ -209,7 +209,7 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             var maximum = split.ClientSize.Width - split.SplitterWidth - 320;
             if (maximum < 260) return;
             var preferred = (int)Math.Round(split.ClientSize.Width * 0.34d);
-            split.SplitterDistance = Math.Clamp(preferred, 300, Math.Min(400, maximum));
+            split.SplitterDistance = Polyfill.Clamp(preferred, 300, Math.Min(400, maximum));
             split.Panel1MinSize = Math.Min(280, split.SplitterDistance);
             split.Panel2MinSize = Math.Min(320, split.ClientSize.Width - split.SplitterDistance - split.SplitterWidth);
             initialDistanceApplied = true;

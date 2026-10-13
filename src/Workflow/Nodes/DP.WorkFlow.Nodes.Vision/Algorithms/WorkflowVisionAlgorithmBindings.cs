@@ -56,7 +56,7 @@ public sealed class WorkflowVisionAlgorithmBindings : IWorkflowVisionAlgorithmBi
     /// <inheritdoc/>
     public async ValueTask<IWorkflowPreparedRun> PrepareRunAsync(WorkflowRunPreparationContext context, CancellationToken cancellationToken)
     {
-        lock (_gate) ObjectDisposedException.ThrowIf(_disposed, this);
+        lock (_gate) Guard.NotDisposed(_disposed, this);
         if (context.BindingScopeId == Guid.Empty) throw new InvalidOperationException("算法准备需要明确的绑定作用域身份。");
         var positioned = context.PositionedNodes ?? context.Nodes.Select(n => new WorkflowPreparationNode("$", n)).ToArray();
         var requests = positioned.Where(p => p.Node is IWorkflowVisionAlgorithmNode).SelectMany(position =>
@@ -108,7 +108,7 @@ public sealed class WorkflowVisionAlgorithmBindings : IWorkflowVisionAlgorithmBi
         VisionAlgorithmPlan plan;
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            Guard.NotDisposed(_disposed, this);
             if (!_active.TryGetValue(context.BindingScopeId, out plan!)) throw new InvalidOperationException("本次运行没有提交算法绑定。");
         }
         return plan.Invoke(Key(context.PlanPath, context.Node.Id, slot), invoke, cancellationToken);
@@ -120,7 +120,7 @@ public sealed class WorkflowVisionAlgorithmBindings : IWorkflowVisionAlgorithmBi
         VisionAlgorithmPlan plan;
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            Guard.NotDisposed(_disposed, this);
             if (!_active.TryGetValue(context.BindingScopeId, out plan!)) throw new InvalidOperationException("本次运行没有提交算法绑定。");
         }
         return plan.InvokeAsync(Key(context.PlanPath, context.Node.Id, slot), invoke, cancellationToken);
@@ -146,7 +146,7 @@ public sealed class WorkflowVisionAlgorithmBindings : IWorkflowVisionAlgorithmBi
         {
             lock (owner._gate)
             {
-                ObjectDisposedException.ThrowIf(owner._disposed || _released, owner);
+                Guard.NotDisposed(owner._disposed || _released, owner);
                 if (_committed) return;
                 if (owner._active.ContainsKey(id)) throw new InvalidOperationException("绑定作用域已经发布。");
                 next?.Commit();

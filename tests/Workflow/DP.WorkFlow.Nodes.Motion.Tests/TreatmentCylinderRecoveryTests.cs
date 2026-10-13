@@ -95,6 +95,7 @@ public sealed class TreatmentCylinderRecoveryTests
         { Created++; return ValueTask.FromResult<IWorkflowNodeOperation>(new Operation(this)); }
         private sealed class Operation(RootHandler owner) : IWorkflowNodeOperation
         {
+            public bool CanContinue => true;
             public ValueTask<NodeExecutionResult> ExecuteAsync(IWorkflowNodeExecutionContext context, CancellationToken cancellationToken) =>
                 ValueTask.FromResult(++owner.Attempts == 1 ? NodeExecutionResult.Fail("物料交接响应丢失") : NodeExecutionResult.Continue());
             public ValueTask DisposeAsync() => ValueTask.CompletedTask;

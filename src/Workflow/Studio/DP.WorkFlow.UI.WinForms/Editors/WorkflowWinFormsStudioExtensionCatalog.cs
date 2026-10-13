@@ -29,7 +29,7 @@ public sealed class WorkflowWinFormsStudioExtensionCatalog
     /// <returns>当前目录。</returns>
     public WorkflowWinFormsStudioExtensionCatalog Register(IWorkflowWinFormsStudioExtension extension)
     {
-        ArgumentNullException.ThrowIfNull(extension);
+        Guard.NotNull(extension);
         EnsureMutable();
         var extensionId = RequireKey(extension.ExtensionId, nameof(extension));
         if (!_extensionIds.Add(extensionId))
@@ -73,7 +73,7 @@ public sealed class WorkflowWinFormsStudioExtensionCatalog
     /// <returns>当前目录。</returns>
     public WorkflowWinFormsStudioExtensionCatalog RegisterRenderer(IWorkflowWinFormsNodeEditorPageRenderer renderer)
     {
-        ArgumentNullException.ThrowIfNull(renderer);
+        Guard.NotNull(renderer);
         EnsureMutable();
         var rendererKey = RequireKey(renderer.RendererKey, nameof(renderer));
         if (!_rendererKeys.Add(rendererKey))

@@ -116,7 +116,7 @@ public static class WorkflowTraceScope
     /// <param name="path">从根画布起经过的复合节点 ID。</param>
     public static WorkflowTraceBatch? ForPath(WorkflowTraceBatch? batch, IReadOnlyList<string> path)
     {
-        ArgumentNullException.ThrowIfNull(path);
+        Guard.NotNull(path);
         if (batch is null || path.Count == 0) return batch;
         var entries = new List<WorkflowTraceEntry>();
         foreach (var entry in batch.Entries)

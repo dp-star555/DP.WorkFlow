@@ -63,9 +63,8 @@ public sealed record WorkflowNodeEditorContext(
 /// <summary>扩展节点工作台页面；实现不得返回 WinForms/WPF 控件。</summary>
 public interface IWorkflowNodeEditorPageProvider
 {
-    /// <summary>获取用于插件注册冲突诊断的稳定扩展标识。</summary>
-    string ExtensionId => GetType().FullName
-        ?? throw new InvalidOperationException("节点页面提供器必须具有稳定类型名称。");
+    /// <summary>获取用于插件注册冲突诊断的稳定扩展标识，通常为实现类型的完整名称。</summary>
+    string ExtensionId { get; }
 
     /// <summary>判断当前提供器能否为指定节点创建页面。</summary>
     /// <param name="context">节点编辑器上下文。</param>
@@ -203,7 +202,7 @@ public sealed class WorkflowScriptEditorPageModel
     /// <param name="node">目标画布节点或节点模型。</param>
     public WorkflowScriptEditorPageModel(WorkflowDesignerSession session, IWorkflowScriptNode node)
     {
-        ArgumentNullException.ThrowIfNull(session);
+        Guard.NotNull(session);
         Node = node;
     }
 
@@ -381,7 +380,7 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
     /// <param name="nodeId">子画布中的节点标识。</param>
     public WorkflowNodeEditorModel CreateSubWorkflowNodeEditor(WorkflowSubWorkflowEditorPageModel page, string nodeId)
     {
-        ArgumentNullException.ThrowIfNull(page);
+        Guard.NotNull(page);
         // 打开页面后才放入的开始节点只反映在子会话文档上，页面构造时解析的入口可能仍为空。
         var entryNodeId = !string.IsNullOrWhiteSpace(page.Session.Document.EntryNodeId)
             ? page.Session.Document.EntryNodeId

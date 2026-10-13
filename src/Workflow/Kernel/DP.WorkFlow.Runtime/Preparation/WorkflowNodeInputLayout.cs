@@ -32,7 +32,7 @@ internal sealed class WorkflowNodeInputLayout
     /// <exception cref="InvalidOperationException">继承层次中出现重复的稳定输入键。</exception>
     internal static WorkflowNodeInputLayout Discover(Type nodeType)
     {
-        ArgumentNullException.ThrowIfNull(nodeType);
+        Guard.NotNull(nodeType);
         return Cache.GetOrAdd(nodeType, static type => Create(type));
     }
 
@@ -51,7 +51,7 @@ internal sealed class WorkflowNodeInputLayout
     /// </remarks>
     internal WorkflowNodeInputMap Bind(IWorkflowNodeModel node)
     {
-        ArgumentNullException.ThrowIfNull(node);
+        Guard.NotNull(node);
         var keys = new Dictionary<object, string>(ReferenceEqualityComparer.Instance);
         foreach (var slot in _slots)
         {

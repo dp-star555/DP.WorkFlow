@@ -22,7 +22,7 @@ public sealed class MeasureVisionLineDistanceNodeModel : WorkflowVisionGeometryA
     public override IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = base.ValidateConfiguration().ToList();
-        if (!IsBound(A) || !IsBound(B) || !Enum.IsDefined(Space) || !Enum.IsDefined(Mode)) errors.Add("线到线必须配置两条视觉直线和有效模式。");
+        if (!IsBound(A) || !IsBound(B) || !Polyfill.IsDefined(Space) || !Polyfill.IsDefined(Mode)) errors.Add("线到线必须配置两条视觉直线和有效模式。");
         return errors;
     }
 }

@@ -136,18 +136,18 @@ public partial class Form1 : Form
             .Register("Run", static (_, cancellationToken) =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return ValueTask.FromResult<object?>("DEMO-OK");
+                return Polyfill.FromResult<object?>("DEMO-OK");
             });
         var conditions = new WorkflowConditionRegistry()
             .Register("AlwaysTrue", static (_, cancellationToken) =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return ValueTask.FromResult(true);
+                return Polyfill.FromResult(true);
             })
             .Register("AlwaysFalse", static (_, cancellationToken) =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return ValueTask.FromResult(false);
+                return Polyfill.FromResult(false);
             });
         var services = new WorkflowServiceProvider()
             .Add<IWorkflowVisionFrameScope>(_frameScope)

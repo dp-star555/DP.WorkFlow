@@ -213,6 +213,7 @@ public sealed class WorkflowNodeOutputProjectionTests
 
     private sealed class RecordingProjection : IWorkflowNodeOutputProjection
     {
+        public void Retire() { }
         public int CommitCount;
         public long LastExecutionSequence = -1;
 

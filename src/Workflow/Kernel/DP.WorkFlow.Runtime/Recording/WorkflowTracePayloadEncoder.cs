@@ -88,7 +88,11 @@ public sealed class WorkflowTracePayloadEncoder
                 return Scalar(value.GetType(), value, Format(value), 8, budget);
             case Enum:
                 return Scalar(value.GetType(), value, value.ToString() ?? string.Empty, 16, budget);
+#if NETFRAMEWORK
+            case Guid or DateTime or DateTimeOffset or TimeSpan:
+#else
             case Guid or DateTime or DateTimeOffset or TimeSpan or DateOnly or TimeOnly:
+#endif
                 return Scalar(value.GetType(), value, Format(value), 32, budget);
             case byte[] bytes:
                 return new WorkflowTraceValue(

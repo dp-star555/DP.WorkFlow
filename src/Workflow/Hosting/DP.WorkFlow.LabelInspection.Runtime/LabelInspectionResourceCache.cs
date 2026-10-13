@@ -37,7 +37,7 @@ internal sealed class LabelInspectionResourceCache<T> : IAsyncDisposable where T
         {
             lock (_gate)
             {
-                ObjectDisposedException.ThrowIf(_disposed, this);
+                Guard.NotDisposed(_disposed, this);
                 CollectExpiredLocked(release);
                 if (_entries.TryGetValue(key, out entry))
                 { entry.Users++; entry.LastUsed = _clock.GetTimestamp(); Interlocked.Increment(ref _hits); }

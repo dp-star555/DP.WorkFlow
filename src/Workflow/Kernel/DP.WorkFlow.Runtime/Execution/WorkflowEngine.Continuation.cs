@@ -23,8 +23,8 @@ public sealed partial class WorkflowEngine
         string nodeId,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(plan);
-        ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+        Guard.NotNull(plan);
+        Guard.NotNullOrWhiteSpace(nodeId);
         var node = plan.Plan.GetNodeOrThrow(nodeId);
         if (Interlocked.Exchange(ref _isRunning, 1) != 0)
             throw new InvalidOperationException("当前 WorkflowEngine 已经处于运行中。");

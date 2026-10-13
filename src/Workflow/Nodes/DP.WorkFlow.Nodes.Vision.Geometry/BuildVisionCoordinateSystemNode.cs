@@ -77,7 +77,7 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
         get => new(CoordinateId, CoordinateName, DefinitionVersion, Unit);
         set
         {
-            ArgumentNullException.ThrowIfNull(value);
+            Guard.NotNull(value);
             CoordinateId = value.Id; CoordinateName = value.Name; DefinitionVersion = value.Version; Unit = value.Unit;
         }
     }
@@ -179,9 +179,9 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
     public override IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = base.ValidateConfiguration().ToList();
-        if (string.IsNullOrWhiteSpace(CoordinateId) || string.IsNullOrWhiteSpace(CoordinateName) || DefinitionVersion < 1 || !Enum.IsDefined(Unit))
+        if (string.IsNullOrWhiteSpace(CoordinateId) || string.IsNullOrWhiteSpace(CoordinateName) || DefinitionVersion < 1 || !Polyfill.IsDefined(Unit))
             errors.Add("坐标系名称不能为空，版本必须为正，单位必须有效。");
-        if (!Enum.IsDefined(Mode)) errors.Add("坐标构建方式无效。");
+        if (!Polyfill.IsDefined(Mode)) errors.Add("坐标构建方式无效。");
         if (Mode == EVisionCoordinateBuildMode.Parent && Coordinates is null) errors.Add("Parent构建必须绑定本帧父坐标。");
         if (Mode != EVisionCoordinateBuildMode.Parent && Coordinates is not null) errors.Add("当前构建方式不使用父坐标，请解除多余坐标绑定。");
         if (Mode == EVisionCoordinateBuildMode.Template && !IsBound(Template)) errors.Add("模板方式需要绑定模板匹配结果。");
@@ -189,7 +189,7 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
         if (Mode == EVisionCoordinateBuildMode.LineIntersection && (!IsBound(AxisLine) || !IsBound(CrossLine))) errors.Add("交线构建需要绑定两条视觉线。");
         if (Mode == EVisionCoordinateBuildMode.Correspondences)
         {
-            if (Samples is null || Samples.Count < 3 || Samples.Count > 1024 || Samples.Any(s => s is null || !double.IsFinite(s.LocalX) || !double.IsFinite(s.LocalY) || !double.IsFinite(s.ImageX) || !double.IsFinite(s.ImageY))) errors.Add("标定必须有3..1024个有限的对应点。");
+            if (Samples is null || Samples.Count < 3 || Samples.Count > 1024 || Samples.Any(s => s is null || !Polyfill.IsFinite(s.LocalX) || !Polyfill.IsFinite(s.LocalY) || !Polyfill.IsFinite(s.ImageX) || !Polyfill.IsFinite(s.ImageY))) errors.Add("标定必须有3..1024个有限的对应点。");
             else try
             {
                 var solved = CalibrationSolver.SolveAffine(Samples.Select(s => new CalibrationSample(new Coordinate2D(s.LocalX, s.LocalY), new Coordinate2D(s.ImageX, s.ImageY))).ToArray());
@@ -197,20 +197,20 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
                 if (solved.RmsError > MaximumRms) errors.Add("标定拟合误差超过最大RMS。");
             }
                 catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { errors.Add(ex.Message); }
-            if (CalibrationImageWidth < 1 || CalibrationImageHeight < 1 || !double.IsFinite(MaximumRms) || MaximumRms < 0) errors.Add("标定适用尺寸必须为正，RMS阈值必须有限非负。");
+            if (CalibrationImageWidth < 1 || CalibrationImageHeight < 1 || !Polyfill.IsFinite(MaximumRms) || MaximumRms < 0) errors.Add("标定适用尺寸必须为正，RMS阈值必须有限非负。");
         }
         if (Mode is EVisionCoordinateBuildMode.Template or EVisionCoordinateBuildMode.Pose or EVisionCoordinateBuildMode.Parent or EVisionCoordinateBuildMode.LineIntersection)
-            if (Scale is null || Scale.Source == WorkflowValueSource.Literal && (!double.IsFinite(Scale.LiteralValue) || Scale.LiteralValue < 1e-6 || Scale.LiteralValue > 1e6)) errors.Add("尺度必须在1e-6..1e6。");
-        if (Mode == EVisionCoordinateBuildMode.TwoPoints && (ReferenceLength is null || ReferenceLength.Source == WorkflowValueSource.Literal && (!double.IsFinite(ReferenceLength.LiteralValue) || ReferenceLength.LiteralValue <= 0))) errors.Add("参考长度必须有限且为正。");
+            if (Scale is null || Scale.Source == WorkflowValueSource.Literal && (!Polyfill.IsFinite(Scale.LiteralValue) || Scale.LiteralValue < 1e-6 || Scale.LiteralValue > 1e6)) errors.Add("尺度必须在1e-6..1e6。");
+        if (Mode == EVisionCoordinateBuildMode.TwoPoints && (ReferenceLength is null || ReferenceLength.Source == WorkflowValueSource.Literal && (!Polyfill.IsFinite(ReferenceLength.LiteralValue) || ReferenceLength.LiteralValue <= 0))) errors.Add("参考长度必须有限且为正。");
         if (Mode is EVisionCoordinateBuildMode.Pose or EVisionCoordinateBuildMode.Parent)
         {
             foreach (var number in new[] { OriginX, OriginY, Angle })
-                if (number is null || number.Source == WorkflowValueSource.Literal && (!double.IsFinite(number.LiteralValue) || Math.Abs(number.LiteralValue) > 1e9)) errors.Add("姿态分量必须有限且不超过正负十亿。");
+                if (number is null || number.Source == WorkflowValueSource.Literal && (!Polyfill.IsFinite(number.LiteralValue) || Math.Abs(number.LiteralValue) > 1e9)) errors.Add("姿态分量必须有限且不超过正负十亿。");
         }
         if (Mode == EVisionCoordinateBuildMode.Matrix)
         {
             var numbers = new[] { M11, M12, Tx, M21, M22, Ty };
-            if (numbers.Any(n => n is null || n.Source == WorkflowValueSource.Literal && !double.IsFinite(n.LiteralValue))) errors.Add("矩阵分量必须有限。");
+            if (numbers.Any(n => n is null || n.Source == WorkflowValueSource.Literal && !Polyfill.IsFinite(n.LiteralValue))) errors.Add("矩阵分量必须有限。");
             else if (numbers.All(n => n.Source == WorkflowValueSource.Literal))
                 try { _ = CoordinateMatrix2D.FromAffine(M11.LiteralValue, M12.LiteralValue, Tx.LiteralValue, M21.LiteralValue, M22.LiteralValue, Ty.LiteralValue).Inverse(); }
                 catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { errors.Add(ex.Message); }
@@ -258,6 +258,6 @@ public sealed class BuildVisionCoordinateSystemNodeHandler : WorkflowNodeHandler
             default: throw new InvalidOperationException("坐标构建方式无效。");
         }
         var result = new VisionCoordinateSystemResult(system, rms);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
     }
 }

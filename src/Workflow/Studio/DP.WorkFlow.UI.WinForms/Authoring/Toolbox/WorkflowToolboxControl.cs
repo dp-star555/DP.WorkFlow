@@ -70,8 +70,7 @@ public sealed partial class WorkflowToolboxControl : UserControl
     /// <param name="item">目标数据项。</param>
     private void AddItem(WorkflowToolboxItem item)
     {
-        var segments = (string.IsNullOrWhiteSpace(item.Category) ? "未分类" : item.Category)
-            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var segments = Polyfill.SplitTrimmed(string.IsNullOrWhiteSpace(item.Category) ? "未分类" : item.Category, '/');
         var nodes = toolboxTreeView.Nodes;
         foreach (var segment in segments)
         {

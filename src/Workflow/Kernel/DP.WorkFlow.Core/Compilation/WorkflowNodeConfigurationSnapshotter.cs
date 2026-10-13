@@ -18,7 +18,7 @@ public static class WorkflowNodeConfigurationSnapshotter
     /// <returns>A deep configuration snapshot.</returns>
     public static IWorkflowNodeModel Capture(IWorkflowNodeModel node)
     {
-        ArgumentNullException.ThrowIfNull(node);
+        Guard.NotNull(node);
         return (IWorkflowNodeModel)CloneValue(
             node,
             new Dictionary<object, object>(ReferenceEqualityComparer.Instance))!;
@@ -29,8 +29,8 @@ public static class WorkflowNodeConfigurationSnapshotter
     /// <param name="snapshot">A snapshot previously returned by <see cref="Capture"/>.</param>
     public static void Restore(IWorkflowNodeModel target, IWorkflowNodeModel snapshot)
     {
-        ArgumentNullException.ThrowIfNull(target);
-        ArgumentNullException.ThrowIfNull(snapshot);
+        Guard.NotNull(target);
+        Guard.NotNull(snapshot);
         if (target.GetType() != snapshot.GetType())
             throw new ArgumentException("节点配置快照类型与目标节点类型不一致。", nameof(snapshot));
 

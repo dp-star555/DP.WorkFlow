@@ -34,7 +34,7 @@ public sealed partial class WorkflowBindingSelectorDialog : Form
         WorkflowBindingKey? current = null)
         : this()
     {
-        ArgumentNullException.ThrowIfNull(candidates);
+        Guard.NotNull(candidates);
         _currentBinding = current;
 
         // SetCandidates 会触发 Changed，Changed 最终调用 RebuildBindingTree。

@@ -56,7 +56,7 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
     /// <param name="frame">本次输入帧。</param><param name="context">节点执行上下文。</param><returns>未绑定时为空。</returns>
     public VisionCoordinateSystem? ResolveCoordinates(ImageFrame frame, IWorkflowNodeExecutionContext context)
     {
-        ArgumentNullException.ThrowIfNull(frame); ArgumentNullException.ThrowIfNull(context);
+        Guard.NotNull(frame); Guard.NotNull(context);
         if (Coordinates is null) return null;
         if (!SupportsCoordinates) throw new InvalidOperationException("此算子不支持定位坐标系。");
         return Coordinates.Resolve(context, frame);
@@ -66,7 +66,7 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
     /// <param name="frame">本次输入帧。</param><param name="context">执行上下文。</param><param name="token">取消。</param><returns>原图精确范围与定位来源。</returns>
     public WorkflowVisionResolvedRange ResolveRange(ImageFrame frame, IWorkflowNodeExecutionContext context, CancellationToken token = default)
     {
-        ArgumentNullException.ThrowIfNull(frame); ArgumentNullException.ThrowIfNull(context); token.ThrowIfCancellationRequested();
+        Guard.NotNull(frame); Guard.NotNull(context); token.ThrowIfCancellationRequested();
         if (RangeCapability != EWorkflowVisionRange.Region) throw new InvalidOperationException("此算子不声明面积范围能力。");
         var coordinates = ResolveCoordinates(frame, context);
         if (coordinates is not null && !FullImage) throw new InvalidOperationException("局部ROI不能叠加原图整数矩形。");
@@ -105,7 +105,7 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
     public virtual IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = new List<string>();
-        if (!Enum.IsDefined(RangeCapability)) errors.Add("范围能力声明无效。");
+        if (!Polyfill.IsDefined(RangeCapability)) errors.Add("范围能力声明无效。");
         if (Frame is null || Frame.Source != WorkflowValueSource.Binding || Frame.Binding is null || Frame.LiteralValue is not null)
             errors.Add("输入图像必须配置上游/公共数据绑定，不能保存运行帧Literal。");
         if (Coordinates is not null)
@@ -202,7 +202,7 @@ public sealed class AnalyzeVisionBlobsNodeHandler : WorkflowNodeHandler<AnalyzeV
                 new BlobOptions(node.MinimumGray, node.MaximumGray, node.MinimumArea, node.EightConnected), cancellationToken, range.Region), cancellationToken);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }
 
@@ -236,6 +236,6 @@ public sealed class AnalyzeVisionColorNodeHandler : WorkflowNodeHandler<AnalyzeV
             (IColorAnalyzer algorithm) => algorithm.Analyze(frame, range.Bounds, cancellationToken, range.Region), cancellationToken);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }

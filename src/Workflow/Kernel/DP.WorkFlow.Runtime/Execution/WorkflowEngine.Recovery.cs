@@ -55,7 +55,7 @@ public sealed partial class WorkflowEngine
             CanContinueOperation = operation?.Instance.CanContinue == true,
             IsBoundaryInterruption = exception.IsBoundaryInterruption,
             ExceptionType = exception.InnerException?.GetType().FullName,
-            LoopIterations = new System.Collections.ObjectModel.ReadOnlyDictionary<string, int>(new Dictionary<string, int>(token.CopyLoopFrames())),
+            LoopIterations = new System.Collections.ObjectModel.ReadOnlyDictionary<string, int>(token.CopyLoopFrames().ToDictionary()),
             CommitStarted = exception.CommitStarted
         };
         var hold = $"Recovery:{request.CaseId}";

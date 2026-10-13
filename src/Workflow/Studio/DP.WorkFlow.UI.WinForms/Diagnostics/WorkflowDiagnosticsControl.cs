@@ -37,7 +37,7 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
         get => _localizationContext;
         set
         {
-            ArgumentNullException.ThrowIfNull(value);
+            Guard.NotNull(value);
             if (_localizationContext is not null) _localizationContext.Changed -= LocalizationChanged;
             _localizationContext = value;
             _localizationContext.Changed += LocalizationChanged;

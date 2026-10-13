@@ -99,7 +99,7 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     {
         if (string.IsNullOrWhiteSpace(key))
             throw new ArgumentException("键不能为空。", nameof(key));
-        ArgumentNullException.ThrowIfNull(value);
+        Guard.NotNull(value);
         _pendingVariableRemovals.Remove(key);
         _pendingVariableWrites[key] = value;
     }
@@ -137,7 +137,7 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     {
         if (string.IsNullOrWhiteSpace(key))
             throw new ArgumentException("公共数据键不能为空。", nameof(key));
-        ArgumentNullException.ThrowIfNull(value);
+        Guard.NotNull(value);
         _pendingPublicDataRemovals.Remove(key);
         _pendingPublicDataWrites[key] = value;
     }
@@ -154,7 +154,7 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
 
     public T? ResolveInput<T>(WorkflowInput<T> input)
     {
-        ArgumentNullException.ThrowIfNull(input);
+        Guard.NotNull(input);
         // 用引用映射把"Handler 实际传入的输入实例"定位回它的公开属性名；查不到说明是动态输入。
         var inputKey = _inputMap.TryGetKey(input, out var key) ? key : null;
         var metadataStatus = inputKey is null
@@ -165,7 +165,7 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
 
     public T? ResolveDynamicInput<T>(string inputKey, WorkflowInput<T> input)
     {
-        ArgumentNullException.ThrowIfNull(input);
+        Guard.NotNull(input);
         if (string.IsNullOrWhiteSpace(inputKey))
             throw new ArgumentException("动态输入键不能为空白。", nameof(inputKey));
         return ResolveAndRecord(input, inputKey.Trim(), WorkflowInputMetadataStatus.ExplicitDynamic);

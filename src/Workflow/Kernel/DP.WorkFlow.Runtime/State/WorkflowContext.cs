@@ -39,8 +39,8 @@ public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
     /// <param name="inputs">按输入名称索引的值。</param>
     public void SetSubflowInputs(IReadOnlyDictionary<string, object?> inputs)
     {
-        ArgumentNullException.ThrowIfNull(inputs);
-        SubflowInputs = new Dictionary<string, object?>(inputs, StringComparer.Ordinal);
+        Guard.NotNull(inputs);
+        SubflowInputs = inputs.ToDictionary(StringComparer.Ordinal);
     }
 
     /// <summary>设置或替换非空流程作用域局部变量。</summary>
@@ -51,7 +51,7 @@ public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
     public void SetVariable(string key, object value)
     {
         ValidateKey(key);
-        ArgumentNullException.ThrowIfNull(value);
+        Guard.NotNull(value);
         lock (_variableSync)
             _variables[key] = value;
     }
@@ -155,8 +155,8 @@ public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
         IReadOnlyDictionary<string, object> writes,
         IReadOnlyCollection<string> removals)
     {
-        ArgumentNullException.ThrowIfNull(writes);
-        ArgumentNullException.ThrowIfNull(removals);
+        Guard.NotNull(writes);
+        Guard.NotNull(removals);
         lock (_variableSync)
         {
             foreach (var key in removals)

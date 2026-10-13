@@ -22,7 +22,7 @@ public static class WorkflowVisionSourceChoices
     /// <exception cref="ArgumentNullException">目录为空。</exception>
     public static WorkflowPropertyChoiceProvider CreateProvider(IWorkflowVisionSourceCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(catalog);
+        Guard.NotNull(catalog);
         return (editorKey, _) => editorKey switch
         {
             WorkflowPropertyEditorKeys.VisionAreaSource => Project(catalog, EVisionAcquisitionKind.AreaScan),

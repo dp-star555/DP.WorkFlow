@@ -17,7 +17,7 @@ public sealed class WorkflowRuntimeBinder
     /// <returns>A runtime-ready plan with recursively bound handlers.</returns>
     public WorkflowBoundExecutionPlan Bind(WorkflowExecutionPlan plan)
     {
-        ArgumentNullException.ThrowIfNull(plan);
+        Guard.NotNull(plan);
         var resolutions = plan.NodeIds.ToDictionary(
             nodeId => nodeId,
             nodeId => _handlers.ResolveWithRequirements(plan.GetNodeOrThrow(nodeId)),

@@ -47,7 +47,9 @@ public sealed class LabelInspectionWorkbenchRenderer(Func<string> baseDirectory,
     {
         var model = (LabelInspectionEditorPageModel)page.Model;
         var control = new LabelWorkbenchControl(model, baseDirectory, previews, cacheRuntime);
-        _controls.AddOrUpdate(model, control);
+        // 4.8 的 ConditionalWeakTable 没有 AddOrUpdate：先移除再添加，效果相同。
+        _controls.Remove(model);
+        _controls.Add(model, control);
         return control;
     }
     /// <inheritdoc/>
@@ -428,7 +430,7 @@ internal sealed class LabelWorkbenchControl : UserControl
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 var info = new FileInfo(dialog.FileName);
                 if (info.Length > 4 * 1024 * 1024) throw new InvalidDataException("配方文件超过预算。");
-                model.ImportRecipe(await File.ReadAllTextAsync(dialog.FileName, _lifetime.Token));
+                model.ImportRecipe(await Polyfill.ReadAllTextAsync(dialog.FileName, _lifetime.Token));
                 if (_actual is not null) await LoadAsync(_actual);
                 else _status.Text = "配方已导入；加载同尺寸配置图后可图上编辑与试检测。";
                 return;
@@ -438,7 +440,7 @@ internal sealed class LabelWorkbenchControl : UserControl
                 model.PrepareCommit();
                 if (string.IsNullOrWhiteSpace(model.Node.RecipeJson)) throw new InvalidOperationException("当前还没有配方：请先载入预览并创建ROI，或导入配方。");
                 using var dialog = new SaveFileDialog { Filter = "标签配方|*.json", FileName = "recipe.json" };
-                if (dialog.ShowDialog(this) == DialogResult.OK) await File.WriteAllTextAsync(dialog.FileName, model.Node.RecipeJson, _lifetime.Token);
+                if (dialog.ShowDialog(this) == DialogResult.OK) await Polyfill.WriteAllTextAsync(dialog.FileName, model.Node.RecipeJson, _lifetime.Token);
                 return;
             }
             case "ReloadResources":
@@ -567,7 +569,7 @@ internal sealed class LabelWorkbenchControl : UserControl
             form.FormClosed += (_, _) => _themedDialogs.Remove(form);
         }
     }
-    private string Root => Path.GetFullPath(_model.Node.ResourceRoot, Path.GetFullPath(_baseDirectory()));
+    private string Root => Polyfill.GetFullPath(_model.Node.ResourceRoot, Path.GetFullPath(_baseDirectory()));
     private bool ValidateResourcePaths(InspectLabelNodeModel node, bool includeAuthor = false)
     {
         var paths = new List<(string Name, string Path)> { ("字库/模型库目录", node.DataDirectory) };
@@ -677,7 +679,7 @@ internal sealed class LabelWorkbenchControl : UserControl
         var pixels = new byte[info.ByteLength]; actual.Image.CopyTo(0, pixels, 0, pixels.Length);
         var snapshot = new PixelSnapshot(info.Width, info.Height, info.Layout == EPixelLayout.Gray8 ? EImagePixelFormat.Gray8 : EImagePixelFormat.Bgr24, pixels);
         Directory.CreateDirectory(Root);
-        await File.WriteAllBytesAsync(Path.Combine(Root, relative), new OpenCvImageCodec().EncodePng(snapshot), _lifetime.Token);
+        await Polyfill.WriteAllBytesAsync(Path.Combine(Root, relative), new OpenCvImageCodec().EncodePng(snapshot), _lifetime.Token);
         model.SetReferenceImagePath(relative);
         if (CaptureRecipe() is { } recipe) model.SetRecipe(recipe);
         bool configFrame = _configFrameShown;

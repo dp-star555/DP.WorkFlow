@@ -17,6 +17,6 @@ public sealed class WarningHandlerStartNodeHandler : WorkflowNodeHandler<Warning
         cancellationToken.ThrowIfCancellationRequested();
         context.TryGetVariable<WorkflowInterruptContext>(WorkflowRecoveryRuntimeKeys.InterruptContext, out var interruptContext);
         context.Trace("加载中断上下文", "告警处理起点加载当前中断上下文。", new Dictionary<string, object?> { ["HasInterruptContext"] = interruptContext is not null, ["ReasonCode"] = interruptContext?.ReasonCode, ["FaultNodeId"] = interruptContext?.FaultNodeId });
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: interruptContext));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: interruptContext));
     }
 }

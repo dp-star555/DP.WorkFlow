@@ -9,7 +9,7 @@ public sealed class WorkflowMotionRuntimePluginModule : IWorkflowRuntimePluginMo
     /// <inheritdoc />
     public void Register(WorkflowRuntimePluginCatalog extensions)
     {
-        ArgumentNullException.ThrowIfNull(extensions);
+        Guard.NotNull(extensions);
         extensions.Nodes.RegisterMotionNodes();
         extensions.Handlers.RegisterMotionNodeHandlers();
     }

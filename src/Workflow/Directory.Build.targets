@@ -1,0 +1,17 @@
+<Project>
+  <!-- 两个目标框架共用的检查辅助（Guard）和只在 .NET Framework 上编译的 API 补齐。 -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Shared/Compatibility/*.cs" Link="Compatibility/%(Filename)%(Extension)" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'">
+    <!-- .NET Framework 的 BCL 没有可空注解，可空性只在 .NET 8 目标上检查；这里保留注解语法，不报可空警告。 -->
+    <Nullable>annotations</Nullable>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'">
+    <!-- record、init、Index/Range、CallerArgumentExpression、可空性特性等编译器所需类型。 -->
+    <PackageReference Include="PolySharp" PrivateAssets="all" />
+    <PackageReference Include="System.Text.Json" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" />
+    <PackageReference Include="System.Threading.Tasks.Extensions" />
+  </ItemGroup>
+</Project>

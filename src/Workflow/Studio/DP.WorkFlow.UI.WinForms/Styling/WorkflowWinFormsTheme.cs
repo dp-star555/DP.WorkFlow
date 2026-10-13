@@ -11,7 +11,7 @@ public static class WorkflowWinFormsTheme
     /// <param name="followAddedControls">是否跟随之后动态加入的子控件。</param>
     public static void ApplyDark(Control root, bool followAddedControls = false)
     {
-        ArgumentNullException.ThrowIfNull(root);
+        Guard.NotNull(root);
         WorkflowWinFormsStyle.Apply(root, followAddedControls);
     }
 }

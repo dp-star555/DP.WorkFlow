@@ -17,11 +17,11 @@ public static class WorkflowOutputDisplayNames
     /// <param name="names">成员名到中文显示名称的映射。</param>
     public static void Register(Type type, IReadOnlyDictionary<string, string> names)
     {
-        ArgumentNullException.ThrowIfNull(type);
-        ArgumentNullException.ThrowIfNull(names);
-        Registered.AddOrUpdate(type, _ => new Dictionary<string, string>(names, StringComparer.Ordinal), (_, existing) =>
+        Guard.NotNull(type);
+        Guard.NotNull(names);
+        Registered.AddOrUpdate(type, _ => names.ToDictionary(StringComparer.Ordinal), (_, existing) =>
         {
-            var merged = new Dictionary<string, string>(existing, StringComparer.Ordinal);
+            var merged = existing.ToDictionary(StringComparer.Ordinal);
             foreach (var pair in names) merged[pair.Key] = pair.Value;
             return merged;
         });
@@ -35,7 +35,7 @@ public static class WorkflowOutputDisplayNames
     /// <returns>显示名称。</returns>
     public static string Resolve(PropertyInfo property)
     {
-        ArgumentNullException.ThrowIfNull(property);
+        Guard.NotNull(property);
         var attributed = property.GetCustomAttribute<WorkflowPropertyAttribute>()?.DisplayName
             ?? property.GetCustomAttribute<DisplayNameAttribute>()?.DisplayName;
         if (!string.IsNullOrWhiteSpace(attributed)) return attributed;

@@ -35,7 +35,7 @@ internal sealed class LabelRecipeSelectionDemo : IWorkflowRuntimePluginModule
         await WorkflowLabelRecipeCatalogStore.PublishAsync(root, "recipes/index.json", a);
         await WorkflowLabelRecipeCatalogStore.PublishAsync(root, "recipes/index.json", b);
         var taskFile = Path.Combine(root, "recipe-key.txt");
-        if (!File.Exists(taskFile)) await File.WriteAllTextAsync(taskFile, "A");
+        if (!File.Exists(taskFile)) await Polyfill.WriteAllTextAsync(taskFile, "A");
         var loop = new LoopNodeModel { Id = "cycles", Title = "100个检测周期", Iterations = 100 };
         var task = new TaskNode { Id = "task", Title = "捕获本次配方/周期", RecipeKeyFile = taskFile };
         var delay = new DelayNodeModel { Id = "delay", Title = "1秒周期间隔", DelayMs = 1000 };
@@ -70,10 +70,16 @@ internal sealed class LabelRecipeSelectionDemo : IWorkflowRuntimePluginModule
     {
         protected override async ValueTask<NodeExecutionResult> ExecuteAsync(TaskNode node, IWorkflowNodeExecutionContext context, CancellationToken token)
         {
-            await using var file = new FileStream(node.RecipeKeyFile, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
+            using var file = new FileStream(node.RecipeKeyFile, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
                 4096, FileOptions.Asynchronous);
             if (file.Length is < 1 or > 512) throw new InvalidDataException("配方任务文件须为1至512字节。");
-            var bytes = new byte[checked((int)file.Length)]; await file.ReadExactlyAsync(bytes, token);
+            var bytes = new byte[checked((int)file.Length)];
+            for (var read = 0; read < bytes.Length;)
+            {
+                var count = await file.ReadAsync(bytes, read, bytes.Length - read, token);
+                if (count == 0) throw new EndOfStreamException("配方任务文件在读取时被截断。");
+                read += count;
+            }
             var key = Encoding.UTF8.GetString(bytes).Trim().TrimStart('\uFEFF');
             return NodeExecutionResult.Continue(output: new TaskSnapshot(key, Guid.NewGuid().ToString("N")));
         }

@@ -27,6 +27,6 @@ public sealed class QueueReadNodeHandler : WorkflowNodeHandler<QueueReadNodeMode
         if (node.AutoCreateIfMissing) service.EnsureExists(node.QueueKey.Trim(), node.ValueType);
         var output = WorkflowQueueNodeRuntime.BuildResult(node.QueueKey.Trim(), node.ValueType, service.ReadSnapshot(node.QueueKey.Trim()), false, null);
         if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: output));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
 }

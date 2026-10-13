@@ -8,7 +8,7 @@ public sealed record WorkflowRuntimeCapabilityRequirement
     /// <param name="description">面向宿主和诊断界面的可选用途说明。</param>
     public WorkflowRuntimeCapabilityRequirement(Type capabilityType, string? description = null)
     {
-        ArgumentNullException.ThrowIfNull(capabilityType);
+        Guard.NotNull(capabilityType);
         if (capabilityType.ContainsGenericParameters)
             throw new ArgumentException("运行能力不能是开放泛型类型。", nameof(capabilityType));
         CapabilityType = capabilityType;

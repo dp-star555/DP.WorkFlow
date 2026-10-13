@@ -108,7 +108,7 @@ public sealed class WorkflowVisionSourceCatalog : IWorkflowVisionSourceCatalog
     /// <exception cref="ArgumentException">存在空条目或重复SourceId。</exception>
     public WorkflowVisionSourceCatalog(IEnumerable<WorkflowVisionSourceInfo> sources)
     {
-        ArgumentNullException.ThrowIfNull(sources);
+        Guard.NotNull(sources);
         _sources = new Dictionary<string, WorkflowVisionSourceInfo>(StringComparer.Ordinal);
         foreach (var source in sources)
         {
@@ -128,7 +128,7 @@ public sealed class WorkflowVisionSourceCatalog : IWorkflowVisionSourceCatalog
     /// <exception cref="ArgumentException">组合投影含重复SourceId。</exception>
     public static WorkflowVisionSourceCatalog FromAcquisition(IVisionAcquisitionSourceCatalog acquisition)
     {
-        ArgumentNullException.ThrowIfNull(acquisition);
+        Guard.NotNull(acquisition);
         return new WorkflowVisionSourceCatalog(
             acquisition.SourceCatalog.Select(entry => new WorkflowVisionSourceInfo(
                 entry.SourceId,

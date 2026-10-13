@@ -16,7 +16,7 @@ public sealed class WorkflowNodeHandlerCatalog
     /// <remarks>同一处理器重复注册不会去重，并会导致解析时出现多匹配错误。</remarks>
     public WorkflowNodeHandlerCatalog Register(IWorkflowNodeHandler handler)
     {
-        ArgumentNullException.ThrowIfNull(handler);
+        Guard.NotNull(handler);
         lock (_syncRoot)
         {
             EnsureMutable();
@@ -35,8 +35,8 @@ public sealed class WorkflowNodeHandlerCatalog
         IWorkflowNodeHandler handler,
         params WorkflowRuntimeCapabilityRequirement[] requiredCapabilities)
     {
-        ArgumentNullException.ThrowIfNull(handler);
-        ArgumentNullException.ThrowIfNull(requiredCapabilities);
+        Guard.NotNull(handler);
+        Guard.NotNull(requiredCapabilities);
         var requirements = ValidateRequirements(requiredCapabilities).ToArray();
         lock (_syncRoot)
         {
@@ -54,8 +54,8 @@ public sealed class WorkflowNodeHandlerCatalog
         IWorkflowNodeHandler handler,
         Func<IWorkflowNodeModel, IEnumerable<WorkflowRuntimeCapabilityRequirement>> requirementResolver)
     {
-        ArgumentNullException.ThrowIfNull(handler);
-        ArgumentNullException.ThrowIfNull(requirementResolver);
+        Guard.NotNull(handler);
+        Guard.NotNull(requirementResolver);
         lock (_syncRoot)
         {
             EnsureMutable();
@@ -73,7 +73,7 @@ public sealed class WorkflowNodeHandlerCatalog
     /// <exception cref="InvalidOperationException">没有处理器或存在多个匹配处理器。</exception>
     public IWorkflowNodeHandler Resolve(IWorkflowNodeModel node)
     {
-        ArgumentNullException.ThrowIfNull(node);
+        Guard.NotNull(node);
         HandlerRegistration[] matches;
         lock (_syncRoot)
             matches = _registrations.Where(item => item.Handler.CanHandle(node)).ToArray();
@@ -91,7 +91,7 @@ public sealed class WorkflowNodeHandlerCatalog
     /// <returns>唯一 Handler 和该配置要求的去重能力集合。</returns>
     public WorkflowNodeHandlerResolution ResolveWithRequirements(IWorkflowNodeModel node)
     {
-        ArgumentNullException.ThrowIfNull(node);
+        Guard.NotNull(node);
         HandlerRegistration[] matches;
         lock (_syncRoot)
             matches = _registrations.Where(item => item.Handler.CanHandle(node)).ToArray();
@@ -141,7 +141,7 @@ public sealed class WorkflowNodeHandlerCatalog
     private static IEnumerable<WorkflowRuntimeCapabilityRequirement> ValidateRequirements(
         IEnumerable<WorkflowRuntimeCapabilityRequirement> requirements)
     {
-        ArgumentNullException.ThrowIfNull(requirements);
+        Guard.NotNull(requirements);
         foreach (var requirement in requirements)
             yield return requirement ?? throw new InvalidOperationException("运行能力要求集合不能包含 null。");
     }

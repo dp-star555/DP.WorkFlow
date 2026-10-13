@@ -1,0 +1,11 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+  <!--
+    Workflow 各库同时面向 .NET Framework 4.8 和 .NET 8：4.8 的设备主程序可以直接引用引擎、节点和编辑界面。
+    项目文件用下面两个属性，不各自写目标框架；测试工程只跑 .NET 8。
+  -->
+  <PropertyGroup>
+    <WorkflowTargetFrameworks>net48;net8.0</WorkflowTargetFrameworks>
+    <WorkflowWindowsTargetFrameworks>net48;net8.0-windows</WorkflowWindowsTargetFrameworks>
+  </PropertyGroup>
+</Project>

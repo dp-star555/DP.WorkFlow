@@ -6,7 +6,7 @@ public static class WorkflowCompositeNodes
     /// <summary>注册 Block、循环块等复合节点模型。</summary>
     public static WorkflowNodeCatalog RegisterCompositeNodes(this WorkflowNodeCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(catalog);
+        Guard.NotNull(catalog);
         return catalog
             .Register(WorkflowNodeDescriptor.Create<BlockNodeModel, BlockNodeOutput>(
                 ports: new[]
@@ -26,7 +26,7 @@ public static class WorkflowCompositeNodes
     public static WorkflowNodeHandlerCatalog RegisterCompositeNodeHandlers(
         this WorkflowNodeHandlerCatalog handlers)
     {
-        ArgumentNullException.ThrowIfNull(handlers);
+        Guard.NotNull(handlers);
         return handlers
             .Register(new BlockNodeHandler())
             .Register(new LoopBlockNodeHandler());

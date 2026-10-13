@@ -12,7 +12,7 @@ public static class WorkflowVisionAlgorithmChoices
     /// <returns>按能力过滤的实现候选。</returns>
     public static WorkflowPropertyChoiceProvider CreateProvider(VisionAlgorithmCatalog catalog, WorkflowPropertyChoiceProvider? fallback = null)
     {
-        ArgumentNullException.ThrowIfNull(catalog);
+        Guard.NotNull(catalog);
         return (key, property) => key.StartsWith(WorkflowPropertyEditorKeys.VisionAlgorithmPrefix, StringComparison.Ordinal)
             ? catalog.Implementations.Where(d => d.CapabilityId == key[WorkflowPropertyEditorKeys.VisionAlgorithmPrefix.Length..])
                 .Select(d => new WorkflowPropertyChoice($"{d.Engine} / {d.ImplementationId}", d.ImplementationId)).ToArray()

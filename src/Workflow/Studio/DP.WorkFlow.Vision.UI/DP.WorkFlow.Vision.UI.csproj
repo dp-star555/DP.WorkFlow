@@ -6,6 +6,6 @@
     <ProjectReference Include="..\DP.WorkFlow.UI.Shared\DP.WorkFlow.UI.Shared.csproj" />
   </ItemGroup>
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>$(WorkflowTargetFrameworks)</TargetFrameworks>
   </PropertyGroup>
 </Project>

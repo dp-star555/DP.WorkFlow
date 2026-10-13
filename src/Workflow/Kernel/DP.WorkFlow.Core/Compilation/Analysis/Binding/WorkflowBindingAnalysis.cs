@@ -105,7 +105,7 @@ public sealed class WorkflowBindingAnalyzer
     /// <returns>绑定用法、候选和诊断。</returns>
     public WorkflowBindingAnalysis Analyze(WorkflowDocument document, string entryNodeId)
     {
-        ArgumentNullException.ThrowIfNull(document);
+        Guard.NotNull(document);
         if (string.IsNullOrWhiteSpace(entryNodeId))
             throw new ArgumentException("绑定分析入口不能为空。", nameof(entryNodeId));
         // 复合节点的输出成员跟随子画布中的来源，分析前按当前文档刷新。
@@ -126,8 +126,8 @@ public sealed class WorkflowBindingAnalyzer
         WorkflowGraphIndex graph,
         IReadOnlyList<WorkflowParallelScopePlan> parallelScopes)
     {
-        ArgumentNullException.ThrowIfNull(graph);
-        ArgumentNullException.ThrowIfNull(parallelScopes);
+        Guard.NotNull(graph);
+        Guard.NotNull(parallelScopes);
 
         var nodes = graph.Nodes;
         var outgoing = graph.Successors;
@@ -161,7 +161,7 @@ public sealed class WorkflowBindingAnalyzer
         IWorkflowSubDocumentNode composite,
         string startNodeId)
     {
-        ArgumentNullException.ThrowIfNull(composite);
+        Guard.NotNull(composite);
         if (composite is not IWorkflowBindingDeclarationProvider provider)
             return Array.Empty<WorkflowValidationError>();
         var declarations = provider.GetDeclaredBindings()
@@ -232,7 +232,7 @@ public sealed class WorkflowBindingAnalyzer
     /// <returns>所有节点的输出根值和最多三层公开可读成员；未提供节点目录时返回空集合。</returns>
     public IReadOnlyList<WorkflowBindingCandidate> GetOutputCandidates(WorkflowDocument document)
     {
-        ArgumentNullException.ThrowIfNull(document);
+        Guard.NotNull(document);
         if (_catalog is null)
             return Array.Empty<WorkflowBindingCandidate>();
         WorkflowSubflowInterfaces.Refresh(document, _catalog);

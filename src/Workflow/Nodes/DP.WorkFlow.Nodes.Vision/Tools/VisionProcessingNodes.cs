@@ -58,7 +58,7 @@ public sealed class PreprocessVisionImageNodeHandler : WorkflowNodeHandler<Prepr
         cancellationToken.ThrowIfCancellationRequested();
         var output = context.GetRequiredCapability<IWorkflowVisionFrameScope>().Retain(frame);
         var projection = WorkflowVisionFrameScope.StageOutput(context, output);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: output, projection: projection));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: output, projection: projection));
     }
 }
 
@@ -106,7 +106,7 @@ public sealed class ThresholdVisionRegionNodeHandler : WorkflowNodeHandler<Thres
         result.ValidateFrame(frame);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }
 
@@ -141,7 +141,7 @@ public sealed class MorphVisionRegionNodeModel : AnalyzeVisionFrameNodeModel, IW
         var errors = base.ValidateConfiguration().ToList();
         if (InputRegion is null || InputRegion.Source != WorkflowValueSource.Binding || InputRegion.Binding is null || InputRegion.LiteralValue is not null)
             errors.Add("区域输入必须为绑定。");
-        if (!FullImage || Radius < 0 || Radius > 31 || !Enum.IsDefined(Operation) || !Enum.IsDefined(Kernel)) errors.Add("无效形态学参数；操作作用于完整输入Region。");
+        if (!FullImage || Radius < 0 || Radius > 31 || !Polyfill.IsDefined(Operation) || !Polyfill.IsDefined(Kernel)) errors.Add("无效形态学参数；操作作用于完整输入Region。");
         return errors;
     }
 }
@@ -160,7 +160,7 @@ public sealed class MorphVisionRegionNodeHandler : WorkflowNodeHandler<MorphVisi
         result.ValidateFrame(frame);
         if (input.CoordinateSystem is not null) result = result.InCoordinates(input.CoordinateSystem);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }
 
@@ -223,6 +223,6 @@ public sealed class SelectVisionBlobsNodeHandler : WorkflowNodeHandler<SelectVis
             (IBlobSelector algorithm) => algorithm.Select(input, node.Options(), cancellationToken), cancellationToken);
         if (input.CoordinateSystem is not null) result = result.InCoordinates(input.CoordinateSystem);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }

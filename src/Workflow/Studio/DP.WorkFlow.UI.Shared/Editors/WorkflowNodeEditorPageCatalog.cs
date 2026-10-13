@@ -24,7 +24,7 @@ public sealed class WorkflowNodeEditorPageCatalog
     /// <exception cref="InvalidOperationException">目录已冻结或扩展标识重复。</exception>
     public WorkflowNodeEditorPageCatalog Register(IWorkflowNodeEditorPageProvider provider)
     {
-        ArgumentNullException.ThrowIfNull(provider);
+        Guard.NotNull(provider);
         if (_frozen)
             throw new InvalidOperationException("节点详情页目录已经冻结，不能继续注册扩展。");
         if (string.IsNullOrWhiteSpace(provider.ExtensionId))
@@ -41,7 +41,7 @@ public sealed class WorkflowNodeEditorPageCatalog
     /// <returns>按显示顺序排列且每个页面槽位唯一的页面集合。</returns>
     public IReadOnlyList<WorkflowNodeEditorPageDescriptor> CreatePages(WorkflowNodeEditorContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        Guard.NotNull(context);
         _frozen = true;
         var candidates = new List<PageCandidate>();
         foreach (var provider in _providers)

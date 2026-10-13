@@ -14,7 +14,7 @@ public static class WorkflowMotionNodes
     /// <summary>注册当前已经实现的运控节点模型。</summary>
     public static WorkflowNodeCatalog RegisterMotionNodes(this WorkflowNodeCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(catalog);
+        Guard.NotNull(catalog);
         return catalog
             .Register(WorkflowNodeDescriptor.Create<IoReadNodeModel, WorkflowIoNodeResult>(
                 ports: new[]
@@ -67,7 +67,7 @@ public static class WorkflowMotionNodes
     public static WorkflowNodeHandlerCatalog RegisterMotionNodeHandlers(
         this WorkflowNodeHandlerCatalog handlers)
     {
-        ArgumentNullException.ThrowIfNull(handlers);
+        Guard.NotNull(handlers);
         return handlers
             .Register(new IoReadNodeHandler(), IoCapability)
             .Register(new IoWriteNodeHandler(), IoCapability)

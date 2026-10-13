@@ -8,7 +8,7 @@ namespace DP.WorkFlow;
 public interface IWorkflowNodeOperation : IAsyncDisposable
 {
     /// <summary>是否允许核实并继续此操作；不能可靠核实的命令应返回false。</summary>
-    bool CanContinue => true;
+    bool CanContinue { get; }
 
     /// <summary>尝试完成原操作；只有成功结果才提交本次上下文的暂存输出。</summary>
     /// <param name="context">本次尝试的新上下文；意图输入应在创建操作时固定。</param>

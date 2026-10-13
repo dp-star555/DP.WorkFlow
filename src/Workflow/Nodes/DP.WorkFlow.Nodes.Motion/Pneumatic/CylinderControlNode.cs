@@ -27,7 +27,7 @@ public sealed class CylinderControlNodeHandler : WorkflowNodeHandler<CylinderCon
     {
         cancellationToken.ThrowIfCancellationRequested();
         var model = (CylinderControlNodeModel)node;
-        return ValueTask.FromResult<IWorkflowNodeOperation>(new CylinderOperation(GetService(context, model.CylinderName),
+        return Polyfill.FromResult<IWorkflowNodeOperation>(new CylinderOperation(GetService(context, model.CylinderName),
             model.CylinderName.Trim(), model.Command, model.WaitForTargetState, model.TimeoutMs, model.Interrupt?.AlarmCode ?? 0));
     }
 
@@ -57,7 +57,7 @@ public sealed class CylinderControlNodeHandler : WorkflowNodeHandler<CylinderCon
                 : NodeExecutionResult.Fail(result.Message ?? $"气缸 '{name}' 未到达目标；保持原意图等待核实。",
                     alarm > 0 ? WorkflowFaultDisposition.RequestRecovery : WorkflowFaultDisposition.HandleAtScope, alarm);
         }
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync() => default(ValueTask);
     }
 
     /// <inheritdoc />

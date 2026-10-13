@@ -69,7 +69,7 @@ public static class VisionEdgePairing
     public static IReadOnlyList<(int First, int Second)> Pair(IReadOnlyList<double> distances, IReadOnlyList<double> gradients,
         ECaliperPolarity firstPolarity, double minimumWidth, double maximumWidth)
     {
-        ArgumentNullException.ThrowIfNull(distances); ArgumentNullException.ThrowIfNull(gradients);
+        Guard.NotNull(distances); Guard.NotNull(gradients);
         if (distances.Count != gradients.Count) throw new ArgumentException("边缘距离与梯度数量不一致。");
         var pairs = new List<(int, int)>();
         for (int i = 0; i < distances.Count; i++)
@@ -106,7 +106,7 @@ public sealed class VisionCaliperMeasurement : IWorkflowVisionFrameFact, IVision
     /// <param name="result">直线卡尺结果。</param>
     public static VisionCaliperMeasurement FromLine(CaliperResult result)
     {
-        ArgumentNullException.ThrowIfNull(result);
+        Guard.NotNull(result);
         var measurement = new VisionCaliperMeasurement(result.FrameId, EVisionCaliperShape.Line, result.Start, result.End, result.SampleStep, result.Profile,
             Array.AsReadOnly(result.Edges.Select(e => new VisionCaliperEdge(e.Position, e.Distance, e.Gradient, null)).ToArray()),
             new[] { result.Start, result.End }, result);
@@ -120,7 +120,7 @@ public sealed class VisionCaliperMeasurement : IWorkflowVisionFrameFact, IVision
     internal static VisionCaliperMeasurement FromArc(string frameId, VisionArcCaliperOptions options, double step, double[] profile,
         IReadOnlyList<VisionCaliperEdge> edges)
     {
-        var path = new PointD[Math.Clamp((int)Math.Ceiling(Math.Abs(options.SweepDegrees) / 3), 8, 120) + 1];
+        var path = new PointD[Polyfill.Clamp((int)Math.Ceiling(Math.Abs(options.SweepDegrees) / 3), 8, 120) + 1];
         for (var i = 0; i < path.Length; i++) path[i] = options.PointAt(options.Radius, (double)i / (path.Length - 1));
         return new VisionCaliperMeasurement(frameId, EVisionCaliperShape.Arc, options.PointAt(options.Radius, 0), options.PointAt(options.Radius, 1),
             step, Array.AsReadOnly((double[])profile.Clone()), edges, path, null)
@@ -262,7 +262,7 @@ public sealed class VisionCaliperMeasurement : IWorkflowVisionFrameFact, IVision
     /// <param name="system">同帧坐标系。</param>
     public VisionCaliperMeasurement InCoordinates(VisionCoordinateSystem system)
     {
-        ArgumentNullException.ThrowIfNull(system);
+        Guard.NotNull(system);
         if (system.FrameId != FrameId) throw new InvalidOperationException("Result coordinate frame mismatch.");
         var copy = (VisionCaliperMeasurement)MemberwiseClone();
         copy.CoordinateSystem = system;
@@ -285,18 +285,18 @@ public sealed class VisionArcCaliperOptions
         double minimumGradient = 5, ECaliperPolarity polarity = ECaliperPolarity.Any, double minimumSeparation = 2, double bandSampleStep = 1,
         double scanStep = 1)
     {
-        if (!double.IsFinite(center.X) || !double.IsFinite(center.Y) || !double.IsFinite(radius) || radius <= 0 || radius > 65535)
+        if (!Polyfill.IsFinite(center.X) || !Polyfill.IsFinite(center.Y) || !Polyfill.IsFinite(radius) || radius <= 0 || radius > 65535)
             throw new ArgumentException("圆弧卡尺圆心或半径无效。");
-        if (!double.IsFinite(startAngleDegrees) || !double.IsFinite(sweepDegrees) || Math.Abs(sweepDegrees) < 1e-9 || Math.Abs(sweepDegrees) > 360)
+        if (!Polyfill.IsFinite(startAngleDegrees) || !Polyfill.IsFinite(sweepDegrees) || Math.Abs(sweepDegrees) < 1e-9 || Math.Abs(sweepDegrees) > 360)
             throw new ArgumentException("圆弧卡尺扫描角度范围必须在 (0, 360] 度。");
-        if (halfWidth < 0 || halfWidth > 63 || !double.IsFinite(bandSampleStep) || bandSampleStep < .1 || bandSampleStep > 10)
+        if (halfWidth < 0 || halfWidth > 63 || !Polyfill.IsFinite(bandSampleStep) || bandSampleStep < .1 || bandSampleStep > 10)
             throw new ArgumentException("圆弧卡尺采样半宽须为 0..63，半径方向采样间隔须为 0.1..10。");
         if (radius - halfWidth * bandSampleStep < 0) throw new ArgumentException("圆弧卡尺采样带内侧越过圆心，请减小带宽或增大半径。");
         var length = Math.Abs(sweepDegrees) * Math.PI / 180 * radius;
         if (length < 4 || length > 65535) throw new ArgumentException("圆弧卡尺弧长须为 4..65535 像素。");
-        if (!double.IsFinite(minimumGradient) || minimumGradient <= 0 || !double.IsFinite(minimumSeparation) || minimumSeparation <= 0
-            || !Enum.IsDefined(polarity)) throw new ArgumentException("圆弧卡尺边缘参数无效。");
-        if (!double.IsFinite(scanStep) || scanStep < .1 || scanStep > 10) throw new ArgumentException("采样间隔须为 0.1..10 像素。");
+        if (!Polyfill.IsFinite(minimumGradient) || minimumGradient <= 0 || !Polyfill.IsFinite(minimumSeparation) || minimumSeparation <= 0
+            || !Polyfill.IsDefined(polarity)) throw new ArgumentException("圆弧卡尺边缘参数无效。");
+        if (!Polyfill.IsFinite(scanStep) || scanStep < .1 || scanStep > 10) throw new ArgumentException("采样间隔须为 0.1..10 像素。");
         Center = center; Radius = radius; StartAngleDegrees = startAngleDegrees; SweepDegrees = sweepDegrees; HalfWidth = halfWidth;
         MinimumGradient = minimumGradient; Polarity = polarity; MinimumSeparation = minimumSeparation; BandSampleStep = bandSampleStep; ScanStep = scanStep;
     }
@@ -343,7 +343,7 @@ public static class VisionArcCaliper
     /// <param name="frame">Gray8 输入帧。</param><param name="options">采样配置。</param><param name="token">取消。</param>
     public static VisionCaliperMeasurement Measure(ImageFrame frame, VisionArcCaliperOptions options, CancellationToken token = default)
     {
-        ArgumentNullException.ThrowIfNull(frame); ArgumentNullException.ThrowIfNull(options);
+        Guard.NotNull(frame); Guard.NotNull(options);
         var info = frame.Image.Info;
         var pixels = VisionCaliperProfile.Pixels(frame);
         double inner = options.Radius - options.HalfWidth * options.BandSampleStep, outer = options.Radius + options.HalfWidth * options.BandSampleStep;
@@ -386,8 +386,8 @@ public static class VisionLineCaliper
     public static VisionCaliperMeasurement Measure(ImageFrame frame, CaliperOptions options, double scanStep, Func<CaliperOptions, CaliperResult>? measurer,
         CancellationToken token = default)
     {
-        ArgumentNullException.ThrowIfNull(frame); ArgumentNullException.ThrowIfNull(options);
-        if (!double.IsFinite(scanStep) || scanStep < .1 || scanStep > 10) throw new ArgumentException("采样间隔须为 0.1..10 像素。");
+        Guard.NotNull(frame); Guard.NotNull(options);
+        if (!Polyfill.IsFinite(scanStep) || scanStep < .1 || scanStep > 10) throw new ArgumentException("采样间隔须为 0.1..10 像素。");
         if (measurer is not null && Math.Abs(scanStep - 1) < 1e-12) return VisionCaliperMeasurement.FromLine(measurer(options));
         var info = frame.Image.Info;
         var pixels = VisionCaliperProfile.Pixels(frame);

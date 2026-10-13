@@ -21,6 +21,6 @@ public sealed class EndNodeHandler : WorkflowNodeHandler<EndNodeModel>
     {
         cancellationToken.ThrowIfCancellationRequested();
         context.Trace("End", "当前执行路径结束。");
-        return ValueTask.FromResult(NodeExecutionResult.Complete());
+        return Polyfill.FromResult(NodeExecutionResult.Complete());
     }
 }

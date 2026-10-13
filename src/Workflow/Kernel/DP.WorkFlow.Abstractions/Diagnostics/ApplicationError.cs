@@ -22,7 +22,7 @@ public sealed record ApplicationError
             ? throw new ArgumentException("Error code cannot be empty.", nameof(code))
             : code;
         Arguments = arguments is null ? null : new ReadOnlyDictionary<string, object?>(
-            new Dictionary<string, object?>(arguments, StringComparer.Ordinal));
+            arguments.ToDictionary(StringComparer.Ordinal));
         TraceId = traceId;
     }
 

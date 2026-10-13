@@ -15,7 +15,7 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
     private const string TypeColumn = "Type";
     private const string ValueColumn = "Value";
     private const string RemoveColumn = "Remove";
-    private static readonly E_WorkflowSubflowValueType[] ValueTypes = Enum.GetValues<E_WorkflowSubflowValueType>();
+    private static readonly E_WorkflowSubflowValueType[] ValueTypes = Polyfill.GetEnumValues<E_WorkflowSubflowValueType>();
 
     private readonly WorkflowSubflowInterfacePageModel _model;
     private readonly ModernDataGridView _inputs = CreateGrid();

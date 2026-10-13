@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net8.0-windows</TargetFramework><UseWPF>true</UseWPF></PropertyGroup>
+  <PropertyGroup><TargetFrameworks>$(WorkflowWindowsTargetFrameworks)</TargetFrameworks><UseWPF>true</UseWPF></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../DP.WorkFlow.UI.Wpf/DP.WorkFlow.UI.Wpf.csproj" />
     <ProjectReference Include="../DP.WorkFlow.LabelInspection.UI/DP.WorkFlow.LabelInspection.UI.csproj" />

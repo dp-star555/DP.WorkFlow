@@ -266,5 +266,5 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
     }
 
     /// <summary>对象已经释放时抛出异常。</summary>
-    private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+    private void ThrowIfDisposed() => Guard.NotDisposed(_disposed, this);
 }

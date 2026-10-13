@@ -203,7 +203,7 @@ public sealed class WorkflowRuntimeMonitorModel
     /// <param name="item">子流程监视项。</param>
     public static string DescribeChildProgress(WorkflowChildMonitorItem item)
     {
-        ArgumentNullException.ThrowIfNull(item);
+        Guard.NotNull(item);
         var parts = new List<string>(2);
         if (item.Cycle > 0) parts.Add($"第{item.Cycle}圈");
         if (!string.IsNullOrEmpty(item.CurrentNodeId)) parts.Add(item.CurrentNodeId);
@@ -216,7 +216,7 @@ public sealed class WorkflowRuntimeMonitorModel
     /// <param name="entry">轨迹条目。</param>
     public static string DescribeNode(WorkflowTraceEntry entry)
     {
-        ArgumentNullException.ThrowIfNull(entry);
+        Guard.NotNull(entry);
         if (entry.Parents is not { Count: > 0 } parents) return entry.NodeId;
         // 子画布自己的监视去掉了所在复合节点，只剩圈序号（节点 ID 为空）。
         var parts = parents.Select(parent => parent.Cycle <= 0 ? parent.NodeId
@@ -270,7 +270,7 @@ public sealed class WorkflowRuntimeMonitorModel
     /// <param name="headers">可选的本地化列标题；空值保留稳定英文格式。</param>
     public void ExportTraceCsv(TextWriter writer, WorkflowTraceCsvHeaders? headers = null)
     {
-        ArgumentNullException.ThrowIfNull(writer);
+        Guard.NotNull(writer);
         if (headers is null)
         {
             headers = WorkflowTraceCsvHeaders.Invariant;

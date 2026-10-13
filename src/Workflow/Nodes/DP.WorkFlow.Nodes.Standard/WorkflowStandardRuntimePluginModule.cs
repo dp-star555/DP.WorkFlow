@@ -9,7 +9,7 @@ public sealed class WorkflowStandardRuntimePluginModule : IWorkflowRuntimePlugin
     /// <inheritdoc />
     public void Register(WorkflowRuntimePluginCatalog extensions)
     {
-        ArgumentNullException.ThrowIfNull(extensions);
+        Guard.NotNull(extensions);
         extensions.Nodes.RegisterStandardNodes();
         extensions.Handlers.RegisterStandardNodeHandlers();
     }

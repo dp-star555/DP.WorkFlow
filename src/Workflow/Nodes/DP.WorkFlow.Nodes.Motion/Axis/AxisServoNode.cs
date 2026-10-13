@@ -37,7 +37,7 @@ public sealed class AxisServoNodeHandler : WorkflowNodeHandler<AxisServoNodeMode
         cancellationToken.ThrowIfCancellationRequested();
         if (node is not AxisServoNodeModel servo) throw new ArgumentException("需要伺服节点配置。", nameof(node));
         ValidateWait(servo.TimeoutMs, servo.PollIntervalMs);
-        return ValueTask.FromResult<IWorkflowNodeOperation>(new ServoOperation(GetService(context), servo.ResolveAxis(context),
+        return Polyfill.FromResult<IWorkflowNodeOperation>(new ServoOperation(GetService(context), servo.ResolveAxis(context),
             servo.Enabled, servo.WaitForCompleted, servo.TimeoutMs, servo.PollIntervalMs,
             servo.ResultVarKey, servo.Interrupt?.AlarmCode ?? 0));
     }
@@ -45,6 +45,7 @@ public sealed class AxisServoNodeHandler : WorkflowNodeHandler<AxisServoNodeMode
     private sealed class ServoOperation(IWorkflowAxisService service, WorkflowAxisAddress axis, bool enabled,
         bool wait, int timeoutMs, int pollIntervalMs, string resultKey, int alarmCode) : IWorkflowNodeOperation
     {
+        public bool CanContinue => true;
         public async ValueTask<NodeExecutionResult> ExecuteAsync(IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
             // SetServo是既有目标状态契约，不把Toggle/Pulse或任意AxisStep视为可重复动作。
@@ -55,7 +56,7 @@ public sealed class AxisServoNodeHandler : WorkflowNodeHandler<AxisServoNodeMode
                 alarmCode > 0 ? WorkflowFaultDisposition.RequestRecovery : WorkflowFaultDisposition.HandleAtScope, alarmCode);
             return NodeExecutionResult.Continue(output: output);
         }
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync() => default(ValueTask);
     }
 
     internal static IWorkflowAxisService GetService(IWorkflowNodeExecutionContext context) =>

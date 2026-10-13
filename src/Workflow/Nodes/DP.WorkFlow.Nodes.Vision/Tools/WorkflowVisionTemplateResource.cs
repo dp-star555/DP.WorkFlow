@@ -41,7 +41,7 @@ internal static class WorkflowVisionTemplateResource
     internal static IReadOnlyList<string> Validate(IWorkflowVisionTemplateNode node)
     {
         var errors = new List<string>();
-        if (!Enum.IsDefined(node.TemplateSource)) errors.Add("模板来源未定义。");
+        if (!Polyfill.IsDefined(node.TemplateSource)) errors.Add("模板来源未定义。");
         if (node.TemplateSource == EWorkflowVisionTemplateSource.Resource && (node.ModelAlgorithm?.Settings == null
             || !node.ModelAlgorithm.Settings.TryGetValue("templatePath", out var path) || string.IsNullOrWhiteSpace(path))) errors.Add("请在节点内制作模板或选择已发布的模板清单。");
         return errors;

@@ -147,13 +147,13 @@ public abstract class FindVisionShapeNodeModel : AnalyzeVisionFrameNodeModel, IW
         if (!FullImage) errors.Add("搜索范围只使用图像页绘制的ROI。");
         if (CaliperCount < 3 || CaliperCount > 256) errors.Add("卡尺数量必须为3..256。");
         if (HalfWidth < 0 || HalfWidth > 63) errors.Add("采样半宽必须为0..63。");
-        if (!double.IsFinite(BandSampleStep) || BandSampleStep <= 0) errors.Add("垂直采样间隔必须为正数。");
-        if (!double.IsFinite(MinimumGradient) || MinimumGradient <= 0) errors.Add("最小梯度必须为正数。");
-        if (!double.IsFinite(MinimumSeparation) || MinimumSeparation <= 0) errors.Add("边缘最小间距必须为正数。");
-        if (!double.IsFinite(DistanceThreshold) || DistanceThreshold <= 0) errors.Add("内点距离阈值必须为正数。");
+        if (!Polyfill.IsFinite(BandSampleStep) || BandSampleStep <= 0) errors.Add("垂直采样间隔必须为正数。");
+        if (!Polyfill.IsFinite(MinimumGradient) || MinimumGradient <= 0) errors.Add("最小梯度必须为正数。");
+        if (!Polyfill.IsFinite(MinimumSeparation) || MinimumSeparation <= 0) errors.Add("边缘最小间距必须为正数。");
+        if (!Polyfill.IsFinite(DistanceThreshold) || DistanceThreshold <= 0) errors.Add("内点距离阈值必须为正数。");
         if (MinimumInliers < 3 || MinimumInliers > CaliperCount) errors.Add("最少内点必须为3到卡尺数量之间。");
         if (IgnoreCount < 0 || IgnoreCount > CaliperCount - MinimumInliers) errors.Add("忽略点数必须为0到（卡尺数量−最少内点）之间。");
-        if (!Enum.IsDefined(EdgeMode) || !double.IsFinite(MinimumPairWidth) || !double.IsFinite(MaximumPairWidth) || MinimumPairWidth < 0 || MaximumPairWidth <= MinimumPairWidth)
+        if (!Polyfill.IsDefined(EdgeMode) || !Polyfill.IsFinite(MinimumPairWidth) || !Polyfill.IsFinite(MaximumPairWidth) || MinimumPairWidth < 0 || MaximumPairWidth <= MinimumPairWidth)
             errors.Add("边缘对宽度范围无效：最小宽度 ≥ 0 且小于最大宽度。");
         return errors;
     }
@@ -313,8 +313,8 @@ public sealed class FindVisionCircleNodeModel : FindVisionShapeNodeModel
     public override IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = base.ValidateConfiguration().ToList();
-        if (!double.IsFinite(SearchLength) || SearchLength <= 0) errors.Add("搜索长度必须为正数。");
-        if (!double.IsFinite(StartAngle) || !double.IsFinite(SweepAngle) || Math.Abs(SweepAngle) < 1e-9 || Math.Abs(SweepAngle) > 360)
+        if (!Polyfill.IsFinite(SearchLength) || SearchLength <= 0) errors.Add("搜索长度必须为正数。");
+        if (!Polyfill.IsFinite(StartAngle) || !Polyfill.IsFinite(SweepAngle) || Math.Abs(SweepAngle) < 1e-9 || Math.Abs(SweepAngle) > 360)
             errors.Add("扫描角度绝对值必须在 (0, 360] 内。");
         try
         {
@@ -390,7 +390,7 @@ public sealed class FindVisionRectangleNodeModel : FindVisionShapeNodeModel
     public override IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = base.ValidateConfiguration().ToList();
-        if (!double.IsFinite(SearchLength) || SearchLength <= 0) errors.Add("搜索长度必须为正数。");
+        if (!Polyfill.IsFinite(SearchLength) || SearchLength <= 0) errors.Add("搜索长度必须为正数。");
         else
         {
             try
@@ -602,7 +602,7 @@ public sealed class VisionFindRectangleResult : IVisionGeometryFact, IVisionDisp
         var (prev, at, next) = (_corners[(i + 3) % 4], _corners[i], _corners[(i + 1) % 4]);
         double ax = prev.X - at.X, ay = prev.Y - at.Y, bx = next.X - at.X, by = next.Y - at.Y;
         double cos = (ax * bx + ay * by) / Math.Max(1e-12, Math.Sqrt(ax * ax + ay * ay) * Math.Sqrt(bx * bx + by * by));
-        return Math.Abs(Math.Acos(Math.Clamp(cos, -1, 1)) * 180 / Math.PI - 90);
+        return Math.Abs(Math.Acos(Polyfill.Clamp(cos, -1, 1)) * 180 / Math.PI - 90);
     });
     /// <summary>卡尺总数（四边合计）。</summary>
     public int CaliperCount => Sides.Sum(s => s.CaliperCount);
@@ -987,7 +987,7 @@ public sealed class FindVisionLineNodeHandler : WorkflowNodeHandler<FindVisionLi
     {
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
         var result = VisionShapeMeasure.Line(node, context, frame, node.ResolveCoordinates(frame, context), cancellationToken);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
     }
 }
 
@@ -999,7 +999,7 @@ public sealed class FindVisionCircleNodeHandler : WorkflowNodeHandler<FindVision
     {
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
         var result = VisionShapeMeasure.Circle(node, context, frame, node.ResolveCoordinates(frame, context), cancellationToken);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
     }
 }
 
@@ -1011,6 +1011,6 @@ public sealed class FindVisionRectangleNodeHandler : WorkflowNodeHandler<FindVis
     {
         var frame = context.ResolveInput(node.Frame) ?? throw new InvalidOperationException("输入帧为空。");
         var result = VisionShapeMeasure.Rectangle(node, context, frame, node.ResolveCoordinates(frame, context), cancellationToken);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
     }
 }

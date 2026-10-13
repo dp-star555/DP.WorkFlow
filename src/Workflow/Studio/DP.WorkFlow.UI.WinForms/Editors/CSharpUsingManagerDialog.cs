@@ -48,7 +48,7 @@ internal sealed partial class CSharpUsingManagerDialog : Form
     /// <summary>使用已有 using 集合初始化运行时窗口。</summary>
     public CSharpUsingManagerDialog(IEnumerable<string> namespaces) : this()
     {
-        ArgumentNullException.ThrowIfNull(namespaces);
+        Guard.NotNull(namespaces);
         _input.Items.AddRange(CommonNamespaces.Cast<object>().ToArray());
         foreach (var item in namespaces.Select(Normalize).Where(item => item.Length > 0).Distinct(StringComparer.Ordinal).OrderBy(item => item, StringComparer.Ordinal))
             _imports.Items.Add(item);

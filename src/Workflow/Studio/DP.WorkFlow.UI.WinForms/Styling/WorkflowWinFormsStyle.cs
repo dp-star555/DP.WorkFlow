@@ -274,7 +274,12 @@ internal static class WorkflowWinFormsStyle
     {
         void Apply()
         {
+#if NETFRAMEWORK
+            // 4.8 未声明兼容 Windows 10 时 Environment.OSVersion 报 6.2，用 RtlGetVersion 取真实版本。
+            if (!IsWindows10October2018OrLater()) return;
+#else
             if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763)) return;
+#endif
             try
             {
                 _ = SetWindowTheme(control.Handle, theme, null);
@@ -286,6 +291,37 @@ internal static class WorkflowWinFormsStyle
         if (control.IsHandleCreated) Apply();
         control.HandleCreated += (_, _) => Apply();
     }
+
+#if NETFRAMEWORK
+    [StructLayout(LayoutKind.Sequential)]
+    private struct OsVersionInfo
+    {
+        public int Size;
+        public int Major;
+        public int Minor;
+        public int Build;
+        public int PlatformId;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+        public string CsdVersion;
+    }
+
+    [DllImport("ntdll.dll", CharSet = CharSet.Unicode)]
+    private static extern int RtlGetVersion(ref OsVersionInfo versionInfo);
+
+    private static bool IsWindows10October2018OrLater()
+    {
+        try
+        {
+            var info = new OsVersionInfo { Size = Marshal.SizeOf<OsVersionInfo>() };
+            if (RtlGetVersion(ref info) != 0) return false;
+            return info.Major > 10 || info.Major == 10 && info.Build >= 17763;
+        }
+        catch (Exception exception) when (exception is DllNotFoundException or EntryPointNotFoundException)
+        {
+            return false;
+        }
+    }
+#endif
 
     [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
     private static extern int SetWindowTheme(IntPtr hwnd, string? subAppName, string? subIdList);

@@ -8,7 +8,13 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+#if NETFRAMEWORK
+        // 4.8 没有 ApplicationConfiguration：视觉样式和文本渲染在这里设置，高 DPI 由 App.config 与 app.manifest 声明。
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+#else
         ApplicationConfiguration.Initialize();
+#endif
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += OnThreadException;
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;

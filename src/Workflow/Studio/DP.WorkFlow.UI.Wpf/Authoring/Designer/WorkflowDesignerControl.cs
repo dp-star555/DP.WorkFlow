@@ -396,7 +396,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             return;
         var position = e.GetPosition(this);
         var canvasPoint = WorkflowDesignerGeometry.ScreenToCanvas(_session, position.X, position.Y);
-        var zoom = Math.Clamp(_session.Zoom * (e.Delta > 0 ? 1.1 : 1 / 1.1), 0.25, 2.5);
+        var zoom = Polyfill.Clamp(_session.Zoom * (e.Delta > 0 ? 1.1 : 1 / 1.1), 0.25, 2.5);
         _session.SetViewport(zoom, position.X - canvasPoint.X * zoom, position.Y - canvasPoint.Y * zoom);
     }
 
@@ -756,7 +756,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         var fill = Brush(167, 139, 250);
         var border = new Pen(ForegroundBrush, 1);
         foreach (var port in ports)
-        foreach (var side in Enum.GetValues<WorkflowPortSide>())
+        foreach (var side in Polyfill.GetEnumValues<WorkflowPortSide>())
         {
             var point = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports, side);
             context.DrawEllipse(fill, border, new Point(point.X, point.Y), 4, 4);
@@ -772,7 +772,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         var active = _mode == InteractionMode.MovePort && _connectionStart?.Node == node
             ? _portDropSide
             : null;
-        foreach (var side in Enum.GetValues<WorkflowPortSide>())
+        foreach (var side in Polyfill.GetEnumValues<WorkflowPortSide>())
         {
             if (_session is not null && WorkflowDesignerInteraction.HasConnectedEndpointAtSide(_session, node, side))
                 continue;

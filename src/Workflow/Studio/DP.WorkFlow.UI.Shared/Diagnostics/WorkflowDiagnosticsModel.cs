@@ -183,7 +183,7 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
     /// <param name="item">目标数据项。</param>
     public bool NavigateTo(WorkflowDiagnosticItem item)
     {
-        ArgumentNullException.ThrowIfNull(item);
+        Guard.NotNull(item);
         if (_navigator != null && (item.FromRoot || item.PlanPath != "$"))
         {
             var depth = item.FromRoot ? 0 : _navigationDepth;

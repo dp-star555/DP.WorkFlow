@@ -118,7 +118,7 @@ public sealed class LocateVisionTemplatePoseNodeHandler : WorkflowNodeHandler<Lo
             var modelRange = node.ResolveRange(frame, context, cancellationToken);
             var modelResult = WorkflowVisionTemplateResource.Match(context, frame, modelRange.Bounds, modelRange.Region,
                 node.Options(modelRange.Coordinates), cancellationToken);
-            return ValueTask.FromResult(NodeExecutionResult.Continue(output: modelResult, projection: WorkflowVisionFrameScope.Stage(context, frame, modelResult)));
+            return Polyfill.FromResult(NodeExecutionResult.Continue(output: modelResult, projection: WorkflowVisionFrameScope.Stage(context, frame, modelResult)));
         }
         var template = context.ResolveInput(node.Template) ?? throw new InvalidOperationException("模板帧为空。");
         var range = node.ResolveRange(frame, context, cancellationToken);
@@ -129,6 +129,6 @@ public sealed class LocateVisionTemplatePoseNodeHandler : WorkflowNodeHandler<Lo
         if (result.Transform is { } pose && (pose.TemplateWidth != template.Image.Info.Width || pose.TemplateHeight != template.Image.Info.Height))
             throw new InvalidOperationException("定位变换的模板尺寸不一致。");
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }

@@ -25,7 +25,7 @@ public sealed class RecoveryEntryNodeHandler : WorkflowNodeHandler<RecoveryEntry
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (string.IsNullOrWhiteSpace(node.EntryKey)) throw new InvalidOperationException("恢复入口键不能为空。");
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: node.RecoveryEntryKey));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: node.RecoveryEntryKey));
     }
 }
 
@@ -50,7 +50,7 @@ public sealed class ContinueOperationNodeHandler : WorkflowNodeHandler<ContinueO
         cancellationToken.ThrowIfCancellationRequested();
         var resolution = new WarningResolution { ExitAction = E_WarningExitAction.ContinueOperation, Note = node.Note };
         context.SetVariable(WorkflowRecoveryRuntimeKeys.WarningResolution, resolution);
-        return ValueTask.FromResult(NodeExecutionResult.Complete(resolution));
+        return Polyfill.FromResult(NodeExecutionResult.Complete(resolution));
     }
 }
 
@@ -82,6 +82,6 @@ public sealed class RestartFromEntryNodeHandler : WorkflowNodeHandler<RestartFro
         if (string.IsNullOrWhiteSpace(node.EntryKey)) throw new InvalidOperationException("恢复入口键不能为空。");
         var resolution = new WarningResolution { ExitAction = E_WarningExitAction.RestartFromEntry, RecoveryEntryKey = node.EntryKey.Trim(), Note = node.Note };
         context.SetVariable(WorkflowRecoveryRuntimeKeys.WarningResolution, resolution);
-        return ValueTask.FromResult(NodeExecutionResult.Complete(resolution));
+        return Polyfill.FromResult(NodeExecutionResult.Complete(resolution));
     }
 }

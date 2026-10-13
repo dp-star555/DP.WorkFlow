@@ -41,7 +41,7 @@ public sealed class WorkflowActionRegistry : IWorkflowActionRegistry
     {
         if (string.IsNullOrWhiteSpace(functionKey))
             throw new ArgumentException("函数键不能为空。", nameof(functionKey));
-        ArgumentNullException.ThrowIfNull(action);
+        Guard.NotNull(action);
         _actions[functionKey.Trim()] = action;
         return this;
     }

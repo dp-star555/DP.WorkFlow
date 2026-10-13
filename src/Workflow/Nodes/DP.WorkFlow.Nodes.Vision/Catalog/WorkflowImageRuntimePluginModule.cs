@@ -12,7 +12,7 @@ public sealed class WorkflowImageRuntimePluginModule : IWorkflowRuntimePluginMod
     /// <inheritdoc/>
     public void Register(WorkflowRuntimePluginCatalog extensions)
     {
-        ArgumentNullException.ThrowIfNull(extensions);
+        Guard.NotNull(extensions);
         extensions.Nodes.RegisterImageNodes(); extensions.Handlers.RegisterImageNodeHandlers();
     }
 }
@@ -25,7 +25,7 @@ public static class WorkflowImageNodes
     /// <returns>目录。</returns>
     public static WorkflowNodeCatalog RegisterImageNodes(this WorkflowNodeCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(catalog);
+        Guard.NotNull(catalog);
         WorkflowVisionOutputNames.EnsureRegistered();
         var ports = new[] { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success), WorkflowPortDescriptor.Failure() };
         return catalog
@@ -53,7 +53,7 @@ public static class WorkflowImageNodes
     /// <returns>目录。</returns>
     public static WorkflowNodeHandlerCatalog RegisterImageNodeHandlers(this WorkflowNodeHandlerCatalog handlers)
     {
-        ArgumentNullException.ThrowIfNull(handlers);
+        Guard.NotNull(handlers);
         var frames = WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>();
         return handlers
             .Register(new AcquireVisionImageNodeHandler(), node =>

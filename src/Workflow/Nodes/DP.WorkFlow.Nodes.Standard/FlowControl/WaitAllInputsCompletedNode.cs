@@ -19,6 +19,6 @@ public sealed class WaitAllInputsCompletedNodeHandler : WorkflowNodeHandler<Wait
     {
         cancellationToken.ThrowIfCancellationRequested();
         context.Trace("ParallelMerged", "全部并行分支已经到达汇聚点。");
-        return ValueTask.FromResult(NodeExecutionResult.Continue());
+        return Polyfill.FromResult(NodeExecutionResult.Continue());
     }
 }

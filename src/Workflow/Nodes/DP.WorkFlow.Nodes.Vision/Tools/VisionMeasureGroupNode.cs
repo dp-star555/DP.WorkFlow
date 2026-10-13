@@ -86,7 +86,7 @@ public sealed class VisionMeasureItem
 
     /// <summary>标识格式是否有效。</summary>
     /// <param name="id">标识。</param>
-    public static bool IsValidId(string? id) => id is { Length: >= 2 and <= 32 } && id[0] == 'm' && id.Skip(1).All(c => char.IsAsciiLetterOrDigit(c));
+    public static bool IsValidId(string? id) => id is { Length: >= 2 and <= 32 } && id[0] == 'm' && id.Skip(1).All(c => Polyfill.IsAsciiLetterOrDigit(c));
 }
 
 /// <summary>
@@ -142,7 +142,7 @@ public sealed class MeasureVisionGroupNodeModel : AnalyzeVisionFrameNodeModel, I
     public override IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = base.ValidateConfiguration().ToList();
-        if (!Enum.IsDefined(FailurePolicy)) errors.Add("失败策略无效。");
+        if (!Polyfill.IsDefined(FailurePolicy)) errors.Add("失败策略无效。");
         if (Items is null || Items.Count == 0 || Items.Count > 64) { errors.Add("测量组需要 1..64 个测量项。"); return errors; }
         if (Items.Any(i => i is null || !VisionMeasureItem.IsValidId(i.Id)) || Items.Select(i => i.Id).Distinct(StringComparer.Ordinal).Count() != Items.Count)
             errors.Add("测量项标识缺失、格式无效或重复。");
@@ -166,7 +166,7 @@ public sealed class MeasureVisionGroupNodeModel : AnalyzeVisionFrameNodeModel, I
     /// <param name="shape">测量项配置。</param>
     public IDisposable Share(FindVisionShapeNodeModel shape)
     {
-        ArgumentNullException.ThrowIfNull(shape);
+        Guard.NotNull(shape);
         var (frame, coordinates, full) = (shape.Frame, shape.Coordinates, shape.FullImage);
         shape.Frame = Frame; shape.Coordinates = Coordinates; shape.FullImage = true;
         return new Restore(() => { shape.Frame = frame; shape.Coordinates = coordinates; shape.FullImage = full; });
@@ -349,7 +349,7 @@ public sealed class MeasureVisionGroupNodeHandler : WorkflowNodeHandler<MeasureV
             }
         }
         var result = new VisionMeasureGroupResult(frame.FrameId, results, failedDisplay);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
     }
 
     // 失败项：把它的卡尺扫描线画成 NG，第一把卡尺起点标“项名 未找到”，点击给出原因。

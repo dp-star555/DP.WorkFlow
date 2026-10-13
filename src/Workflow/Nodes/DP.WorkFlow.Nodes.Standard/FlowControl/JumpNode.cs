@@ -21,6 +21,6 @@ public sealed class JumpNodeHandler : WorkflowNodeHandler<JumpNodeModel>
     {
         cancellationToken.ThrowIfCancellationRequested();
         context.Trace("Jump", "通过 Success 端口跳转到连接目标。");
-        return ValueTask.FromResult(NodeExecutionResult.Continue());
+        return Polyfill.FromResult(NodeExecutionResult.Continue());
     }
 }

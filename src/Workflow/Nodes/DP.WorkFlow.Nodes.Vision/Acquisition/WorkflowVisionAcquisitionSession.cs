@@ -35,7 +35,7 @@ public sealed class WorkflowVisionAcquisitionSession(IImageFileReader reader, IW
     /// </remarks>
     public async ValueTask PrepareAsync(WorkflowRunPreparationContext context, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        Guard.NotNull(context);
         var prepared = new Dictionary<string, Sequence>(StringComparer.Ordinal);
         foreach (var node in context.Nodes)
         {
@@ -47,7 +47,7 @@ public sealed class WorkflowVisionAcquisitionSession(IImageFileReader reader, IW
             };
             if (folder.FolderPath is null) continue;
             cancellationToken.ThrowIfCancellationRequested();
-            var extensions = folder.Extensions.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            var extensions = Polyfill.SplitTrimmed(folder.Extensions, ';')
                 .Select(e => e.StartsWith('.') ? e : "." + e).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var path = Path.GetFullPath(folder.FolderPath);
             var filter = string.Join(";", extensions.OrderBy(extension => extension, StringComparer.OrdinalIgnoreCase));
@@ -89,7 +89,7 @@ public sealed class WorkflowVisionAcquisitionSession(IImageFileReader reader, IW
     /// <inheritdoc/>
     public async Task<IImageSource> NextAsync(string nodeId, Func<string, CancellationToken, Task<IImageSource>> read, CancellationToken token)
     {
-        ArgumentNullException.ThrowIfNull(read);
+        Guard.NotNull(read);
         if (!_sequences.TryGetValue(nodeId, out var sequence)) throw new InvalidOperationException("文件夹节点尚未进行运行准备。");
         await sequence.Gate.WaitAsync(token).ConfigureAwait(false);
         try

@@ -111,7 +111,7 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
         WorkflowRunEventDraft @event,
         WorkflowEventWriteMode writeMode = WorkflowEventWriteMode.Buffered)
     {
-        ArgumentNullException.ThrowIfNull(@event);
+        Guard.NotNull(@event);
         WorkflowRunEvent recorded;
         bool flush;
         lock (_recordSync)
@@ -186,7 +186,7 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
         WorkflowRunCompletion completion,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(completion);
+        Guard.NotNull(completion);
         if (_disposed)
             return;
 

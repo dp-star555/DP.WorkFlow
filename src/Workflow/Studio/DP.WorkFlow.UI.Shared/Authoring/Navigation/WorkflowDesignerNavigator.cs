@@ -15,7 +15,7 @@ public sealed class WorkflowDesignerNavigator
     /// <summary>初始化正式根文档的导航器并创建根设计会话。</summary>
     public WorkflowDesignerNavigator(WorkflowDocument rootDocument, WorkflowNodeCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(rootDocument);
+        Guard.NotNull(rootDocument);
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         if (string.IsNullOrWhiteSpace(rootDocument.EntryNodeId))
             throw new ArgumentException("根文档入口不能为空。", nameof(rootDocument));

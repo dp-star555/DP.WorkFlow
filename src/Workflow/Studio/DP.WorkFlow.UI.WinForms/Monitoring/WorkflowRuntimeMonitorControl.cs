@@ -61,7 +61,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         get => _localizationContext;
         set
         {
-            ArgumentNullException.ThrowIfNull(value);
+            Guard.NotNull(value);
             if (ReferenceEquals(_localizationContext, value)) return;
             if (_localizationContext is not null) _localizationContext.Changed -= LocalizationChanged;
             _localizationContext = value;

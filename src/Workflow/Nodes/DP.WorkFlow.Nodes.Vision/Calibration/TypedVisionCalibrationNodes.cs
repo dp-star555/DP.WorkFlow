@@ -43,7 +43,7 @@ public sealed class SolveVisionCalibrationNodeHandler : WorkflowNodeHandler<Solv
 {
     /// <inheritdoc/>
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(SolveVisionCalibrationNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken) =>
-        ValueTask.FromResult(NodeExecutionResult.Continue(output: node.Solve(cancellationToken)));
+        Polyfill.FromResult(NodeExecutionResult.Continue(output: node.Solve(cancellationToken)));
 }
 
 /// <summary>强类型标定与数值绑定坐标转换。</summary>
@@ -63,7 +63,7 @@ public sealed class MapVisionCoordinateNodeModel : WorkflowNodeModel, IWorkflowN
     public double RotationRadians { get; set; }
     /// <inheritdoc/>
     public IReadOnlyList<string> ValidateConfiguration() => Calibration is null || Calibration.Source != WorkflowValueSource.Binding
-        || Calibration.Binding is null || Calibration.LiteralValue is not null || !double.IsFinite(RotationRadians)
+        || Calibration.Binding is null || Calibration.LiteralValue is not null || !Polyfill.IsFinite(RotationRadians)
         || X is null || Y is null || X.Validate() is not null || Y.Validate() is not null
         ? new[] { "必须绑定标定结果，坐标输入和旋转弧度必须有效。" } : Array.Empty<string>();
 }
@@ -76,7 +76,7 @@ public sealed class MapVisionCoordinateNodeHandler : WorkflowNodeHandler<MapVisi
     {
         cancellationToken.ThrowIfCancellationRequested();
         var calibration = context.ResolveInput(node.Calibration) ?? throw new InvalidOperationException("标定结果为空。");
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: calibration.TransformWithRotation(
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: calibration.TransformWithRotation(
             new Coordinate2D(context.ResolveInput(node.X), context.ResolveInput(node.Y)), node.RotationRadians)));
     }
 }

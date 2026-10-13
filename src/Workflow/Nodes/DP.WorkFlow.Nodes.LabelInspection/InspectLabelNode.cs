@@ -104,7 +104,7 @@ public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConf
         if (!UsesRecipeCatalog && HasReferencePose)
         {
             double[] pose = { ReferenceM11, ReferenceM12, ReferenceTx, ReferenceM21, ReferenceM22, ReferenceTy };
-            if (pose.Any(v => !double.IsFinite(v)) || Math.Abs(ReferenceM11 * ReferenceM22 - ReferenceM12 * ReferenceM21) < 1e-12)
+            if (pose.Any(v => !Polyfill.IsFinite(v)) || Math.Abs(ReferenceM11 * ReferenceM22 - ReferenceM12 * ReferenceM21) < 1e-12)
                 errors.Add("参考位姿无效，请在配置页重新载入上游预览。");
         }
         // 还没有配方不阻止整个流程编译运行：上游节点要先跑出预览图，才能在配置页制作配方；本节点运行时报“尚未配置配方”。
@@ -249,7 +249,7 @@ public sealed class WorkflowLabelInspectionModule : IWorkflowRuntimePluginModule
     /// <inheritdoc/>
     public void Register(WorkflowRuntimePluginCatalog extensions)
     {
-        ArgumentNullException.ThrowIfNull(extensions);
+        Guard.NotNull(extensions);
         extensions.Nodes.Register(WorkflowNodeDescriptor.Create<InspectLabelNodeModel, WorkflowLabelInspectionResult>(ports: new[]
         { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success), WorkflowPortDescriptor.Failure() }));
         extensions.Handlers.Register(new InspectLabelNodeHandler(), node => new[]

@@ -113,16 +113,16 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
     {
         var errors = base.ValidateConfiguration().ToList();
         if (!FullImage) errors.Add("卡尺由起终点和带宽定义，不接受额外矩形范围。");
-        if (!Enum.IsDefined(Shape)) { errors.Add("未知卡尺形状。"); return errors; }
+        if (!Polyfill.IsDefined(Shape)) { errors.Add("未知卡尺形状。"); return errors; }
         try
         {
             if (Shape == EVisionCaliperShape.Arc)
             {
                 // 局部单位的尺度要到运行时才知道：这里只校验形状，弧长与原图有效间隔在运行时按坐标系尺度校验。
                 if (Coordinates is null) _ = ArcOptions();
-                else if (!double.IsFinite(CenterX) || !double.IsFinite(CenterY) || !double.IsFinite(Radius) || Radius <= 0
-                    || !double.IsFinite(StartAngle) || !double.IsFinite(SweepAngle) || Math.Abs(SweepAngle) < 1e-9 || Math.Abs(SweepAngle) > 360
-                    || HalfWidth < 0 || HalfWidth > 63 || !double.IsFinite(BandSampleStep) || BandSampleStep < .01 || BandSampleStep > 100
+                else if (!Polyfill.IsFinite(CenterX) || !Polyfill.IsFinite(CenterY) || !Polyfill.IsFinite(Radius) || Radius <= 0
+                    || !Polyfill.IsFinite(StartAngle) || !Polyfill.IsFinite(SweepAngle) || Math.Abs(SweepAngle) < 1e-9 || Math.Abs(SweepAngle) > 360
+                    || HalfWidth < 0 || HalfWidth > 63 || !Polyfill.IsFinite(BandSampleStep) || BandSampleStep < .01 || BandSampleStep > 100
                     || Radius - HalfWidth * BandSampleStep < 0)
                     throw new ArgumentException("局部圆弧采样带配置无效。");
                 if (Coordinates is not null) _ = new CaliperOptions(new PointD(0, 0), new PointD(4, 0), HalfWidth, MinimumGradient, Polarity, MinimumSeparation);
@@ -133,13 +133,13 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
                 _ = new Coordinate2D(StartX, StartY); _ = new Coordinate2D(EndX, EndY);
                 if (Math.Abs(StartX) > 1e9 || Math.Abs(StartY) > 1e9 || Math.Abs(EndX) > 1e9 || Math.Abs(EndY) > 1e9
                     || Math.Sqrt(Math.Pow(EndX - StartX, 2) + Math.Pow(EndY - StartY, 2)) < 1e-9
-                    || !double.IsFinite(BandSampleStep) || BandSampleStep < .01 || BandSampleStep > 100)
+                    || !Polyfill.IsFinite(BandSampleStep) || BandSampleStep < .01 || BandSampleStep > 100)
                     throw new ArgumentException("局部采样带配置无效。");
                 _ = new CaliperOptions(new PointD(0, 0), new PointD(4, 0), HalfWidth, MinimumGradient, Polarity, MinimumSeparation);
             }
-            if (Coordinates is null ? ScanStep < .1 || ScanStep > 10 || !double.IsFinite(ScanStep) : !double.IsFinite(ScanStep) || ScanStep <= 0)
+            if (Coordinates is null ? ScanStep < .1 || ScanStep > 10 || !Polyfill.IsFinite(ScanStep) : !Polyfill.IsFinite(ScanStep) || ScanStep <= 0)
                 throw new ArgumentException("采样间隔须为原图 0.1..10 像素。");
-            if (!Enum.IsDefined(EdgeMode) || !double.IsFinite(MinimumPairWidth) || !double.IsFinite(MaximumPairWidth)
+            if (!Polyfill.IsDefined(EdgeMode) || !Polyfill.IsFinite(MinimumPairWidth) || !Polyfill.IsFinite(MaximumPairWidth)
                 || MinimumPairWidth < 0 || MaximumPairWidth <= MinimumPairWidth)
                 throw new ArgumentException("边缘对宽度范围无效：最小宽度 ≥ 0 且小于最大宽度。");
         }
@@ -164,7 +164,7 @@ public sealed class MeasureVisionCaliperNodeHandler : WorkflowNodeHandler<Measur
         result = result.WithEdgeMode(node.EdgeMode, node.Polarity, node.MinimumPairWidth * scale, node.MaximumPairWidth * scale);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }
 
@@ -199,7 +199,7 @@ public sealed class FitVisionRobustLineNodeModel : AnalyzeVisionFrameNodeModel, 
     public override IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = base.ValidateConfiguration().ToList();
-        if (!FullImage || !double.IsFinite(DistanceThreshold) || DistanceThreshold <= 0 || DistanceThreshold > 1000000
+        if (!FullImage || !Polyfill.IsFinite(DistanceThreshold) || DistanceThreshold <= 0 || DistanceThreshold > 1000000
             || Iterations < 1 || Iterations > 1024 || MinimumInliers < 3 || MinimumInliers > 8192) errors.Add("无效鲁棒拟合参数。");
         if (Samples is null || Samples.Count < 1 || Samples.Count > 512 || Samples.Any(s => s is null || s.Source != WorkflowValueSource.Binding || s.Binding is null || s.LiteralValue is not null))
             errors.Add("必须配置1..512个卡尺事实绑定。");
@@ -233,6 +233,6 @@ public sealed class FitVisionRobustLineNodeHandler : WorkflowNodeHandler<FitVisi
             (IRobustLineFitter algorithm) => algorithm.Fit(frame.FrameId, points, node.DistanceThreshold * (coordinates?.SimilarityScale ?? 1), node.Iterations, node.MinimumInliers, cancellationToken), cancellationToken);
         if (coordinates is not null) result = result.InCoordinates(coordinates);
         var projection = WorkflowVisionFrameScope.Stage(context, frame, result);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: result, projection: projection));
     }
 }

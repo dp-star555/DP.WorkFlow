@@ -2,12 +2,14 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- 同一宿主可编为 .NET 8 和 .NET Framework 4.8，用于验证 4.8 设备程序直接嵌入工作台。 -->
+    <TargetFrameworks>net8.0-windows;net48</TargetFrameworks>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- 采集Provider插件包目录；目标框架必须与各厂商工程的对应输出一致。 -->
-    <VisionAcquisitionPluginTfm>net8.0-windows</VisionAcquisitionPluginTfm>
+    <VisionAcquisitionPluginTfm>$(TargetFramework)</VisionAcquisitionPluginTfm>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <HalconPluginRoot>$(MSBuildThisFileDirectory)..\..\..\DP.Vision\src\DP.Vision.Halcon\</HalconPluginRoot>
     <BaslerPluginRoot>$(MSBuildThisFileDirectory)..\..\..\DP.Vision\src\DP.Vision.Basler\</BaslerPluginRoot>
   </PropertyGroup>
@@ -53,11 +55,13 @@
     插件包**不投放 plugin.json**：发现依据是"程序集里存在实现 IVisionAcquisitionDriverModule 的
     公开类型"，Manifest 不是加载依据。留一个没人读的 Manifest 只会让人以为它还在生效。
   -->
-  <Target Name="StageVisionAcquisitionProviderPlugins" AfterTargets="Build">
+  <Target Name="StageVisionAcquisitionProviderPlugins" AfterTargets="Build" Condition="'$(TargetFramework)' != ''">
     <ItemGroup>
       <HalconProviderPayload Include="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\*.dll"
                              Exclude="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.dll;$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.dll;$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Algorithms.dll" />
-      <HalconProviderPayload Include="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Halcon.deps.json" />
+      <!-- .NET Framework 版本不生成 deps.json，存在时才投放。 -->
+      <HalconProviderPayload Include="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Halcon.deps.json"
+                             Condition="Exists('$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Halcon.deps.json')" />
       <HalconProviderPayload Include="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\*.pdb"
                              Exclude="$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.pdb;$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Acquisition.Abstractions.pdb;$(HalconPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\DP.Vision.Algorithms.pdb" />
       <BaslerProviderPayload Include="$(BaslerPluginRoot)bin\$(Configuration)\$(VisionAcquisitionPluginTfm)\*.dll"
@@ -82,4 +86,6 @@
     <Content Include="..\VisionData\demo.pgm" Link="VisionData\demo.pgm" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <Import Project="..\VisionData\AlgorithmPlugins.targets" />
+  <!-- 与 Workflow 各库相同的 4.8 兼容层（Guard、Polyfill、PolySharp 等），宿主代码按 .NET 8 写法即可。 -->
+  <Import Project="..\..\src\Workflow\Directory.Build.targets" />
 </Project>

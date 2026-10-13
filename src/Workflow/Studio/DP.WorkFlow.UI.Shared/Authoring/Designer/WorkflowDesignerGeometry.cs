@@ -112,8 +112,8 @@ public static class WorkflowDesignerGeometry
         IReadOnlyList<WorkflowPortDescriptor> ports,
         WorkflowPortSide? sideOverride = null)
     {
-        ArgumentNullException.ThrowIfNull(port);
-        ArgumentNullException.ThrowIfNull(ports);
+        Guard.NotNull(port);
+        Guard.NotNull(ports);
         var rect = GetNodeScreenRect(session, node);
         var actualSide = sideOverride ?? node.GetPortSide(port);
         var sameSide = ports.Where(item => ReferenceEquals(item, port) || node.GetPortSide(item) == actualSide).ToArray();
@@ -199,6 +199,6 @@ public static class WorkflowDesignerGeometry
         var ports = Enumerable.Range(0, Math.Max(1, count))
             .Select(item => new WorkflowPortDescriptor(item.ToString(), direction, side: side))
             .ToArray();
-        return GetPortScreenPoint(session, node, ports[Math.Clamp(index, 0, ports.Length - 1)], ports);
+        return GetPortScreenPoint(session, node, ports[Polyfill.Clamp(index, 0, ports.Length - 1)], ports);
     }
 }

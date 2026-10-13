@@ -43,7 +43,7 @@ public sealed class WorkflowRuntimePluginCatalog
     /// <returns>当前组合目录。</returns>
     public WorkflowRuntimePluginCatalog Register(IWorkflowRuntimePluginModule extension)
     {
-        ArgumentNullException.ThrowIfNull(extension);
+        Guard.NotNull(extension);
         lock (_syncRoot)
         {
             EnsureMutable();

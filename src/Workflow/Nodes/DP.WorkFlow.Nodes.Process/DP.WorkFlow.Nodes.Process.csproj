@@ -4,7 +4,7 @@
     <ProjectReference Include="..\..\Kernel\DP.WorkFlow.Runtime\DP.WorkFlow.Runtime.csproj" />
   </ItemGroup>
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>$(WorkflowTargetFrameworks)</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>

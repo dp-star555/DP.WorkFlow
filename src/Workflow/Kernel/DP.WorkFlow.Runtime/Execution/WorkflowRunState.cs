@@ -113,7 +113,7 @@ public sealed class WorkflowRunState
 
     internal void RecordFault(WorkflowNodeFault fault)
     {
-        ArgumentNullException.ThrowIfNull(fault);
+        Guard.NotNull(fault);
         lock (_syncRoot)
             _faults.Add(fault);
     }

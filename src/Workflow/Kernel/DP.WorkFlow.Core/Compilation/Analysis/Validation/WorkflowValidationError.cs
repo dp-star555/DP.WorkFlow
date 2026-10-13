@@ -47,7 +47,7 @@ public sealed class WorkflowGraphValidator
     /// <summary>校验正式文档的语义图、入口和独立布局投影。</summary>
     public IReadOnlyList<WorkflowValidationError> Validate(WorkflowDocument document)
     {
-        ArgumentNullException.ThrowIfNull(document);
+        Guard.NotNull(document);
         var errors = ValidateOwnedState(
             document.Graph.Nodes,
             document.Graph.ControlConnections,
