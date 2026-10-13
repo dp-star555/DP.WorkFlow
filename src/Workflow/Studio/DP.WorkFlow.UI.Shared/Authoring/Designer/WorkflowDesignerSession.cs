@@ -50,11 +50,17 @@ public sealed record WorkflowDesignerChangedEventArgs(WorkflowDesignerChangeKind
 /// <param name="DisplayName">界面显示名称。</param>
 /// <param name="Category">界面分类。</param>
 /// <param name="Description">用途说明。</param>
+/// <param name="Icon">节点定义声明的图标（图标键或 SVG 路径数据）；为空时按类型和分类选择。</param>
 public sealed record WorkflowToolboxItem(
     string NodeType,
     string DisplayName,
     string Category,
-    string? Description);
+    string? Description,
+    string? Icon = null)
+{
+    /// <summary>工具箱显示的图标，与画布节点的图标一致。</summary>
+    public WorkflowNodeIcon ResolveIcon() => WorkflowNodeIcons.Resolve(NodeType, Category, Icon);
+}
 
 /// <summary>
 /// 画布编辑状态、节点操作和 Undo/Redo 行为。
@@ -97,26 +103,28 @@ public sealed partial class WorkflowDesignerSession
     /// <summary>获取宿主声明的公共可绑定数据目录。</summary>
     public WorkflowPublicDataCatalog PublicDataCatalog { get; }
 
-    /// <summary>获取或设置节点与手工路径点是否吸附到 24 单位设计栅格。</summary>
+    /// <summary>获取或设置节点与手工路径点是否吸附到设计栅格（<see cref="WorkflowDesignerGeometry.GridSize"/>）。</summary>
     public bool SnapToGrid { get; set; } = true;
 
     /// <summary>将画布坐标吸附到当前设计栅格。</summary>
     /// <param name="point">目标坐标。</param>
     public WorkflowPoint SnapPoint(WorkflowPoint point) => SnapToGrid
-        ? new WorkflowPoint(Math.Round(point.X / 24) * 24, Math.Round(point.Y / 24) * 24)
+        ? new WorkflowPoint(WorkflowDesignerGeometry.SnapToGrid(point.X), WorkflowDesignerGeometry.SnapToGrid(point.Y))
         : point;
 
-    /// <summary>按节点中心点吸附位置，避免不同尺寸节点无法居中对齐。</summary>
+    /// <summary>
+    /// 吸附节点位置：横向按中心对齐（宽度为 2 格整数倍，中心与左右边同时落在栅格线上，不同宽度的节点上下仍居中对齐），
+    /// 纵向按上边对齐（高度为整格，上下边都落在栅格线上）。
+    /// </summary>
     /// <param name="node">目标画布节点或节点模型。</param>
     /// <param name="position">目标坐标或相对位置。</param>
     public WorkflowPoint SnapNodePosition(WorkflowCanvasNode node, WorkflowPoint position)
     {
         Guard.NotNull(node);
         if (!SnapToGrid) return position;
-        var center = SnapPoint(new WorkflowPoint(
-            position.X + node.Width / 2,
-            position.Y + node.Height / 2));
-        return new WorkflowPoint(center.X - node.Width / 2, center.Y - node.Height / 2);
+        return new WorkflowPoint(
+            WorkflowDesignerGeometry.SnapToGrid(position.X + node.Width / 2) - node.Width / 2,
+            WorkflowDesignerGeometry.SnapToGrid(position.Y));
     }
 
     /// <summary>获取或设置当前选中节点。</summary>
@@ -230,7 +238,8 @@ public sealed partial class WorkflowDesignerSession
             descriptor.NodeType,
             descriptor.DisplayName ?? descriptor.NodeType,
             descriptor.Category ?? "Other",
-            descriptor.Description))
+            descriptor.Description,
+            descriptor.Icon))
         .OrderBy(item => item.Category, StringComparer.Ordinal)
         .ThenBy(item => item.DisplayName, StringComparer.Ordinal)
         .ToArray();
@@ -256,7 +265,7 @@ public sealed partial class WorkflowDesignerSession
             Node = node,
             X = x,
             Y = y,
-            Height = CalculateRequiredNodeHeight(maximumPortsOnSide)
+            Height = WorkflowDesignerGeometry.HeaderHeight + maximumPortsOnSide * WorkflowDesignerGeometry.RowHeight
         };
         EnsureNodeDisplaySize(canvasNode);
         var position = SnapNodePosition(canvasNode, new WorkflowPoint(canvasNode.X, canvasNode.Y));
@@ -323,7 +332,7 @@ public sealed partial class WorkflowDesignerSession
             Node = node,
             X = x,
             Y = y,
-            Height = CalculateRequiredNodeHeight(maximumPortsOnSide)
+            Height = WorkflowDesignerGeometry.HeaderHeight + maximumPortsOnSide * WorkflowDesignerGeometry.RowHeight
         };
         EnsureNodeDisplaySize(canvasNode);
         var position = SnapNodePosition(canvasNode, new WorkflowPoint(canvasNode.X, canvasNode.Y));
@@ -1079,10 +1088,33 @@ public sealed partial class WorkflowDesignerSession
         return output is not null && output.RunId == snapshot.RunId ? output : null;
     }
 
+    /// <summary>获取画布节点显示的图标：节点定义声明的图标优先，其次按节点类型和分类选择。</summary>
+    /// <param name="node">节点模型。</param>
+    public WorkflowNodeIcon GetNodeIcon(IWorkflowNodeModel node)
+    {
+        Guard.NotNull(node);
+        var descriptor = Catalog.TryGet(node.NodeType, out var found) ? found : null;
+        return WorkflowNodeIcons.Resolve(node.NodeType, descriptor?.Category, descriptor?.Icon);
+    }
+
     /// <summary>获取节点最近运行状态。</summary>
     /// <param name="nodeId">节点标识。</param>
     public E_NodeState GetNodeState(string nodeId) =>
         GetNodeRuntimeInfo(nodeId)?.State ?? E_NodeState.Idle;
+
+    /// <summary>
+    /// 获取节点的显示状态：流程暂停时正在执行的节点显示为暂停，被取消的节点显示为停止（同为黄色），其余与运行状态一一对应。
+    /// </summary>
+    /// <param name="nodeId">节点标识。</param>
+    public WorkflowNodeVisualState GetNodeVisualState(string nodeId) => GetNodeState(nodeId) switch
+    {
+        E_NodeState.Running when _runtimeSnapshot?.ExecutionState == E_WorkflowExecutionState.Paused => WorkflowNodeVisualState.Paused,
+        E_NodeState.Running => WorkflowNodeVisualState.Running,
+        E_NodeState.Canceled => WorkflowNodeVisualState.Paused,
+        E_NodeState.Completed => WorkflowNodeVisualState.Completed,
+        E_NodeState.Failed => WorkflowNodeVisualState.Failed,
+        _ => WorkflowNodeVisualState.Idle
+    };
 
     /// <summary>获取节点最近一次执行的运行信息。</summary>
     /// <param name="nodeId">节点标识。</param>
@@ -1427,36 +1459,28 @@ public sealed partial class WorkflowDesignerSession
             .Select(port => TextWidth(WorkflowPorts.GetDisplayName(port.Key)))
             .DefaultIfEmpty(0)
             .Max();
-        var verticalPortCount = groups
-            .Where(group => group.Key is WorkflowPortSide.Left or WorkflowPortSide.Right)
-            .Select(group => group.Value.Length)
-            .DefaultIfEmpty(0)
-            .Max();
-        var dataLabelWidth = node.ExposedOutputMembers.Count == 0
+        var exposed = GetExposedOutputMembers(node);
+        var dataLabelWidth = exposed.Count == 0
             ? 0
-            : GetExposedOutputMembers(node).Select(member => TextWidth(member.DisplayName)).DefaultIfEmpty(0).Max() + 40;
+            : exposed.Select(member => TextWidth(member.DisplayName)).DefaultIfEmpty(0).Max() + 40;
+        // 标题行：左右内边距、状态点、图标与间距约 60，右侧执行序号徽标与耗时约 90。
         var requiredWidth = Math.Max(Math.Max(180, dataLabelWidth + sideLabelWidth + 24),
-            Math.Max(titleWidth + 100, Math.Max(horizontalPortWidth + 20, titleWidth + sideLabelWidth * 2 + 72)));
-        var requiredHeight = CalculateRequiredNodeHeight(verticalPortCount)
-            + WorkflowDesignerGeometry.GetDataBandHeight(node.ExposedOutputMembers.Count, 1);
+            Math.Max(titleWidth + 150, Math.Max(horizontalPortWidth + 20, titleWidth + sideLabelWidth * 2 + 72)));
+        var rows = WorkflowDesignerGeometry.GetNodeRows(ports.Select(port => (port, node.GetPortSide(port))), exposed.Count);
+        var requiredHeight = rows.NodeHeight;
+        // 尺寸始终取整格（与是否吸附无关），切换吸附不会改变节点大小。
+        requiredWidth = WorkflowDesignerGeometry.QuantizeNodeWidth(requiredWidth);
+        requiredHeight = WorkflowDesignerGeometry.QuantizeNodeHeight(requiredHeight);
         if (Math.Abs(node.Width - requiredWidth) < 0.01 && Math.Abs(node.Height - requiredHeight) < 0.01)
             return;
         var centerX = node.X + node.Width / 2;
         var centerY = node.Y + node.Height / 2;
         node.Width = requiredWidth;
         node.Height = requiredHeight;
-        centerX = SnapToGrid ? Math.Round(centerX / 24) * 24 : centerX;
-        centerY = SnapToGrid ? Math.Round(centerY / 24) * 24 : centerY;
-        node.X = centerX - node.Width / 2;
-        node.Y = centerY - node.Height / 2;
+        var position = SnapNodePosition(node, new WorkflowPoint(centerX - node.Width / 2, centerY - node.Height / 2));
+        node.X = position.X;
+        node.Y = position.Y;
     }
-
-    /// <summary>根据垂直边上的最大端口数计算节点所需高度。</summary>
-    /// <param name="maximumVerticalPorts">节点任一垂直边上的最大端口数量。</param>
-    private static double CalculateRequiredNodeHeight(int maximumVerticalPorts) => Math.Max(
-        WorkflowDesignerGeometry.MinimumNodeHeight,
-        WorkflowDesignerGeometry.HeaderHeight + WorkflowDesignerGeometry.NodeBodyVerticalPadding
-        + maximumVerticalPorts * WorkflowDesignerGeometry.VerticalPortSpacing);
 
     /// <summary>根据节点类型生成画布内不重复的节点标识。</summary>
     /// <param name="nodeType">节点类型键。</param>

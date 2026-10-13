@@ -82,9 +82,20 @@ public sealed class WorkflowToolboxControl : UserControl
             }
             nodes = category.Items;
         }
+        // 名称左侧显示与画布节点相同的线框图标。
+        var header = new StackPanel { Orientation = Orientation.Horizontal };
+        header.Children.Add(new Image
+        {
+            Source = IconImage(item.ResolveIcon()),
+            Width = 16,
+            Height = 16,
+            Margin = new Thickness(0, 0, 6, 0),
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        header.Children.Add(new TextBlock { Text = item.DisplayName, VerticalAlignment = VerticalAlignment.Center });
         nodes.Add(new TreeViewItem
         {
-            Header = item.DisplayName,
+            Header = header,
             Tag = item,
             ToolTip = item.Description ?? item.NodeType,
             Foreground = Foreground
@@ -101,6 +112,24 @@ public sealed class WorkflowToolboxControl : UserControl
             && Math.Abs(current.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
             return;
         _ = DragDrop.DoDragDrop(_tree, item, DragDropEffects.Copy);
+    }
+
+    private static readonly Dictionary<string, ImageSource> IconImages = new(StringComparer.Ordinal);
+
+    /// <summary>把线框图标转换为可缩放的矢量图像（每个图标只转换一次）。</summary>
+    private static ImageSource IconImage(WorkflowNodeIcon icon)
+    {
+        if (IconImages.TryGetValue(icon.Key, out var image)) return image;
+        var box = new WorkflowDesignerRect(0, 0, WorkflowNodeIcon.ViewBox, WorkflowNodeIcon.ViewBox);
+        var group = new DrawingGroup();
+        // 透明的视图框底板保证图像总是 24×24 视图框，图标不会因路径包围盒不同而被拉伸。
+        group.Children.Add(new GeometryDrawing(Brushes.Transparent, null, new RectangleGeometry(new Rect(0, 0, box.Width, box.Height))));
+        group.Children.Add(new GeometryDrawing(null, WorkflowDesignerControl.IconPen(WorkflowDesignerPalette.Icon, box.Width),
+            WorkflowDesignerControl.IconGeometry(icon, box)));
+        group.Freeze();
+        var drawing = new DrawingImage(group);
+        drawing.Freeze();
+        return IconImages[icon.Key] = drawing;
     }
 
     /// <summary>创建并冻结指定 RGB 颜色的 WPF 画刷。</summary>

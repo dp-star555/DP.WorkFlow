@@ -9,10 +9,7 @@ namespace DP.WorkFlow.UI.Wpf;
 /// <summary>基于 WPF DrawingContext 的工作流画布，使用共享设计会话。</summary>
 public sealed class WorkflowDesignerControl : FrameworkElement
 {
-    private static Brush CanvasBrush => Brush(30, 30, 30);
-    private static Brush NodeBrush => Brush(37, 37, 38);
-    private static Brush HeaderBrush => Brush(51, 51, 55);
-    private static Brush ForegroundBrush => Brush(241, 241, 241);
+    private static Brush CanvasBrush => Brush(WorkflowDesignerPalette.Canvas);
     /// <summary>标识 Session 依赖属性。</summary>
     public static readonly DependencyProperty SessionProperty = DependencyProperty.Register(
         nameof(Session),
@@ -35,6 +32,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     private WorkflowPortHit? _connectionStart;
     private WorkflowPortSide? _portDropSide;
     private Point _pointer;
+    private string? _hoverNodeId;
     private (WorkflowCanvasNode Node, WorkflowOutputMember Member, WorkflowPoint Point)? _dataLinkStart;
     private InteractionMode _mode;
     private readonly System.Windows.Threading.DispatcherTimer _runtimeTimer;
@@ -309,6 +307,25 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             _marqueeCurrent = _pointer;
             InvalidateVisual();
         }
+        else if (_mode == InteractionMode.None)
+        {
+            SetHoverNode(WorkflowDesignerInteraction.HitHoverNode(_session, _pointer.X, _pointer.Y)?.Node.Id);
+        }
+    }
+
+    /// <inheritdoc />
+    protected override void OnMouseLeave(MouseEventArgs e)
+    {
+        base.OnMouseLeave(e);
+        SetHoverNode(null);
+    }
+
+    /// <summary>记录鼠标所在节点；悬停节点的端口放大显示，便于拖线。</summary>
+    private void SetHoverNode(string? nodeId)
+    {
+        if (string.Equals(_hoverNodeId, nodeId, StringComparison.Ordinal)) return;
+        _hoverNodeId = nodeId;
+        InvalidateVisual();
     }
 
     /// <summary>完成当前鼠标交互并将最终结果提交到设计会话。</summary>
@@ -459,21 +476,29 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             e.Handled = _session.Redo();
     }
 
-    /// <summary>绘制随缩放和平移变化的设计网格。</summary>
+    /// <summary>绘制随缩放和平移变化的淡细线栅格：每格一条细线、每 5 格一条主线；缩小后先隐藏细线，再按 2 的幂合并主线。</summary>
     /// <param name="context">绘图上下文或当前编辑上下文。</param>
     private void DrawGrid(DrawingContext context)
     {
         if (_session is null)
             return;
-        var spacing = 24 * _session.Zoom;
-        if (spacing < 8)
-            return;
-        var pen = new Pen(Brush(67, 67, 70), 1);
-        for (var x = _session.PanX % spacing; x < ActualWidth; x += spacing)
-            context.DrawLine(pen, new Point(x, 0), new Point(x, ActualHeight));
-        for (var y = _session.PanY % spacing; y < ActualHeight; y += spacing)
-            context.DrawLine(pen, new Point(0, y), new Point(ActualWidth, y));
+        var (minor, major) = WorkflowDesignerGeometry.GridLineSpacing(_session.Zoom);
+        if (minor > 0)
+            DrawGridLines(context, WorkflowDesignerPalette.GridMinor, minor);
+        DrawGridLines(context, WorkflowDesignerPalette.GridMajor, major);
     }
+
+    /// <summary>按像素对齐绘制一组等距栅格线（线宽 1 时落在像素中心），栅格原点跟随画布平移。</summary>
+    private void DrawGridLines(DrawingContext context, WorkflowColor color, double spacing)
+    {
+        var pen = Freeze(new Pen(Brush(color), 1));
+        for (var x = PositiveModulo(_session!.PanX, spacing); x < ActualWidth; x += spacing)
+            context.DrawLine(pen, new Point(Math.Round(x) + 0.5, 0), new Point(Math.Round(x) + 0.5, ActualHeight));
+        for (var y = PositiveModulo(_session.PanY, spacing); y < ActualHeight; y += spacing)
+            context.DrawLine(pen, new Point(0, Math.Round(y) + 0.5), new Point(ActualWidth, Math.Round(y) + 0.5));
+    }
+
+    private static double PositiveModulo(double value, double modulus) => (value % modulus + modulus) % modulus;
 
     /// <summary>绘制画布中的全部正交连接。</summary>
     /// <param name="context">绘图上下文或当前编辑上下文。</param>
@@ -490,12 +515,11 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             if (source.HasValue && target.HasValue)
             {
                 var selected = ReferenceEquals(_session.SelectedConnection, connection);
-                // 停用的并行分支：淡灰虚线，线和下游节点保留，随时可以重新启用。
+                // 停用的并行分支：暗灰虚线，线和下游节点保留，随时可以重新启用。
                 var pen = new Pen(
-                    Freeze(new SolidColorBrush(selected
-                        ? Color.FromRgb(0, 120, 212)
-                        : connection.Enabled ? Color.FromRgb(155, 155, 155) : Color.FromRgb(95, 95, 95))),
-                    selected ? 3 : 2) { DashStyle = connection.Enabled ? DashStyles.Solid : DashStyles.Dash };
+                    Brush(selected ? WorkflowDesignerPalette.Selected
+                        : connection.Enabled ? WorkflowDesignerPalette.Connection : WorkflowDesignerPalette.DisabledConnection),
+                    selected ? 2.5 : 1.5) { DashStyle = connection.Enabled ? DashStyles.Solid : DashStyles.Dash };
                 DrawConnectionPath(context, pen, connection, source.Value, target.Value);
                 DrawConnectionLabel(context, connection, source.Value);
                 if (selected)
@@ -504,80 +528,148 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         }
     }
 
-    /// <summary>绘制节点背景、标题、状态、端口和运行信息。</summary>
+    /// <summary>
+    /// 绘制节点：标题行（状态点 · 图标 · 标题 · 执行序号 · 耗时）和按内容逐行排列的正文（端口名称、外置数据成员）。
+    /// 边框按方案 A 着色：运行绿、暂停/停止黄、异常红、选中蓝，其余为中性色。
+    /// </summary>
     /// <param name="context">绘图上下文或当前编辑上下文。</param>
     /// <param name="item">目标数据项。</param>
     private void DrawNode(DrawingContext context, WorkflowCanvasNode item)
     {
         if (_session is null)
             return;
+        var zoom = _session.Zoom;
         var rect = WorkflowDesignerGeometry.GetNodeScreenRect(_session, item);
         var bounds = new Rect(rect.X, rect.Y, rect.Width, rect.Height);
-        var state = _session.GetNodeState(item.Node.Id);
-        var stateBrush = StateBrush(state);
         var selected = _session.SelectedNodeIds.Contains(item.Node.Id);
-        context.DrawRoundedRectangle(NodeBrush, null, bounds, 8, 8);
-        var headerHeight = Math.Min(rect.Height, WorkflowDesignerGeometry.HeaderHeight * _session.Zoom);
-        context.PushClip(new RectangleGeometry(bounds, 8, 8));
-        context.DrawRectangle(HeaderBrush, null, new Rect(rect.X, rect.Y, Math.Max(0, rect.Width), Math.Max(0, headerHeight)));
+        var style = WorkflowDesignerPalette.GetNodeStyle(_session.GetNodeVisualState(item.Node.Id), selected);
+        var corner = WorkflowDesignerGeometry.NodeCornerRadius(zoom);
+        if (style.Glow.A > 0)
+        {
+            var glow = Math.Max(1, WorkflowDesignerPalette.GlowWidth * zoom);
+            var outer = bounds;
+            outer.Inflate(glow / 2, glow / 2);
+            context.DrawRoundedRectangle(null, new Pen(Brush(style.Glow), glow), outer, corner + glow / 2, corner + glow / 2);
+        }
+        context.DrawRoundedRectangle(Brush(WorkflowDesignerPalette.NodeBody), null, bounds, corner, corner);
+        var rows = WorkflowDesignerGeometry.GetNodeRows(_session, item);
+        var headerHeight = Math.Min(rect.Height, WorkflowDesignerGeometry.HeaderHeight * zoom);
+        context.PushClip(new RectangleGeometry(bounds, corner, corner));
+        context.DrawRectangle(Brush(WorkflowDesignerPalette.NodeHeader), null, new Rect(rect.X, rect.Y, Math.Max(0, rect.Width), Math.Max(0, headerHeight)));
         context.Pop();
+        DrawRowSeparators(context, rect, rows, zoom);
         context.DrawRoundedRectangle(
             null,
-            new Pen(selected ? Freeze(new SolidColorBrush(Color.FromRgb(56, 189, 248))) : stateBrush, selected ? 3 : 2),
+            new Pen(Brush(style.Border), WorkflowDesignerGeometry.NodeBorderWidth(zoom, style.BorderWidth)),
             bounds,
-            8,
-            8);
-        var runtimeText = WorkflowDesignerInteraction.GetRuntimeDisplayText(_session, item);
-        var runtimeMeasureSize = Math.Max(3, WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
-        var measuredRuntimeWidth = string.IsNullOrEmpty(runtimeText)
-            ? 0
-            : MeasureTextWidth(runtimeText, runtimeMeasureSize, FontWeights.Normal);
-        var headerLayout = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(
-            new WorkflowDesignerRect(bounds.X, bounds.Y, bounds.Width, bounds.Height),
-            _session.Zoom,
-            measuredRuntimeWidth);
-        var indicator = headerLayout.IndicatorBounds;
-        context.DrawEllipse(stateBrush, null, new Point(indicator.X + indicator.Width / 2, indicator.Y + indicator.Height / 2),
+            corner,
+            corner);
+
+        var orderText = WorkflowDesignerInteraction.GetRuntimeOrderText(_session, item);
+        var durationText = WorkflowDesignerInteraction.GetRuntimeDurationText(_session, item);
+        var detailSize = Math.Max(3, WorkflowDesignerGeometry.DetailFontPixels * zoom);
+        var layout = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(
+            rect,
+            zoom,
+            string.IsNullOrEmpty(orderText) ? 0 : MeasureTextWidth(orderText!, detailSize, FontWeights.Normal),
+            string.IsNullOrEmpty(durationText) ? 0 : MeasureTextWidth(durationText!, detailSize, FontWeights.Normal));
+        var indicator = layout.IndicatorBounds;
+        context.DrawEllipse(Brush(style.Indicator), null, new Point(indicator.X + indicator.Width / 2, indicator.Y + indicator.Height / 2),
             indicator.Width / 2, indicator.Height / 2);
+        DrawIcon(context, _session.GetNodeIcon(item.Node), layout.IconBounds, WorkflowDesignerPalette.Icon);
         DrawTextClipped(
             context,
             item.Node.Title,
-            headerLayout.TitleBounds.X,
-            headerLayout.TitleBounds.Y,
-            headerLayout.TitleBounds.Width,
-            headerLayout.TitleBounds.Height,
-            headerLayout.TitleFontSize,
+            layout.TitleBounds.X,
+            layout.TitleBounds.Y,
+            layout.TitleBounds.Width,
+            layout.TitleBounds.Height,
+            layout.TitleFontSize,
             FontWeights.Normal,
-            ForegroundBrush);
-        DrawPorts(context, item, WorkflowPortDirection.Input);
-        DrawPorts(context, item, WorkflowPortDirection.Output);
-        DrawDataPorts(context, item, bounds);
-        DrawRuntimeInfo(context, headerLayout, runtimeText);
+            Brush(WorkflowDesignerPalette.Title));
+        DrawRuntimeInfo(context, layout, style, orderText, durationText);
+
+        var emphasized = _hoverNodeId == item.Node.Id || _mode is InteractionMode.Connect or InteractionMode.MovePort;
+        DrawPorts(context, item, WorkflowPortDirection.Input, emphasized);
+        DrawPorts(context, item, WorkflowPortDirection.Output, emphasized);
+        DrawDataPorts(context, item, rect);
         DrawConnectionOverrideEndpoints(context, item);
         DrawConnectionInputTargets(context, item);
         if (selected)
             DrawPortSideTargets(context, item, bounds);
     }
 
-    private static readonly Brush DataPortBrush = Freeze(new SolidColorBrush(Color.FromRgb(251, 191, 36)));
+    /// <summary>标题行与正文之间、侧边端口行与外置数据行之间的分隔线。</summary>
+    private static void DrawRowSeparators(DrawingContext context, WorkflowDesignerRect rect, WorkflowNodeRows rows, double zoom)
+    {
+        if (rows.Count == 0) return;
+        var pen = Freeze(new Pen(Brush(WorkflowDesignerPalette.RowSeparator), 1));
+        var headerBottom = rect.Y + WorkflowDesignerGeometry.HeaderHeight * zoom;
+        context.DrawLine(pen, new Point(rect.X + 1, headerBottom), new Point(rect.X + rect.Width - 1, headerBottom));
+        if (rows.DataRows > 0 && rows.TopLabelRows + rows.SideRows > 0)
+        {
+            var (top, _) = WorkflowDesignerGeometry.GetDataBand(rect, zoom, rows);
+            var inset = 8 * zoom;
+            context.DrawLine(pen, new Point(rect.X + inset, top), new Point(rect.X + rect.Width - inset, top));
+        }
+    }
 
-    /// <summary>在节点底部数据端口区绘制分隔线、成员名称和右边缘的菱形数据端口。</summary>
-    private void DrawDataPorts(DrawingContext context, WorkflowCanvasNode node, Rect bounds)
+    /// <summary>以线框描边绘制 24×24 视图框的矢量图标，缩放到目标区域。</summary>
+    private static void DrawIcon(DrawingContext context, WorkflowNodeIcon icon, WorkflowDesignerRect bounds, WorkflowColor color)
+    {
+        if (bounds.Width < 4) return;
+        context.DrawGeometry(null, IconPen(color, bounds.Width), IconGeometry(icon, bounds));
+    }
+
+    /// <summary>把图标子路径转换为 WPF 几何，缩放到目标区域。</summary>
+    internal static Geometry IconGeometry(WorkflowNodeIcon icon, WorkflowDesignerRect bounds)
+    {
+        var scale = bounds.Width / WorkflowNodeIcon.ViewBox;
+        Point Map(WorkflowPoint point) => new(bounds.X + point.X * scale, bounds.Y + point.Y * scale);
+        var geometry = new StreamGeometry();
+        using (var figure = geometry.Open())
+        {
+            foreach (var item in icon.Figures)
+            {
+                figure.BeginFigure(Map(item.Start), false, item.Closed);
+                if (item.Segments.Count == 0) figure.LineTo(Map(item.Start), true, true);
+                foreach (var segment in item.Segments)
+                {
+                    if (segment.IsCubic) figure.BezierTo(Map(segment.Control1), Map(segment.Control2), Map(segment.End), true, true);
+                    else figure.LineTo(Map(segment.End), true, true);
+                }
+            }
+        }
+        geometry.Freeze();
+        return geometry;
+    }
+
+    /// <summary>图标描边画笔：圆头圆角，线宽随图标尺寸等比。</summary>
+    internal static Pen IconPen(WorkflowColor color, double size) => Freeze(new Pen(Brush(color), Math.Max(1, WorkflowNodeIcon.StrokeWidth * size / WorkflowNodeIcon.ViewBox))
+    {
+        StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round
+    });
+
+    /// <summary>
+    /// 在节点右边缘对应行绘制外置数据成员：成员名称右对齐，端口为淡紫空心菱形。
+    /// </summary>
+    private void DrawDataPorts(DrawingContext context, WorkflowCanvasNode node, WorkflowDesignerRect rect)
     {
         if (_session is null || node.ExposedOutputMembers.Count == 0) return;
         var ports = WorkflowDesignerGeometry.GetDataPortPoints(_session, node);
         if (ports.Count == 0) return;
         var zoom = _session.Zoom;
-        var bandTop = bounds.Bottom - WorkflowDesignerGeometry.GetDataBandHeight(ports.Count, zoom);
-        context.DrawLine(new Pen(Brush(66, 66, 66), 1), new Point(bounds.Left + 8 * zoom, bandTop), new Point(bounds.Right - 8 * zoom, bandTop));
-        var size = Math.Max(3, 5 * zoom);
-        var rowHeight = WorkflowDesignerGeometry.DataPortSpacing * zoom;
-        var border = new Pen(Brush(15, 23, 42), 1.5);
+        var size = Math.Max(2.5, 4.5 * zoom);
+        var rowHeight = WorkflowDesignerGeometry.RowHeight * zoom;
+        var border = Freeze(new Pen(Brush(WorkflowDesignerPalette.DataPort), Math.Max(1, 1.5 * Math.Min(1, zoom))));
+        var fill = Brush(WorkflowDesignerPalette.NodeBody);
+        var text = Brush(WorkflowDesignerPalette.DataLabel);
         foreach (var (member, point) in ports)
         {
-            DrawTextClipped(context, member.DisplayName, bounds.Left + 10 * zoom, point.Y - rowHeight / 2,
-                Math.Max(0, point.X - bounds.Left - 10 * zoom - size - 6 * zoom), rowHeight,
-                Math.Max(3, WorkflowDesignerGeometry.DetailFontPixels * zoom), FontWeights.Normal, Brush(253, 230, 138), TextAlignment.Right);
+            var left = rect.X + 10 * zoom;
+            DrawTextClipped(context, member.DisplayName, left, point.Y - rowHeight / 2,
+                Math.Max(0, point.X - left - size - 6 * zoom), rowHeight,
+                Math.Max(3, WorkflowDesignerGeometry.DetailFontPixels * zoom), FontWeights.Normal, text, TextAlignment.Right);
             var geometry = new StreamGeometry();
             using (var figure = geometry.Open())
             {
@@ -585,9 +677,11 @@ public sealed class WorkflowDesignerControl : FrameworkElement
                 figure.PolyLineTo(new[] { new Point(point.X + size, point.Y), new Point(point.X, point.Y + size), new Point(point.X - size, point.Y) }, true, true);
             }
             geometry.Freeze();
-            context.DrawGeometry(DataPortBrush, border, geometry);
+            context.DrawGeometry(fill, border, geometry);
         }
     }
+
+    private static Brush DataPortBrush => Brush(WorkflowDesignerPalette.DataPort);
 
     /// <summary>绘制数据端口到下游节点的虚线数据连线，表示该参数绑定到了这个输出成员。</summary>
     private void DrawDataLinks(DrawingContext context)
@@ -596,14 +690,15 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         var links = _session.GetDataLinks();
         if (links.Count == 0) return;
         var nodes = _session.Canvas.Nodes.ToDictionary(node => node.Node.Id, StringComparer.Ordinal);
-        var pen = new Pen(DataPortBrush, 1.5) { DashStyle = DashStyles.Dash };
+        var pen = new Pen(Brush(WorkflowDesignerPalette.DataPort.WithAlpha(170)), 1.5) { DashStyle = DashStyles.Dash };
         foreach (var link in links.DistinctBy(link => (link.SourceNodeId, link.Member, link.ConsumerNodeId)))
         {
             if (!nodes.TryGetValue(link.SourceNodeId, out var source) || !nodes.TryGetValue(link.ConsumerNodeId, out var consumer)) continue;
             var from = WorkflowDesignerGeometry.GetDataPortPoints(_session, source).FirstOrDefault(port => port.Member.Name == link.Member);
             if (from.Member is null) continue;
             var to = WorkflowDesignerInteraction.GetSideCenter(
-                WorkflowDesignerGeometry.GetNodeScreenRect(_session, consumer), WorkflowPortSide.Left, _session.Zoom, consumer.ExposedOutputMembers.Count);
+                WorkflowDesignerGeometry.GetNodeScreenRect(_session, consumer), WorkflowPortSide.Left, _session.Zoom,
+                WorkflowDesignerGeometry.GetNodeRows(_session, consumer));
             DrawDataCurve(context, pen, from.Point, to);
             var radius = Math.Max(2, 3 * _session.Zoom);
             context.DrawEllipse(DataPortBrush, null, new Point(to.X, to.Y), radius, radius);
@@ -716,27 +811,28 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException) { InteractionError?.Invoke(this, exception.Message); }
     }
 
-    /// <summary>在节点标题栏右侧绘制执行序号和耗时。</summary>
-    /// <param name="context">绘图上下文或当前编辑上下文。</param>
-    /// <param name="layout">标题和运行摘要的独立布局区域。</param>
-    /// <param name="text">要显示或处理的文本。</param>
+    /// <summary>在标题行右侧绘制执行序号徽标（异常时为红底）和中性色耗时。</summary>
     private static void DrawRuntimeInfo(
         DrawingContext context,
         WorkflowNodeHeaderLayout layout,
-        string? text)
+        WorkflowNodeVisualStyle style,
+        string? order,
+        string? duration)
     {
-        if (string.IsNullOrEmpty(text) || layout.RuntimeBounds.Width <= 0) return;
-        DrawTextClipped(
-            context,
-            text,
-            layout.RuntimeBounds.X,
-            layout.RuntimeBounds.Y,
-            layout.RuntimeBounds.Width,
-            layout.RuntimeBounds.Height,
-            layout.RuntimeFontSize,
-            FontWeights.Normal,
-            Brush(200, 200, 200),
-            TextAlignment.Right);
+        if (!string.IsNullOrEmpty(order) && layout.OrderBounds.Width > 0)
+        {
+            var badge = layout.OrderBounds;
+            context.DrawRoundedRectangle(Brush(style.BadgeBackground), null,
+                new Rect(badge.X, badge.Y, badge.Width, badge.Height), badge.Height / 2, badge.Height / 2);
+            DrawTextClipped(context, order!, badge.X, badge.Y, badge.Width, badge.Height,
+                layout.DetailFontSize, FontWeights.Normal, Brush(style.BadgeText), TextAlignment.Center);
+        }
+        if (!string.IsNullOrEmpty(duration) && layout.DurationBounds.Width > 0)
+        {
+            var bounds = layout.DurationBounds;
+            DrawTextClipped(context, duration!, bounds.X, bounds.Y, bounds.Width, bounds.Height,
+                layout.DetailFontSize, FontWeights.Normal, Brush(WorkflowDesignerPalette.Duration), TextAlignment.Right);
+        }
     }
 
     /// <summary>连接拖动期间绘制所有可用输入端点。</summary>
@@ -753,13 +849,14 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         }
         var ports = _session.GetPorts(node.Node.Id, WorkflowPortDirection.Input);
         if (ports.Count == 0) return;
-        var fill = Brush(167, 139, 250);
-        var border = new Pen(ForegroundBrush, 1);
+        var fill = Brush(WorkflowDesignerPalette.NodeBody);
+        var border = Freeze(new Pen(Brush(WorkflowDesignerPalette.PortHighlight), 1.5));
+        var radius = WorkflowDesignerGeometry.PortScreenRadius(_session.Zoom, true);
         foreach (var port in ports)
         foreach (var side in Polyfill.GetEnumValues<WorkflowPortSide>())
         {
             var point = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports, side);
-            context.DrawEllipse(fill, border, new Point(point.X, point.Y), 4, 4);
+            context.DrawEllipse(fill, border, new Point(point.X, point.Y), radius, radius);
         }
     }
 
@@ -777,7 +874,8 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             if (_session is not null && WorkflowDesignerInteraction.HasConnectedEndpointAtSide(_session, node, side))
                 continue;
             var anchor = WorkflowDesignerInteraction.GetSideCenter(
-                new WorkflowDesignerRect(bounds.X, bounds.Y, bounds.Width, bounds.Height), side, _session?.Zoom ?? 1);
+                new WorkflowDesignerRect(bounds.X, bounds.Y, bounds.Width, bounds.Height), side, _session?.Zoom ?? 1,
+                _session is null ? default : WorkflowDesignerGeometry.GetNodeRows(_session, node));
             var center = new Point(anchor.X, anchor.Y);
             var highlighted = active == side;
             var activeColor = _connectionStart?.Port.Direction == WorkflowPortDirection.Input
@@ -793,40 +891,45 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         }
     }
 
-    /// <summary>绘制节点指定方向的可见端口及标签。</summary>
+    /// <summary>
+    /// 绘制节点指定方向的端口及名称。已连线端口为直径 6 的小圆点，未连线端口平时不画，悬停节点或拖线时以空心圈放大显示；
+    /// 失败端口为红色。同方向有多个端口时名称写在对应行内，未连线也显示，便于找到出口。
+    /// </summary>
     /// <param name="context">绘图上下文或当前编辑上下文。</param>
     /// <param name="node">目标画布节点。</param>
     /// <param name="direction">端口方向。</param>
-    private void DrawPorts(DrawingContext context, WorkflowCanvasNode node, WorkflowPortDirection direction)
+    /// <param name="emphasized">是否放大显示（悬停节点或拖线中）。</param>
+    private void DrawPorts(DrawingContext context, WorkflowCanvasNode node, WorkflowPortDirection direction, bool emphasized)
     {
         if (_session is null)
             return;
         var ports = _session.GetPorts(node.Node.Id, direction);
-        var brush = direction == WorkflowPortDirection.Input
-            ? Freeze(new SolidColorBrush(Color.FromRgb(167, 139, 250)))
-            : Freeze(new SolidColorBrush(Color.FromRgb(52, 211, 153)));
-        for (var index = 0; index < ports.Count; index++)
+        var rect = WorkflowDesignerGeometry.GetNodeScreenRect(_session, node);
+        var labeled = WorkflowDesignerInteraction.ShouldDrawPortLabel(_session, node, direction);
+        foreach (var port in ports)
         {
-            var port = ports[index];
             var side = node.GetPortSide(port);
-            var connected = WorkflowDesignerInteraction.IsPortConnectedAtSide(_session, node, port, side);
-            var semanticHandle = !connected
-                && direction == WorkflowPortDirection.Output
-                && ports.Count > 1;
-            if (!connected && !semanticHandle) continue;
             var point = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports);
-            // 多出口节点的每个出口都画成正常大小的连接点：已连线为实心，未连线为空心圈；失败出口用红色。
-            var radius = Math.Max(2.5, WorkflowDesignerGeometry.PortRadius * _session.Zoom * 0.72);
-            var portBrush = direction == WorkflowPortDirection.Output && port.Key == WorkflowPorts.Failed ? Brush(239, 68, 68) : brush;
-            context.DrawEllipse(
-                semanticHandle ? Brush(30, 41, 59) : portBrush,
-                semanticHandle ? new Pen(portBrush, 1.8) : new Pen(CanvasBrush, 1.25),
-                new Point(point.X, point.Y),
-                radius,
-                radius);
-            if ((connected || semanticHandle) && WorkflowDesignerInteraction.ShouldDrawPortLabel(_session, node, direction))
-                DrawPortLabel(context, node, port, point, radius, direction);
+            var failed = direction == WorkflowPortDirection.Output && port.Key == WorkflowPorts.Failed;
+            if (labeled)
+                DrawPortLabel(context, failed ? WorkflowDesignerPalette.FailedPortLabel : WorkflowDesignerPalette.PortLabel,
+                    rect, side, point, ports.Count(item => node.GetPortSide(item) == side), WorkflowPorts.GetDisplayName(port.Key));
+            var connected = WorkflowDesignerInteraction.IsPortConnectedAtSide(_session, node, port, side);
+            if (connected || emphasized)
+                DrawPortDot(context, point, failed ? WorkflowDesignerPalette.FailedPort : WorkflowDesignerPalette.Port, connected, emphasized);
         }
+    }
+
+    /// <summary>绘制端口圆点：已连线为实心，未连线为空心圈。</summary>
+    private void DrawPortDot(DrawingContext context, WorkflowPoint point, WorkflowColor color, bool filled, bool emphasized)
+    {
+        var radius = WorkflowDesignerGeometry.PortScreenRadius(_session?.Zoom ?? 1, emphasized);
+        context.DrawEllipse(
+            Brush(filled ? color : WorkflowDesignerPalette.NodeBody),
+            new Pen(Brush(filled ? WorkflowDesignerPalette.Canvas : color), filled ? 1 : 1.5),
+            new Point(point.X, point.Y),
+            radius,
+            radius);
     }
 
     /// <summary>绘制框选区域。</summary>
@@ -912,14 +1015,15 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         if (_session is null) return;
         var points = WorkflowDesignerInteraction.GetConnectionPath(_session, connection, start, end);
         DrawOrthogonalPath(context, pen, points);
-        DrawInsetArrow(context, pen.Brush, points);
+        DrawInsetArrow(context, pen.Brush, points, _session.Zoom);
     }
 
     /// <summary>在连接终点前绘制方向箭头。</summary>
     /// <param name="context">绘图上下文或当前编辑上下文。</param>
     /// <param name="brush">绘制使用的画刷。</param>
     /// <param name="points">路径点集合。</param>
-    private static void DrawInsetArrow(DrawingContext context, Brush brush, IReadOnlyList<WorkflowPoint> points)
+    /// <param name="zoom">当前缩放；箭头尺寸随缩放等比。</param>
+    private static void DrawInsetArrow(DrawingContext context, Brush brush, IReadOnlyList<WorkflowPoint> points, double zoom)
     {
         if (points.Count < 2) return;
         var end = points[^1];
@@ -927,17 +1031,18 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         var dx = end.X - previous.X;
         var dy = end.Y - previous.Y;
         var length = Math.Sqrt(dx * dx + dy * dy);
-        if (length < 12) return;
+        var arrow = WorkflowDesignerGeometry.ConnectionArrow(zoom);
+        if (length < arrow.Inset + arrow.Length) return;
         var ux = dx / length;
         var uy = dy / length;
-        var tip = new Point(end.X - ux * 7, end.Y - uy * 7);
-        var center = new Point(tip.X - ux * 8, tip.Y - uy * 8);
+        var tip = new Point(end.X - ux * arrow.Inset, end.Y - uy * arrow.Inset);
+        var center = new Point(tip.X - ux * arrow.Length, tip.Y - uy * arrow.Length);
         var geometry = new StreamGeometry();
         using (var drawing = geometry.Open())
         {
             drawing.BeginFigure(tip, true, true);
-            drawing.LineTo(new Point(center.X - uy * 4, center.Y + ux * 4), true, false);
-            drawing.LineTo(new Point(center.X + uy * 4, center.Y - ux * 4), true, false);
+            drawing.LineTo(new Point(center.X - uy * arrow.HalfWidth, center.Y + ux * arrow.HalfWidth), true, false);
+            drawing.LineTo(new Point(center.X + uy * arrow.HalfWidth, center.Y - ux * arrow.HalfWidth), true, false);
         }
         geometry.Freeze();
         context.DrawGeometry(brush, null, geometry);
@@ -951,45 +1056,21 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             WorkflowDesignerInteraction.ShouldDrawConnectionLabel(_session, connection)
             && GetConnectionLabelBounds(connection).Contains(x, y));
 
-    /// <summary>在端口内侧绘制端口键文本。</summary>
-    /// <param name="context">绘图上下文或当前编辑上下文。</param>
-    /// <param name="node">目标画布节点。</param>
-    /// <param name="port">“port”参数。</param>
-    /// <param name="point">目标坐标。</param>
-    /// <param name="radius">端口或圆角半径。</param>
-    /// <param name="direction">端口方向。</param>
-    /// <param name="sideOverride">可选的连接端点边覆盖。</param>
+    /// <summary>在端口所在行内绘制端口名称，区域与对齐方式见 <see cref="WorkflowDesignerGeometry.GetPortLabelBounds"/>。</summary>
     private void DrawPortLabel(
         DrawingContext context,
-        WorkflowCanvasNode node,
-        WorkflowPortDescriptor port,
+        WorkflowColor color,
+        WorkflowDesignerRect nodeRect,
+        WorkflowPortSide side,
         WorkflowPoint point,
-        double radius,
-        WorkflowPortDirection direction,
-        WorkflowPortSide? sideOverride = null)
+        int sameSideCount,
+        string text)
     {
-        if (_session is null) return;
-        var size = Math.Max(3, WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
-        var brush = direction == WorkflowPortDirection.Input
-            ? Brush(196, 181, 253)
-            : port.Key == WorkflowPorts.Failed ? Brush(252, 165, 165) : Brush(110, 231, 183);
-        var estimatedWidth = WorkflowPorts.GetDisplayName(port.Key).Length * size * 0.58;
-        var side = sideOverride ?? node.GetPortSide(port);
-        var x = side switch
-        {
-            WorkflowPortSide.Left => point.X + radius + 4,
-            WorkflowPortSide.Right => point.X - radius - estimatedWidth - 4,
-            _ => point.X - estimatedWidth / 2
-        };
-        var nodeRect = WorkflowDesignerGeometry.GetNodeScreenRect(_session, node);
-        var bodyTop = nodeRect.Y + WorkflowDesignerGeometry.HeaderHeight * _session.Zoom + 2;
-        var y = side switch
-        {
-            WorkflowPortSide.Top => bodyTop,
-            WorkflowPortSide.Bottom => point.Y - radius - size - 4,
-            _ => point.Y - size / 2 - 2
-        };
-        DrawText(context, WorkflowPorts.GetDisplayName(port.Key), x, y, size, FontWeights.Normal, brush);
+        var zoom = _session?.Zoom ?? 1;
+        var (bounds, alignment) = WorkflowDesignerGeometry.GetPortLabelBounds(nodeRect, zoom, side, point, sameSideCount);
+        DrawTextClipped(context, text, bounds.X, bounds.Y, bounds.Width, bounds.Height,
+            Math.Max(3, WorkflowDesignerGeometry.DetailFontPixels * zoom), FontWeights.Normal, Brush(color),
+            alignment switch { < 0 => TextAlignment.Left, > 0 => TextAlignment.Right, _ => TextAlignment.Center });
     }
 
     /// <summary>绘制具有单连接边覆盖的额外端点。</summary>
@@ -1015,12 +1096,10 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         var ports = _session.GetPorts(node.Node.Id, direction);
         foreach (var (port, side) in WorkflowDesignerInteraction.GetSideOverrideEndpoints(_session, node, direction))
         {
+            // 换边端点只画圆点：端口语义由线上的标签表达。
             var target = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports, side);
-            var radius = Math.Max(2, WorkflowDesignerGeometry.PortRadius * _session.Zoom * 0.72);
-            var brush = direction == WorkflowPortDirection.Input ? Brush(167, 139, 250) : Brush(52, 211, 153);
-            context.DrawEllipse(brush, new Pen(CanvasBrush, 1.25), new Point(target.X, target.Y), radius, radius);
-            if (WorkflowDesignerInteraction.ShouldDrawPortLabel(_session, node, direction))
-                DrawPortLabel(context, node, port, target, radius, direction, side);
+            var failed = direction == WorkflowPortDirection.Output && port.Key == WorkflowPorts.Failed;
+            DrawPortDot(context, target, failed ? WorkflowDesignerPalette.FailedPort : WorkflowDesignerPalette.Port, true, false);
         }
     }
 
@@ -1035,31 +1114,36 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     {
         if (_session is null || !WorkflowDesignerInteraction.ShouldDrawConnectionLabel(_session, connection)) return;
         var rect = GetConnectionLabelBounds(connection);
-        var background = Brush(37, 37, 38);
-        var border = Brush(63, 63, 70);
-        var foreground = connection.Enabled ? Brush(0, 120, 212) : Brush(140, 140, 140);
-        context.DrawRectangle(background, new Pen(border, 1), rect);
-        DrawText(
+        // 线上的小胶囊：深底细描边，可沿线拖动。
+        context.DrawRoundedRectangle(Brush(WorkflowDesignerPalette.LabelBackground),
+            new Pen(Brush(WorkflowDesignerPalette.LabelBorder), 1), rect, rect.Height / 2, rect.Height / 2);
+        DrawTextClipped(
             context,
             WorkflowDesignerInteraction.GetConnectionLabelDisplay(_session, connection),
-            rect.X + 4,
-            rect.Y + 1,
-            Math.Max(3, 10 * _session.Zoom),
-            FontWeights.SemiBold,
-            foreground);
+            rect.X,
+            rect.Y,
+            rect.Width,
+            rect.Height,
+            Math.Max(3, WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom),
+            FontWeights.Normal,
+            Brush(connection.Enabled ? WorkflowDesignerPalette.LabelText : WorkflowDesignerPalette.DisabledLabelText),
+            TextAlignment.Center);
     }
 
     /// <summary>计算连接标签的屏幕边界。</summary>
     /// <param name="connection">目标连接。</param>
     private Rect GetConnectionLabelBounds(WorkflowConnectionModel connection)
     {
+        var zoom = _session?.Zoom ?? 1;
         var center = _session is null
             ? default
             : WorkflowDesignerInteraction.PointAlongPath(
                 WorkflowDesignerInteraction.GetConnectionPath(_session, connection), connection.LabelPosition);
-        var size = Math.Max(3, 10 * (_session?.Zoom ?? 1));
-        var width = MeasureTextWidth(_session is null ? "" : WorkflowDesignerInteraction.GetConnectionLabelDisplay(_session, connection), size, FontWeights.SemiBold) + 8;
-        return new Rect(center.X - width / 2, center.Y - (size + 6) / 2, width, size + 6);
+        var size = Math.Max(3, WorkflowDesignerGeometry.DetailFontPixels * zoom);
+        var padding = Math.Max(3, 6 * zoom);
+        var width = MeasureTextWidth(_session is null ? "" : WorkflowDesignerInteraction.GetConnectionLabelDisplay(_session, connection), size, FontWeights.Normal) + padding * 2;
+        var height = size * 1.35 + 2;
+        return new Rect(center.X - width / 2, center.Y - height / 2, width, height);
     }
 
     /// <summary>使用平台绘图 API 绘制正交折线路径。</summary>
@@ -1183,16 +1267,9 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     private static Brush Brush(byte red, byte green, byte blue) =>
         Freeze(new SolidColorBrush(Color.FromRgb(red, green, blue)));
 
-    /// <summary>取得节点运行状态对应的 WPF 画刷。</summary>
-    /// <param name="state">节点运行状态。</param>
-    private static Brush StateBrush(E_NodeState state) => state switch
-    {
-        E_NodeState.Running => Freeze(new SolidColorBrush(Color.FromRgb(56, 189, 248))),
-        E_NodeState.Completed => Freeze(new SolidColorBrush(Color.FromRgb(52, 211, 153))),
-        E_NodeState.Failed => Freeze(new SolidColorBrush(Color.FromRgb(248, 113, 113))),
-        E_NodeState.Canceled => Freeze(new SolidColorBrush(Color.FromRgb(251, 191, 36))),
-        _ => Freeze(new SolidColorBrush(Color.FromRgb(100, 116, 139)))
-    };
+    /// <summary>创建并冻结共享调色板颜色的 WPF 画刷。</summary>
+    internal static Brush Brush(WorkflowColor color) =>
+        Freeze(new SolidColorBrush(Color.FromArgb(color.A, color.R, color.G, color.B)));
 
     /// <summary>冻结 WPF Freezable 对象以降低绘制开销。</summary>
     /// <param name="freezable">需要冻结的 WPF 对象。</param>

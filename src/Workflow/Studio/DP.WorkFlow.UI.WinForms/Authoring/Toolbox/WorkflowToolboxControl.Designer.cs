@@ -6,7 +6,11 @@ partial class WorkflowToolboxControl
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) components?.Dispose();
+        if (disposing)
+        {
+            components?.Dispose();
+            _icons?.Dispose();
+        }
         base.Dispose(disposing);
     }
 

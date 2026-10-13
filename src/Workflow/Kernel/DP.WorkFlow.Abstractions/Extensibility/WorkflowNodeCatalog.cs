@@ -179,6 +179,9 @@ public sealed class WorkflowNodeDescriptor
     /// <summary>获取节点标准输出的静态类型；null 表示由宿主或运行时决定。</summary>
     public Type? OutputType { get; }
 
+    /// <summary>获取或设置设计器显示的图标（图标键或 SVG 路径数据），见 <see cref="WorkflowNodeAttribute.Icon"/>。</summary>
+    public string? Icon { get; init; }
+
     /// <summary>根据节点模型类型及其特性创建不声明静态输出类型的描述器。</summary>
     /// <typeparam name="TNode">节点配置模型类型；必须实现节点接口并提供公开无参数构造函数。</typeparam>
     /// <param name="nodeVersion">节点配置格式版本，默认从 1 开始。</param>
@@ -226,7 +229,10 @@ public sealed class WorkflowNodeDescriptor
             attribute?.Category,
             attribute?.Description,
             ports,
-            outputType);
+            outputType)
+        {
+            Icon = attribute?.Icon
+        };
     }
 }
 

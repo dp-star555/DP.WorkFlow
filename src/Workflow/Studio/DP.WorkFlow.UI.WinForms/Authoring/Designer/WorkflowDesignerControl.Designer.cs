@@ -10,7 +10,7 @@ partial class WorkflowDesignerControl
     private void InitializeComponent()
     {
         AllowDrop = true;
-        BackColor = Color.FromArgb(30, 30, 30);
+        BackColor = Color.FromArgb(21, 21, 23);
         DoubleBuffered = true;
         ForeColor = Color.FromArgb(226, 232, 240);
         Name = "WorkflowDesignerControl";
