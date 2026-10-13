@@ -154,6 +154,81 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
         return task;
     }
 
+    /// <inheritdoc />
+    public Task<WorkflowRunResult> RunNodeAsync(WorkflowDocument document, string nodeId, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+        // 先在调用线程编译：画布有错误时直接抛出，不改动最近一次运行。
+        var plan = new WorkflowCompiler(_nodeCatalog).Compile(document);
+        if (!plan.Nodes.ContainsKey(nodeId))
+            throw new InvalidOperationException($"当前画布中没有节点 {nodeId}。");
+        var boundPlan = new WorkflowRuntimeBinder(_handlerCatalog).Bind(plan);
+        lock (_syncRoot)
+        {
+            if (_runTask is { IsCompleted: false })
+                throw new InvalidOperationException("流程正在运行，不能单独运行节点；请先停止或等待运行结束。");
+            if (_engine is null || _engine.RunState.RunId == Guid.Empty)
+                throw new InvalidOperationException("还没有运行过流程：先运行一次主流程，单独运行才能使用上游节点的结果。");
+            _runCancellation?.Dispose();
+            _runCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _lastRunResult = null;
+            // 重新 Configure 会解除快照订阅；继续运行的仍是这个引擎，界面需要继续收到它的快照。
+            UpdateEngineSnapshotSubscriptionLocked();
+            var engine = _engine;
+            var runToken = _runCancellation.Token;
+            _runTask = Task.Run(() => RunNodeCoreAsync(engine, boundPlan, nodeId, runToken));
+            return _runTask;
+        }
+    }
+
+    /// <summary>
+    /// 继续运行的准备：只准备该节点及其子画布（嵌套作用域，不退役上一轮资源，上游输出和图像因此仍可读取），
+    /// 并像根运行一样取得本次运行作用域（例如采集布防）。
+    /// </summary>
+    private async Task<WorkflowRunResult> RunNodeCoreAsync(
+        WorkflowEngine engine,
+        WorkflowBoundExecutionPlan plan,
+        string nodeId,
+        CancellationToken cancellationToken)
+    {
+        var services = engine.Context.Services;
+        WorkflowRuntimeCapabilityValidator.Validate(plan, services);
+        var node = plan.Plan.GetNodeOrThrow(nodeId);
+        var positioned = new List<WorkflowPreparationNode> { new(engine.PlanPath, node) };
+        if (plan.Plan.ChildPlans.TryGetValue(nodeId, out var child))
+            positioned.AddRange(WorkflowRunPreparationPlanner.Enumerate(child, WorkflowRunPreparationPlanner.ChildPath(engine.PlanPath, nodeId)));
+        engine.BindingScopeId = Guid.NewGuid();
+        var preparationContext = new WorkflowRunPreparationContext(
+            positioned.Select(item => item.Node).ToArray(), WorkflowRunScopeKind.Nested, Services: services,
+            PositionedNodes: positioned, BindingScopeId: engine.BindingScopeId);
+        IWorkflowPreparedRun? prepared = null;
+        IWorkflowRunScopeLease? runScope = null;
+        try
+        {
+            if (services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowTransactionalRunPreparationService transactional)
+                prepared = await transactional.PrepareRunAsync(preparationContext, cancellationToken).ConfigureAwait(false);
+            else if (services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowRunPreparationService preparation)
+                await preparation.PrepareAsync(preparationContext, cancellationToken).ConfigureAwait(false);
+            if (services.GetService(typeof(IWorkflowRunScopeOwner)) is IWorkflowRunScopeOwner scopeOwner)
+                runScope = await scopeOwner.BeginRunAsync(Guid.NewGuid(), cancellationToken).ConfigureAwait(false);
+            if (prepared is not null) cancellationToken.ThrowIfCancellationRequested();
+            prepared?.Commit();
+            var result = await engine.RunNodeAsync(plan, nodeId, cancellationToken).ConfigureAwait(false);
+            lock (_syncRoot)
+                _lastRunResult = result;
+            return result;
+        }
+        finally
+        {
+            if (runScope is not null)
+                try { await runScope.DisposeAsync().ConfigureAwait(false); }
+                finally { if (prepared is not null) await prepared.DisposeAsync().ConfigureAwait(false); }
+            else if (prepared is not null) await prepared.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
     /// <summary>请求取消并等待当前运行（包括运行准备）结束；宿主应先禁用新的Run请求，再释放设备及图像资源。</summary>
     /// <returns>当前任务完成；运行准备异常仍向调用者传播。</returns>
     public async Task StopAsync()

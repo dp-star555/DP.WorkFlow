@@ -17,6 +17,8 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
     private readonly DataGrid _output = CreateGrid();
     private readonly DataGrid _timing = CreateGrid();
     private WorkflowStudioRuntimeBinding? _runtimeBinding;
+    private IWorkflowRuntimeMonitorSource? _source;
+    private IWorkflowRuntimeMonitorSource? _subscribed;
 
     /// <summary>初始化工作流运行时监视控件。</summary>
     public WorkflowRuntimeMonitorControl()
@@ -35,7 +37,11 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
         Content = tabs;
         _model.Changed += (_, _) => RefreshLists();
         Unloaded += (_, _) => Subscribe(null);
-        Loaded += (_, _) => Subscribe(_runtimeBinding);
+        Loaded += (_, _) =>
+        {
+            Subscribe(_source);
+            RefreshRuntimeData();
+        };
     }
 
     public WorkflowStudioRuntimeBinding? RuntimeBinding
@@ -45,20 +51,37 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
         {
             if (ReferenceEquals(_runtimeBinding, value))
                 return;
-            Subscribe(null);
             _runtimeBinding = value;
+            Source = value;
+        }
+    }
+
+    /// <summary>
+    /// 监视的数据来源：主画布为整个运行（<see cref="RuntimeBinding"/>），
+    /// 节点窗口的子画布为该复合节点的子运行（<see cref="WorkflowSessionRuntimeMonitorSource"/>）。
+    /// </summary>
+    public IWorkflowRuntimeMonitorSource? Source
+    {
+        get => _source;
+        set
+        {
+            if (ReferenceEquals(_source, value))
+                return;
+            _source = value;
             Subscribe(value);
             RefreshRuntimeData();
         }
     }
 
-    /// <summary>执行 Subscribe 相关处理。</summary>
-    private void Subscribe(WorkflowStudioRuntimeBinding? binding)
+    private void Subscribe(IWorkflowRuntimeMonitorSource? source)
     {
-        if (_runtimeBinding is not null)
-            _runtimeBinding.StateChanged -= OnRuntimeChanged;
-        if (binding is not null)
-            binding.StateChanged += OnRuntimeChanged;
+        if (ReferenceEquals(_subscribed, source))
+            return;
+        if (_subscribed is not null)
+            _subscribed.Changed -= OnRuntimeChanged;
+        _subscribed = source;
+        if (_subscribed is not null)
+            _subscribed.Changed += OnRuntimeChanged;
     }
 
     private void OnRuntimeChanged(object? sender, EventArgs e)
@@ -83,8 +106,8 @@ public sealed class WorkflowRuntimeMonitorControl : UserControl
     /// <summary>刷新Runtime Data。</summary>
     private void RefreshRuntimeData()
     {
-        _model.SetSnapshot(_runtimeBinding?.Host.GetSnapshot());
-        _model.SetTraceBatch(_runtimeBinding?.Host.Engine?.GetTraceBatch(includeChildRuns: true));
+        _model.SetSnapshot(_source?.GetSnapshot());
+        _model.SetTraceBatch(_source?.GetTraceBatch());
     }
 
     /// <summary>创建Trace Panel。</summary>

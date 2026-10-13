@@ -218,7 +218,9 @@ public sealed class WorkflowRuntimeMonitorModel
     {
         ArgumentNullException.ThrowIfNull(entry);
         if (entry.Parents is not { Count: > 0 } parents) return entry.NodeId;
-        var parts = parents.Select(parent => parent.Cycle > 0 ? $"{parent.NodeId}·第{parent.Cycle}圈" : parent.NodeId)
+        // 子画布自己的监视去掉了所在复合节点，只剩圈序号（节点 ID 为空）。
+        var parts = parents.Select(parent => parent.Cycle <= 0 ? parent.NodeId
+                : parent.NodeId.Length == 0 ? $"第{parent.Cycle}圈" : $"{parent.NodeId}·第{parent.Cycle}圈")
             .Append(entry.NodeId)
             .Where(part => !string.IsNullOrEmpty(part));
         return string.Join(" › ", parts);

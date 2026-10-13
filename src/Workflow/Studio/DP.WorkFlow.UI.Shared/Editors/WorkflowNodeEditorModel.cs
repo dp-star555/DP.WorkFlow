@@ -165,6 +165,9 @@ public sealed class WorkflowSubWorkflowEditorPageModel : IDisposable
     {
         if (RuntimeSession is not { } runtime) return;
         Session.RunNodeOutputProvider = runtime.RunNodeOutputProvider;
+        Session.Runtime = runtime.Runtime;
+        if (Session.RuntimePath.Count != runtime.RuntimePath.Count + 1 || !Session.RuntimePath.SequenceEqual(runtime.RuntimePath.Append(Node.Id)))
+            Session.RuntimePath = runtime.RuntimePath.Append(Node.Id).ToArray();
         Session.SetRuntimeSnapshot(WorkflowDesignerNavigator.FindChildSnapshot(runtime.RuntimeSnapshot, Node.Id));
     }
 

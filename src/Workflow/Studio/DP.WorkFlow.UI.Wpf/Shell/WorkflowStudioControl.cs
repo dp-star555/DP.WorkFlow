@@ -17,126 +17,40 @@ public sealed class WorkflowStudioControl : UserControl
         nameof(EntryNodeId), typeof(string), typeof(WorkflowStudioControl),
         new PropertyMetadata(null, OnEntryNodeIdChanged));
 
-    private readonly Button _undoButton;
-    private readonly Button _redoButton;
-    private readonly TextBlock _breadcrumb;
-    private readonly Button _runButton;
-    private readonly Button _pauseButton;
-    private readonly Button _resumeButton;
-    private readonly Button _stopButton;
-    private readonly TextBlock _runtimeLabel;
-    private WorkflowDesignerSession? _subscribedSession;
+    private readonly WorkflowCanvasWorkspaceControl _canvasWorkspace = new();
     private WorkflowStudioRuntimeBinding? _runtimeBinding;
+    private WorkflowStudioRunCommands? _runCommands;
     private WorkflowDocumentWorkspace? _workspace;
     private WorkflowDesignerNavigator? _navigator;
-    private StackPanel? _toolbar;
     private int _toolWindowCount;
-    private bool _autoFitPending;
-    private bool _autoFitQueued;
 
     /// <summary>初始化集设计器、工具箱、诊断和运行控制于一体的工作室控件。</summary>
     public WorkflowStudioControl()
     {
         Background = Brush(30, 30, 30);
-        Designer = new WorkflowDesignerControl();
-        Toolbox = new WorkflowToolboxControl();
         Properties = new WorkflowPropertyPanel();
-        Diagnostics = new WorkflowDiagnosticsControl();
-        RuntimeMonitor = new WorkflowRuntimeMonitorControl();
 
-        var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(42) });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(150) });
-        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
-        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
-        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-        var toolbar = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Background = Brush(37, 37, 38)
-        };
-        _toolbar = toolbar;
-        var newButton = CommandButton("新建");
-        var openButton = CommandButton("打开");
-        var saveButton = CommandButton("保存");
-        _undoButton = CommandButton("撤销");
-        _redoButton = CommandButton("重做");
-        _breadcrumb = new TextBlock
-        {
-            Text = "Root",
-            Foreground = Brush(148, 163, 184),
-            Margin = new Thickness(10, 0, 10, 0),
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        var fitButton = CommandButton("适合画布");
-        var autoLayoutButton = CommandButton("自动布局");
-        var alignLeftButton = CommandButton("左对齐");
-        var alignTopButton = CommandButton("顶对齐");
-        _runButton = CommandButton("运行");
-        _pauseButton = CommandButton("暂停");
-        _resumeButton = CommandButton("继续");
-        _stopButton = CommandButton("停止");
-        _runtimeLabel = new TextBlock
-        {
-            Text = "Idle",
-            Foreground = Brush(148, 163, 184),
-            Margin = new Thickness(8, 0, 8, 0),
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        toolbar.Children.Add(newButton);
-        toolbar.Children.Add(openButton);
-        toolbar.Children.Add(saveButton);
-        toolbar.Children.Add(_undoButton);
-        toolbar.Children.Add(_redoButton);
-        toolbar.Children.Add(_breadcrumb);
-        toolbar.Children.Add(fitButton);
-        toolbar.Children.Add(autoLayoutButton);
-        toolbar.Children.Add(alignLeftButton);
-        toolbar.Children.Add(alignTopButton);
-        toolbar.Children.Add(_runButton);
-        toolbar.Children.Add(_pauseButton);
-        toolbar.Children.Add(_resumeButton);
-        toolbar.Children.Add(_stopButton);
-        toolbar.Children.Add(_runtimeLabel);
-        Grid.SetColumnSpan(toolbar, 3);
-        root.Children.Add(toolbar);
-
-        AddToGrid(root, Toolbox, 0, 2);
-        AddToGrid(root, new Border { Background = Brush(30, 41, 59) }, 1, 2);
-        AddToGrid(root, Designer, 2);
-        _bottomTabs.Items.Add(new TabItem { Header = "诊断", Content = Diagnostics });
-        _bottomTabs.Items.Add(new TabItem { Header = "运行监视", Content = RuntimeMonitor });
-        AddToGrid(root, _bottomTabs, 2, row: 2);
-        Content = root;
+        // 画布工具栏、工具箱、诊断与运行监视来自共用的画布工作区；这里只加工作台自己的文档命令。
+        var newButton = WorkflowCanvasWorkspaceControl.CommandButton("新建");
+        var openButton = WorkflowCanvasWorkspaceControl.CommandButton("打开");
+        var saveButton = WorkflowCanvasWorkspaceControl.CommandButton("保存");
+        _canvasWorkspace.Toolbar.Children.Insert(0, saveButton);
+        _canvasWorkspace.Toolbar.Children.Insert(0, openButton);
+        _canvasWorkspace.Toolbar.Children.Insert(0, newButton);
+        Content = _canvasWorkspace;
 
         newButton.Click += (_, _) => NewDocument();
         openButton.Click += (_, _) => OpenDocument();
         saveButton.Click += (_, _) => SaveDocument();
-        _undoButton.Click += (_, _) => Session?.Undo();
-        _redoButton.Click += (_, _) => Session?.Redo();
-        _runButton.Click += async (_, _) => await RunWorkflowAsync();
-        _pauseButton.Click += (_, _) => RuntimeBinding?.Pause();
-        _resumeButton.Click += (_, _) => RuntimeBinding?.Resume();
-        _stopButton.Click += (_, _) => RuntimeBinding?.Cancel();
-        autoLayoutButton.Click += (_, _) => Session?.AutoLayout();
-        alignLeftButton.Click += (_, _) => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Left);
-        alignTopButton.Click += (_, _) => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Top);
-        fitButton.Click += (_, _) => Session?.FitToView(Designer.ActualWidth, Designer.ActualHeight);
-        Toolbox.NodeTypeActivated += OnNodeTypeActivated;
-        Designer.InteractionError += (_, message) => InteractionError?.Invoke(this, message);
+        _canvasWorkspace.InteractionError += (_, message) => InteractionError?.Invoke(this, message);
+        _canvasWorkspace.RunFaulted += (_, message) => RunFaulted?.Invoke(this, message);
         Designer.NodeEditRequested += OnDesignerNodeEditRequested;
         Properties.EditError += (_, message) => InteractionError?.Invoke(this, message);
         Properties.PropertyActionRequested += OnPropertyActionRequested;
-        Designer.SizeChanged += (_, _) => QueueAutoFit();
         Unloaded += (_, _) =>
         {
-            SubscribeSession(null);
             if (_navigator is not null)
                 _navigator.CurrentChanged -= OnNavigatorChanged;
-            if (_runtimeBinding is not null)
-                _runtimeBinding.StateChanged -= OnRuntimeStateChanged;
             if (_workspace is not null)
             {
                 _workspace.DocumentChanged -= OnWorkspaceChanged;
@@ -145,17 +59,10 @@ public sealed class WorkflowStudioControl : UserControl
         };
         Loaded += (_, _) =>
         {
-            QueueAutoFit();
-            SubscribeSession(Session);
             if (_navigator is not null)
             {
                 _navigator.CurrentChanged -= OnNavigatorChanged;
                 _navigator.CurrentChanged += OnNavigatorChanged;
-            }
-            if (_runtimeBinding is not null)
-            {
-                _runtimeBinding.StateChanged -= OnRuntimeStateChanged;
-                _runtimeBinding.StateChanged += OnRuntimeStateChanged;
             }
             if (_workspace is not null)
             {
@@ -164,20 +71,25 @@ public sealed class WorkflowStudioControl : UserControl
                 _workspace.DocumentChanged += OnWorkspaceChanged;
                 _workspace.DirtyStateChanged += OnWorkspaceChanged;
             }
+            UpdateNavigation();
         };
+        UpdateNavigation();
     }
 
+    /// <summary>获取共用的画布工作区（工具栏、工具箱、画布、诊断、运行监视）。</summary>
+    public WorkflowCanvasWorkspaceControl CanvasWorkspace => _canvasWorkspace;
+
     /// <summary>获取或设置 Designer 成员。</summary>
-    public WorkflowDesignerControl Designer { get; }
+    public WorkflowDesignerControl Designer => _canvasWorkspace.Designer;
 
     /// <summary>获取或设置 Toolbox 成员。</summary>
-    public WorkflowToolboxControl Toolbox { get; }
+    public WorkflowToolboxControl Toolbox => _canvasWorkspace.Toolbox;
 
     /// <summary>获取或设置 Properties 成员。</summary>
     public WorkflowPropertyPanel Properties { get; }
 
     /// <summary>获取或设置 Diagnostics 成员。</summary>
-    public WorkflowDiagnosticsControl Diagnostics { get; }
+    public WorkflowDiagnosticsControl Diagnostics => _canvasWorkspace.Diagnostics;
     /// <summary>为领域工具添加弹出窗口入口：工具栏“保存”之后出现同名按钮，点击打开；关闭窗口不会丢失面板状态。</summary>
     /// <param name="title">按钮与窗口标题。</param>
     /// <param name="content">窗口内容。</param>
@@ -186,7 +98,7 @@ public sealed class WorkflowStudioControl : UserControl
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ArgumentNullException.ThrowIfNull(content);
         Window? window = null;
-        var button = CommandButton(title + "…");
+        var button = WorkflowCanvasWorkspaceControl.CommandButton(title + "…");
         button.Click += (_, _) =>
         {
             if (window is null)
@@ -208,11 +120,11 @@ public sealed class WorkflowStudioControl : UserControl
             window.Show();
             window.Activate();
         };
-        _toolbar!.Children.Insert(3 + _toolWindowCount++, button);
+        _canvasWorkspace.Toolbar.Children.Insert(3 + _toolWindowCount++, button);
     }
 
     /// <summary>获取或设置 Runtime Monitor 成员。</summary>
-    public WorkflowRuntimeMonitorControl RuntimeMonitor { get; }
+    public WorkflowRuntimeMonitorControl RuntimeMonitor => _canvasWorkspace.RuntimeMonitor;
 
     /// <summary>获取或设置文档工作区。</summary>
     public WorkflowDocumentWorkspace? Workspace
@@ -249,8 +161,8 @@ public sealed class WorkflowStudioControl : UserControl
         {
             if (ReferenceEquals(_runtimeBinding, value))
                 return;
-            if (_runtimeBinding is not null)
-                _runtimeBinding.StateChanged -= OnRuntimeStateChanged;
+            _runCommands?.Dispose();
+            _runCommands = null;
             _runtimeBinding = value;
             RuntimeMonitor.RuntimeBinding = value;
             if (_runtimeBinding is not null)
@@ -262,9 +174,10 @@ public sealed class WorkflowStudioControl : UserControl
                         ? WorkflowStudioRunTarget.CurrentCanvas
                         : WorkflowStudioRunTarget.RootWorkflow;
                 }
-                _runtimeBinding.StateChanged += OnRuntimeStateChanged;
+                _runCommands = new WorkflowStudioRunCommands(_runtimeBinding,
+                    () => Navigator?.Depth > 0 ? "运行当前子流程" : "运行");
             }
-            UpdateRuntimeCommands();
+            _canvasWorkspace.RunCommands = _runCommands;
         }
     }
 
@@ -309,8 +222,6 @@ public sealed class WorkflowStudioControl : UserControl
     /// <summary>流程运行以故障结束时发生（只用于记录；故障详情已写入运行监视）。</summary>
     public event EventHandler<string>? RunFaulted;
 
-    private readonly TabControl _bottomTabs = new();
-
     /// <summary>双击节点并关闭统一节点工作台后发生。</summary>
     public event EventHandler<IWorkflowNodeModel>? NodeEditRequested;
 
@@ -339,50 +250,14 @@ public sealed class WorkflowStudioControl : UserControl
     private static void OnSessionChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs e)
     {
         var control = (WorkflowStudioControl)dependencyObject;
-        var session = (WorkflowDesignerSession?)e.NewValue;
-        control.Designer.Session = session;
-        control.Toolbox.Session = session;
-        control.Diagnostics.Session = session;
-        control.SubscribeSession(session);
-        control._autoFitPending = session is not null;
-        control.QueueAutoFit();
-        control.UpdateCommands();
+        control._canvasWorkspace.Session = (WorkflowDesignerSession?)e.NewValue;
+        control.UpdateNavigation();
     }
 
     private static void OnEntryNodeIdChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs e)
     {
         var control = (WorkflowStudioControl)dependencyObject;
         control.Diagnostics.EntryNodeId = (string?)e.NewValue;
-    }
-
-    // 在 Loaded 和布局完成后消费一次请求，避免用初始化时的零尺寸计算视口。
-    private void QueueAutoFit()
-    {
-        if (!_autoFitPending || _autoFitQueued || !IsLoaded)
-            return;
-        _autoFitQueued = true;
-        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, (Action)(() =>
-        {
-            _autoFitQueued = false;
-            if (!IsLoaded || !_autoFitPending || Session is null
-                || Designer.ActualWidth <= 0 || Designer.ActualHeight <= 0)
-                return;
-            _autoFitPending = false;
-            Session.FitToView(Designer.ActualWidth, Designer.ActualHeight);
-        }));
-    }
-
-    /// <summary>执行 Subscribe Session 相关处理。</summary>
-    /// <param name="session">设计器会话。</param>
-    private void SubscribeSession(WorkflowDesignerSession? session)
-    {
-        if (ReferenceEquals(_subscribedSession, session))
-            return;
-        if (_subscribedSession is not null)
-            _subscribedSession.Changed -= OnDesignerSessionChanged;
-        _subscribedSession = session;
-        if (_subscribedSession is not null)
-            _subscribedSession.Changed += OnDesignerSessionChanged;
     }
 
     /// <summary>执行 New Document 相关处理。</summary>
@@ -506,117 +381,15 @@ public sealed class WorkflowStudioControl : UserControl
         UpdateNavigation();
     }
 
-    /// <summary>执行 Run DP.WorkFlow 相关处理。</summary>
-    private async Task RunWorkflowAsync()
-    {
-        Diagnostics.RefreshDiagnostics();
-        if (RuntimeBinding is null)
-            return;
-        if (!Diagnostics.CanRun)
-        {
-            InteractionError?.Invoke(this, "当前流程存在配置或编译错误，不能运行。");
-            return;
-        }
-        try
-        {
-            var result = await RuntimeBinding.RunAsync();
-            if (!result.Success && result.State == E_WorkflowExecutionState.Faulted)
-            {
-                // 运行失败只记录：失败节点标红、故障写入运行监视轨迹，切到运行监视页查看，不弹窗。
-                _bottomTabs.SelectedIndex = 1;
-                RunFaulted?.Invoke(this, $"流程运行失败：{result.Message}");
-            }
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
-        {
-            InteractionError?.Invoke(this, exception.Message);
-        }
-    }
-
-    private void OnRuntimeStateChanged(object? sender, EventArgs e)
-    {
-        if (Dispatcher.CheckAccess())
-            UpdateRuntimeCommands();
-        else
-            _ = Dispatcher.BeginInvoke(UpdateRuntimeCommands);
-    }
-
-    /// <summary>处理设计会话变化并请求 WPF 画布重绘。</summary>
-    private void OnDesignerSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
-    {
-        if (Dispatcher.CheckAccess())
-            UpdateCommands();
-        else
-            _ = Dispatcher.BeginInvoke(UpdateCommands);
-    }
-
-    /// <summary>更新Commands。</summary>
-    private void UpdateCommands()
-    {
-        _undoButton.IsEnabled = Session?.CanUndo == true;
-        _redoButton.IsEnabled = Session?.CanRedo == true;
-        UpdateNavigation();
-        UpdateRuntimeCommands();
-    }
-
-    /// <summary>更新Runtime Commands。</summary>
-    private void UpdateRuntimeCommands()
-    {
-        var state = RuntimeBinding?.State ?? E_WorkflowExecutionState.Idle;
-        _runButton.IsEnabled = RuntimeBinding is not null && state is not (E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused);
-        _pauseButton.IsEnabled = state == E_WorkflowExecutionState.Running;
-        _resumeButton.IsEnabled = state == E_WorkflowExecutionState.Paused;
-        _stopButton.IsEnabled = state is E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused;
-        _runtimeLabel.Text = state.ToString();
-    }
-
-    /// <summary>更新Navigation。</summary>
+    /// <summary>更新路径文字和运行按钮（导航到子画布时运行当前子流程）。</summary>
     private void UpdateNavigation()
     {
         var path = Navigator is null
             ? "Root"
             : string.Join("  /  ", Navigator.Breadcrumbs.Select(item => item.Title));
-        _breadcrumb.Text = Workspace?.IsDirty == true ? path + " *" : path;
-        _runButton.Content = Navigator?.Depth > 0 ? "运行当前子流程" : "运行";
+        _canvasWorkspace.BreadcrumbText = Workspace?.IsDirty == true ? path + " *" : path;
+        _runCommands?.Refresh();
     }
-
-    /// <summary>处理“Node Type Activated”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="item">目标数据项。</param>
-    private void OnNodeTypeActivated(object? sender, WorkflowToolboxItem item)
-    {
-        if (Session is null)
-            return;
-        var center = WorkflowDesignerGeometry.ScreenToCanvas(
-            Session,
-            Designer.ActualWidth / 2,
-            Designer.ActualHeight / 2);
-        Session.AddNode(item.NodeType, center.X - 90, center.Y - 30);
-    }
-
-    /// <summary>添加To Grid。</summary>
-    private static void AddToGrid(
-        Grid grid,
-        UIElement element,
-        int column,
-        int rowSpan = 1,
-        int row = 1)
-    {
-        Grid.SetRow(element, row);
-        Grid.SetRowSpan(element, rowSpan);
-        Grid.SetColumn(element, column);
-        grid.Children.Add(element);
-    }
-
-    private static Button CommandButton(string text) => new()
-    {
-        Content = text,
-        Foreground = Brush(241, 241, 241),
-        Background = Brush(51, 51, 55),
-        BorderBrush = Brush(63, 63, 70),
-        Padding = new Thickness(14, 5, 14, 5),
-        Margin = new Thickness(4)
-    };
 
     /// <summary>创建并冻结指定 RGB 颜色的 WPF 画刷。</summary>
     private static SolidColorBrush Brush(byte red, byte green, byte blue)

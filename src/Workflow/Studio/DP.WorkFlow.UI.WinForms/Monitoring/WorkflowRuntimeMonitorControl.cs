@@ -17,6 +17,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     private readonly ModernContextMenu _listMenu = new() { Theme = ModernTheme.Dark };
     private ListView? _menuList;
     private WorkflowStudioRuntimeBinding? _runtimeBinding;
+    private IWorkflowRuntimeMonitorSource? _source;
     private ILocalizationContext _localizationContext = null!;
 
     /// <summary>初始化运行时监视控件及其共享命令。</summary>
@@ -81,9 +82,26 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         set
         {
             if (ReferenceEquals(_runtimeBinding, value)) return;
-            if (_runtimeBinding is not null) _runtimeBinding.StateChanged -= OnRuntimeChanged;
             _runtimeBinding = value;
-            if (_runtimeBinding is not null) _runtimeBinding.StateChanged += OnRuntimeChanged;
+            Source = value;
+        }
+    }
+
+    /// <summary>
+    /// 获取或设置监视的数据来源：主画布为整个运行（<see cref="RuntimeBinding"/>），
+    /// 节点窗口的子画布为该复合节点的子运行（<see cref="WorkflowSessionRuntimeMonitorSource"/>）。
+    /// </summary>
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public IWorkflowRuntimeMonitorSource? Source
+    {
+        get => _source;
+        set
+        {
+            if (ReferenceEquals(_source, value)) return;
+            if (_source is not null) _source.Changed -= OnRuntimeChanged;
+            _source = value;
+            if (_source is not null) _source.Changed += OnRuntimeChanged;
             RefreshRuntimeData();
         }
     }
@@ -226,8 +244,8 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
 
     private void RefreshRuntimeData()
     {
-        _model.SetSnapshot(_runtimeBinding?.Host.GetSnapshot());
-        _model.SetTraceBatch(_runtimeBinding?.Host.Engine?.GetTraceBatch(includeChildRuns: true));
+        _model.SetSnapshot(_source?.GetSnapshot());
+        _model.SetTraceBatch(_source?.GetTraceBatch());
     }
 
     /// <summary>导出右键所在表格；轨迹表按完整轨迹字段导出，其余表格按当前列导出。</summary>
@@ -360,7 +378,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
 
     private void DisposeRuntimeMonitor()
     {
-        if (_runtimeBinding is not null) _runtimeBinding.StateChanged -= OnRuntimeChanged;
+        if (_source is not null) _source.Changed -= OnRuntimeChanged;
         _model.Changed -= ModelChanged;
         if (_localizationContext is not null) _localizationContext.Changed -= LocalizationChanged;
         commandManager.Owner = null;

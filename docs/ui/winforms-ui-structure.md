@@ -42,18 +42,23 @@ Form1
 主要文件：
 
 ```text
-src/Workflow/Studio/DP.WorkFlow.UI.WinForms/Studio/
+src/Workflow/Studio/DP.WorkFlow.UI.WinForms/Shell/
+├─ WorkflowCanvasWorkspaceControl.cs   画布工作区（主画布与节点窗口子画布共用）
 ├─ WorkflowStudioControl.cs
 ├─ WorkflowStudioControl.Designer.cs
 └─ WorkflowStudioControl.resx
 ```
 
+工具栏、工具箱、画布和底部“诊断 | 运行监视”属于 `WorkflowCanvasWorkspaceControl`，工作台只在工具栏最前面加入“文件”菜单，
+并提供文档、导航和节点窗口。节点窗口的子画布页用同一个控件（见第 10 节末尾），WPF 的 `WorkflowCanvasWorkspaceControl` 结构相同。
+
 当前实际结构：
 
 ```text
 WorkflowStudioControl
+└─ WorkflowCanvasWorkspaceControl
 ├─ ToolStrip 顶部工具栏
-│  ├─ 文件
+│  ├─ 文件（工作台加入）
 │  │  ├─ 新建
 │  │  ├─ 打开
 │  │  ├─ 保存
@@ -475,7 +480,16 @@ src/Workflow/Studio/DP.WorkFlow.UI.Shared/Editors/WorkflowSubflowInterfacePageMo
 
 修改写入节点窗口的编辑副本，随“应用/确定”一并提交，取消则丢弃。子画布页下方的诊断随之刷新。
 
-节点窗口的“流程”页（子画布）跟随该复合节点的子运行实时显示：正在执行的节点、各节点执行序号和耗时；循环块每圈刷新。从子画布打开的内部节点窗口，其“运行结果”页同样实时读取该子运行的状态和输出。复合节点自身的“运行结果”页在状态行显示当前圈、正在执行的内部节点和本圈耗时。运行监控的“子流程”页在状态列显示圈序号和当前节点，“轨迹”页合并子运行的节点记录，节点列带所属复合节点和圈序号。
+节点窗口的“流程”页（子画布）与工作台主画布共用 `WorkflowCanvasWorkspaceControl`：同一套工具栏（撤销、重做、适合画布、布局、运行/暂停/继续/停止）、工具箱、底部“诊断 | 运行监视”；撤销、重做只作用于本窗口的草稿。底部运行监视只显示该复合节点的子运行（令牌、并行作用域、耗时是子画布内部的，轨迹、输出只取该节点内部的记录，节点列以“第3圈 › 找线1”开头）。
+
+工具栏“运行”在最近一次运行的基础上把这个复合节点再正常执行一次（`WorkflowSubWorkflowRunCommands` → `IWorkflowRuntimeHost.RunNodeAsync`）：输入取自该次运行的结果，结果照常写入并取代该节点上一次的结果，下游节点之后读到的就是新结果；执行的是窗口中当前的内容，包括尚未“确定”的修改。规则：
+
+- 主流程正在运行或暂停时不能单独运行；这时暂停、继续、停止作用于整个流程，告警/联锁（外部 Hold）照常生效。
+- 还没有运行过主流程时不能运行；某个输入没有可用结果时运行失败，原因写入运行监视。
+- 只有直接放在运行画布上的子流程、循环块可以单独运行；嵌套在其他子画布中的从外层运行。
+- 点工作台的“运行”照旧从头完整运行一遍。
+
+子画布同样跟随该复合节点的子运行实时显示：正在执行的节点、各节点执行序号和耗时；循环块每圈刷新。从子画布打开的内部节点窗口，其“运行结果”页同样实时读取该子运行的状态和输出。复合节点自身的“运行结果”页在状态行显示当前圈、正在执行的内部节点和本圈耗时。运行监控的“子流程”页在状态列显示圈序号和当前节点，“轨迹”页合并子运行的节点记录，节点列带所属复合节点和圈序号。
 
 ## 11. C# using 管理窗口
 

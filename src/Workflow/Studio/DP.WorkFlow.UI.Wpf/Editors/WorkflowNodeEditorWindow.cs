@@ -316,59 +316,32 @@ public sealed class WorkflowNodeEditorWindow : Window
         return panel;
     }
 
-    /// <summary>创建Sub DP.WorkFlow。</summary>
+    /// <summary>
+    /// 子画布页与工作台主画布共用画布工作区：同一套工具栏、工具箱、诊断和运行监视。
+    /// 监视的是该复合节点的子运行；“运行”在最近一次运行的基础上单独再执行这个节点。
+    /// </summary>
     private FrameworkElement CreateSubWorkflow(WorkflowSubWorkflowEditorPageModel page)
     {
-        var designer = new WorkflowDesignerControl { Session = page.Session };
+        var workspace = new WorkflowCanvasWorkspaceControl();
+        // 子画布自己的诊断：检查正在编辑的草稿，可能稍后才放入启动节点。
+        workspace.Diagnostics.FollowsDocumentEntry = true;
+        workspace.Session = page.Session;
+        var monitor = new WorkflowSessionRuntimeMonitorSource(page.Session);
+        var commands = new WorkflowSubWorkflowRunCommands(page);
+        workspace.RuntimeMonitor.Source = monitor;
+        workspace.RunCommands = commands;
+        Closed += (_, _) =>
+        {
+            workspace.RunCommands = null;
+            workspace.RuntimeMonitor.Source = null;
+            commands.Dispose();
+            monitor.Dispose();
+        };
         // 子画布与主工作台一致：双击节点打开其节点窗口。
-        designer.NodeEditRequested += (_, node) => OpenSubWorkflowNode(page, node);
-        var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Height = 42 };
-        var fit = Button("适合画布");
-        var layout = Button("自动布局");
-        fit.Click += (_, _) => page.Session.FitToView(designer.ActualWidth, designer.ActualHeight);
-        layout.Click += (_, _) => page.Session.AutoLayout();
-        toolbar.Children.Add(fit);
-        toolbar.Children.Add(layout);
-        var canvas = new Grid();
-        canvas.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        canvas.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        canvas.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        canvas.RowDefinitions.Add(new RowDefinition { Height = new GridLength(140), MinHeight = 60 });
-        canvas.Children.Add(toolbar);
-        Grid.SetRow(designer, 1);
-        canvas.Children.Add(designer);
-        // 子画布自己的诊断：检查正在编辑的草稿，双击选中子画布内的问题节点。
-        var diagnosticsSplitter = new GridSplitter
-        {
-            Height = 5,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            ResizeDirection = GridResizeDirection.Rows,
-            Background = new SolidColorBrush(Color.FromRgb(51, 51, 55))
-        };
-        Grid.SetRow(diagnosticsSplitter, 2);
-        canvas.Children.Add(diagnosticsSplitter);
-        var diagnostics = new WorkflowDiagnosticsControl { FollowsDocumentEntry = true, Session = page.Session };
-        Grid.SetRow(diagnostics, 3);
-        canvas.Children.Add(diagnostics);
-
-        // 子画布与主工作台一致：左侧工具箱双击添加到画布中心，或直接拖放到画布。
-        var toolbox = new WorkflowToolboxControl { Session = page.Session };
-        toolbox.NodeTypeActivated += (_, item) =>
-        {
-            var center = WorkflowDesignerGeometry.ScreenToCanvas(page.Session, designer.ActualWidth / 2d, designer.ActualHeight / 2d);
-            page.Session.AddNode(item.NodeType, center.X - 90, center.Y - 30);
-        };
-        var layoutGrid = new Grid();
-        layoutGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200), MinWidth = 150 });
-        layoutGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
-        layoutGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 300 });
-        layoutGrid.Children.Add(toolbox);
-        var splitter = new GridSplitter { Width = 5, HorizontalAlignment = HorizontalAlignment.Stretch, Background = new SolidColorBrush(Color.FromRgb(51, 51, 55)) };
-        Grid.SetColumn(splitter, 1);
-        layoutGrid.Children.Add(splitter);
-        Grid.SetColumn(canvas, 2);
-        layoutGrid.Children.Add(canvas);
-        return layoutGrid;
+        workspace.Designer.NodeEditRequested += (_, node) => OpenSubWorkflowNode(page, node);
+        workspace.InteractionError += (_, message) =>
+            MessageBox.Show(this, message, "子画布", MessageBoxButton.OK, MessageBoxImage.Warning);
+        return workspace;
     }
 
     /// <summary>在本窗口之上打开子画布节点的节点窗口；应用写回子画布草稿，随本窗口确认或取消。</summary>

@@ -192,10 +192,100 @@ public sealed class LoopBlockNodeTests
         Assert.Contains("第 1 圈", result.Message);
     }
 
+    [Fact]
+    public async Task RunNodeAsync_RerunsOnlyTheLoopInTheFinishedRun_WithEditedConfiguration()
+    {
+        var initCount = 0;
+        var workCount = 0;
+        var actions = new WorkflowActionRegistry()
+            .Register("Init", (_, _) =>
+            {
+                initCount++;
+                return ValueTask.FromResult<object?>(null);
+            })
+            .Register("Work", (_, _) =>
+            {
+                workCount++;
+                return ValueTask.FromResult<object?>(null);
+            });
+        var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
+        var (document, loop) = ParentDocument(ChildDocument(withEnd: true), configured => configured.Iterations = 2);
+        using var host = new WorkflowRuntimeHost(Catalog(), Handlers());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => host.RunNodeAsync(document, loop.Id));
+        host.Configure(document, context);
+        Assert.True((await host.RunAsync()).Success);
+        var engine = host.Engine!;
+        var runId = engine.RunState.RunId;
+        var lastSequence = engine.GetTraceBatch().LastSequence;
+        var parentEndCount = engine.GetRuntimeSnapshot().Nodes["ParentEnd"].ExecutionCount;
+
+        // 节点窗口里改了循环次数但还没确认：按当前画布重新编译后单独运行循环块。
+        loop.Iterations = 3;
+        var result = await host.RunNodeAsync(document, loop.Id);
+
+        Assert.True(result.Success, result.Message);
+        Assert.Same(engine, host.Engine);
+        Assert.Equal(runId, engine.RunState.RunId);
+        Assert.Equal(1, initCount);
+        Assert.Equal(5, workCount);
+        var snapshot = engine.GetRuntimeSnapshot();
+        Assert.Equal(E_WorkflowExecutionState.Completed, snapshot.ExecutionState);
+        Assert.Equal(2, snapshot.Nodes[loop.Id].ExecutionCount);
+        Assert.Equal(parentEndCount, snapshot.Nodes["ParentEnd"].ExecutionCount);
+        Assert.True(context.TryGetNodeOutput(loop.Id, out var output));
+        Assert.Equal(3, Assert.IsType<LoopBlockNodeOutput>(output!.Value).CompletedCycles);
+        var trace = engine.GetTraceBatch(includeChildRuns: true).Entries;
+        Assert.Contains(trace, entry => entry.Step == "RunContinued" && entry.Sequence > lastSequence);
+        Assert.Equal(new[] { 1, 2, 3 }, trace
+            .Where(entry => entry.NodeId == "Work" && entry.Step == "NodeCompleted")
+            .Select(entry => Assert.Single(entry.Parents!).Cycle));
+    }
+
+    [Fact]
+    public async Task RunNodeAsync_IsRejectedWhileTheWorkflowRuns()
+    {
+        var gate = new TaskCompletionSource();
+        var actions = new WorkflowActionRegistry()
+            .Register("Init", (_, _) => ValueTask.FromResult<object?>(null))
+            .Register("Work", async (_, token) =>
+            {
+                await gate.Task.WaitAsync(token);
+                return null;
+            });
+        var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
+        var (document, loop) = ParentDocument(ChildDocument(withEnd: true), configured => configured.Iterations = 1);
+        using var host = new WorkflowRuntimeHost(Catalog(), Handlers());
+        host.Configure(document, context);
+        var running = host.RunAsync();
+        await WaitUntilAsync(() => host.State == E_WorkflowExecutionState.Running);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => host.RunNodeAsync(document, loop.Id));
+
+        gate.SetResult();
+        Assert.True((await running).Success);
+    }
+
     /// <summary>父流程：初始化 → 循环块 → 结束。</summary>
     private static (WorkflowEngine Engine, LoopBlockNodeModel Loop) CreateEngine(
         WorkflowDocument childDocument,
         WorkflowContext context,
+        Action<LoopBlockNodeModel> configure)
+    {
+        var (parentDocument, loop) = ParentDocument(childDocument, configure);
+        var definition = new WorkflowCompiler(Catalog()).Compile(parentDocument);
+        return (new WorkflowEngine(definition, Handlers(), context), loop);
+    }
+
+    private static WorkflowNodeCatalog Catalog() => new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes();
+
+    private static WorkflowNodeHandlerCatalog Handlers() => new WorkflowNodeHandlerCatalog()
+        .RegisterCompositeNodeHandlers()
+        .Register(new StartNodeHandler())
+        .Register(new ActionNodeHandler())
+        .Register(new EndNodeHandler());
+
+    private static (WorkflowDocument Document, LoopBlockNodeModel Loop) ParentDocument(
+        WorkflowDocument childDocument,
         Action<LoopBlockNodeModel> configure)
     {
         var init = new ActionNodeModel { Id = "Init", Title = "初始化", FunctionKey = "Init" };
@@ -210,14 +300,7 @@ public sealed class LoopBlockNodeTests
         parent.Connections.Add(Connect(init.Id, loop.Id));
         parent.Connections.Add(Connect(loop.Id, end.Id));
         parentDocument.EntryNodeId = init.Id;
-        var catalog = new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes();
-        var definition = new WorkflowCompiler(catalog).Compile(parentDocument);
-        var handlers = new WorkflowNodeHandlerCatalog()
-            .RegisterCompositeNodeHandlers()
-            .Register(new StartNodeHandler())
-            .Register(new ActionNodeHandler())
-            .Register(new EndNodeHandler());
-        return (new WorkflowEngine(definition, handlers, context), loop);
+        return (parentDocument, loop);
     }
 
     /// <summary>子画布：开始 → Work（→ 结束）。</summary>

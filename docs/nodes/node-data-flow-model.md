@@ -301,6 +301,7 @@ Handler/Operation返回成功
 - 没有默认周期间隔，一圈结束立即开始下一圈；每圈的运行记录在后台收尾，只有记录写出跟不上循环速度时才等待上一圈写完。
 - 停止立即取消当前圈；暂停传到最里层正在运行的子引擎，在下一个节点前停下（包括落在两圈之间的暂停），恢复后继续。
 - 运行观察：子运行（子流程、循环块各圈）的节点记录合并进父运行的轨迹（`WorkflowEngine.GetTraceBatch(includeChildRuns: true)`），条目的`Parents`标明所属复合节点和圈序号，运行监控显示为“循环块1·第3圈 › 找线1”。正在运行的一圈实时合并，已结束的各圈按父节点有界保留（`MaxTraceEntries`），父运行开始时清空。子流程快照`WorkflowChildRuntimeInfo.Cycle`给出当前圈。
+- 单独运行：`WorkflowEngine.RunNodeAsync(plan, nodeId)`（宿主入口 `IWorkflowRuntimeHost.RunNodeAsync(document, nodeId)`）在已结束的运行中再正常执行一个节点。运行标识、根 Token 身份和已提交输出沿用该次运行，所以上游输出可见；新输出取代该节点上一次的输出；节点状态、执行次数、记录序号接着该次运行继续（记录器以 `RunContinued` 事件续写同一 Run）。宿主只为该节点及其子画布做嵌套准备，不退役上一轮资源（上游图像仍可读），并像根运行一样取得本次运行作用域。只执行这一个节点，不沿连线继续。
 - 子运行内部节点的输出按子快照的运行标识读取（`WorkflowEngine.FindLatestNodeOutput(runId, nodeId)`），覆盖正在运行的子运行和每个父节点最近一次完成的子运行。
 
 ## 12. 故障与恢复中的数据

@@ -29,6 +29,19 @@ public interface IWorkflowRuntimeHost
     /// <exception cref="InvalidOperationException">尚未调用 <see cref="Configure"/>。</exception>
     Task<WorkflowRunResult> RunAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 在已结束的最近一次运行中再正常执行一个节点（例如单独运行复合节点的子画布）。
+    /// 输入取自该次运行已提交的输出，结果照常提交并取代该节点上一次的输出。
+    /// </summary>
+    /// <param name="document">当前画布文档（可含尚未保存的修改），按它重新编译后执行。</param>
+    /// <param name="nodeId">要执行的节点。</param>
+    /// <param name="cancellationToken">与宿主内部取消源链接的调用方令牌。</param>
+    /// <returns>该节点执行的结果。</returns>
+    /// <exception cref="InvalidOperationException">流程正在运行，或还没有运行过。</exception>
+    /// <exception cref="NotSupportedException">宿主不支持继续运行。</exception>
+    Task<WorkflowRunResult> RunNodeAsync(WorkflowDocument document, string nodeId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("当前运行宿主不支持单独运行节点。");
+
     /// <summary>请求人工暂停。</summary>
     void Pause();
 
