@@ -465,9 +465,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     {
         if (_session is null)
             return;
-        var spacing = 24 * _session.Zoom;
-        if (spacing < 8)
-            return;
+        var spacing = WorkflowDesignerGeometry.GridScreenSpacing(_session.Zoom);
         var pen = new Pen(Brush(67, 67, 70), 1);
         for (var x = _session.PanX % spacing; x < ActualWidth; x += spacing)
             context.DrawLine(pen, new Point(x, 0), new Point(x, ActualHeight));
@@ -516,17 +514,18 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         var state = _session.GetNodeState(item.Node.Id);
         var stateBrush = StateBrush(state);
         var selected = _session.SelectedNodeIds.Contains(item.Node.Id);
-        context.DrawRoundedRectangle(NodeBrush, null, bounds, 8, 8);
+        var corner = WorkflowDesignerGeometry.NodeCornerRadius(_session.Zoom);
+        context.DrawRoundedRectangle(NodeBrush, null, bounds, corner, corner);
         var headerHeight = Math.Min(rect.Height, WorkflowDesignerGeometry.HeaderHeight * _session.Zoom);
-        context.PushClip(new RectangleGeometry(bounds, 8, 8));
+        context.PushClip(new RectangleGeometry(bounds, corner, corner));
         context.DrawRectangle(HeaderBrush, null, new Rect(rect.X, rect.Y, Math.Max(0, rect.Width), Math.Max(0, headerHeight)));
         context.Pop();
         context.DrawRoundedRectangle(
             null,
-            new Pen(selected ? Freeze(new SolidColorBrush(Color.FromRgb(56, 189, 248))) : stateBrush, selected ? 3 : 2),
+            new Pen(selected ? Freeze(new SolidColorBrush(Color.FromRgb(56, 189, 248))) : stateBrush, WorkflowDesignerGeometry.NodeBorderWidth(_session.Zoom, selected)),
             bounds,
-            8,
-            8);
+            corner,
+            corner);
         var runtimeText = WorkflowDesignerInteraction.GetRuntimeDisplayText(_session, item);
         var runtimeMeasureSize = Math.Max(3, WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
         var measuredRuntimeWidth = string.IsNullOrEmpty(runtimeText)
@@ -816,7 +815,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             if (!connected && !semanticHandle) continue;
             var point = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports);
             // 多出口节点的每个出口都画成正常大小的连接点：已连线为实心，未连线为空心圈；失败出口用红色。
-            var radius = Math.Max(2.5, WorkflowDesignerGeometry.PortRadius * _session.Zoom * 0.72);
+            var radius = WorkflowDesignerGeometry.PortScreenRadius(_session.Zoom);
             var portBrush = direction == WorkflowPortDirection.Output && port.Key == WorkflowPorts.Failed ? Brush(239, 68, 68) : brush;
             context.DrawEllipse(
                 semanticHandle ? Brush(30, 41, 59) : portBrush,
@@ -912,14 +911,15 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         if (_session is null) return;
         var points = WorkflowDesignerInteraction.GetConnectionPath(_session, connection, start, end);
         DrawOrthogonalPath(context, pen, points);
-        DrawInsetArrow(context, pen.Brush, points);
+        DrawInsetArrow(context, pen.Brush, points, _session.Zoom);
     }
 
     /// <summary>在连接终点前绘制方向箭头。</summary>
     /// <param name="context">绘图上下文或当前编辑上下文。</param>
     /// <param name="brush">绘制使用的画刷。</param>
     /// <param name="points">路径点集合。</param>
-    private static void DrawInsetArrow(DrawingContext context, Brush brush, IReadOnlyList<WorkflowPoint> points)
+    /// <param name="zoom">当前缩放；箭头尺寸随缩放等比。</param>
+    private static void DrawInsetArrow(DrawingContext context, Brush brush, IReadOnlyList<WorkflowPoint> points, double zoom)
     {
         if (points.Count < 2) return;
         var end = points[^1];
@@ -927,17 +927,18 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         var dx = end.X - previous.X;
         var dy = end.Y - previous.Y;
         var length = Math.Sqrt(dx * dx + dy * dy);
-        if (length < 12) return;
+        var arrow = WorkflowDesignerGeometry.ConnectionArrow(zoom);
+        if (length < arrow.Inset + arrow.Length) return;
         var ux = dx / length;
         var uy = dy / length;
-        var tip = new Point(end.X - ux * 7, end.Y - uy * 7);
-        var center = new Point(tip.X - ux * 8, tip.Y - uy * 8);
+        var tip = new Point(end.X - ux * arrow.Inset, end.Y - uy * arrow.Inset);
+        var center = new Point(tip.X - ux * arrow.Length, tip.Y - uy * arrow.Length);
         var geometry = new StreamGeometry();
         using (var drawing = geometry.Open())
         {
             drawing.BeginFigure(tip, true, true);
-            drawing.LineTo(new Point(center.X - uy * 4, center.Y + ux * 4), true, false);
-            drawing.LineTo(new Point(center.X + uy * 4, center.Y - ux * 4), true, false);
+            drawing.LineTo(new Point(center.X - uy * arrow.HalfWidth, center.Y + ux * arrow.HalfWidth), true, false);
+            drawing.LineTo(new Point(center.X + uy * arrow.HalfWidth, center.Y - ux * arrow.HalfWidth), true, false);
         }
         geometry.Freeze();
         context.DrawGeometry(brush, null, geometry);
@@ -1016,7 +1017,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         foreach (var (port, side) in WorkflowDesignerInteraction.GetSideOverrideEndpoints(_session, node, direction))
         {
             var target = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports, side);
-            var radius = Math.Max(2, WorkflowDesignerGeometry.PortRadius * _session.Zoom * 0.72);
+            var radius = WorkflowDesignerGeometry.PortScreenRadius(_session.Zoom);
             var brush = direction == WorkflowPortDirection.Input ? Brush(167, 139, 250) : Brush(52, 211, 153);
             context.DrawEllipse(brush, new Pen(CanvasBrush, 1.25), new Point(target.X, target.Y), radius, radius);
             if (WorkflowDesignerInteraction.ShouldDrawPortLabel(_session, node, direction))

@@ -108,6 +108,64 @@ public sealed class WorkflowDesignerInteractionTests
     }
 
     [Fact]
+    public void ConnectionPath_IsRoutedOnGrid_AndKeepsItsShapeAtEveryZoom()
+    {
+        var session = new WorkflowDesignerSession(new WorkflowDocument(), new WorkflowNodeCatalog().RegisterStandardNodes());
+        // 与截图相同的结构：并行节点两个分支，分支目标左右错开，中间有一个不相关节点挡路。
+        var source = session.AddNode("ParallelAll", 240, 0);
+        var left = session.AddNode("Delay", 0, 192);
+        var right = session.AddNode("Delay", 480, 192);
+        var blocker = session.AddNode("Delay", 240, 192);
+        var toLeft = session.Connect(source.Node.Id, WorkflowPorts.Branch, left.Node.Id);
+        var toRight = session.Connect(source.Node.Id, WorkflowPorts.Branch, right.Node.Id);
+        IReadOnlyList<WorkflowPoint> CanvasPath(WorkflowConnectionModel connection) => WorkflowDesignerInteraction.GetConnectionPath(session, connection)
+            .Select(point => WorkflowDesignerGeometry.ScreenToCanvas(session, point.X, point.Y)).ToArray();
+        session.SetViewport(1, 24, 24);
+        var normal = new[] { CanvasPath(toLeft), CanvasPath(toRight) };
+        // 端点（端口）与所有拐点都在栅格线上。
+        foreach (var path in normal)
+            foreach (var point in path)
+            {
+                Assert.Equal(0, Math.Abs(point.X % WorkflowDesignerGeometry.GridSize), 6);
+                Assert.Equal(0, Math.Abs(point.Y % WorkflowDesignerGeometry.GridSize), 6);
+            }
+        // 从同一出口分出的两条连线在同一条栅格线上拐弯。
+        Assert.Equal(normal[0][1].Y, normal[1][1].Y, 6);
+        foreach (var zoom in new[] { .25, .5, 2.0 })
+        {
+            session.SetViewport(zoom, 37, -11);
+            var scaled = new[] { CanvasPath(toLeft), CanvasPath(toRight) };
+            for (int i = 0; i < 2; i++)
+            {
+                Assert.Equal(normal[i].Count, scaled[i].Count);
+                for (int k = 0; k < normal[i].Count; k++)
+                {
+                    Assert.Equal(normal[i][k].X, scaled[i][k].X, 6);
+                    Assert.Equal(normal[i][k].Y, scaled[i][k].Y, 6);
+                }
+            }
+        }
+        _ = blocker;
+    }
+
+    [Fact]
+    public void ZoomedOutDrawing_KeepsGridAndShapesProportional()
+    {
+        // 缩小后栅格按2的幂合并成粗栅格而不是消失，间距仍是设计栅格的整数倍。
+        foreach (var zoom in new[] { 1.0, .3, .1, .05 })
+        {
+            var spacing = WorkflowDesignerGeometry.GridScreenSpacing(zoom);
+            Assert.True(spacing >= 8);
+            var cells = spacing / (WorkflowDesignerGeometry.GridSize * zoom);
+            Assert.Equal(Math.Round(cells), cells, 6);
+        }
+        // 圆角随缩放等比，任何缩放下都小于节点高度的一半（不会变成胶囊）。
+        foreach (var zoom in new[] { .2, .5, 1.0, 2.0 })
+            Assert.True(WorkflowDesignerGeometry.NodeCornerRadius(zoom) * 2 < WorkflowDesignerGeometry.QuantizeNodeHeight(WorkflowDesignerGeometry.MinimumNodeHeight) * zoom);
+        Assert.True(WorkflowDesignerGeometry.ConnectionArrow(.25).Length < WorkflowDesignerGeometry.ConnectionArrow(1).Length);
+    }
+
+    [Fact]
     public void HitConnection_InsertionAndWaypoint_FollowTheRoutedPath()
     {
         var (session, _, _, connection) = CreateConnectedSession();

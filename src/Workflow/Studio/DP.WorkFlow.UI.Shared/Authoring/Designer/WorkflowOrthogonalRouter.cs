@@ -225,7 +225,7 @@ public static class WorkflowOrthogonalRouter
     /// <param name="end">路径终点。</param>
     private static IReadOnlyList<WorkflowPoint> SimpleFallback(WorkflowPoint start, WorkflowPoint end)
     {
-        var middleX = (start.X + end.X) / 2;
+        var middleX = WorkflowDesignerGeometry.SnapToGrid((start.X + end.X) / 2);
         return Compact(new[] { start, new WorkflowPoint(middleX, start.Y), new WorkflowPoint(middleX, end.Y), end });
     }
 

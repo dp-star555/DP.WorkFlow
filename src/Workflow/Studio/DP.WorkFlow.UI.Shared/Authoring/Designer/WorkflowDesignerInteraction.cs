@@ -21,7 +21,7 @@ public static class WorkflowDesignerInteraction
 {
     private const double PortHitRadius = 10;
     private const double WaypointHitHalfSize = 9;
-    private const double ObstacleMargin = 14;
+    /// <summary>路由时只考虑端点包围盒外扩这么多画布单位内的节点。</summary>
     private const double ObstacleSearchMargin = 160;
 
     /// <summary>返回指定屏幕坐标命中的最上层节点。</summary>
@@ -228,42 +228,39 @@ public static class WorkflowDesignerInteraction
             : Array.Empty<WorkflowPoint>();
     }
 
-    /// <summary>以已知屏幕端点计算连接经过障碍物路由后的屏幕路径。</summary>
+    /// <summary>
+    /// 以已知屏幕端点计算连接经过障碍物路由后的屏幕路径。路由在画布坐标里进行：引线长 1 格，障碍物按节点外扩 1 格（节点边在栅格线上，
+    /// 外扩后的边也在栅格线上），因此拐点落在栅格线上，且路径形状不随缩放改变；最后再换算成屏幕坐标。
+    /// </summary>
     public static IReadOnlyList<WorkflowPoint> GetConnectionPath(
         WorkflowDesignerSession session,
         WorkflowConnectionModel connection,
         WorkflowPoint start,
         WorkflowPoint end)
     {
-        var waypoints = connection.Waypoints
-            .Select(point => WorkflowDesignerGeometry.CanvasToScreen(session, point.X, point.Y))
-            .ToArray();
+        var canvasStart = WorkflowDesignerGeometry.ScreenToCanvas(session, start.X, start.Y);
+        var canvasEnd = WorkflowDesignerGeometry.ScreenToCanvas(session, end.X, end.Y);
+        var grid = WorkflowDesignerGeometry.GridSize;
         var search = new WorkflowDesignerRect(
-            Math.Min(start.X, end.X) - ObstacleSearchMargin,
-            Math.Min(start.Y, end.Y) - ObstacleSearchMargin,
-            Math.Abs(end.X - start.X) + ObstacleSearchMargin * 2,
-            Math.Abs(end.Y - start.Y) + ObstacleSearchMargin * 2);
+            Math.Min(canvasStart.X, canvasEnd.X) - ObstacleSearchMargin,
+            Math.Min(canvasStart.Y, canvasEnd.Y) - ObstacleSearchMargin,
+            Math.Abs(canvasEnd.X - canvasStart.X) + ObstacleSearchMargin * 2,
+            Math.Abs(canvasEnd.Y - canvasStart.Y) + ObstacleSearchMargin * 2);
         var obstacles = session.Canvas.Nodes
             .Where(node => node.Node.Id != connection.FromNodeId && node.Node.Id != connection.ToNodeId)
-            .Select(node =>
-            {
-                var rect = WorkflowDesignerGeometry.GetNodeScreenRect(session, node);
-                return new WorkflowDesignerRect(
-                    rect.X - ObstacleMargin,
-                    rect.Y - ObstacleMargin,
-                    rect.Width + ObstacleMargin * 2,
-                    rect.Height + ObstacleMargin * 2);
-            })
+            .Select(node => new WorkflowDesignerRect(node.X - grid, node.Y - grid, node.Width + grid * 2, node.Height + grid * 2))
             .Where(rect => rect.X <= search.X + search.Width && rect.X + rect.Width >= search.X
                 && rect.Y <= search.Y + search.Height && rect.Y + rect.Height >= search.Y)
             .ToArray();
-        return WorkflowOrthogonalRouter.Route(
-            start,
-            end,
+        var route = WorkflowOrthogonalRouter.Route(
+            canvasStart,
+            canvasEnd,
             connection.FromSide ?? FindPortSide(session, connection.FromNodeId, connection.FromPort, WorkflowPortDirection.Output),
             connection.ToSide ?? FindPortSide(session, connection.ToNodeId, connection.ToPort, WorkflowPortDirection.Input),
-            waypoints,
-            obstacles);
+            connection.Waypoints.ToArray(),
+            obstacles,
+            grid);
+        return route.Select(point => WorkflowDesignerGeometry.CanvasToScreen(session, point.X, point.Y)).ToArray();
     }
 
     /// <summary>判断端口在指定边是否存在连接。</summary>
@@ -318,7 +315,8 @@ public static class WorkflowDesignerInteraction
 
     /// <summary>多输出、非 Success 输出、有备注或已停用的连接需要显示标签。</summary>
     public static bool ShouldDrawConnectionLabel(WorkflowDesignerSession session, WorkflowConnectionModel connection) =>
-        HasSemanticLabel(session, connection) || !string.IsNullOrWhiteSpace(connection.Note) || !connection.Enabled;
+        session.Zoom >= WorkflowDesignerGeometry.ConnectionLabelMinimumZoom
+        && (HasSemanticLabel(session, connection) || !string.IsNullOrWhiteSpace(connection.Note) || !connection.Enabled);
 
     private static bool HasSemanticLabel(WorkflowDesignerSession session, WorkflowConnectionModel connection) =>
         session.GetPorts(connection.FromNodeId, WorkflowPortDirection.Output).Count > 1

@@ -500,9 +500,7 @@ public sealed partial class WorkflowDesignerControl : Control
         graphics.Clear(BackColor);
         if (_session is null)
             return;
-        var spacing = 24 * _session.Zoom;
-        if (spacing < 8)
-            return;
+        var spacing = WorkflowDesignerGeometry.GridScreenSpacing(_session.Zoom);
         using var pen = new Pen(WorkflowWinFormsStyle.Get().Grid, 1);
         var startX = _session.PanX % spacing;
         var startY = _session.PanY % spacing;
@@ -551,9 +549,9 @@ public sealed partial class WorkflowDesignerControl : Control
         var selected = _session.SelectedNodeIds.Contains(item.Node.Id);
         var state = _session.GetNodeState(item.Node.Id);
         var stateColor = StateColor(state);
-        using var path = RoundedRectangle(bounds, 8);
+        using var path = RoundedRectangle(bounds, (float)WorkflowDesignerGeometry.NodeCornerRadius(_session.Zoom));
         using var fill = new SolidBrush(WorkflowWinFormsStyle.Get().Surface);
-        using var border = new Pen(selected ? Color.FromArgb(56, 189, 248) : stateColor, selected ? 3f : 2f);
+        using var border = new Pen(selected ? Color.FromArgb(56, 189, 248) : stateColor, (float)WorkflowDesignerGeometry.NodeBorderWidth(_session.Zoom, selected));
         graphics.FillPath(fill, path);
         var headerHeight = (float)Math.Min(rect.Height, WorkflowDesignerGeometry.HeaderHeight * _session.Zoom);
         using var header = new SolidBrush(Color.FromArgb(51, 51, 55));
@@ -861,7 +859,7 @@ public sealed partial class WorkflowDesignerControl : Control
             if (!connected && !semanticHandle) continue;
             var point = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports);
             // 多出口节点的每个出口都画成正常大小的连接点：已连线为实心，未连线为空心圈；失败出口用红色。
-            var radius = (float)Math.Max(2.5, WorkflowDesignerGeometry.PortRadius * _session.Zoom * 0.72);
+            var radius = (float)WorkflowDesignerGeometry.PortScreenRadius(_session.Zoom);
             var failed = direction == WorkflowPortDirection.Output && port.Key == WorkflowPorts.Failed;
             using var portFill = new SolidBrush(failed ? Color.FromArgb(239, 68, 68) : fill.Color);
             if (semanticHandle)
@@ -1195,14 +1193,15 @@ public sealed partial class WorkflowDesignerControl : Control
             .Select(point => new PointF((float)point.X, (float)point.Y))
             .ToArray();
         graphics.DrawLines(pen, points);
-        DrawInsetArrow(graphics, pen.Color, points);
+        DrawInsetArrow(graphics, pen.Color, points, _session.Zoom);
     }
 
     /// <summary>在连接终点前绘制方向箭头。</summary>
     /// <param name="graphics">GDI+ 绘图表面。</param>
     /// <param name="color">“color”参数。</param>
     /// <param name="points">路径点集合。</param>
-    private static void DrawInsetArrow(Graphics graphics, Color color, IReadOnlyList<PointF> points)
+    /// <param name="zoom">当前缩放；箭头尺寸随缩放等比。</param>
+    private static void DrawInsetArrow(Graphics graphics, Color color, IReadOnlyList<PointF> points, double zoom)
     {
         if (points.Count < 2) return;
         var end = points[^1];
@@ -1210,13 +1209,14 @@ public sealed partial class WorkflowDesignerControl : Control
         var dx = end.X - previous.X;
         var dy = end.Y - previous.Y;
         var length = Math.Sqrt(dx * dx + dy * dy);
-        if (length < 12) return;
+        var arrow = WorkflowDesignerGeometry.ConnectionArrow(zoom);
+        if (length < arrow.Inset + arrow.Length) return;
         var ux = (float)(dx / length);
         var uy = (float)(dy / length);
-        var tip = new PointF(end.X - ux * 7, end.Y - uy * 7);
-        var center = new PointF(tip.X - ux * 8, tip.Y - uy * 8);
-        var perpendicularX = -uy * 4;
-        var perpendicularY = ux * 4;
+        var tip = new PointF(end.X - ux * (float)arrow.Inset, end.Y - uy * (float)arrow.Inset);
+        var center = new PointF(tip.X - ux * (float)arrow.Length, tip.Y - uy * (float)arrow.Length);
+        var perpendicularX = -uy * (float)arrow.HalfWidth;
+        var perpendicularY = ux * (float)arrow.HalfWidth;
         using var brush = new SolidBrush(color);
         graphics.FillPolygon(brush, new[]
         {
@@ -1290,7 +1290,7 @@ public sealed partial class WorkflowDesignerControl : Control
         foreach (var (port, side) in WorkflowDesignerInteraction.GetSideOverrideEndpoints(_session, node, direction))
         {
             var target = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports, side);
-            var radius = (float)Math.Max(2, WorkflowDesignerGeometry.PortRadius * _session.Zoom * 0.72);
+            var radius = (float)WorkflowDesignerGeometry.PortScreenRadius(_session.Zoom);
             using var fill = new SolidBrush(direction == WorkflowPortDirection.Input
                 ? Color.FromArgb(167, 139, 250)
                 : Color.FromArgb(52, 211, 153));

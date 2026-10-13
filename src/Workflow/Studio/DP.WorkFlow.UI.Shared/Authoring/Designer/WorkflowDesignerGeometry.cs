@@ -28,6 +28,59 @@ public readonly record struct WorkflowNodeHeaderLayout(
 /// <summary>提供画布与屏幕坐标换算。</summary>
 public static class WorkflowDesignerGeometry
 {
+    /// <summary>
+    /// 设计栅格边长（画布单位）。节点、端口、连线拐点与绘制的栅格线共用这一个值：
+    /// 节点宽为 2 格整数倍、高为整格，吸附后四条边与居中端口都落在栅格线上；连线在画布坐标里按栅格路由，任何缩放下形状一致。
+    /// </summary>
+    public const double GridSize = 24;
+
+    /// <summary>把画布坐标就近吸附到栅格线。</summary>
+    /// <param name="value">画布坐标。</param>
+    public static double SnapToGrid(double value) => Math.Round(value / GridSize) * GridSize;
+
+    /// <summary>节点宽度向上取到 2 格的整数倍，使居中端口也落在栅格线上。</summary>
+    /// <param name="width">内容所需宽度。</param>
+    public static double QuantizeNodeWidth(double width) => Math.Max(2, Math.Ceiling(width / (2 * GridSize) - 1e-9)) * 2 * GridSize;
+
+    /// <summary>节点高度向上取整格。</summary>
+    /// <param name="height">内容所需高度。</param>
+    public static double QuantizeNodeHeight(double height) => Math.Max(1, Math.Ceiling(height / GridSize - 1e-9)) * GridSize;
+
+    /// <summary>
+    /// 屏幕上绘制的栅格间距：设计栅格乘以缩放；小于 8 像素时按 2 的幂合并成粗栅格，栅格线仍是设计栅格的整数倍，不会因缩小而消失或错位。
+    /// </summary>
+    /// <param name="zoom">当前缩放。</param>
+    public static double GridScreenSpacing(double zoom)
+    {
+        var spacing = GridSize * Math.Max(0.01, zoom);
+        while (spacing < 8) spacing *= 2;
+        return spacing;
+    }
+
+    /// <summary>节点圆角半径（屏幕像素），随缩放等比，缩小时不会变成胶囊形。</summary>
+    /// <param name="zoom">当前缩放。</param>
+    public static double NodeCornerRadius(double zoom) => Math.Max(1, 8 * zoom);
+
+    /// <summary>节点边框宽度（屏幕像素）。</summary>
+    /// <param name="zoom">当前缩放。</param>
+    /// <param name="selected">是否选中。</param>
+    public static double NodeBorderWidth(double zoom, bool selected) => Math.Max(1, Math.Min(selected ? 3 : 2, (selected ? 3 : 2) * zoom));
+
+    /// <summary>端口圆点半径（屏幕像素）。</summary>
+    /// <param name="zoom">当前缩放。</param>
+    public static double PortScreenRadius(double zoom) => Math.Max(1.5, PortRadius * zoom * 0.72);
+
+    /// <summary>连线终点箭头：长度、半宽以及箭尖距端口中心的内缩（屏幕像素），随缩放等比并限制在可辨认范围内。</summary>
+    /// <param name="zoom">当前缩放。</param>
+    public static (double Length, double HalfWidth, double Inset) ConnectionArrow(double zoom)
+    {
+        var length = Math.Max(3, Math.Min(12, 8 * zoom));
+        return (length, length / 2, PortScreenRadius(zoom) + Math.Max(1, 2 * zoom));
+    }
+
+    /// <summary>连接标签在缩放小于此值时不绘制（文字已不可读，只会遮挡连线）。</summary>
+    public const double ConnectionLabelMinimumZoom = 0.5;
+
     /// <summary>节点标题区域的设计高度。</summary>
     public const double HeaderHeight = 32;
     /// <summary>节点允许的最小设计高度。</summary>

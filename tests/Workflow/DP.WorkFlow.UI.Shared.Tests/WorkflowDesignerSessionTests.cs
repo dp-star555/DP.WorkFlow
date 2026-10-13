@@ -14,8 +14,13 @@ public sealed class WorkflowDesignerSessionTests
         var node = session.AddNode("Delay", 37, 61);
         session.MoveNode(node.Node.Id, 103, 107);
 
+        // 宽为2格整数倍、高为整格；横向中心和左右边、纵向上下边都落在栅格线上。
+        Assert.Equal(0, node.Width % 48, 6);
+        Assert.Equal(0, node.Height % 24, 6);
         Assert.Equal(0, (node.X + node.Width / 2) % 24, 6);
-        Assert.Equal(0, (node.Y + node.Height / 2) % 24, 6);
+        Assert.Equal(0, node.X % 24, 6);
+        Assert.Equal(0, node.Y % 24, 6);
+        Assert.Equal(0, (node.Y + node.Height) % 24, 6);
     }
 
     [Fact]
@@ -30,7 +35,7 @@ public sealed class WorkflowDesignerSessionTests
 
         Assert.Equal(140, canvas.Nodes[0].Height);
         Assert.True(session.NormalizeLayout());
-        Assert.Equal(WorkflowDesignerGeometry.MinimumNodeHeight, canvas.Nodes[0].Height);
+        Assert.Equal(WorkflowDesignerGeometry.QuantizeNodeHeight(WorkflowDesignerGeometry.MinimumNodeHeight), canvas.Nodes[0].Height);
         Assert.True(session.Undo());
         Assert.Equal(140, canvas.Nodes[0].Height);
     }
