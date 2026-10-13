@@ -22,6 +22,6 @@ public sealed class CreateVisionRegionNodeHandler : WorkflowNodeHandler<CreateVi
         var range = node.ResolveRange(frame, context, cancellationToken);
         var result = new RegionAnalysisResult(frame.FrameId, frame.Image.Info.Width, frame.Image.Info.Height, range.ToRegion(cancellationToken));
         if (range.Coordinates is not null) result = result.InCoordinates(range.Coordinates);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: result, projection: WorkflowVisionFrameScope.Stage(context, frame, result)));
     }
 }

@@ -32,7 +32,7 @@ public sealed class WorkflowBindingResolver
     /// <exception cref="WorkflowBindingException">来源不可见、成员路径无效或值不能转换为 <typeparamref name="T"/>。</exception>
     public T? Resolve<T>(WorkflowInput<T> input)
     {
-        ArgumentNullException.ThrowIfNull(input);
+        Guard.NotNull(input);
         var validationError = input.Validate();
         if (validationError is not null)
             throw new InvalidOperationException(validationError);
@@ -72,7 +72,7 @@ public sealed class WorkflowBindingResolver
     /// <exception cref="WorkflowBindingException">来源不可见、成员路径无效或值不能转换为 <typeparamref name="T"/>。</exception>
     internal WorkflowInputBindingResult<T> ResolveWithSource<T>(WorkflowInput<T> input)
     {
-        ArgumentNullException.ThrowIfNull(input);
+        Guard.NotNull(input);
         var validationError = input.Validate();
         if (validationError is not null)
             throw new InvalidOperationException(validationError);
@@ -116,7 +116,7 @@ public sealed class WorkflowBindingResolver
     /// <remarks>该方法绕过 Token/Scope 可见性检查，不应作为普通节点输入解析入口。</remarks>
     public static T? ResolveLatest<T>(WorkflowContext context, WorkflowBindingKey binding)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        Guard.NotNull(context);
         object? root;
         if (binding.IsPublicData)
         {
@@ -137,7 +137,7 @@ public sealed class WorkflowBindingResolver
     /// <summary>按最近一次运行的 Latest 输出解析输入（固定值照常返回）；只用于编辑器试运行，不校验 Token/Scope 可见性。</summary>
     internal static T? ResolveLatestInput<T>(WorkflowContext context, WorkflowInput<T> input)
     {
-        ArgumentNullException.ThrowIfNull(input);
+        Guard.NotNull(input);
         var validationError = input.Validate();
         if (validationError is not null)
             throw new InvalidOperationException(validationError);
@@ -193,7 +193,7 @@ public sealed class WorkflowBindingResolver
         // 静态计划失败时，按运行时对象逐段读取，允许经过按键寻址的输出。
         object? current = root;
         bool keyed = false;
-        foreach (var name in binding.MemberPath.Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        foreach (var name in Polyfill.SplitTrimmed(binding.MemberPath, '.'))
         {
             if (current is null)
                 throw new WorkflowBindingException(binding, $"读取成员 {name} 前对象已经为空。");
@@ -232,7 +232,7 @@ public sealed class WorkflowBindingResolver
     /// <returns>属性链；路径无效时返回携带错误文本的失败计划。</returns>
     private static BindingPathPlan BuildPlan(Type rootType, string memberPath)
     {
-        var names = memberPath.Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var names = Polyfill.SplitTrimmed(memberPath, '.');
         if (names.Length == 0)
             return BindingPathPlan.Failed("成员路径为空。");
 

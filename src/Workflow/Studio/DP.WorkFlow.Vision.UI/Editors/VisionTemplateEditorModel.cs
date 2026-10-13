@@ -83,18 +83,18 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
         else if (parameter.ValueType != typeof(string))
         {
             var value = Convert.ChangeType(text, parameter.ValueType, CultureInfo.InvariantCulture); var number = Convert.ToDouble(value, CultureInfo.InvariantCulture);
-            if (!double.IsFinite(number) || number < parameter.Minimum || number > parameter.Maximum)
+            if (!Polyfill.IsFinite(number) || number < parameter.Minimum || number > parameter.Maximum)
                 throw new ArgumentOutOfRangeException(parameter.Id, text, $"{parameter.DisplayName}超出允许范围：{parameter.Minimum?.ToString(CultureInfo.InvariantCulture) ?? "无下限"}～{parameter.Maximum?.ToString(CultureInfo.InvariantCulture) ?? "无上限"}；输入值：{text}。");
         }
         if (ParameterValue(parameter) == text) { _failure = null; Status = BuildState; return; }
         _settings[parameter.Id] = text; Invalidate();
     }
     /// <summary>样图中的原点X。</summary>
-    public double OriginX { get => _originX; set { if (!double.IsFinite(value)) throw new ArgumentException("原点必须有限。"); if (_originX != value) { _originX = value; Invalidate(); } } }
+    public double OriginX { get => _originX; set { if (!Polyfill.IsFinite(value)) throw new ArgumentException("原点必须有限。"); if (_originX != value) { _originX = value; Invalidate(); } } }
     /// <summary>样图中的原点Y。</summary>
-    public double OriginY { get => _originY; set { if (!double.IsFinite(value)) throw new ArgumentException("原点必须有限。"); if (_originY != value) { _originY = value; Invalidate(); } } }
+    public double OriginY { get => _originY; set { if (!Polyfill.IsFinite(value)) throw new ArgumentException("原点必须有限。"); if (_originY != value) { _originY = value; Invalidate(); } } }
     /// <summary>参考X轴顺时针弧度。</summary>
-    public double AxisAngleRadians { get => _axisAngle; set { if (!double.IsFinite(value)) throw new ArgumentException("方向必须有限。"); if (_axisAngle != value) { _axisAngle = value; Invalidate(); } } }
+    public double AxisAngleRadians { get => _axisAngle; set { if (!Polyfill.IsFinite(value)) throw new ArgumentException("方向必须有限。"); if (_axisAngle != value) { _axisAngle = value; Invalidate(); } } }
     /// <summary>状态说明。</summary>
     public string Status { get; private set; } = "空白模板：读取样图、使用当前输入，或选择已制作的模板。";
     /// <summary>显式刷新后的配方模板列表；打开属性面板不进行文件扫描。</summary>
@@ -116,7 +116,7 @@ public sealed partial class VisionTemplateEditorModel : IDisposable
     public TemplatePoseResult? TrialResult => _trial;
     private void OnChanged(object? sender, RoiDocumentChangedEventArgs e) => Invalidate();
     private void Invalidate() { _dirty = true; _generation++; ResetBuildVerification(); ResetTrial(); Status = "模板制作配置已变化，需要生成模型后应用。"; }
-    private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+    private void ThrowIfDisposed() => Guard.NotDisposed(_disposed, this);
 
     /// <summary>独立复制输入预览，释放运行帧租约。</summary>
     public void UseInput()

@@ -98,7 +98,11 @@ internal sealed class WorkflowOutputValueExtractor
         string or char or bool => true,
         byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal => true,
         Enum => true,
+#if NETFRAMEWORK
+        Guid or DateTime or DateTimeOffset or TimeSpan => true,
+#else
         Guid or DateTime or DateTimeOffset or TimeSpan or DateOnly or TimeOnly => true,
+#endif
         byte[] => true,
         Array => true,
         IDictionary => true,

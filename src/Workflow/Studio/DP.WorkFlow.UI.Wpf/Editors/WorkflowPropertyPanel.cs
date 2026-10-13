@@ -499,14 +499,9 @@ public sealed class WorkflowPropertyPanel : UserControl
             }
             else
             {
-                var dialog = new Microsoft.Win32.OpenFolderDialog
-                {
-                    Title = string.IsNullOrWhiteSpace(entry.EditorDialogTitle) ? $"选择{entry.DisplayName}" : entry.EditorDialogTitle,
-                    Multiselect = false,
-                    InitialDirectory = Directory.Exists(text.Text) ? text.Text : string.Empty
-                };
-                if (dialog.ShowDialog(Window.GetWindow(this)) != true) return;
-                text.Text = dialog.FolderName;
+                var title = string.IsNullOrWhiteSpace(entry.EditorDialogTitle) ? $"选择{entry.DisplayName}" : entry.EditorDialogTitle;
+                if (!WorkflowFolderPicker.TrySelect(Window.GetWindow(this), title, text.Text, out var folder)) return;
+                text.Text = folder;
             }
             shown = text.Text;
             TryEdit(() => _model!.SetValue(entry, text.Text));
@@ -662,7 +657,7 @@ public sealed class WorkflowPropertyPanel : UserControl
         var panel = new Grid { Margin = new Thickness(3) };
         panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.42, GridUnitType.Star) });
         panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.58, GridUnitType.Star) });
-        var source = Combo(Enum.GetValues<WorkflowValueSource>().Cast<object>());
+        var source = Combo(Polyfill.GetEnumValues<WorkflowValueSource>().Cast<object>());
         source.SelectedItem = entry.GetInputSource();
         panel.Children.Add(source);
 

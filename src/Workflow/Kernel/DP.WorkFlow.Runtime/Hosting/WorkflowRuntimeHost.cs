@@ -94,7 +94,7 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
     public void Configure(WorkflowDocument document, WorkflowContext? context = null)
     {
         ThrowIfDisposed();
-        ArgumentNullException.ThrowIfNull(document);
+        Guard.NotNull(document);
         var plan = new WorkflowCompiler(_nodeCatalog).Compile(document);
         ConfigurePlan(plan, context);
     }
@@ -103,7 +103,7 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
     public void ConfigurePlan(WorkflowExecutionPlan plan, WorkflowContext? context = null)
     {
         ThrowIfDisposed();
-        ArgumentNullException.ThrowIfNull(plan);
+        Guard.NotNull(plan);
         var boundPlan = new WorkflowRuntimeBinder(_handlerCatalog).Bind(plan);
         lock (_syncRoot)
         {
@@ -158,8 +158,8 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
     public Task<WorkflowRunResult> RunNodeAsync(WorkflowDocument document, string nodeId, CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        ArgumentNullException.ThrowIfNull(document);
-        ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+        Guard.NotNull(document);
+        Guard.NotNullOrWhiteSpace(nodeId);
         // 先在调用线程编译：画布有错误时直接抛出，不改动最近一次运行。
         var plan = new WorkflowCompiler(_nodeCatalog).Compile(document);
         if (!plan.Nodes.ContainsKey(nodeId))
@@ -470,7 +470,7 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
             throw new InvalidOperationException("流程运行期间不能重新 Configure。");
     }
 
-    private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+    private void ThrowIfDisposed() => Guard.NotDisposed(_disposed, this);
 
     private static void SafeInvoke<T>(Action<T>? handlers, T argument)
     {

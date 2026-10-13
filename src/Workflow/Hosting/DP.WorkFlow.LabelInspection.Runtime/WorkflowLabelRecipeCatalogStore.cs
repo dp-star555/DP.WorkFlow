@@ -88,7 +88,7 @@ public static class WorkflowLabelRecipeCatalogStore
         var index = WorkflowLabelInspectionResources.ResolvePath(root, indexPath);
         Directory.CreateDirectory(Path.GetDirectoryName(index)!);
         // 文件锁跨进程协调发布，最多等待30秒；不以进程static字典永久持有目录锁。
-        await using var fileLock = await AcquirePublishLockAsync(WorkflowLabelInspectionResources.ResolvePath(root, indexPath + ".publish.lock"), token).ConfigureAwait(false);
+        using var fileLock = await AcquirePublishLockAsync(WorkflowLabelInspectionResources.ResolvePath(root, indexPath + ".publish.lock"), token).ConfigureAwait(false);
         var entries = File.Exists(index) ? (await ReadIndexAsync(root, indexPath, token).ConfigureAwait(false)).ToList() : [];
         if (entries.FirstOrDefault(e => e.Key == entry.Key) is { } old)
         {
@@ -126,7 +126,7 @@ public static class WorkflowLabelRecipeCatalogStore
     private static async Task WriteAtomicAsync(string path, byte[] bytes, CancellationToken token)
     {
         var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try { await File.WriteAllBytesAsync(temporary, bytes, token).ConfigureAwait(false); token.ThrowIfCancellationRequested(); File.Move(temporary, path, true); }
+        try { await Polyfill.WriteAllBytesAsync(temporary, bytes, token).ConfigureAwait(false); token.ThrowIfCancellationRequested(); Polyfill.MoveFile(temporary, path, true); }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
     internal static void ValidateId(string id, int version)
@@ -136,11 +136,11 @@ public static class WorkflowLabelRecipeCatalogStore
     }
     private static void ValidateHash(string hash)
     {
-        if (hash is null || hash.Length != 64 || hash.Any(c => !char.IsAsciiHexDigit(c))) throw new InvalidDataException("配方/资产SHA256无效。");
+        if (hash is null || hash.Length != 64 || hash.Any(c => !Polyfill.IsAsciiHexDigit(c))) throw new InvalidDataException("配方/资产SHA256无效。");
     }
     private static void ValidateProfile(string root, WorkflowLabelRecipeProfile profile, bool requireAssetHashes = false)
     {
-        ArgumentNullException.ThrowIfNull(profile); ValidateId(profile.Id, profile.Version);
+        Guard.NotNull(profile); ValidateId(profile.Id, profile.Version);
         var node = new InspectLabelNodeModel { ResourceRoot = root, Frame = WorkflowInput<DP.Vision.ImageFrame>.FromBinding(new("source", "$")) };
         profile.ApplyTo(node);
         var errors = node.ValidateConfiguration();

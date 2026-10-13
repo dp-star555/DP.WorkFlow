@@ -22,7 +22,7 @@ public sealed class MeasureVisionPointLineDistanceNodeModel : WorkflowVisionGeom
     public override IReadOnlyList<string> ValidateConfiguration()
     {
         var errors = base.ValidateConfiguration().ToList();
-        if (!IsBound(Point) || !IsBound(Line) || !Enum.IsDefined(Space) || !Enum.IsDefined(Mode)) errors.Add("点到线必须配置强类型输入和有效测量模式。");
+        if (!IsBound(Point) || !IsBound(Line) || !Polyfill.IsDefined(Space) || !Polyfill.IsDefined(Mode)) errors.Add("点到线必须配置强类型输入和有效测量模式。");
         return errors;
     }
 }

@@ -40,23 +40,29 @@ public sealed class VisionTemplateEditingRuntime(VisionAlgorithmCatalog catalog,
         return Task.Run<IReadOnlyList<VisionTemplateResourceChoice>>(() =>
         {
             var result = new List<VisionTemplateResourceChoice>();
+            // 跳过重解析点（符号链接、联接）；4.8 没有 EnumerationOptions，枚举后按属性过滤。
+            static IEnumerable<string> RealDirectories(string path) =>
+#if NETFRAMEWORK
+                Directory.EnumerateDirectories(path, "*").Where(item => (File.GetAttributes(item) & FileAttributes.ReparsePoint) == 0);
+#else
+                Directory.EnumerateDirectories(path, "*", new EnumerationOptions { AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false });
+#endif
             if (directory == null) return result;
             var root = Path.Combine(directory, "Resources", "Templates");
             if (!Directory.Exists(root)) return result;
-            var options = new EnumerationOptions { AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false };
-            foreach (var asset in Directory.EnumerateDirectories(root, "*", options).OrderBy(p => p, StringComparer.Ordinal))
+            foreach (var asset in RealDirectories(root).OrderBy(p => p, StringComparer.Ordinal))
             {
                 token.ThrowIfCancellationRequested();
                 if (!Guid.TryParseExact(Path.GetFileName(asset), "N", out _)) continue;
                 var revisions = Path.Combine(asset, "revisions");
                 if (!Directory.Exists(revisions) || (File.GetAttributes(revisions) & FileAttributes.ReparsePoint) != 0) continue;
-                foreach (var revision in Directory.EnumerateDirectories(revisions, "*", options)
+                foreach (var revision in RealDirectories(revisions)
                     .OrderByDescending(p => File.GetLastWriteTimeUtc(Path.Combine(p, "manifest.json"))).ThenBy(p => p, StringComparer.Ordinal))
                 {
                     token.ThrowIfCancellationRequested();
                     if (!Guid.TryParseExact(Path.GetFileName(revision), "N", out _)) continue;
                     var path = Path.Combine(revision, "manifest.json");
-                    var reference = Path.GetRelativePath(directory, path);
+                    var reference = Polyfill.GetRelativePath(directory, path);
                     try
                     {
                         var manifest = VisionTemplateStore.Inspect(path);

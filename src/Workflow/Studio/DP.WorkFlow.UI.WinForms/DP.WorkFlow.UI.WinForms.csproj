@@ -30,7 +30,7 @@
     <Compile Update="Properties\WorkflowPropertyPanel.Designer.cs"><DependentUpon>WorkflowPropertyPanel.cs</DependentUpon></Compile>
   </ItemGroup>
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFrameworks>$(WorkflowWindowsTargetFrameworks)</TargetFrameworks>
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ImplicitUsings>enable</ImplicitUsings>

@@ -54,9 +54,9 @@ public sealed class WorkflowLabelInspectionResources : IDisposable
 
     private static Task<WorkflowLabelInspectionResources> CaptureAsync(InspectLabelNodeModel node, string baseDirectory, bool editing, CancellationToken token, IEnumerable<IAnomalyImplementation>? anomalyImplementations = null)
     { 
-        ArgumentNullException.ThrowIfNull(node);
+        Guard.NotNull(node);
         var copy = (InspectLabelNodeModel)WorkflowNodeConfigurationSnapshotter.Capture(node);
-        var root = Path.GetFullPath(copy.ResourceRoot, Path.GetFullPath(baseDirectory));
+        var root = Polyfill.GetFullPath(copy.ResourceRoot, Path.GetFullPath(baseDirectory));
         var implementations = anomalyImplementations?.ToArray();
         return Task.Run(() => Create(copy, root, editing, token, implementations: implementations), token);
     }
@@ -65,7 +65,7 @@ public sealed class WorkflowLabelInspectionResources : IDisposable
         WorkflowLabelInspectionModels models, CancellationToken token, IEnumerable<IAnomalyImplementation>? anomalyImplementations = null)
     {
         var copy = (InspectLabelNodeModel)WorkflowNodeConfigurationSnapshotter.Capture(node);
-        var root = Path.GetFullPath(copy.ResourceRoot, Path.GetFullPath(baseDirectory));
+        var root = Polyfill.GetFullPath(copy.ResourceRoot, Path.GetFullPath(baseDirectory));
         var leases = new List<LabelInspectionResourceCache<WorkflowLabelInspectionModels.Model>.Lease>();
         try
         {
@@ -186,10 +186,10 @@ public sealed class WorkflowLabelInspectionResources : IDisposable
     /// <param name="node">节点配置。</param><param name="baseDirectory">流程目录。</param>
     public static string? Fingerprint(InspectLabelNodeModel node, string baseDirectory)
     {
-        ArgumentNullException.ThrowIfNull(node);
+        Guard.NotNull(node);
         try
         {
-            var root = Path.GetFullPath(node.ResourceRoot, Path.GetFullPath(baseDirectory));
+            var root = Polyfill.GetFullPath(node.ResourceRoot, Path.GetFullPath(baseDirectory));
             string Stamp(string path)
             {
                 if (string.IsNullOrWhiteSpace(path)) return "-";
@@ -225,14 +225,14 @@ public sealed class WorkflowLabelInspectionResources : IDisposable
         try
         {
             root = Path.GetFullPath(root);
-            var candidate = Path.GetFullPath(path, root);
-            string prefix = Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar;
+            var candidate = Polyfill.GetFullPath(path, root);
+            string prefix = Polyfill.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar;
             if (!candidate.Equals(root, StringComparison.OrdinalIgnoreCase) && !candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             {
                 error = $"标签资源路径超出显式资源根目录：{path}。当前资源根目录：{root}。请将资源复制到根内，再填写根内相对路径（如models/ppocr_rec.onnx）。";
                 return false;
             }
-            var relative = Path.GetRelativePath(root, candidate);
+            var relative = Polyfill.GetRelativePath(root, candidate);
             var current = root;
             foreach (var segment in relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
             {
@@ -277,7 +277,7 @@ public sealed class WorkflowLabelInspectionResources : IDisposable
         }
         return bytes;
     }
-    internal static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+    internal static string Hash(byte[] bytes) => Polyfill.ToHexString(Polyfill.Sha256(bytes)).ToLowerInvariant();
     /// <summary>必须在所有原生调用完成后释放；运行服务与页面负责等待。</summary>
     public void Dispose()
     {

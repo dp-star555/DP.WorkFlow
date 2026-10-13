@@ -18,7 +18,7 @@ public static class WorkflowStandardNodes
     /// <summary>向节点目录注册 Phase 1 已实现的标准节点模型。</summary>
     public static WorkflowNodeCatalog RegisterStandardNodes(this WorkflowNodeCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(catalog);
+        Guard.NotNull(catalog);
         return catalog
             .Register(WorkflowNodeDescriptor.Create<StartNodeModel, WorkflowSubflowValues>(
                 ports: new[] { WorkflowPortDescriptor.Output() }))
@@ -122,7 +122,7 @@ public static class WorkflowStandardNodes
     public static WorkflowNodeHandlerCatalog RegisterStandardNodeHandlers(
         this WorkflowNodeHandlerCatalog handlers)
     {
-        ArgumentNullException.ThrowIfNull(handlers);
+        Guard.NotNull(handlers);
         return handlers
             .Register(new StartNodeHandler())
             .Register(new ActionNodeHandler(), ActionRegistryCapability)

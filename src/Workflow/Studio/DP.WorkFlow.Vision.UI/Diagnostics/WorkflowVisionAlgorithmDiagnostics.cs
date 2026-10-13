@@ -87,7 +87,7 @@ public sealed class WorkflowVisionAlgorithmDiagnostics : IWorkflowDiagnosticProv
     public async Task CheckAsync(WorkflowDocument document, CancellationToken cancellationToken)
     {
         long revision;
-        lock (_gate) { ObjectDisposedException.ThrowIf(_disposed, this); revision = ++_revision; _status = "正在检查当前配方资源，可取消…"; _checkIssues = Array.Empty<WorkflowDiagnosticItem>(); }
+        lock (_gate) { Guard.NotDisposed(_disposed, this); revision = ++_revision; _status = "正在检查当前配方资源，可取消…"; _checkIssues = Array.Empty<WorkflowDiagnosticItem>(); }
         Captured? captured = null;
         Notify();
         try

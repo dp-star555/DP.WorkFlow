@@ -153,7 +153,7 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
         }
         else if (IsCircle)
         {
-            var segments = Math.Clamp((int)Math.Ceiling(Math.Abs(CircleSweep) / 3), 8, 120);
+            var segments = Polyfill.Clamp((int)Math.Ceiling(Math.Abs(CircleSweep) / 3), 8, 120);
             IEnumerable<PointD> Arc(double radius) => Enumerable.Range(0, segments + 1).Select(i => CirclePoint(radius, (double)i / segments));
             visuals.Add(new Visual("find-outer", new ContourGeometry(Arc(Radius + SearchLength / 2)), BoxColor));
             visuals.Add(new Visual("find-inner", new ContourGeometry(Arc(Math.Max(0, Radius - SearchLength / 2))), BoxColor));
@@ -325,7 +325,7 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
                 roi.Angle = Math.Round(Math.Atan2(point.Y - Center.Y, point.X - Center.X) + Math.PI / 2 - Rotation, 6);
                 break;
             case EVisionCaliperHandle.Length:
-                rectangle.SearchLength = Round(Math.Clamp(2 * Math.Abs(Dot(point, Offset(Center, U, LineLength / 2), U)), 4, Math.Max(4, Math.Min(LineLength, BoxHeight) - 1)) / Scale);
+                rectangle.SearchLength = Round(Polyfill.Clamp(2 * Math.Abs(Dot(point, Offset(Center, U, LineLength / 2), U)), 4, Math.Max(4, Math.Min(LineLength, BoxHeight) - 1)) / Scale);
                 break;
             case EVisionCaliperHandle.Width:
                 SetHalfBand(Math.Abs(Dot(point, _dragCaliperCenter, _dragCaliperNormal)));
@@ -351,7 +351,7 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
                 break;
             }
             case EVisionCaliperHandle.Length:
-                circle.SearchLength = Round(Math.Clamp(2 * Math.Abs(Distance(point, center) - Radius), 4, 2 * Radius) / Scale);
+                circle.SearchLength = Round(Polyfill.Clamp(2 * Math.Abs(Distance(point, center) - Radius), 4, 2 * Radius) / Scale);
                 break;
             case EVisionCaliperHandle.Width:
             {
@@ -391,10 +391,10 @@ public sealed class VisionFindShapeGizmo : IVisionCanvasGizmo
     // 卡尺宽度 = 采样半宽 × 垂直采样间隔；半宽最多 63 步，超出时放大间隔（原图最大 10px）。
     private void SetHalfBand(double halfBand)
     {
-        var baseStep = Math.Clamp(_dragStep, .1, 10);
+        var baseStep = Polyfill.Clamp(_dragStep, .1, 10);
         var step = halfBand <= MaximumHalfWidth * baseStep ? baseStep : Math.Min(10, Math.Ceiling(halfBand / MaximumHalfWidth * 100) / 100);
         _node.BandSampleStep = Bound ? Round(step / Scale) : step;
-        _node.HalfWidth = Math.Clamp((int)Math.Floor(Math.Min(halfBand, MaximumHalfWidth * 10) / step + .5), 0, MaximumHalfWidth);
+        _node.HalfWidth = Polyfill.Clamp((int)Math.Floor(Math.Min(halfBand, MaximumHalfWidth * 10) / step + .5), 0, MaximumHalfWidth);
     }
 
     // 找线的扫描方向（与节点一致：沿框高度方向，反向扫描时相反）。

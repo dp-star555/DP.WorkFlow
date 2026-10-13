@@ -248,6 +248,7 @@ public sealed class LabelRecipeSelectionTests
     private sealed class Context(InspectLabelNodeModel node, Guid scope) : IWorkflowNodeExecutionContext
     {
         public Guid BindingScopeId => scope; public IWorkflowNodeModel Node => node;
+        public string PlanPath => "$"; public IReadOnlyDictionary<string, object?> SubflowInputs => WorkflowSubflowValues.EmptyInputs;
         public WorkflowExecutionIdentity ExecutionIdentity => default!; public int NodeExecutionCount => 1;
         public IServiceProvider Services => new WorkflowServiceProvider();
         public T GetRequiredCapability<T>() where T : class => throw new NotSupportedException();

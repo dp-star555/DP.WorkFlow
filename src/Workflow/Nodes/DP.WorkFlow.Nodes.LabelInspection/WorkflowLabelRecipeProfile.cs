@@ -34,7 +34,7 @@ public sealed record WorkflowLabelRecipeProfile
     /// <param name="node">待装配的独立节点副本或编辑草稿。</param>
     public void ApplyTo(InspectLabelNodeModel node)
     {
-        ArgumentNullException.ThrowIfNull(node);
+        Guard.NotNull(node);
         node.RecipeJson = RecipeJson; node.DataDirectory = DataDirectory;
         node.ReferenceImagePath = ReferenceImagePath; node.RecognitionModelPath = RecognitionModelPath;
         node.AnomalyBackbonePath = AnomalyBackbonePath; node.AuthorImagePath = AuthorImagePath;
@@ -45,7 +45,7 @@ public sealed record WorkflowLabelRecipeProfile
     /// <returns>待发布的配方描述。</returns>
     public static WorkflowLabelRecipeProfile FromNode(InspectLabelNodeModel node, string id, int version)
     {
-        ArgumentNullException.ThrowIfNull(node);
+        Guard.NotNull(node);
         return new() { Id = id, Version = version, RecipeJson = node.RecipeJson, DataDirectory = node.DataDirectory,
             ReferenceImagePath = node.ReferenceImagePath, RecognitionModelPath = node.RecognitionModelPath,
             AnomalyBackbonePath = node.AnomalyBackbonePath, AuthorImagePath = node.AuthorImagePath,

@@ -29,7 +29,7 @@ public static class WorkflowRecoverableNodeFailure
     /// <exception cref="ArgumentNullException"><paramref name="node"/> 为空。</exception>
     public static NodeExecutionResult Create(IRecoverableWorkflowNode node, string message)
     {
-        ArgumentNullException.ThrowIfNull(node);
+        Guard.NotNull(node);
         var interrupt = node.Interrupt;
         return NodeExecutionResult.Fail(
             message,

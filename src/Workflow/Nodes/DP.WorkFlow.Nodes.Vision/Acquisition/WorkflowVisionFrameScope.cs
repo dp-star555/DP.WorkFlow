@@ -69,10 +69,10 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
     /// <inheritdoc/>
     public ImageFrame Retain(ImageFrame frame)
     {
-        ArgumentNullException.ThrowIfNull(frame);
+        Guard.NotNull(frame);
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            Guard.NotDisposed(_disposed, this);
             if (_frames.Count >= _maximumFrames || frame.Image.Info.ByteLength > _maximumBytes - _bytes)
                 throw new InvalidOperationException("本次运行图像输出超过资源预算；不能静默淘汰仍可被绑定读取的帧。");
             var retained = frame.Retain();
@@ -131,7 +131,7 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
     {
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            Guard.NotDisposed(_disposed, this);
             var next = new WorkflowVisionPreview(frame.Retain(), facts, ++_sequence, executionSequence);
             if (_previews.Remove(nodeId, out var old)) old.Dispose();
             _previews.Add(nodeId, next);
@@ -167,7 +167,7 @@ public sealed class WorkflowVisionFrameScope : IWorkflowVisionFrameScope, IWorkf
     /// </remarks>
     public async ValueTask PrepareAsync(WorkflowRunPreparationContext context, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        Guard.NotNull(context);
         cancellationToken.ThrowIfCancellationRequested();
         var duplicate = context.Nodes.Where(n => n is AnalyzeVisionFrameNodeModel or AcquireVisionImageNodeModel)
             .GroupBy(n => n.Id, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1);

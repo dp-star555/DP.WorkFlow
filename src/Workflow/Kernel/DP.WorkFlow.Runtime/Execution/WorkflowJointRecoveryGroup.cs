@@ -74,7 +74,7 @@ public sealed class WorkflowJointRecoveryGroup : IDisposable
     /// <returns>消息属于当前已授权轮次并已执行提交时为true；过期消息不调用委托。</returns>
     public bool TryApply(WorkflowCollaborationStamp stamp, Action commit)
     {
-        ArgumentNullException.ThrowIfNull(commit);
+        Guard.NotNull(commit);
         lock (_sync)
         {
             if (!Accepts(stamp)) return false;
@@ -90,7 +90,7 @@ public sealed class WorkflowJointRecoveryGroup : IDisposable
     /// <returns>角色监控和独立Hold句柄，不提供单独启动或重配置能力。</returns>
     public WorkflowJointRecoveryParticipant AddParticipant(string role, WorkflowBoundExecutionPlan plan, WorkflowContext context)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(role); ArgumentNullException.ThrowIfNull(plan); ArgumentNullException.ThrowIfNull(context);
+        Guard.NotNullOrWhiteSpace(role); Guard.NotNull(plan); Guard.NotNull(context);
         lock (_sync)
         {
             EnsureConfigurable();
@@ -111,13 +111,13 @@ public sealed class WorkflowJointRecoveryGroup : IDisposable
     /// <param name="entries">角色到命名入口的完整映射，注册时复制。</param>
     public void AddRestartPlan(string key, IReadOnlyDictionary<string, string?> entries)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key); ArgumentNullException.ThrowIfNull(entries);
+        Guard.NotNullOrWhiteSpace(key); Guard.NotNull(entries);
         lock (_sync)
         {
             EnsureConfigurable();
             if (entries.Any(p => string.IsNullOrWhiteSpace(p.Key) || p.Value is not null && string.IsNullOrWhiteSpace(p.Value)))
                 throw new ArgumentException("角色和恢复入口不能为空白。", nameof(entries));
-            _plans.Add(key, new ReadOnlyDictionary<string, string?>(new Dictionary<string, string?>(entries, StringComparer.Ordinal)));
+            _plans.Add(key, new ReadOnlyDictionary<string, string?>(entries.ToDictionary(StringComparer.Ordinal)));
         }
     }
 
@@ -312,7 +312,7 @@ public sealed class WorkflowJointRecoveryGroup : IDisposable
     }
     private void EnsureConfigurable()
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Guard.NotDisposed(_disposed, this);
         if (_started) throw new InvalidOperationException("联合运行开始后不能修改参与关系或再次运行。");
     }
     /// <summary>取消整个域；活动运行结束前保留取消源，避免释放竞态。应先等待RunAsync结束再Dispose。</summary>

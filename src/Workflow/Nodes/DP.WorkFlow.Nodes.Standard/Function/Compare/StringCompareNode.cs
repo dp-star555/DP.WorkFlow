@@ -77,7 +77,7 @@ public sealed class StringCompareNodeHandler : WorkflowNodeHandler<StringCompare
             ["Operator"] = node.Operator.ToString(),
             ["Matched"] = matched
         });
-        return ValueTask.FromResult(NodeExecutionResult.Continue(port, output));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(port, output));
     }
 
     private static bool RequiresRight(E_StringCompareOperator operation) =>
@@ -86,7 +86,7 @@ public sealed class StringCompareNodeHandler : WorkflowNodeHandler<StringCompare
     private static bool MatchLike(string input, string wildcard, bool ignoreCase)
     {
         var pattern = "^" + Regex.Escape(wildcard).Replace("\\*", ".*").Replace("\\?", ".") + "$";
-        var options = RegexOptions.CultureInvariant | RegexOptions.NonBacktracking;
+        var options = RegexOptions.CultureInvariant | Polyfill.NonBacktracking;
         if (ignoreCase)
             options |= RegexOptions.IgnoreCase;
         return Regex.IsMatch(input, pattern, options, RegexTimeout);

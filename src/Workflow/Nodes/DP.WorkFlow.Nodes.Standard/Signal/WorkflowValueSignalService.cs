@@ -43,7 +43,7 @@ public sealed class WorkflowValueSignalService : IWorkflowValueSignalService
     /// <inheritdoc />
     public WorkflowValueSignalSnapshot WriteValue(string signalKey, object value)
     {
-        ArgumentNullException.ThrowIfNull(value);
+        Guard.NotNull(value);
         var key = Normalize(signalKey);
         var entry = _entries.GetOrAdd(key, static _ => new Entry());
         TaskCompletionSource<long> changed;
@@ -63,7 +63,7 @@ public sealed class WorkflowValueSignalService : IWorkflowValueSignalService
     /// <inheritdoc />
     public async ValueTask<WorkflowValueSignalSnapshot?> WaitValueAsync(string signalKey, long minVersion, Func<object?, bool> predicate, TimeSpan? timeout, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(predicate);
+        Guard.NotNull(predicate);
         var key = Normalize(signalKey);
         var entry = _entries.GetOrAdd(key, static _ => new Entry());
         using var timeoutSource = timeout.HasValue ? new CancellationTokenSource(timeout.Value) : null;

@@ -55,7 +55,7 @@ public static class WorkflowDesignerInteraction
                     return new WorkflowPortHit(node, port, point, node.GetPortSide(port));
                 if (direction != WorkflowPortDirection.Input || connectingFrom is null || connectingFrom == node)
                     continue;
-                foreach (var side in Enum.GetValues<WorkflowPortSide>())
+                foreach (var side in Polyfill.GetEnumValues<WorkflowPortSide>())
                 {
                     var candidate = WorkflowDesignerGeometry.GetPortScreenPoint(session, node, port, ports, side);
                     if (Distance(candidate, x, y) <= PortHitRadius)
@@ -70,7 +70,7 @@ public static class WorkflowDesignerInteraction
     public static (WorkflowCanvasNode Node, WorkflowOutputMember Member, WorkflowPoint Point)? HitDataPort(
         WorkflowDesignerSession session, double x, double y)
     {
-        ArgumentNullException.ThrowIfNull(session);
+        Guard.NotNull(session);
         for (var index = session.Canvas.Nodes.Count - 1; index >= 0; index--)
         {
             var node = session.Canvas.Nodes[index];
@@ -91,7 +91,7 @@ public static class WorkflowDesignerInteraction
         var outputs = session.GetPorts(node.Node.Id, WorkflowPortDirection.Output);
         if (outputs.Count != 1) return null;
         var bounds = WorkflowDesignerGeometry.GetNodeScreenRect(session, node);
-        foreach (var side in Enum.GetValues<WorkflowPortSide>())
+        foreach (var side in Polyfill.GetEnumValues<WorkflowPortSide>())
         {
             var point = GetSideCenter(bounds, side, session.Zoom, node.ExposedOutputMembers.Count);
             if (Math.Pow(point.X - x, 2) + Math.Pow(point.Y - y, 2) <= 36)
@@ -334,7 +334,7 @@ public static class WorkflowDesignerInteraction
     /// <param name="session">设计会话。</param><param name="connection">连线。</param>
     public static string GetConnectionLabel(WorkflowDesignerSession session, WorkflowConnectionModel connection)
     {
-        ArgumentNullException.ThrowIfNull(session); ArgumentNullException.ThrowIfNull(connection);
+        Guard.NotNull(session); Guard.NotNull(connection);
         var semantic = WorkflowPorts.GetDisplayName(connection.FromPort);
         var note = string.IsNullOrWhiteSpace(connection.Note) ? null : connection.Note.Trim();
         string text;
@@ -437,7 +437,7 @@ public static class WorkflowDesignerInteraction
         if (points.Count == 0) return default;
         if (points.Count == 1) return points[0];
         var lengths = SegmentLengths(points);
-        var remaining = lengths.Sum() * Math.Clamp(position, 0, 1);
+        var remaining = lengths.Sum() * Polyfill.Clamp(position, 0, 1);
         for (var index = 0; index < lengths.Length; index++)
         {
             if (remaining > lengths[index]) { remaining -= lengths[index]; continue; }
@@ -464,7 +464,7 @@ public static class WorkflowDesignerInteraction
             var second = points[index + 1];
             var dx = second.X - first.X;
             var dy = second.Y - first.Y;
-            var ratio = lengths[index] <= 0 ? 0 : Math.Clamp(((x - first.X) * dx + (y - first.Y) * dy) / (lengths[index] * lengths[index]), 0, 1);
+            var ratio = lengths[index] <= 0 ? 0 : Polyfill.Clamp(((x - first.X) * dx + (y - first.Y) * dy) / (lengths[index] * lengths[index]), 0, 1);
             var nearestX = first.X + dx * ratio;
             var nearestY = first.Y + dy * ratio;
             var distance = Math.Pow(nearestX - x, 2) + Math.Pow(nearestY - y, 2);
@@ -475,7 +475,7 @@ public static class WorkflowDesignerInteraction
             }
             traversed += lengths[index];
         }
-        return Math.Clamp(bestPosition, 0.05, 0.95);
+        return Polyfill.Clamp(bestPosition, 0.05, 0.95);
     }
 
     /// <summary>计算点到有限线段的最短距离。</summary>
@@ -485,7 +485,7 @@ public static class WorkflowDesignerInteraction
         var dy = end.Y - start.Y;
         if (dx == 0 && dy == 0)
             return Distance(start, x, y);
-        var t = Math.Clamp(((x - start.X) * dx + (y - start.Y) * dy) / (dx * dx + dy * dy), 0, 1);
+        var t = Polyfill.Clamp(((x - start.X) * dx + (y - start.Y) * dy) / (dx * dx + dy * dy), 0, 1);
         return Distance(new WorkflowPoint(start.X + t * dx, start.Y + t * dy), x, y);
     }
 

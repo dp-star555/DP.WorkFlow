@@ -13,7 +13,7 @@ namespace DP.WorkFlow.UI.Wpf;
 /// </summary>
 internal sealed class WorkflowSubflowInterfaceControl : UserControl
 {
-    private static readonly E_WorkflowSubflowValueType[] ValueTypes = Enum.GetValues<E_WorkflowSubflowValueType>();
+    private static readonly E_WorkflowSubflowValueType[] ValueTypes = Polyfill.GetEnumValues<E_WorkflowSubflowValueType>();
     private readonly WorkflowSubflowInterfacePageModel _model;
     private readonly StackPanel _inputs = new();
     private readonly StackPanel _outputs = new();

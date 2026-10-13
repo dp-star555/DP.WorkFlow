@@ -34,7 +34,7 @@ public sealed class WorkflowNodeTrialRunner
     public async Task<NodeExecutionResult> RunAsync(IWorkflowNodeModel node, IReadOnlyDictionary<object, object?>? inputOverrides = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(node);
+        Guard.NotNull(node);
         var handler = _handlers.Resolve(node);
         var source = _context() ?? throw new InvalidOperationException("宿主还没有流程运行上下文。");
         var scope = Guid.NewGuid();
@@ -66,6 +66,8 @@ public sealed class WorkflowNodeTrialRunner
         private readonly Dictionary<string, object?> _publicData = new(StringComparer.Ordinal);
 
         public Guid BindingScopeId => scope;
+        public string PlanPath => "$";
+        public IReadOnlyDictionary<string, object?> SubflowInputs => WorkflowSubflowValues.EmptyInputs;
         public IWorkflowNodeModel Node => node;
         public WorkflowExecutionIdentity ExecutionIdentity { get; } = new(Guid.NewGuid(), 0, Array.Empty<long>(), Array.Empty<long>(), 1);
         public int NodeExecutionCount => 1;
@@ -103,7 +105,7 @@ public sealed class WorkflowNodeTrialRunner
 
         public T? ResolveInput<T>(WorkflowInput<T> input)
         {
-            ArgumentNullException.ThrowIfNull(input);
+            Guard.NotNull(input);
             if (overrides is not null && overrides.TryGetValue(input, out var replaced)) return (T?)replaced;
             return WorkflowBindingResolver.ResolveLatestInput(context, input);
         }
@@ -112,7 +114,7 @@ public sealed class WorkflowNodeTrialRunner
         public void RaiseWorkflowSignal(string signalKey) { }
         public bool ContainsWorkflowSignal(string signalKey) => false;
         public ValueTask<bool> WaitAllWorkflowSignalsAsync(IReadOnlyList<string> signalKeys, TimeSpan? timeout, CancellationToken cancellationToken) =>
-            signalKeys.Count == 0 ? ValueTask.FromResult(true) : throw new InvalidOperationException("单节点试运行不能等待流程信号。");
+            signalKeys.Count == 0 ? Polyfill.FromResult(true) : throw new InvalidOperationException("单节点试运行不能等待流程信号。");
         public void Trace(string step, string? message = null, IReadOnlyDictionary<string, object?>? data = null) { }
         public void Trace(string step, string? message, IReadOnlyDictionary<string, object?>? data, WorkflowEventWriteMode writeMode) { }
     }

@@ -36,7 +36,7 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
     /// <param name="blockReason">操作当前不可执行的原因；空文本表示可执行。</param>
     public void AttachCommands(IReadOnlyList<LabelInspectionEditorCommand> commands, Func<string, Task> execute, Func<string, string> blockReason)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Guard.NotDisposed(_disposed, this);
         _commands = commands; _execute = execute; _commandBlockReason = blockReason;
     }
 
@@ -57,7 +57,7 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
     /// <summary>写入草稿中的配方快照。</summary>
     public void SetRecipe(InspectionRecipe recipe)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Guard.NotDisposed(_disposed, this);
         var json = Serializer.Serialize(recipe);
         if (Node.RecipeJson == json) return;
         Node.RecipeJson = json; _changed();
@@ -66,7 +66,7 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
     /// <param name="profile">已校验的配方版本。</param>
     public void LoadProfile(WorkflowLabelRecipeProfile profile)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Guard.NotDisposed(_disposed, this);
         var recipe = Serializer.Deserialize(profile.RecipeJson);
         profile.ApplyTo(Node); Node.RecipeJson = Serializer.Serialize(recipe); _changed();
     }
@@ -74,7 +74,7 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
     /// <param name="relativePath">根内索引路径。</param><param name="initialKey">可选初始选择。</param>
     public void SetRecipeCatalog(string relativePath, string? initialKey = null)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Guard.NotDisposed(_disposed, this);
         Node.RecipeCatalogPath = relativePath;
         if (initialKey is not null && Node.RecipeKey.Source == WorkflowValueSource.Literal && string.IsNullOrWhiteSpace(Node.RecipeKey.LiteralValue))
             Node.RecipeKey = WorkflowInput<string>.FromLiteral(initialKey);
@@ -85,7 +85,7 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
     /// <param name="relativePath">相对资源根目录的路径。</param>
     public void SetAuthorImagePath(string relativePath)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Guard.NotDisposed(_disposed, this);
         if (Node.AuthorImagePath == relativePath) return;
         Node.AuthorImagePath = relativePath; _changed();
     }
@@ -94,7 +94,7 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
     /// <param name="relativePath">相对资源根目录的路径。</param>
     public void SetReferenceImagePath(string relativePath)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Guard.NotDisposed(_disposed, this);
         if (Node.ReferenceImagePath == relativePath) return;
         Node.ReferenceImagePath = relativePath; _changed();
     }
@@ -104,7 +104,7 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
     /// <param name="source">该坐标系的来源标识；用于之后提示定位来源已变化。</param>
     public void SetReferencePose(DP.Vision.Algorithms.CoordinateMatrix2D pose, string? source = null)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Guard.NotDisposed(_disposed, this);
         if (Node.GetReferencePose() is { } current && current.M11 == pose.M11 && current.M12 == pose.M12 && current.Tx == pose.Tx
             && current.M21 == pose.M21 && current.M22 == pose.M22 && current.Ty == pose.Ty && Node.ReferenceSource == (source ?? string.Empty)) return;
         Node.SetReferencePose(pose, source); _changed();
@@ -118,16 +118,16 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
     public static string ImportIntoRoot(string root, string path)
     {
         root = Path.GetFullPath(root); path = Path.GetFullPath(path);
-        var prefix = Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar;
-        if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return Path.GetRelativePath(root, path);
+        var prefix = Polyfill.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar;
+        if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return Polyfill.GetRelativePath(root, path);
         var folder = Path.Combine(root, "samples");
         Directory.CreateDirectory(folder);
         var name = Path.GetFileNameWithoutExtension(path); var extension = Path.GetExtension(path);
         for (int index = 0; ; index++)
         {
             var target = Path.Combine(folder, index == 0 ? name + extension : $"{name}-{index}{extension}");
-            if (!File.Exists(target)) { File.Copy(path, target); return Path.GetRelativePath(root, target); }
-            if (SameContent(target, path)) return Path.GetRelativePath(root, target);
+            if (!File.Exists(target)) { File.Copy(path, target); return Polyfill.GetRelativePath(root, target); }
+            if (SameContent(target, path)) return Polyfill.GetRelativePath(root, target);
         }
     }
 
@@ -141,7 +141,7 @@ public sealed class LabelInspectionEditorPageModel : IWorkflowNodeEditorCommitPa
     /// <summary>控件注册确认前捕获、忙状态及关闭前停止原生工作的桥。</summary>
     public void AttachWorkbench(Func<InspectionRecipe?> capture, Func<bool> busy, Func<ValueTask> release)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Guard.NotDisposed(_disposed, this);
         if (_release is not null) throw new InvalidOperationException("此页面已经绑定工作台。");
         _capture = capture; _busy = busy; _release = release;
     }

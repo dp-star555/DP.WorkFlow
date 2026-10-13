@@ -40,6 +40,6 @@ public sealed class StartNodeHandler : WorkflowNodeHandler<StartNodeModel>
         var inputs = context.SubflowInputs.Count == 0
             ? WorkflowSubflowValues.Empty
             : new WorkflowSubflowValues(context.SubflowInputs);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: inputs));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: inputs));
     }
 }

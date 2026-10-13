@@ -221,6 +221,7 @@ public sealed class JointRecoveryTests
             ValueTask.FromResult<IWorkflowNodeOperation>(new Operation(rig, ((Step)node).Role, ((Step)node).Stage));
         private sealed class Operation(Rig rig, string role, string stage) : IWorkflowNodeOperation
         {
+            public bool CanContinue => true;
             private bool _sent;
             public async ValueTask<NodeExecutionResult> ExecuteAsync(IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
             {

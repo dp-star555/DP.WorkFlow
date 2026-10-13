@@ -15,7 +15,7 @@ public sealed class WorkflowServiceProvider : IServiceProvider
     /// <returns>当前容器实例，便于链式注册。</returns>
     public WorkflowServiceProvider Add<TService>(TService service) where TService : class
     {
-        ArgumentNullException.ThrowIfNull(service);
+        Guard.NotNull(service);
         _services[typeof(TService)] = service;
         return this;
     }
@@ -23,7 +23,7 @@ public sealed class WorkflowServiceProvider : IServiceProvider
     /// <inheritdoc />
     public object? GetService(Type serviceType)
     {
-        ArgumentNullException.ThrowIfNull(serviceType);
+        Guard.NotNull(serviceType);
         return _services.TryGetValue(serviceType, out var service) ? service : null;
     }
 }

@@ -5,7 +5,7 @@
     <ProjectReference Include="..\..\..\Platform\Scripting\ScriptEngine.Wpf\ScriptEngine.Wpf.csproj" />
   </ItemGroup>
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFrameworks>$(WorkflowWindowsTargetFrameworks)</TargetFrameworks>
     <UseWPF>true</UseWPF>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ImplicitUsings>enable</ImplicitUsings>

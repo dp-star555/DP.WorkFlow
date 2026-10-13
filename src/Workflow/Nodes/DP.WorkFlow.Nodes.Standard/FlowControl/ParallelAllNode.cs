@@ -21,7 +21,7 @@ public sealed class ParallelAllNodeHandler : WorkflowNodeHandler<ParallelAllNode
     {
         cancellationToken.ThrowIfCancellationRequested();
         context.Trace("ParallelDispatch", "请求派发 Branch 端口上的全部并行分支。");
-        return ValueTask.FromResult(NodeExecutionResult.Continue(WorkflowPorts.Branch));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(WorkflowPorts.Branch));
     }
 }
 

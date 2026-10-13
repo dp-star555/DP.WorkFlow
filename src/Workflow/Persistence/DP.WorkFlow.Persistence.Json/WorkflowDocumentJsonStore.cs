@@ -32,7 +32,7 @@ public sealed class WorkflowDocumentJsonStore
     /// <returns>Schema 4 JSON。</returns>
     public string Serialize(WorkflowDocument document)
     {
-        ArgumentNullException.ThrowIfNull(document);
+        Guard.NotNull(document);
         ValidateEntry(document);
         return JsonSerializer.Serialize(
             CreateDocument(
@@ -61,7 +61,7 @@ public sealed class WorkflowDocumentJsonStore
     /// <summary>以原子替换方式保存正式工作流文档。</summary>
     public void SaveToFile(WorkflowDocument document, string filePath)
     {
-        ArgumentNullException.ThrowIfNull(document);
+        Guard.NotNull(document);
         if (string.IsNullOrWhiteSpace(filePath))
             throw new ArgumentException("文件路径不能为空。", nameof(filePath));
 
@@ -69,7 +69,7 @@ public sealed class WorkflowDocumentJsonStore
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         var temporaryPath = fullPath + ".tmp";
         File.WriteAllText(temporaryPath, Serialize(document));
-        File.Move(temporaryPath, fullPath, true);
+        Polyfill.MoveFile(temporaryPath, fullPath, true);
     }
 
     /// <summary>从文件加载流程，并保留迁移报告。</summary>
@@ -474,7 +474,7 @@ public sealed class WorkflowDocumentJsonStore
                 ToPort = source.ToPort,
                 FromSide = source.FromSide,
                 ToSide = source.ToSide,
-                LabelPosition = Math.Clamp(source.LabelPosition, 0, 1),
+                LabelPosition = Polyfill.Clamp(source.LabelPosition, 0, 1),
                 Note = string.IsNullOrWhiteSpace(source.Note) ? null : source.Note,
                 Enabled = source.Disabled != true,
                 State = source.State,

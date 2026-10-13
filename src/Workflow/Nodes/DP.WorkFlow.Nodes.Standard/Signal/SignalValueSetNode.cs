@@ -37,7 +37,7 @@ public sealed class SignalValueSetNodeHandler : WorkflowNodeHandler<SignalValueS
         var snapshot = service.WriteValue(node.SignalKey.Trim(), value);
         var output = BuildResult(snapshot, node.ValueType, node.WriteMode, true);
         if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: output));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
     internal static IWorkflowValueSignalService GetService(IWorkflowNodeExecutionContext context, string key)
     {

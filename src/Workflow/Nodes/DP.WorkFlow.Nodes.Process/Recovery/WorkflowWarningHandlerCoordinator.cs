@@ -11,9 +11,9 @@ public sealed class WorkflowWarningHandlerCoordinator : IWorkflowFaultRecoveryCo
     /// <summary>从告警处理块创建恢复协调器。</summary>
     public WorkflowWarningHandlerCoordinator(WarningHandlerBlockNodeModel block, WorkflowNodeCatalog catalog, WorkflowNodeHandlerCatalog handlers, WorkflowExecutionOptions? options = null, IWorkflowTreatmentRecoveryPolicy? treatmentPolicy = null)
     {
-        ArgumentNullException.ThrowIfNull(block);
-        ArgumentNullException.ThrowIfNull(catalog);
-        ArgumentNullException.ThrowIfNull(handlers);
+        Guard.NotNull(block);
+        Guard.NotNull(catalog);
+        Guard.NotNull(handlers);
         if (string.IsNullOrWhiteSpace(block.SubDocument.EntryNodeId))
             throw new InvalidOperationException("告警处理块缺少文档入口。");
         _plan = new WorkflowCompiler(catalog).Compile(block.SubDocument);

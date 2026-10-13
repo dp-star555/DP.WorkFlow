@@ -5,14 +5,14 @@ namespace DP.WorkFlow;
 /// </summary>
 public interface IWorkflowNodeExecutionContext
 {
-    /// <summary>准备绑定作用域，根运行和普通子流程共享，独立准备的恢复运行另有身份。</summary>
-    Guid BindingScopeId => Guid.Empty;
+    /// <summary>准备绑定作用域，根运行和普通子流程共享，独立准备的恢复运行另有身份；没有准备作用域时为 <see cref="Guid.Empty"/>。</summary>
+    Guid BindingScopeId { get; }
 
-    /// <summary>稳定的编译计划路径。</summary>
-    string PlanPath => "$";
+    /// <summary>稳定的编译计划路径；根画布为 <c>$</c>。</summary>
+    string PlanPath { get; }
 
-    /// <summary>所在复合节点传入本子流程的输入值，按输入名称索引；不在子流程中时为空。</summary>
-    IReadOnlyDictionary<string, object?> SubflowInputs => WorkflowSubflowValues.EmptyInputs;
+    /// <summary>所在复合节点传入本子流程的输入值，按输入名称索引；不在子流程中时为 <see cref="WorkflowSubflowValues.EmptyInputs"/>。</summary>
+    IReadOnlyDictionary<string, object?> SubflowInputs { get; }
 
     /// <summary>获取当前节点。</summary>
     IWorkflowNodeModel Node { get; }

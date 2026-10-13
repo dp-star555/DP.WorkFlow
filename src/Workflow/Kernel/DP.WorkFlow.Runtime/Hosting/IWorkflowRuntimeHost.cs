@@ -39,8 +39,7 @@ public interface IWorkflowRuntimeHost
     /// <returns>该节点执行的结果。</returns>
     /// <exception cref="InvalidOperationException">流程正在运行，或还没有运行过。</exception>
     /// <exception cref="NotSupportedException">宿主不支持继续运行。</exception>
-    Task<WorkflowRunResult> RunNodeAsync(WorkflowDocument document, string nodeId, CancellationToken cancellationToken = default) =>
-        throw new NotSupportedException("当前运行宿主不支持单独运行节点。");
+    Task<WorkflowRunResult> RunNodeAsync(WorkflowDocument document, string nodeId, CancellationToken cancellationToken = default);
 
     /// <summary>请求人工暂停。</summary>
     void Pause();

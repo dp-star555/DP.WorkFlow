@@ -8,7 +8,7 @@ public static class WorkflowRuntimeText
 {
     public static string ExecutionState(ILocalizationContext context, E_WorkflowExecutionState state)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        Guard.NotNull(context);
         var key = state switch
         {
             E_WorkflowExecutionState.Idle => WorkflowUiTextKeys.ExecutionStateIdle,
@@ -24,7 +24,7 @@ public static class WorkflowRuntimeText
 
     public static string NodeState(ILocalizationContext context, E_NodeState state)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        Guard.NotNull(context);
         var key = state switch
         {
             E_NodeState.Idle => WorkflowUiTextKeys.NodeStateIdle,
@@ -40,8 +40,8 @@ public static class WorkflowRuntimeText
     /// <summary>只翻译引擎拥有的稳定步骤；节点自定义步骤保持原始业务文本。</summary>
     public static string TraceStep(ILocalizationContext context, string step)
     {
-        ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(step);
+        Guard.NotNull(context);
+        Guard.NotNull(step);
         var key = step switch
         {
             "NodeStarted" => WorkflowUiTextKeys.TraceStepNodeStarted,

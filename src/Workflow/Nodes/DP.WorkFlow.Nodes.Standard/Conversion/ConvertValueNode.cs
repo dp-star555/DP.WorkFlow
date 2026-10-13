@@ -43,6 +43,6 @@ public sealed class ConvertValueNodeHandler : WorkflowNodeHandler<ConvertValueNo
         var output = new ConvertValueNodeResult(node.TargetType, true, Convert.ToString(raw, CultureInfo.InvariantCulture) ?? string.Empty, Convert.ToString(converted, CultureInfo.InvariantCulture) ?? string.Empty, Convert.ToString(converted, CultureInfo.InvariantCulture) ?? string.Empty, Try(converted, Convert.ToInt32), Try(converted, Convert.ToInt64), Try(converted, Convert.ToDouble), Try(converted, Convert.ToBoolean));
         if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), converted);
         context.Trace("ConvertValue", $"已转换为 {node.TargetType}。", new Dictionary<string, object?> { ["OriginalText"] = output.OriginalText, ["ConvertedValueText"] = output.ConvertedValueText });
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: output));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
 }

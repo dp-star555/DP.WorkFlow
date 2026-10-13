@@ -38,6 +38,6 @@ public sealed class QueueRemoveNodeHandler : WorkflowNodeHandler<QueueRemoveNode
         else { affected = WorkflowQueueNodeRuntime.Resolve(node.ValueSource, node.LiteralValue, node.BindingValue, node.ValueType, context); changed = service.RemoveValue(node.QueueKey.Trim(), affected, node.ValueType, node.AutoCreateIfMissing); }
         var output = WorkflowQueueNodeRuntime.BuildResult(node.QueueKey.Trim(), node.ValueType, service.ReadSnapshot(node.QueueKey.Trim()), changed, affected);
         if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: output));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
 }

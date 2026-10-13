@@ -18,7 +18,7 @@ public sealed class MeasureVisionPointDistanceNodeModel : WorkflowVisionGeometry
     /// <inheritdoc/>
     public override IReadOnlyList<string> ValidateConfiguration()
     {
-        var errors = base.ValidateConfiguration().ToList(); if (!IsBound(A) || !IsBound(B) || !Enum.IsDefined(Space)) errors.Add("点间距必须绑定两个视觉点并选择有效空间。"); return errors;
+        var errors = base.ValidateConfiguration().ToList(); if (!IsBound(A) || !IsBound(B) || !Polyfill.IsDefined(Space)) errors.Add("点间距必须绑定两个视觉点并选择有效空间。"); return errors;
     }
 }
 

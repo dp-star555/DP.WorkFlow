@@ -29,6 +29,6 @@ public sealed class QueueInitializeNodeHandler : WorkflowNodeHandler<QueueInitia
         }
         var output = new QueueInitializeResult(node.Items.Count, created, cleared, string.Join(",", node.Items.Select(item => item.QueueKey).Distinct(StringComparer.Ordinal)));
         context.SetVariable(string.IsNullOrWhiteSpace(node.ResultVarKey) ? node.Id + ".Result" : node.ResultVarKey.Trim(), output);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: output));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
 }

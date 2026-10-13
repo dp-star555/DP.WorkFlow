@@ -18,7 +18,7 @@ public sealed class VisionWpfStudioExtension : IWorkflowWpfStudioExtension
     /// <inheritdoc/>
     public void Register(WorkflowWpfStudioExtensionCatalog extensions)
     {
-        ArgumentNullException.ThrowIfNull(extensions);
+        Guard.NotNull(extensions);
         extensions.RegisterPageProvider(new VisionFrameEditorPageProvider(FrameSource, FileReader, Templates, NodeRunner))
             .RegisterRenderer(new VisionFrameEditorRenderer())
             .RegisterRenderer(new VisionTemplateAuthoringRenderer());

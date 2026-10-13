@@ -80,7 +80,7 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule, IWorkfl
         {
             token.ThrowIfCancellationRequested();
             _position = 0;
-            return ValueTask.FromResult<object?>(0);
+            return new ValueTask<object?>(0);
         });
         services.Add<IWorkflowActionRegistry>(actions)
             .Add<IWorkflowRecoveryEntryGuard>(this)
@@ -105,7 +105,7 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule, IWorkfl
         IWorkflowFaultRecoveryContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.FromResult(new WorkflowRecoveryEntryValidation(
+        return new ValueTask<WorkflowRecoveryEntryValidation>(new WorkflowRecoveryEntryValidation(
             plan.EntryKey == "OperationStart" && _position == 0 && _feeds == 1,
             "模拟检查要求：位置0、进料次数1、恢复入口OperationStart。"));
     }
@@ -136,7 +136,7 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule, IWorkfl
                 demo._runId = context.ExecutionIdentity.RunId;
                 demo._position = 100; demo._commands = 0; demo._feeds = 0; demo._lostResponse = false;
             }
-            return ValueTask.FromResult(NodeExecutionResult.Continue(output: ++demo._feeds));
+            return new ValueTask<NodeExecutionResult>(NodeExecutionResult.Continue(output: ++demo._feeds));
         }
     }
 
@@ -146,11 +146,12 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule, IWorkfl
             throw new InvalidOperationException("本节点由操作工厂执行。");
         public ValueTask<IWorkflowNodeOperation> CreateOperationAsync(Guid operationId, IWorkflowNodeModel node,
             IWorkflowNodeExecutionContext context, CancellationToken cancellationToken) =>
-            ValueTask.FromResult<IWorkflowNodeOperation>(new MoveOperation(demo, demo._position + 10));
+            new ValueTask<IWorkflowNodeOperation>(new MoveOperation(demo, demo._position + 10));
     }
 
     private sealed class MoveOperation(WorkflowRecoveryDemo demo, int target) : IWorkflowNodeOperation
     {
+        public bool CanContinue => true;
         private bool _sent;
         public ValueTask<NodeExecutionResult> ExecuteAsync(IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
@@ -161,14 +162,14 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule, IWorkfl
                 if (!demo._lostResponse)
                 {
                     demo._lostResponse = true;
-                    return ValueTask.FromResult(NodeExecutionResult.Fail("模拟轴完成响应丢失；设备实际状态须由处置逻辑核实。"));
+                    return new ValueTask<NodeExecutionResult>(NodeExecutionResult.Fail("模拟轴完成响应丢失；设备实际状态须由处置逻辑核实。"));
                 }
             }
-            if (demo._position != target) return ValueTask.FromResult(NodeExecutionResult.Fail("原目标不再满足，不能确认原操作完成。"));
+            if (demo._position != target) return new ValueTask<NodeExecutionResult>(NodeExecutionResult.Fail("原目标不再满足，不能确认原操作完成。"));
             var result = new MoveResult(demo._position, demo._commands, demo._feeds);
             context.Trace("模拟恢复结果", $"位置={result.Position}，命令次数={result.Commands}，进料次数={result.Feeds}");
-            return ValueTask.FromResult(NodeExecutionResult.Continue(output: result));
+            return new ValueTask<NodeExecutionResult>(NodeExecutionResult.Continue(output: result));
         }
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync() => default(ValueTask);
     }
 }

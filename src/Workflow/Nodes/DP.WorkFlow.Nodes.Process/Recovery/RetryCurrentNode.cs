@@ -20,6 +20,6 @@ public sealed class RetryCurrentNodeHandler : WorkflowNodeHandler<RetryCurrentNo
         var output = new WarningResolution { ExitAction = E_WarningExitAction.RetryCurrentNode, Note = node.Note };
         context.SetVariable(WorkflowRecoveryRuntimeKeys.WarningResolution, output);
         context.Trace("创建恢复决议", "创建重试当前节点恢复决议。", new Dictionary<string, object?> { ["Note"] = node.Note });
-        return ValueTask.FromResult(NodeExecutionResult.Complete(output));
+        return Polyfill.FromResult(NodeExecutionResult.Complete(output));
     }
 }

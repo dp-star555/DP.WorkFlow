@@ -25,13 +25,13 @@ public sealed class WorkflowPublicDataStore : IWorkflowPublicDataStore
     /// <inheritdoc />
     public void Apply(WorkflowPublicDataChangeSet changes)
     {
-        ArgumentNullException.ThrowIfNull(changes);
+        Guard.NotNull(changes);
         foreach (var key in changes.Removals)
             ValidateKey(key);
         foreach (var pair in changes.Writes)
         {
             ValidateKey(pair.Key);
-            ArgumentNullException.ThrowIfNull(pair.Value);
+            Guard.NotNull(pair.Value);
         }
         lock (_sync)
         {

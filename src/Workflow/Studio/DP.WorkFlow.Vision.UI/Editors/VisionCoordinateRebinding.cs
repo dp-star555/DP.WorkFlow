@@ -17,7 +17,7 @@ public static class VisionCoordinateRebinding
     /// <param name="frames">本轮运行预览。</param>
     public static void Bind(AnalyzeVisionFrameNodeModel node, string sourceNodeId, IWorkflowVisionPreviewSource frames)
     {
-        ArgumentNullException.ThrowIfNull(node); ArgumentNullException.ThrowIfNull(frames);
+        Guard.NotNull(node); Guard.NotNull(frames);
         if (!node.SupportsCoordinates) throw new InvalidOperationException("此节点不支持坐标系。");
         if (string.IsNullOrWhiteSpace(sourceNodeId) || sourceNodeId == node.Id) throw new InvalidOperationException("请选择其它节点构建的坐标系。");
         using var input = CaptureInput(node, frames);
@@ -40,7 +40,7 @@ public static class VisionCoordinateRebinding
     /// <param name="frames">本轮运行预览。</param>
     public static void Unbind(AnalyzeVisionFrameNodeModel node, IWorkflowVisionPreviewSource frames)
     {
-        ArgumentNullException.ThrowIfNull(node); ArgumentNullException.ThrowIfNull(frames);
+        Guard.NotNull(node); Guard.NotNull(frames);
         if (node.Coordinates is not { } binding) return;
         using var input = CaptureInput(node, frames);
         Apply(node, Current(binding, input.Frame, frames), null);

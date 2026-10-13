@@ -157,8 +157,8 @@ public sealed class WorkflowSubflowValues : IWorkflowKeyedOutput, IWorkflowResul
     /// <param name="values">名称到值的映射；名称区分大小写。</param>
     public WorkflowSubflowValues(IReadOnlyDictionary<string, object?> values)
     {
-        ArgumentNullException.ThrowIfNull(values);
-        _values = new Dictionary<string, object?>(values, StringComparer.Ordinal);
+        Guard.NotNull(values);
+        _values = values.ToDictionary(StringComparer.Ordinal);
     }
 
     /// <inheritdoc />

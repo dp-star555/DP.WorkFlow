@@ -12,9 +12,9 @@ public interface IWorkflowKeyedOutput
     /// <returns>键存在时返回 <see langword="true"/>。</returns>
     bool TryGetKeyedValue(string key, out object? value);
 
-    /// <summary>键不存在或不可读时的说明，用于绑定错误消息。</summary>
+    /// <summary>键不存在或不可读时的说明，用于绑定错误消息，例如“不存在键 m1a2b3c4。”。</summary>
     /// <param name="key">未找到的键。</param>
-    string DescribeMissingKey(string key) => $"不存在键 {key}。";
+    string DescribeMissingKey(string key);
 }
 
 /// <summary>结果页额外显示的逐项结果行（例如测量组每个测量项一行）。</summary>
@@ -51,7 +51,7 @@ public static class WorkflowOutputMembers
     /// <param name="maxDepth">递归层数。</param>
     public static IEnumerable<WorkflowBindableMember> OfType(Type type, string path = "$", string? displayPrefix = null, int maxDepth = 3)
     {
-        ArgumentNullException.ThrowIfNull(type);
+        Guard.NotNull(type);
         return Walk(type, path, "", 0);
 
         IEnumerable<WorkflowBindableMember> Walk(Type current, string currentPath, string relative, int depth)
@@ -76,7 +76,7 @@ public static class WorkflowOutputMembers
     /// <param name="node">节点配置。</param><param name="outputType">描述器声明的静态输出类型，可为空。</param>
     public static IReadOnlyList<WorkflowBindableMember> Describe(IWorkflowNodeModel node, Type? outputType)
     {
-        ArgumentNullException.ThrowIfNull(node);
+        Guard.NotNull(node);
         if (node is IWorkflowDynamicOutputNode dynamic) return dynamic.DescribeOutputs();
         return outputType is null ? Array.Empty<WorkflowBindableMember>() : OfType(outputType).ToArray();
     }
@@ -88,14 +88,14 @@ public static class WorkflowOutputMembers
     /// <param name="node">来源节点。</param><param name="outputType">描述器声明的静态输出类型。</param><param name="path">成员路径。</param>
     public static Type? Resolve(IWorkflowNodeModel node, Type outputType, string path)
     {
-        ArgumentNullException.ThrowIfNull(node); ArgumentNullException.ThrowIfNull(outputType); ArgumentNullException.ThrowIfNull(path);
+        Guard.NotNull(node); Guard.NotNull(outputType); Guard.NotNull(path);
         if (path == "$") return outputType;
-        var segments = path.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var segments = path.Split('.').Select(segment => segment.Trim()).Where(segment => segment.Length > 0).ToArray();
         if (node is IWorkflowDynamicOutputNode dynamic)
         {
             var members = dynamic.DescribeOutputs().ToDictionary(m => m.Path, m => m.Type, StringComparer.OrdinalIgnoreCase);
             for (int length = segments.Length; length > 0; length--)
-                if (members.TryGetValue(string.Join('.', segments.Take(length)), out var prefix))
+                if (members.TryGetValue(string.Join(".", segments.Take(length)), out var prefix))
                     return ResolveProperties(prefix, segments.Skip(length));
             return null;
         }

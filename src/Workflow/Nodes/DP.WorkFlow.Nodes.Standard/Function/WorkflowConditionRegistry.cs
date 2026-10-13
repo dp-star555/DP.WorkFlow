@@ -24,7 +24,7 @@ public sealed class WorkflowConditionRegistry : IWorkflowConditionRegistry
     {
         if (string.IsNullOrWhiteSpace(functionKey))
             throw new ArgumentException("条件函数键不能为空。", nameof(functionKey));
-        ArgumentNullException.ThrowIfNull(condition);
+        Guard.NotNull(condition);
         _conditions[functionKey.Trim()] = condition;
         return this;
     }

@@ -36,6 +36,6 @@ public sealed class QueueAddNodeHandler : WorkflowNodeHandler<QueueAddNodeModel>
         var changed = service.EnqueueValue(node.QueueKey.Trim(), value, node.ValueType, node.PreventDuplicate, node.AutoCreateIfMissing);
         var output = WorkflowQueueNodeRuntime.BuildResult(node.QueueKey.Trim(), node.ValueType, service.ReadSnapshot(node.QueueKey.Trim()), changed, value);
         if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: output));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
 }

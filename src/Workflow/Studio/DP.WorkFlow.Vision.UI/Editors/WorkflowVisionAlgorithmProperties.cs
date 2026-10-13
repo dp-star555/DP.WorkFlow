@@ -10,7 +10,7 @@ public static class WorkflowVisionAlgorithmProperties
     /// <summary>提供行内实现选择、参数子组、递归依赖及轻量检查；不会创建算法实例。</summary>
     public static Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>> CreateProvider(VisionAlgorithmCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(catalog);
+        Guard.NotNull(catalog);
         return node => node is IWorkflowVisionAlgorithmNode algorithm
             ? algorithm.GetAlgorithmSlots().SelectMany(slot => Project(slot, catalog, node)).ToArray()
             : Array.Empty<WorkflowPropertyEntry>();
@@ -87,7 +87,7 @@ public static class WorkflowVisionAlgorithmProperties
                         }
                         else
                         {
-                            var parent = Required(path[..^1]);
+                            var parent = Required(path.Take(path.Length - 1).ToArray());
                             if (nextId.Length == 0) parent.Dependencies.Remove(path[^1]);
                             else parent.Dependencies[path[^1]] = new VisionAlgorithmSelection { ImplementationId = nextId };
                         }
@@ -197,7 +197,7 @@ public static class WorkflowVisionAlgorithmProperties
                     if (kind == WorkflowPropertyEditorKind.Number)
                     {
                         var number = Convert.ToDouble(value, CultureInfo.InvariantCulture);
-                        if (!double.IsFinite(number) || number < parameter.Minimum || number > parameter.Maximum)
+                        if (!Polyfill.IsFinite(number) || number < parameter.Minimum || number > parameter.Maximum)
                             throw new ArgumentOutOfRangeException(parameter.Id, "初始化参数超出允许范围。");
                     }
                     if (type.IsEnum && !Enum.IsDefined(type, value!)) throw new ArgumentException("枚举值未定义。");

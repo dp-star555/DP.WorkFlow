@@ -75,7 +75,7 @@ public sealed class WorkflowBindingTreeModel
     /// <param name="candidates">候选项集合。</param>
     public void SetCandidates(IEnumerable<WorkflowBindingCandidate> candidates)
     {
-        ArgumentNullException.ThrowIfNull(candidates);
+        Guard.NotNull(candidates);
         _candidates = candidates
             .DistinctBy(item => item.ToBindingKey())
             .OrderBy(item => item.SourceNodeId, StringComparer.Ordinal)

@@ -30,7 +30,7 @@ public sealed class WorkflowCompiler
     /// <exception cref="WorkflowCompilationException">结构、端口、并行或绑定分析产生阻塞错误。</exception>
     public WorkflowExecutionPlan Compile(WorkflowDocument document)
     {
-        ArgumentNullException.ThrowIfNull(document);
+        Guard.NotNull(document);
         // 子流程接口的类型跟随来源，编译前按当前文档解析并注入启动节点和复合节点。
         WorkflowSubflowInterfaces.Refresh(document, _catalog);
         return CompileCore(
@@ -43,7 +43,7 @@ public sealed class WorkflowCompiler
         WorkflowDocument document,
         HashSet<WorkflowDocument> ancestors)
     {
-        ArgumentNullException.ThrowIfNull(document);
+        Guard.NotNull(document);
         if (!ancestors.Add(document))
             throw new InvalidOperationException("检测到子文档循环引用，无法编译复合流程。");
         // 子画布独立于当前文档编译：当前文档有错时也照常检查，一次报全所有子画布的问题。

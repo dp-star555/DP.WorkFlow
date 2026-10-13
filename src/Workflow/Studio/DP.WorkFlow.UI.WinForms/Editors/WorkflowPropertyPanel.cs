@@ -443,7 +443,9 @@ public sealed partial class WorkflowPropertyPanel : UserControl
                 using var dialog = new FolderBrowserDialog
                 {
                     Description = string.IsNullOrWhiteSpace(entry.EditorDialogTitle) ? $"选择{entry.DisplayName}" : entry.EditorDialogTitle,
+#if !NETFRAMEWORK
                     UseDescriptionForTitle = true,
+#endif
                     ShowNewFolderButton = true,
                     SelectedPath = Directory.Exists(text.Text) ? text.Text : string.Empty
                 };

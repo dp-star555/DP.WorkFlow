@@ -168,7 +168,7 @@ public sealed partial class WorkflowEngine
                 info.State = state;
                 info.CompletedAt = DateTimeOffset.UtcNow;
                 info.Elapsed = info.ExecutionStartedTimestamp > 0
-                    ? Stopwatch.GetElapsedTime(info.ExecutionStartedTimestamp)
+                    ? Polyfill.GetElapsedTime(info.ExecutionStartedTimestamp)
                     : info.CompletedAt.Value - info.StartedAt.GetValueOrDefault(info.CompletedAt.Value);
                 info.Message = message;
             }
@@ -276,7 +276,7 @@ public sealed partial class WorkflowEngine
         try
         {
             return new ReadOnlyDictionary<string, object?>(
-                new Dictionary<string, object?>(data, StringComparer.Ordinal));
+                data.ToDictionary(StringComparer.Ordinal));
         }
         catch
         {

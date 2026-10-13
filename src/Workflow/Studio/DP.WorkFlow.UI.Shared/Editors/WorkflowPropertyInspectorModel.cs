@@ -140,8 +140,8 @@ public sealed class WorkflowPropertyEntry
     public static WorkflowPropertyEntry CreateAction(string name, string displayName, string category, string description,
         Func<string> caption, Func<Task> execute, Func<string>? blockReason = null)
     {
-        ArgumentNullException.ThrowIfNull(caption);
-        ArgumentNullException.ThrowIfNull(execute);
+        Guard.NotNull(caption);
+        Guard.NotNull(execute);
         var entry = Create(name, displayName, category, description, WorkflowPropertyEditorKind.Action, typeof(string), () => caption(), _ => { });
         entry._action = execute; entry._actionBlockReason = blockReason;
         return entry;
@@ -210,7 +210,7 @@ public sealed class WorkflowPropertyEntry
     public WorkflowPropertyEntry WithNumberRange(double? minimum, double? maximum)
     {
         if (EditorKind != WorkflowPropertyEditorKind.Number) throw new InvalidOperationException("只有数值属性可以指定范围。");
-        if (minimum > maximum || minimum is { } min && !double.IsFinite(min) || maximum is { } max && !double.IsFinite(max))
+        if (minimum > maximum || minimum is { } min && !Polyfill.IsFinite(min) || maximum is { } max && !Polyfill.IsFinite(max))
             throw new ArgumentException("数值范围无效。");
         var factor = _displayRadiansAsDegrees ? 180 / Math.PI : 1;
         NumberMinimum = minimum * factor; NumberMaximum = maximum * factor;
@@ -239,10 +239,10 @@ public sealed class WorkflowPropertyEntry
         if (!_displayRadiansAsDegrees || value == null) return value;
         double Scale(double angle)
         {
-            if (toStorage && (!double.IsFinite(angle) || angle < NumberMinimum || angle > NumberMaximum))
+            if (toStorage && (!Polyfill.IsFinite(angle) || angle < NumberMinimum || angle > NumberMaximum))
                 throw new ArgumentOutOfRangeException(Name, angle, $"{DisplayName}允许范围：{NumberMinimum?.ToString(CultureInfo.InvariantCulture) ?? "无下限"}～{NumberMaximum?.ToString(CultureInfo.InvariantCulture) ?? "无上限"}，角度须为有限数值。");
             var scaled = toStorage ? angle * (Math.PI / 180) : angle * (180 / Math.PI);
-            if (toStorage && !double.IsFinite(scaled)) throw new ArgumentOutOfRangeException(nameof(value), "角度必须是有限数值。");
+            if (toStorage && !Polyfill.IsFinite(scaled)) throw new ArgumentOutOfRangeException(nameof(value), "角度必须是有限数值。");
             return scaled;
         }
         return value switch
@@ -341,7 +341,7 @@ public sealed class WorkflowPropertyEntry
     {
         if (EditorKind != WorkflowPropertyEditorKind.WorkflowInput || WorkflowInputType is null)
             throw new InvalidOperationException($"属性 {Name} 不是 WorkflowInput。");
-        if (!Enum.IsDefined(source))
+        if (!Polyfill.IsDefined(source))
             throw new InvalidOperationException("输入来源类型未定义。");
         if (source == WorkflowValueSource.Binding && !binding.HasValue)
             throw new InvalidOperationException("绑定模式必须选择绑定键。");
@@ -467,7 +467,7 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     /// <param name="value">要校验、转换或写入的值。</param>
     public void SetValue(WorkflowPropertyEntry entry, object? value)
     {
-        ArgumentNullException.ThrowIfNull(entry);
+        Guard.NotNull(entry);
         ExecuteConfigurationChange(() => entry.SetValue(value));
     }
 
@@ -476,7 +476,7 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     /// <param name="rows">表格行数据。</param>
     public void ApplyCollectionTable(WorkflowCollectionTableModel table, IEnumerable<IReadOnlyList<string>> rows)
     {
-        ArgumentNullException.ThrowIfNull(table);
+        Guard.NotNull(table);
         ExecuteConfigurationChange(() => table.Apply(rows));
     }
 
@@ -485,7 +485,7 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     /// <param name="json">结构化 JSON 文本。</param>
     public void SetStructuredJson(WorkflowPropertyEntry entry, string json)
     {
-        ArgumentNullException.ThrowIfNull(entry);
+        Guard.NotNull(entry);
         ExecuteConfigurationChange(() => entry.SetStructuredJson(json));
     }
 
@@ -500,13 +500,13 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
         object? literalValue,
         WorkflowBindingKey? binding)
     {
-        ArgumentNullException.ThrowIfNull(entry);
+        Guard.NotNull(entry);
         ExecuteConfigurationChange(() => entry.SetWorkflowInput(source, literalValue, binding));
     }
 
     private void ExecuteConfigurationChange(Action change)
     {
-        ArgumentNullException.ThrowIfNull(change);
+        Guard.NotNull(change);
         var node = SelectedNode
             ?? throw new InvalidOperationException("当前没有选中的节点。");
         _session.ExecuteNodeConfigurationChange(node.Id, _ => change());
@@ -573,7 +573,7 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     /// <param name="node">配置对象。</param><param name="choiceProvider">可选候选提供者。</param>
     public static IReadOnlyList<WorkflowPropertyEntry> CreateEntries(IWorkflowNodeModel node, WorkflowPropertyChoiceProvider? choiceProvider = null)
     {
-        ArgumentNullException.ThrowIfNull(node);
+        Guard.NotNull(node);
         return BuildEntries(node, choiceProvider, Array.Empty<IWorkflowNodeModel>());
     }
 

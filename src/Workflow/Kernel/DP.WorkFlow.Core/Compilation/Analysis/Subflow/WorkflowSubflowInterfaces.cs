@@ -11,7 +11,7 @@ public static class WorkflowSubflowInterfaces
     /// <param name="catalog">节点目录；为空时类型全部按 <see cref="object"/> 处理。</param>
     public static void Refresh(WorkflowDocument document, WorkflowNodeCatalog? catalog)
     {
-        ArgumentNullException.ThrowIfNull(document);
+        Guard.NotNull(document);
         Refresh(document, catalog, new HashSet<WorkflowDocument>(ReferenceEqualityComparer.Instance));
     }
 
@@ -24,8 +24,8 @@ public static class WorkflowSubflowInterfaces
         WorkflowDocument parent,
         WorkflowNodeCatalog? catalog)
     {
-        ArgumentNullException.ThrowIfNull(composite);
-        ArgumentNullException.ThrowIfNull(parent);
+        Guard.NotNull(composite);
+        Guard.NotNull(parent);
         return UniqueValid(composite.Inputs, input => input.Name)
             .Select(input =>
             {
@@ -45,7 +45,7 @@ public static class WorkflowSubflowInterfaces
         IWorkflowSubflowNode composite,
         WorkflowNodeCatalog? catalog)
     {
-        ArgumentNullException.ThrowIfNull(composite);
+        Guard.NotNull(composite);
         return UniqueValid(composite.Outputs, output => output.Name)
             .Select(output =>
             {
@@ -65,8 +65,8 @@ public static class WorkflowSubflowInterfaces
     /// <param name="outputType">复合节点登记的输出类型。</param>
     public static IReadOnlyList<WorkflowBindableMember> DescribeCompositeOutputs(IWorkflowSubflowNode composite, Type outputType)
     {
-        ArgumentNullException.ThrowIfNull(composite);
-        ArgumentNullException.ThrowIfNull(outputType);
+        Guard.NotNull(composite);
+        Guard.NotNull(outputType);
         return WorkflowOutputMembers.OfType(outputType)
             .Where(member => member.Path != nameof(IWorkflowResultRows.ResultRows)
                 && !member.Path.StartsWith(nameof(IWorkflowResultRows.ResultRows) + ".", StringComparison.Ordinal))
@@ -80,7 +80,7 @@ public static class WorkflowSubflowInterfaces
     /// <param name="catalog">节点目录。</param>
     public static Type? ResolveBindingType(WorkflowBindingKey binding, WorkflowDocument document, WorkflowNodeCatalog? catalog)
     {
-        ArgumentNullException.ThrowIfNull(document);
+        Guard.NotNull(document);
         if (catalog is null || binding.IsPublicData)
             return null;
         var node = document.Graph.Nodes.FirstOrDefault(item => string.Equals(item.Id, binding.NodeId, StringComparison.Ordinal));
@@ -93,7 +93,7 @@ public static class WorkflowSubflowInterfaces
     /// <param name="composite">复合节点。</param>
     public static IEnumerable<WorkflowDeclaredBinding> DeclareBindings(IWorkflowSubflowNode composite)
     {
-        ArgumentNullException.ThrowIfNull(composite);
+        Guard.NotNull(composite);
         for (var index = 0; index < composite.Inputs.Count; index++)
         {
             if (composite.Inputs[index].Source is { } source)
@@ -117,7 +117,7 @@ public static class WorkflowSubflowInterfaces
     /// <param name="outputType">复合节点登记的输出类型；输出名称不能与其中的成员重名。</param>
     public static IReadOnlyList<WorkflowValidationError> Validate(IWorkflowSubflowNode composite, Type? outputType)
     {
-        ArgumentNullException.ThrowIfNull(composite);
+        Guard.NotNull(composite);
         var errors = new List<WorkflowValidationError>();
         ValidateNames(composite, composite.Inputs.Select(input => input.Name), "输入", errors);
         ValidateNames(composite, composite.Outputs.Select(output => output.Name), "输出", errors);

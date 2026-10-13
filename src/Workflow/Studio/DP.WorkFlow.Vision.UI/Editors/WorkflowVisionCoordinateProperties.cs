@@ -15,7 +15,7 @@ public static class WorkflowVisionCoordinateProperties
     public static Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>> CreateProvider(IWorkflowVisionPreviewSource frames,
         Func<IReadOnlyList<IWorkflowNodeModel>> documentNodes)
     {
-        ArgumentNullException.ThrowIfNull(frames); ArgumentNullException.ThrowIfNull(documentNodes);
+        Guard.NotNull(frames); Guard.NotNull(documentNodes);
         return node => node is AnalyzeVisionFrameNodeModel { SupportsCoordinates: true } analysis
             ? [Create(analysis, frames, documentNodes())] : [];
     }

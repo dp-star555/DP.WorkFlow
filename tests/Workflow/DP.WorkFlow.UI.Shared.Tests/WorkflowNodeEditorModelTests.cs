@@ -302,6 +302,7 @@ public sealed class WorkflowNodeEditorModelTests
 
     private sealed class MissingRendererKeyProvider : IWorkflowNodeEditorPageProvider
     {
+        public string ExtensionId => nameof(MissingRendererKeyProvider);
         public bool CanProvide(WorkflowNodeEditorContext context) => true;
 
         public IEnumerable<WorkflowNodeEditorPageDescriptor> CreatePages(WorkflowNodeEditorContext context)
@@ -313,6 +314,7 @@ public sealed class WorkflowNodeEditorModelTests
 
     private sealed class CustomProvider : IWorkflowNodeEditorPageProvider
     {
+        public string ExtensionId => nameof(CustomProvider);
         public bool CanProvide(WorkflowNodeEditorContext context) => true;
         public IEnumerable<WorkflowNodeEditorPageDescriptor> CreatePages(WorkflowNodeEditorContext context)
         {

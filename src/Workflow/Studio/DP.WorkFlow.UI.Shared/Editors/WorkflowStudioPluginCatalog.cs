@@ -24,7 +24,7 @@ public sealed class WorkflowStudioPluginCatalog
     /// <returns>当前目录。</returns>
     public WorkflowStudioPluginCatalog Register(IWorkflowStudioPluginModule extension)
     {
-        ArgumentNullException.ThrowIfNull(extension);
+        Guard.NotNull(extension);
         EnsureMutable();
         var extensionId = RequireKey(extension.ExtensionId, nameof(extension));
         if (!_extensionIds.Add(extensionId))
@@ -38,7 +38,7 @@ public sealed class WorkflowStudioPluginCatalog
     /// <returns>当前目录。</returns>
     public WorkflowStudioPluginCatalog RegisterPageProvider(IWorkflowNodeEditorPageProvider provider)
     {
-        ArgumentNullException.ThrowIfNull(provider);
+        Guard.NotNull(provider);
         EnsureMutable();
         var extensionId = RequireKey(provider.ExtensionId, nameof(provider));
         if (!_pageProviderIds.Add(extensionId))

@@ -25,7 +25,7 @@ public sealed class LabelInspectionWpfExtension : IWorkflowWpfStudioExtension
     /// <inheritdoc/>
     public void Register(WorkflowWpfStudioExtensionCatalog extensions)
     {
-        ArgumentNullException.ThrowIfNull(extensions);
+        Guard.NotNull(extensions);
         extensions.RegisterPageProvider(new LabelInspectionEditorPageProvider(new OpenCvImageCodec(), FrameSource))
             .RegisterRenderer(new LabelRecipeWpfRenderer())
             .RegisterRenderer(new LabelReportWpfRenderer());

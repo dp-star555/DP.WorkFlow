@@ -49,6 +49,6 @@ public sealed class LoopNodeHandler : WorkflowNodeHandler<LoopNodeModel>
                 ["TotalIterations"] = node.Iterations,
                 ["Port"] = port
             });
-        return ValueTask.FromResult(NodeExecutionResult.Continue(port, output));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(port, output));
     }
 }

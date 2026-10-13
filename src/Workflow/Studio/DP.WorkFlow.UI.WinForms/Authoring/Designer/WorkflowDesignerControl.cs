@@ -435,7 +435,7 @@ public sealed partial class WorkflowDesignerControl : Control
         if (_session is null)
             return;
         var canvasPoint = WorkflowDesignerGeometry.ScreenToCanvas(_session, e.X, e.Y);
-        var zoom = Math.Clamp(_session.Zoom * (e.Delta > 0 ? 1.1 : 1 / 1.1), 0.25, 2.5);
+        var zoom = Polyfill.Clamp(_session.Zoom * (e.Delta > 0 ? 1.1 : 1 / 1.1), 0.25, 2.5);
         _session.SetViewport(zoom, e.X - canvasPoint.X * zoom, e.Y - canvasPoint.Y * zoom);
     }
 
@@ -791,7 +791,7 @@ public sealed partial class WorkflowDesignerControl : Control
         using var fill = new SolidBrush(Color.FromArgb(167, 139, 250));
         using var border = new Pen(ForeColor, 1);
         foreach (var port in ports)
-        foreach (var side in Enum.GetValues<WorkflowPortSide>())
+        foreach (var side in Polyfill.GetEnumValues<WorkflowPortSide>())
         {
             var point = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports, side);
             const float radius = 4;
@@ -810,7 +810,7 @@ public sealed partial class WorkflowDesignerControl : Control
             && _connectionStart?.Node == node
             ? _portDropSide
             : null;
-        foreach (var side in Enum.GetValues<WorkflowPortSide>())
+        foreach (var side in Polyfill.GetEnumValues<WorkflowPortSide>())
         {
             if (_session is not null && WorkflowDesignerInteraction.HasConnectedEndpointAtSide(_session, node, side))
                 continue;
@@ -973,18 +973,18 @@ public sealed partial class WorkflowDesignerControl : Control
     {
         if (_session is null || !TryCreateOverviewMapLayout(out var layout) || !layout.MapBounds.Contains(location))
             return false;
-        var x = Math.Clamp(location.X, layout.ContentBounds.Left, layout.ContentBounds.Right);
-        var y = Math.Clamp(location.Y, layout.ContentBounds.Top, layout.ContentBounds.Bottom);
+        var x = Polyfill.Clamp(location.X, layout.ContentBounds.Left, layout.ContentBounds.Right);
+        var y = Polyfill.Clamp(location.Y, layout.ContentBounds.Top, layout.ContentBounds.Bottom);
         var canvasX = layout.WorldBounds.X + (x - layout.ContentBounds.X) / layout.Scale;
         var canvasY = layout.WorldBounds.Y + (y - layout.ContentBounds.Y) / layout.Scale;
         var viewport = CurrentViewportCanvasRect();
         // 概览拖动只能在固定的流程世界边界内定位。这样拖到边缘时世界边界不会
         // 跟随当前视口继续扩张，概览比例和蓝色视口框尺寸也就不会发生抖动。
-        canvasX = Math.Clamp(
+        canvasX = Polyfill.Clamp(
             canvasX,
             layout.WorldBounds.X + viewport.Width / 2d,
             layout.WorldBounds.X + layout.WorldBounds.Width - viewport.Width / 2d);
-        canvasY = Math.Clamp(
+        canvasY = Polyfill.Clamp(
             canvasY,
             layout.WorldBounds.Y + viewport.Height / 2d,
             layout.WorldBounds.Y + layout.WorldBounds.Height - viewport.Height / 2d);
@@ -1172,7 +1172,7 @@ public sealed partial class WorkflowDesignerControl : Control
         if (IsDisposed)
             return;
         if (InvokeRequired)
-            BeginInvoke(Invalidate);
+            BeginInvoke((Action)Invalidate);
         else
             Invalidate();
     }

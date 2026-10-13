@@ -97,7 +97,7 @@ public sealed class RecognizeVisionTextLineNodeHandler : WorkflowNodeHandler<Rec
         var recognition = bindings.Invoke<ITextLineRecognizer, TextLineRecognition>(context, "recognizer",
             recognizer => recognizer.Recognize(patch, new PixelBounds(0, 0, width, height), cancellationToken), cancellationToken);
         var fact = new WorkflowVisionTextLineFact(frame.FrameId, recognition);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: fact, projection: WorkflowVisionFrameScope.Stage(context, frame, fact)));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: fact, projection: WorkflowVisionFrameScope.Stage(context, frame, fact)));
     }
 
     private static IImageSource Resample(IImageSource image, CoordinateMatrix2D outputToImage, int width, int height, CancellationToken token)

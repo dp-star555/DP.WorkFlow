@@ -131,8 +131,8 @@ public sealed class WorkflowNodeDescriptor
             throw new ArgumentException("节点类型键不能为空。", nameof(nodeType));
         if (nodeVersion <= 0)
             throw new ArgumentOutOfRangeException(nameof(nodeVersion), "节点版本必须大于 0。");
-        ArgumentNullException.ThrowIfNull(modelType);
-        ArgumentNullException.ThrowIfNull(factory);
+        Guard.NotNull(modelType);
+        Guard.NotNull(factory);
         if (!typeof(IWorkflowNodeModel).IsAssignableFrom(modelType))
             throw new ArgumentException($"{modelType.FullName} 没有实现 IWorkflowNodeModel。", nameof(modelType));
 
@@ -246,7 +246,7 @@ public sealed class WorkflowNodeCatalog
     /// <exception cref="InvalidOperationException">目录中已经存在相同 <see cref="WorkflowNodeDescriptor.NodeType"/> 的描述。</exception>
     public WorkflowNodeCatalog Register(WorkflowNodeDescriptor descriptor)
     {
-        ArgumentNullException.ThrowIfNull(descriptor);
+        Guard.NotNull(descriptor);
         lock (_syncRoot)
         {
             EnsureMutable();

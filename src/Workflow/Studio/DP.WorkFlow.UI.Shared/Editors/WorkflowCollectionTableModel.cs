@@ -36,7 +36,7 @@ public sealed class WorkflowCollectionTableModel
     /// <param name="table">集合表格模型。</param>
     public static bool TryCreate(WorkflowPropertyEntry entry, out WorkflowCollectionTableModel? table)
     {
-        ArgumentNullException.ThrowIfNull(entry);
+        Guard.NotNull(entry);
         var type = entry.ValueType;
         var dictionary = FindGeneric(type, typeof(IDictionary<,>));
         if (dictionary is not null && dictionary.GetGenericArguments()[0] == typeof(string))
@@ -81,7 +81,7 @@ public sealed class WorkflowCollectionTableModel
     /// <param name="rows">表格行数据。</param>
     public void Apply(IEnumerable<IReadOnlyList<string>> rows)
     {
-        ArgumentNullException.ThrowIfNull(rows);
+        Guard.NotNull(rows);
         if (_dictionaryValueType is not null)
         {
             var dictionary = (IDictionary)(Activator.CreateInstance(_entry.ValueType)

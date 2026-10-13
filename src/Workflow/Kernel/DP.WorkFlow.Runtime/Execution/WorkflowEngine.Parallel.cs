@@ -102,7 +102,7 @@ public sealed partial class WorkflowEngine
             ScopeIds = scopeIds;
             _loopFrames = loopFrames is null
                 ? new Dictionary<string, int>(StringComparer.Ordinal)
-                : new Dictionary<string, int>(loopFrames, StringComparer.Ordinal);
+                : loopFrames.ToDictionary(StringComparer.Ordinal);
         }
 
         public long TokenId { get; }

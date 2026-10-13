@@ -30,6 +30,5 @@ public interface IWorkflowChildExecutionContext
     /// <returns>调用方负责释放的会话。</returns>
     IWorkflowChildWorkflowSession OpenChildWorkflowSession(
         WorkflowExecutionPlan definition,
-        WorkflowContext childContext) =>
-        throw new NotSupportedException("当前运行时不支持反复运行子流程。");
+        WorkflowContext childContext);
 }

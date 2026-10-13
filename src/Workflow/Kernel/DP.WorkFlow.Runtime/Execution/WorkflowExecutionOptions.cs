@@ -33,7 +33,7 @@ public sealed class WorkflowExecutionOptions
     /// <exception cref="ArgumentOutOfRangeException">执行次数、Trace 容量或记录容量非正，或恢复次数为负。</exception>
     internal void Validate()
     {
-        ArgumentNullException.ThrowIfNull(Recording);
+        Guard.NotNull(Recording);
         Recording.Validate();
         if (MaxTotalNodeExecutions <= 0)
             throw new ArgumentOutOfRangeException(nameof(MaxTotalNodeExecutions));

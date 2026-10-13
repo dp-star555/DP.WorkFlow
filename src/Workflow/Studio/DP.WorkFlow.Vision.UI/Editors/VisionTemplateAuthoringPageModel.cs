@@ -138,11 +138,11 @@ public sealed class VisionTemplateAuthoringPageModel(VisionFrameEditorPageModel 
         }
         Action(EVisionTemplateAuthoringCommand.Build, "模型制作", "生成模型", "3. 制作参数");
         properties.Add(WorkflowPropertyEntry.CreateChoice("TestSource", "测试图像", "4. 测试设置", "制作区域自检使用0°/1倍；样图整图使用运行搜索区间。当前输入/测试文件沿用节点搜索范围。",
-            () => TestSource.ToString(), v => TestSource = Enum.Parse<EVisionTemplateTestSource>((string)v!),
+            () => TestSource.ToString(), v => TestSource = Polyfill.ParseEnum<EVisionTemplateTestSource>((string)v!),
             new[] { new WorkflowPropertyChoice("制作区域（0°/1倍自检）", "SampleRegion"), new WorkflowPropertyChoice("模板样图（整图）", "Sample"), new WorkflowPropertyChoice("当前输入（节点搜索范围）", "Input"), new WorkflowPropertyChoice("测试图像（节点搜索范围）", "TestImage") }, new WorkflowPropertyEditorAttribute("Template.TestSource")));
         Add("Score", "最小分数", "4. 测试设置", WorkflowPropertyEditorKind.Number, typeof(double),
             () => ((LocateVisionTemplatePoseNodeModel)Frame.EditingNode).MinimumScore,
-            v => { var score = (double)v!; if (!double.IsFinite(score) || score < 0 || score > 1) throw new ArgumentOutOfRangeException(nameof(score), "最小分数必须在0到1之间。");
+            v => { var score = (double)v!; if (!Polyfill.IsFinite(score) || score < 0 || score > 1) throw new ArgumentOutOfRangeException(nameof(score), "最小分数必须在0到1之间。");
                 ((LocateVisionTemplatePoseNodeModel)Frame.EditingNode).MinimumScore = score; Draft.ResetTrial(); }, minimum: 0, maximum: 1);
         if (Frame.EditingNode is LocateVisionTemplatePoseNodeModel poseNode)
         {

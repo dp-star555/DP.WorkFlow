@@ -83,7 +83,7 @@ public sealed class ValueCompareNodeHandler : WorkflowNodeHandler<ValueCompareNo
             ["Right"] = rightText,
             ["Matched"] = matched
         });
-        return ValueTask.FromResult(NodeExecutionResult.Continue(port, output));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(port, output));
     }
 
     private static void Validate(ValueCompareNodeModel node)
@@ -149,11 +149,22 @@ public sealed class ValueCompareNodeHandler : WorkflowNodeHandler<ValueCompareNo
     private static bool CompareDouble(double left, double right, E_ValueCompareOperator operation, double tolerance) =>
         CompareDifference(left - right, tolerance, operation);
 
-    private static bool CompareDifference<T>(T difference, T tolerance, E_ValueCompareOperator operation)
-        where T : INumber<T> => operation switch
+    // 小数和浮点数各一份（.NET Framework 没有泛型数学接口）。
+    private static bool CompareDifference(decimal difference, decimal tolerance, E_ValueCompareOperator operation) => operation switch
     {
-        E_ValueCompareOperator.Equal => T.Abs(difference) <= tolerance,
-        E_ValueCompareOperator.NotEqual => T.Abs(difference) > tolerance,
+        E_ValueCompareOperator.Equal => Math.Abs(difference) <= tolerance,
+        E_ValueCompareOperator.NotEqual => Math.Abs(difference) > tolerance,
+        E_ValueCompareOperator.GreaterThan => difference > tolerance,
+        E_ValueCompareOperator.GreaterOrEqual => difference >= -tolerance,
+        E_ValueCompareOperator.LessThan => difference < -tolerance,
+        E_ValueCompareOperator.LessOrEqual => difference <= tolerance,
+        _ => throw new NotSupportedException($"不支持的值比较操作：{operation}。")
+    };
+
+    private static bool CompareDifference(double difference, double tolerance, E_ValueCompareOperator operation) => operation switch
+    {
+        E_ValueCompareOperator.Equal => Math.Abs(difference) <= tolerance,
+        E_ValueCompareOperator.NotEqual => Math.Abs(difference) > tolerance,
         E_ValueCompareOperator.GreaterThan => difference > tolerance,
         E_ValueCompareOperator.GreaterOrEqual => difference >= -tolerance,
         E_ValueCompareOperator.LessThan => difference < -tolerance,

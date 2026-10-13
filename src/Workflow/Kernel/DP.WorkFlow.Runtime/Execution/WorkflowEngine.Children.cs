@@ -114,7 +114,7 @@ public sealed partial class WorkflowEngine
     /// <returns>最近一次未失效的输出；该运行已不在本引擎可见范围内时为空。</returns>
     public WorkflowNodeOutput? FindLatestNodeOutput(Guid runId, string nodeId)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+        Guard.NotNullOrWhiteSpace(nodeId);
         if (runId == RunState.RunId)
             return RunState.TryGetLatestNodeOutput(nodeId, out var output) ? output : null;
         WorkflowEngine[] children;
@@ -158,7 +158,7 @@ public sealed partial class WorkflowEngine
 
         public async Task<WorkflowRunResult> RunCycleAsync(CancellationToken cancellationToken)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            Guard.NotDisposed(_disposed, this);
             // 圈与圈之间不传递数据，上一圈剩余输出不会再被读取，开始新一圈前释放其资源。
             owner.RetireChildOutputProjections(parentNode.Id, engine.DetachOutputProjections());
             _keepLastCycleOutputs = false;

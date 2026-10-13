@@ -16,7 +16,7 @@ public static class WorkflowProcessNodes
     /// <summary>注册当前已经实现的工艺流程节点模型。</summary>
     public static WorkflowNodeCatalog RegisterProcessNodes(this WorkflowNodeCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(catalog);
+        Guard.NotNull(catalog);
         return catalog
             .Register(WorkflowNodeDescriptor.Create<RecoveryEntryNodeModel, string>(ports: Ports(WorkflowPorts.Success)))
             .Register(WorkflowNodeDescriptor.Create<ContinueOperationNodeModel, WarningResolution>(ports: Ports()))
@@ -59,7 +59,7 @@ public static class WorkflowProcessNodes
     public static WorkflowNodeHandlerCatalog RegisterProcessNodeHandlers(
         this WorkflowNodeHandlerCatalog handlers)
     {
-        ArgumentNullException.ThrowIfNull(handlers);
+        Guard.NotNull(handlers);
         return handlers
             .Register(new RecoveryEntryNodeHandler())
             .Register(new ContinueOperationNodeHandler())

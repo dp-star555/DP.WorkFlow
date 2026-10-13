@@ -71,7 +71,7 @@ public sealed class ReadVisionBarcodeNodeModel : AnalyzeVisionFrameNodeModel, IW
     /// <returns>过滤排序后的码。</returns>
     internal IReadOnlyList<BarcodeObservation> Select(BarcodeReadResult reading, VisionCoordinateSystem? coordinates)
     {
-        var formats = Formats.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var formats = Polyfill.SplitTrimmed(Formats, ';').ToHashSet(StringComparer.OrdinalIgnoreCase);
         var pattern = TextPattern.Length == 0 ? null : new Regex(TextPattern);
         var codes = reading.Observations.Where(o => (formats.Count == 0 || formats.Contains(o.Format)) && (pattern is null || pattern.IsMatch(o.Text)));
         if (Order == EWorkflowBarcodeOrder.Decoded) return codes.ToArray();
@@ -154,7 +154,7 @@ public sealed class ReadVisionBarcodeNodeHandler : WorkflowNodeHandler<ReadVisio
             return masked.Read(frame.Image, range.Bounds, range.Region, cancellationToken);
         }, cancellationToken);
         var fact = new WorkflowVisionBarcodeFact(frame.FrameId, reading, node.Select(reading, range.Coordinates), node.ExpectedCount, node.Separator, range);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: fact, projection: WorkflowVisionFrameScope.Stage(context, frame, fact)));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: fact, projection: WorkflowVisionFrameScope.Stage(context, frame, fact)));
     }
 }
 

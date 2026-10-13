@@ -38,7 +38,7 @@ public sealed class IntersectVisionLinesNodeModel : WorkflowVisionGeometryNodeMo
     {
         var errors = base.ValidateConfiguration().ToList();
         if (!IsBound(LineA) || !IsBound(LineB)) errors.Add("线线交点必须绑定两条直线。");
-        if (!double.IsFinite(MinimumAngleDegrees) || MinimumAngleDegrees < 0 || MinimumAngleDegrees >= 90) errors.Add("最小夹角须在 0..90° 之间。");
+        if (!Polyfill.IsFinite(MinimumAngleDegrees) || MinimumAngleDegrees < 0 || MinimumAngleDegrees >= 90) errors.Add("最小夹角须在 0..90° 之间。");
         return errors;
     }
 }
@@ -63,7 +63,7 @@ public sealed class MeasureVisionLineAngleNodeModel : WorkflowVisionGeometryNode
     {
         var errors = base.ValidateConfiguration().ToList();
         if (!IsBound(LineA) || !IsBound(LineB)) errors.Add("两线夹角必须绑定两条直线。");
-        if (!Enum.IsDefined(Mode)) errors.Add("角度方式无效。");
+        if (!Polyfill.IsDefined(Mode)) errors.Add("角度方式无效。");
         return errors;
     }
 }
@@ -130,7 +130,7 @@ public sealed class ProjectVisionPointToLineNodeModel : WorkflowVisionGeometryNo
     {
         var errors = base.ValidateConfiguration().ToList();
         if (!IsBound(Point) || !IsBound(Line)) errors.Add("点到线垂足必须绑定点和直线。");
-        if (!Enum.IsDefined(Mode)) errors.Add("投影模式无效。");
+        if (!Polyfill.IsDefined(Mode)) errors.Add("投影模式无效。");
         return errors;
     }
 }
@@ -409,7 +409,7 @@ public static class VisionConstruction
         double cross = rx * sy - ry * sx;
         if (Math.Abs(cross) <= 1e-12 * Math.Sqrt((rx * rx + ry * ry) * (sx * sx + sy * sy))) return null;
         double t = ((q.X - p.X) * sy - (q.Y - p.Y) * sx) / cross, x = p.X + t * rx, y = p.Y + t * ry;
-        return double.IsFinite(x) && double.IsFinite(y) && Math.Abs(x) <= CoordinateLimit && Math.Abs(y) <= CoordinateLimit ? new PointD(x, y) : null;
+        return Polyfill.IsFinite(x) && Polyfill.IsFinite(y) && Math.Abs(x) <= CoordinateLimit && Math.Abs(y) <= CoordinateLimit ? new PointD(x, y) : null;
     }
 
     private static VisionCoordinateSystem? Common(VisionCoordinateSystem? a, VisionCoordinateSystem? b, string frameA, string frameB)

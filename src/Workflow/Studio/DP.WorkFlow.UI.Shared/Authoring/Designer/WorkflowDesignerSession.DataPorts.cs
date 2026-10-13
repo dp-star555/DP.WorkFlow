@@ -38,7 +38,7 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="node">画布节点。</param>
     public IReadOnlyList<WorkflowOutputMember> GetExposedOutputMembers(WorkflowCanvasNode node)
     {
-        ArgumentNullException.ThrowIfNull(node);
+        Guard.NotNull(node);
         if (node.ExposedOutputMembers.Count == 0) return Array.Empty<WorkflowOutputMember>();
         return GetOutputMembers(node).Where(member => node.ExposedOutputMembers.Contains(member.Name)).ToArray();
     }
@@ -120,7 +120,7 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="target">目标参数。</param>
     public void BindDataPort(string sourceNodeId, string member, WorkflowDataPortTarget target)
     {
-        ArgumentNullException.ThrowIfNull(target);
+        Guard.NotNull(target);
         var binding = new WorkflowBindingKey(sourceNodeId, member);
         ExecuteNodeConfigurationChange(target.NodeId, node =>
         {

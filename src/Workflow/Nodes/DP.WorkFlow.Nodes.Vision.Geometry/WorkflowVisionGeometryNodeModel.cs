@@ -47,7 +47,7 @@ internal static class WorkflowVisionGeometryExecution
         return coordinates is null ? circle : circle.InCoordinates(coordinates);
     }
     internal static ValueTask<NodeExecutionResult> Output(IWorkflowNodeExecutionContext context, ImageFrame frame, IVisionGeometryFact fact) =>
-        ValueTask.FromResult(NodeExecutionResult.Continue(output: fact, projection: WorkflowVisionFrameScope.Stage(context, frame, fact)));
+        Polyfill.FromResult(NodeExecutionResult.Continue(output: fact, projection: WorkflowVisionFrameScope.Stage(context, frame, fact)));
     internal static T Invoke<T>(IWorkflowNodeExecutionContext context, Func<IGeometryMeasurer, T> operation, CancellationToken token) =>
         context.GetRequiredCapability<IWorkflowVisionAlgorithmBindings>().Invoke(context, "algorithm", operation, token);
 }

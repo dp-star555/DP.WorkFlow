@@ -55,7 +55,7 @@ public sealed class WorkflowOperatorInteraction : IWorkflowOperatorService, IDis
     public async ValueTask<string> AskChoiceAsync(string title, string message,
         IReadOnlyList<OperatorChoiceOption> options, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(options);
+        Guard.NotNull(options);
         if (options.Count < 2 || options.Count > 32)
             throw new ArgumentException("人工选择须包含2至32个选项，建议设备人员仅配置少量必要方案。", nameof(options));
         var copy = options.Select(option => option is null || string.IsNullOrWhiteSpace(option.Key) || string.IsNullOrWhiteSpace(option.Text)
@@ -123,7 +123,7 @@ public sealed class WorkflowOperatorInteraction : IWorkflowOperatorService, IDis
         CancellationTokenSource linked;
         lock (_sync)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            Guard.NotDisposed(_disposed, this);
             linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
         }
         using (linked)

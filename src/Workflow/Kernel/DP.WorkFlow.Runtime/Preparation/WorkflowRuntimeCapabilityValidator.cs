@@ -29,7 +29,7 @@ public sealed class WorkflowRuntimeCapabilityException : InvalidOperationExcepti
 
     private static string CreateMessage(IReadOnlyList<WorkflowRuntimeCapabilityIssue> issues)
     {
-        ArgumentNullException.ThrowIfNull(issues);
+        Guard.NotNull(issues);
         if (issues.Count == 0)
             return "工作流运行能力预检失败，但没有提供问题详情。";
         var details = issues.Select(issue =>
@@ -50,8 +50,8 @@ public static class WorkflowRuntimeCapabilityValidator
         WorkflowBoundExecutionPlan plan,
         IServiceProvider capabilities)
     {
-        ArgumentNullException.ThrowIfNull(plan);
-        ArgumentNullException.ThrowIfNull(capabilities);
+        Guard.NotNull(plan);
+        Guard.NotNull(capabilities);
         var availability = new Dictionary<Type, bool>();
         var issues = new List<WorkflowRuntimeCapabilityIssue>();
         AnalyzePlan(plan, "$", capabilities, availability, issues);

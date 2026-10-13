@@ -111,7 +111,7 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="position">目标坐标或相对位置。</param>
     public WorkflowPoint SnapNodePosition(WorkflowCanvasNode node, WorkflowPoint position)
     {
-        ArgumentNullException.ThrowIfNull(node);
+        Guard.NotNull(node);
         if (!SnapToGrid) return position;
         var center = SnapPoint(new WorkflowPoint(
             position.X + node.Width / 2,
@@ -172,7 +172,7 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="additive">是否保留现有选择并增选。</param>
     public void SelectNodes(IEnumerable<string> nodeIds, bool additive = false)
     {
-        ArgumentNullException.ThrowIfNull(nodeIds);
+        Guard.NotNull(nodeIds);
         if (!additive)
             _selectedNodeIds.Clear();
         var validIds = Canvas.Nodes.Select(item => item.Node.Id).ToHashSet(StringComparer.Ordinal);
@@ -300,7 +300,7 @@ public sealed partial class WorkflowDesignerSession
         WorkflowPortSide? inputSide = null,
         WorkflowPortSide? outputSide = null)
     {
-        ArgumentNullException.ThrowIfNull(connection);
+        Guard.NotNull(connection);
         if (!Canvas.Connections.Contains(connection))
             return null;
         var descriptor = Catalog.GetOrThrow(nodeType);
@@ -456,7 +456,7 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="positions">节点标识到目标位置的映射。</param>
     public bool MoveNodes(IReadOnlyDictionary<string, WorkflowPoint> positions)
     {
-        ArgumentNullException.ThrowIfNull(positions);
+        Guard.NotNull(positions);
         var changes = Canvas.Nodes
             .Where(item => positions.ContainsKey(item.Node.Id))
             .Select(item => (Node: item, Old: new WorkflowPoint(item.X, item.Y), New: positions[item.Node.Id]))
@@ -822,7 +822,7 @@ public sealed partial class WorkflowDesignerSession
     public bool SetConnectionLabelPosition(WorkflowConnectionModel connection, double position)
     {
         ValidateConnection(connection);
-        var normalized = Math.Clamp(position, 0.05, 0.95);
+        var normalized = Polyfill.Clamp(position, 0.05, 0.95);
         if (Math.Abs(connection.LabelPosition - normalized) < 0.0001)
             return false;
         var old = connection.LabelPosition;
@@ -861,7 +861,7 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="connection">目标连接。</param>
     public bool RemoveConnection(WorkflowConnectionModel connection)
     {
-        ArgumentNullException.ThrowIfNull(connection);
+        Guard.NotNull(connection);
         var index = Canvas.Connections.IndexOf(connection);
         if (index < 0)
             return false;
@@ -879,7 +879,7 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="panY">垂直平移量。</param>
     public void SetViewport(double zoom, double panX, double panY)
     {
-        var normalizedZoom = Math.Clamp(zoom, 0.25, 2.5);
+        var normalizedZoom = Polyfill.Clamp(zoom, 0.25, 2.5);
         if (Zoom.Equals(normalizedZoom) && PanX.Equals(panX) && PanY.Equals(panY))
             return;
         Zoom = normalizedZoom;
@@ -905,7 +905,7 @@ public sealed partial class WorkflowDesignerSession
         var bottom = Canvas.Nodes.Max(node => node.Y + node.Height);
         var contentWidth = Math.Max(1, right - left);
         var contentHeight = Math.Max(1, bottom - top);
-        var zoom = Math.Clamp(
+        var zoom = Polyfill.Clamp(
             Math.Min(
                 Math.Max(1, viewportWidth - padding * 2) / contentWidth,
                 Math.Max(1, viewportHeight - padding * 2) / contentHeight),
@@ -924,7 +924,7 @@ public sealed partial class WorkflowDesignerSession
         IEnumerable<WorkflowPoint> waypoints)
     {
         ValidateConnection(connection);
-        ArgumentNullException.ThrowIfNull(waypoints);
+        Guard.NotNull(waypoints);
         var before = connection.Waypoints.ToArray();
         var after = NormalizeWaypoints(waypoints.Select(SnapPoint));
         Execute(new DesignerOperation(
@@ -945,7 +945,7 @@ public sealed partial class WorkflowDesignerSession
         IReadOnlyCollection<string>? hiddenOutputPorts = null,
         IReadOnlyCollection<string>? exposedOutputMembers = null)
     {
-        ArgumentNullException.ThrowIfNull(change);
+        Guard.NotNull(change);
         var canvasNode = GetCanvasNodeOrThrow(nodeId);
         var before = CaptureConfigurationState(canvasNode);
         ConfigurationState after;
@@ -1144,8 +1144,8 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="undo">撤销文档修改的委托。</param>
     public void ExecuteDocumentOperation(Action execute, Action undo)
     {
-        ArgumentNullException.ThrowIfNull(execute);
-        ArgumentNullException.ThrowIfNull(undo);
+        Guard.NotNull(execute);
+        Guard.NotNull(undo);
         Execute(new DesignerOperation(execute, undo));
     }
 
@@ -1387,7 +1387,7 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="connection">目标连接。</param>
     private void ValidateConnection(WorkflowConnectionModel connection)
     {
-        ArgumentNullException.ThrowIfNull(connection);
+        Guard.NotNull(connection);
         if (!Canvas.Connections.Contains(connection))
             throw new InvalidOperationException("连接不属于当前画布。");
     }
@@ -1466,7 +1466,7 @@ public sealed partial class WorkflowDesignerSession
     /// <summary>根据节点类型生成画布内不重复的节点标识。</summary>
     /// <param name="nodeType">节点类型键。</param>
     /// <param name="reserved">已经占用、不可重复使用的标识集合。</param>
-    private static string CreateUniqueNodeId(string nodeType, IReadOnlySet<string> reserved)
+    private static string CreateUniqueNodeId(string nodeType, ISet<string> reserved)
     {
         var prefix = new string(nodeType.Where(char.IsLetterOrDigit).ToArray());
         if (prefix.Length == 0)

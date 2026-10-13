@@ -47,7 +47,7 @@ Build: 0 warning / 0 error
 Tests: 163 passed / 0 failed
 ```
 
-解决方案固定为 x64；Windows UI 工程目标框架为 `net8.0-windows`。
+解决方案固定为 x64。Workflow 各库同时编译为 .NET Framework 4.8 和 .NET 8（`net48;net8.0`，Windows UI 工程为 `net48;net8.0-windows`），4.8 的设备主程序可以直接引用引擎、节点和工作台；示例宿主 `samples/DP.WorkFlow.WinForms.Sample` 也同时编为两个框架。兼容约定见 `docs/decisions/0022-net48-and-net8-dual-targets.md`。
 
 ---
 

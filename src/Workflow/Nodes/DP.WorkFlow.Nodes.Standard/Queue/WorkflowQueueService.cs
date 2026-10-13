@@ -126,7 +126,7 @@ public sealed class WorkflowQueueService : IWorkflowQueueService
     /// <inheritdoc />
     public async ValueTask<WorkflowQueueSnapshot?> WaitAsync(string queueKey, E_SignalValueType valueType, Func<WorkflowQueueSnapshot, bool> predicate, TimeSpan? timeout, bool autoCreate, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(predicate);
+        Guard.NotNull(predicate);
         var key = Normalize(queueKey); var entry = Get(key, valueType, autoCreate);
         if (entry is null) return null;
         using var timeoutSource = timeout.HasValue ? new CancellationTokenSource(timeout.Value) : null;

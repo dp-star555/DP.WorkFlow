@@ -1,6 +1,11 @@
 <Project>
   <PropertyGroup>
     <VisionEngineSourceRoot>$(MSBuildThisFileDirectory)..\..\..\DP.Vision\src\</VisionEngineSourceRoot>
+    <!-- 插件包取与宿主相同目标框架的输出：4.8 宿主投放 net48 版，.NET 8 宿主投放 net8.0(-windows) 版。 -->
+    <WorkflowPluginTfm Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'">net48</WorkflowPluginTfm>
+    <WorkflowPluginTfm Condition="'$(WorkflowPluginTfm)' == ''">net8.0</WorkflowPluginTfm>
+    <VisionWindowsPluginTfm Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'">net48</VisionWindowsPluginTfm>
+    <VisionWindowsPluginTfm Condition="'$(VisionWindowsPluginTfm)' == ''">net8.0-windows</VisionWindowsPluginTfm>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="$(MSBuildThisFileDirectory)barcode.pgm" Link="VisionData\barcode.pgm" CopyToOutputDirectory="PreserveNewest" />
@@ -12,20 +17,24 @@
     <ProjectReference Include="$(VisionEngineSourceRoot)DP.Vision.PPOcr.Onnx\DP.Vision.PPOcr.Onnx.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
   <!-- 引擎仅参与构建及插件包投放，示例宿主不引用具体算法实现。 -->
-  <Target Name="StageVisionAlgorithmPlugins" AfterTargets="Build">
+  <!-- 多目标宿主的外层构建没有输出目录，只在具体目标框架的构建中投放。 -->
+  <Target Name="StageVisionAlgorithmPlugins" AfterTargets="Build" Condition="'$(TargetFramework)' != ''">
     <ItemGroup>
-      <BarcodeNodePayload Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Barcode\bin\$(Configuration)\net8.0\DP.WorkFlow.Nodes.Vision.Barcode.dll;$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Barcode\bin\$(Configuration)\net8.0\DP.WorkFlow.Nodes.Vision.Barcode.deps.json" />
-      <OcrNodePayload Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Ocr\bin\$(Configuration)\net8.0\DP.WorkFlow.Nodes.Vision.Ocr.dll;$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Ocr\bin\$(Configuration)\net8.0\DP.WorkFlow.Nodes.Vision.Ocr.deps.json" />
-      <GeometryNodePayload Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Geometry\bin\$(Configuration)\net8.0\DP.WorkFlow.Nodes.Vision.Geometry.dll;$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Geometry\bin\$(Configuration)\net8.0\DP.WorkFlow.Nodes.Vision.Geometry.deps.json" />
-      <OpenCvAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.OpenCv\bin\$(Configuration)\net8.0-windows\**\*"
-        Exclude="$(VisionEngineSourceRoot)DP.Vision.OpenCv\bin\$(Configuration)\net8.0-windows\DP.Vision*.dll;$(VisionEngineSourceRoot)DP.Vision.OpenCv\bin\$(Configuration)\net8.0-windows\*.pdb" />
-      <OpenCvAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.OpenCv\bin\$(Configuration)\net8.0-windows\DP.Vision.OpenCv.dll" />
+      <BarcodeNodePayload Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Barcode\bin\$(Configuration)\$(WorkflowPluginTfm)\DP.WorkFlow.Nodes.Vision.Barcode.dll" />
+      <BarcodeNodePayload Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Barcode\bin\$(Configuration)\$(WorkflowPluginTfm)\DP.WorkFlow.Nodes.Vision.Barcode.deps.json" Condition="Exists('$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Barcode\bin\$(Configuration)\$(WorkflowPluginTfm)\DP.WorkFlow.Nodes.Vision.Barcode.deps.json')" />
+      <OcrNodePayload Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Ocr\bin\$(Configuration)\$(WorkflowPluginTfm)\DP.WorkFlow.Nodes.Vision.Ocr.dll" />
+      <OcrNodePayload Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Ocr\bin\$(Configuration)\$(WorkflowPluginTfm)\DP.WorkFlow.Nodes.Vision.Ocr.deps.json" Condition="Exists('$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Ocr\bin\$(Configuration)\$(WorkflowPluginTfm)\DP.WorkFlow.Nodes.Vision.Ocr.deps.json')" />
+      <GeometryNodePayload Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Geometry\bin\$(Configuration)\$(WorkflowPluginTfm)\DP.WorkFlow.Nodes.Vision.Geometry.dll" />
+      <GeometryNodePayload Include="$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Geometry\bin\$(Configuration)\$(WorkflowPluginTfm)\DP.WorkFlow.Nodes.Vision.Geometry.deps.json" Condition="Exists('$(MSBuildThisFileDirectory)..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision.Geometry\bin\$(Configuration)\$(WorkflowPluginTfm)\DP.WorkFlow.Nodes.Vision.Geometry.deps.json')" />
+      <OpenCvAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.OpenCv\bin\$(Configuration)\$(VisionWindowsPluginTfm)\**\*"
+        Exclude="$(VisionEngineSourceRoot)DP.Vision.OpenCv\bin\$(Configuration)\$(VisionWindowsPluginTfm)\DP.Vision*.dll;$(VisionEngineSourceRoot)DP.Vision.OpenCv\bin\$(Configuration)\$(VisionWindowsPluginTfm)\*.pdb" />
+      <OpenCvAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.OpenCv\bin\$(Configuration)\$(VisionWindowsPluginTfm)\DP.Vision.OpenCv.dll" />
       <ZxingAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.Zxing\bin\$(Configuration)\netstandard2.0\**\*"
         Exclude="$(VisionEngineSourceRoot)DP.Vision.Zxing\bin\$(Configuration)\netstandard2.0\DP.Vision*.dll;$(VisionEngineSourceRoot)DP.Vision.Zxing\bin\$(Configuration)\netstandard2.0\*.pdb" />
       <ZxingAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.Zxing\bin\$(Configuration)\netstandard2.0\DP.Vision.Zxing.dll" />
-      <OnnxAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.PPOcr.Onnx\bin\$(Configuration)\net8.0-windows\**\*"
-        Exclude="$(VisionEngineSourceRoot)DP.Vision.PPOcr.Onnx\bin\$(Configuration)\net8.0-windows\DP.Vision*.dll;$(VisionEngineSourceRoot)DP.Vision.PPOcr.Onnx\bin\$(Configuration)\net8.0-windows\*.pdb" />
-      <OnnxAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.PPOcr.Onnx\bin\$(Configuration)\net8.0-windows\DP.Vision.PPOcr.Onnx.dll" />
+      <OnnxAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.PPOcr.Onnx\bin\$(Configuration)\$(VisionWindowsPluginTfm)\**\*"
+        Exclude="$(VisionEngineSourceRoot)DP.Vision.PPOcr.Onnx\bin\$(Configuration)\$(VisionWindowsPluginTfm)\DP.Vision*.dll;$(VisionEngineSourceRoot)DP.Vision.PPOcr.Onnx\bin\$(Configuration)\$(VisionWindowsPluginTfm)\*.pdb" />
+      <OnnxAlgorithmPayload Include="$(VisionEngineSourceRoot)DP.Vision.PPOcr.Onnx\bin\$(Configuration)\$(VisionWindowsPluginTfm)\DP.Vision.PPOcr.Onnx.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(BarcodeNodePayload)" DestinationFolder="$(TargetDir)plugins\workflow.vision.barcode" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(OcrNodePayload)" DestinationFolder="$(TargetDir)plugins\workflow.vision.ocr-line" SkipUnchangedFiles="true" />

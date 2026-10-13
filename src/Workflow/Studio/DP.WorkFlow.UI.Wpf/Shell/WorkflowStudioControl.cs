@@ -95,8 +95,8 @@ public sealed class WorkflowStudioControl : UserControl
     /// <param name="content">窗口内容。</param>
     public void AddToolWindow(string title, UIElement content)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(title);
-        ArgumentNullException.ThrowIfNull(content);
+        Guard.NotNullOrWhiteSpace(title);
+        Guard.NotNull(content);
         Window? window = null;
         var button = WorkflowCanvasWorkspaceControl.CommandButton(title + "…");
         button.Click += (_, _) =>

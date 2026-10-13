@@ -22,7 +22,7 @@ public sealed record WorkflowLabelInspectionCacheOptions
             throw new ArgumentOutOfRangeException(nameof(IdleExpiration), "空闲期限与清理周期必须是有效正值。");
         if (MaximumCachedRecipes < 1 || MaximumCachedModels < 1 || MaximumConcurrentLoads < 1)
             throw new ArgumentOutOfRangeException(nameof(MaximumCachedRecipes), "缓存数量与加载并发上限必须大于零。");
-        ArgumentNullException.ThrowIfNull(TimeProvider);
+        Guard.NotNull(TimeProvider);
     }
 }
 

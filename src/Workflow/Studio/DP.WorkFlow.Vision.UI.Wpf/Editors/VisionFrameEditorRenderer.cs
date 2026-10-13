@@ -81,8 +81,8 @@ internal sealed class VisionFrameEditorControl : DockPanel, IDisposable
             var folder = new MenuItem { Header = "打开文件夹…" };
             folder.Click += (_, _) =>
             {
-                var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "加载文件夹中的图像（按文件名排序）" };
-                if (dialog.ShowDialog(Window.GetWindow(this)) == true) Command(async () => { await model.LoadFolderAsync(dialog.FolderName); SetView(0); });
+                if (DP.WorkFlow.UI.Wpf.WorkflowFolderPicker.TrySelect(Window.GetWindow(this), "加载文件夹中的图像（按文件名排序）", null, out var selected))
+                    Command(async () => { await model.LoadFolderAsync(selected); SetView(0); });
             };
             var menu = new ContextMenu { Items = { _upstream, file, folder } };
             _load.ContextMenu = menu;

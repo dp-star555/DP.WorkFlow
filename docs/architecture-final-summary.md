@@ -609,6 +609,8 @@ UI.Shared  →  Abstractions + Core + Runtime + Persistence.Json + ScriptEngine
 
 **建议**：明确回答"`net48` 是业务硬需求还是历史兼容"；若为前者，隔离在 Platform 的独立发布单元。Legacy 样例移出主 sln。
 
+> 更新：已确认 `net48` 是业务需求（4.8 设备主程序要直接嵌入引擎和工作台）。Workflow 全部库改为 `net48;net8.0(-windows)` 双目标，目标框架统一由 `src/Workflow/Directory.Build.props` 定义，兼容层集中在 `src/Workflow/Shared/Compatibility`，见 ADR-0022。
+
 ### AR-16 / P1：DP.Vision 跨仓源码引用，无版本锁定
 
 `Nodes.Vision` 与 `Vision.UI*` 使用 `..\..\..\..\..\DP.Vision\src\...` 形式的 `ProjectReference`：构建要求同级目录存在源码，版本无法锁定，两侧改动互相击穿，没有版本号可回溯。单向依赖规则是好的，缺的是**单向的版本化契约**。

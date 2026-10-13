@@ -45,7 +45,7 @@ internal sealed class WorkflowGraphIndex
     /// <returns>An immutable control-graph index.</returns>
     public static WorkflowGraphIndex Create(WorkflowGraph graph)
     {
-        ArgumentNullException.ThrowIfNull(graph);
+        Guard.NotNull(graph);
 
         var nodes = graph.Nodes
             .Where(node => node is not null && !string.IsNullOrWhiteSpace(node.Id))
@@ -215,7 +215,7 @@ internal sealed class WorkflowGraphIndex
     /// </param>
     public IReadOnlyDictionary<string, HashSet<string>> ComputePostDominators(IEnumerable<string> entryNodeIds, string? boundaryNodeId = null)
     {
-        ArgumentNullException.ThrowIfNull(entryNodeIds);
+        Guard.NotNull(entryNodeIds);
         var reachable = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entryNodeId in entryNodeIds)
             reachable.UnionWith(CollectReachable(entryNodeId, boundaryNodeId));

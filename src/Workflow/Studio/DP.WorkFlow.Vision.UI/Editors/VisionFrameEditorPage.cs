@@ -63,7 +63,7 @@ public sealed partial class VisionFrameEditorPageModel : IDisposable, IWorkflowN
     /// <param name="release">幂等释放视图的动作。</param>
     public void RegisterViewLifetime(Action release)
     {
-        ArgumentNullException.ThrowIfNull(release);
+        Guard.NotNull(release);
         if (_disposed) throw new ObjectDisposedException(nameof(VisionFrameEditorPageModel));
         _releaseViews.Add(release);
     }

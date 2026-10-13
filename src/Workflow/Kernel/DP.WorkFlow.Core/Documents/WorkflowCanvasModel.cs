@@ -61,7 +61,7 @@ public sealed class WorkflowCanvasNode
     /// <param name="port">输出端口。</param>
     public bool IsOutputPortHidden(WorkflowPortDescriptor port)
     {
-        ArgumentNullException.ThrowIfNull(port);
+        Guard.NotNull(port);
         return HiddenOutputPorts.Contains(port.Key) || port.HiddenByDefault && !HiddenOutputPorts.Contains(ShownPortMarker + port.Key);
     }
 
@@ -69,7 +69,7 @@ public sealed class WorkflowCanvasNode
     /// <param name="port">输出端口。</param><param name="hidden">是否隐藏。</param>
     public void SetOutputPortHidden(WorkflowPortDescriptor port, bool hidden)
     {
-        ArgumentNullException.ThrowIfNull(port);
+        Guard.NotNull(port);
         HiddenOutputPorts.Remove(port.Key);
         HiddenOutputPorts.Remove(ShownPortMarker + port.Key);
         if (port.HiddenByDefault) { if (!hidden) HiddenOutputPorts.Add(ShownPortMarker + port.Key); }

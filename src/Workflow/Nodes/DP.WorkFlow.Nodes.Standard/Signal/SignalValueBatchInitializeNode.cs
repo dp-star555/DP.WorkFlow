@@ -28,6 +28,6 @@ public sealed class SignalValueBatchInitializeNodeHandler : WorkflowNodeHandler<
         }
         var output = new SignalValueBatchInitializeResult(node.Items.Count, string.Join(",", node.Items.Select(item => item.SignalKey).Distinct(StringComparer.Ordinal)));
         context.SetVariable(string.IsNullOrWhiteSpace(node.ResultVarKey) ? node.Id + ".Result" : node.ResultVarKey.Trim(), output);
-        return ValueTask.FromResult(NodeExecutionResult.Continue(output: output));
+        return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
 }

@@ -64,8 +64,8 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
     /// <inheritdoc/>
     public async ValueTask<IWorkflowPreparedRun> PrepareRunAsync(WorkflowRunPreparationContext context, CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested(); ArgumentNullException.ThrowIfNull(context);
-        lock (_gate) ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested(); Guard.NotNull(context);
+        lock (_gate) Guard.NotDisposed(_disposed, this);
         if (context.BindingScopeId == Guid.Empty) throw new InvalidOperationException("标签准备需要明确绑定作用域。");
         var duplicate = context.Nodes.GroupBy(n => n.Id, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1 && g.Any(n => n is InspectLabelNodeModel));
         if (duplicate is not null) throw new InvalidOperationException("标签预览节点ID跨子计划重复：" + duplicate.Key);
@@ -84,7 +84,7 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
                 if (!node.HasRecipe && !node.UsesRecipeCatalog) continue;
                 CatalogSlot? catalog = null;
                 if (node.UsesRecipeCatalog)
-                    catalog = await GetCatalogAsync(Path.GetFullPath(node.ResourceRoot, directory), node.RecipeCatalogPath, cancellationToken).ConfigureAwait(false);
+                    catalog = await GetCatalogAsync(Polyfill.GetFullPath(node.ResourceRoot, directory), node.RecipeCatalogPath, cancellationToken).ConfigureAwait(false);
                 var key = (position.PlanPath, node.Id);
                 var group = directory + "\n" + position.PlanPath + "\n" + node.Id;
                 if (!entries.TryAdd(key, new(node, directory, group, catalog))) throw new InvalidOperationException("标签计划位置重复。");
@@ -174,7 +174,7 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
     {
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            Guard.NotDisposed(_disposed, this);
             if (!_active.TryGetValue(context.BindingScopeId, out var plan) || !plan.TryGetValue((context.PlanPath, context.Node.Id), out var registration))
                 throw new InvalidOperationException("本次运行未提交此标签节点的配方登记。");
             return registration;
@@ -216,11 +216,11 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
     private async Task<CatalogSlot> GetCatalogAsync(string root, string indexPath, CancellationToken token)
     {
         var key = root + "\n" + WorkflowLabelInspectionResources.ResolvePath(root, indexPath);
-        lock (_gate) { ObjectDisposedException.ThrowIf(_disposed, this); if (_catalogs.TryGetValue(key, out var found)) return found; }
+        lock (_gate) { Guard.NotDisposed(_disposed, this); if (_catalogs.TryGetValue(key, out var found)) return found; }
         var entries = await WorkflowLabelRecipeCatalogStore.ReadIndexAsync(root, indexPath, token).ConfigureAwait(false);
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            Guard.NotDisposed(_disposed, this);
             if (_catalogs.TryGetValue(key, out var found)) return found;
             var slot = new CatalogSlot(root, key); slot.Update(entries); _catalogs.Add(key, slot); return slot;
         }
@@ -235,7 +235,7 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
         token.ThrowIfCancellationRequested();
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            Guard.NotDisposed(_disposed, this);
             if (!_catalogs.TryGetValue(key, out var slot)) { slot = new(root, key); _catalogs.Add(key, slot); }
             slot.Update(entries);
         }
@@ -247,10 +247,19 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
     { _recipes.Cleanup(removeAllIdle); _models.Cleanup(removeAllIdle); }
     private async Task MaintainAsync()
     {
-        using var timer = new PeriodicTimer(CacheOptions.CleanupInterval, CacheOptions.TimeProvider);
         try
         {
+#if NETFRAMEWORK
+            // 4.8 没有 PeriodicTimer：按同一时间源逐次等待一个清理间隔。
+            while (true)
+            {
+                await CacheOptions.TimeProvider.Delay(CacheOptions.CleanupInterval, _maintenanceCancellation.Token).ConfigureAwait(false);
+                CleanupIdleResources();
+            }
+#else
+            using var timer = new PeriodicTimer(CacheOptions.CleanupInterval, CacheOptions.TimeProvider);
             while (await timer.WaitForNextTickAsync(_maintenanceCancellation.Token).ConfigureAwait(false)) CleanupIdleResources();
+#endif
         }
         catch (OperationCanceledException) when (_maintenanceCancellation.IsCancellationRequested) { }
     }
@@ -317,7 +326,7 @@ public sealed class WorkflowLabelInspectionRuntime : IWorkflowLabelInspectionSer
         {
             lock (owner._gate)
             {
-                ObjectDisposedException.ThrowIf(owner._disposed || _released, owner);
+                Guard.NotDisposed(owner._disposed || _released, owner);
                 if (_committed) return;
                 if (owner._active.ContainsKey(id)) throw new InvalidOperationException("标签绑定作用域已经发布。");
                 next?.Commit(); owner._active.Add(id, entries); _committed = true;
