@@ -56,13 +56,46 @@ public sealed partial class WorkflowEngine
 
     /// <summary>获取内存中当前保留的不可变 Trace 批次。</summary>
     /// <returns>来自 Recorder 最近事件窗口、按事件序号升序排列的条目及最后序号。</returns>
-    public WorkflowTraceBatch GetTraceBatch()
+    public WorkflowTraceBatch GetTraceBatch() => GetTraceBatch(includeChildRuns: false);
+
+    /// <summary>获取内存中当前保留的 Trace 批次，可选合并子运行（子流程、循环块各圈）的轨迹。</summary>
+    /// <param name="includeChildRuns">
+    /// 为真时同时返回正在运行的子运行实时轨迹和每个父节点已结束子运行的有界历史；
+    /// 这些条目的 <see cref="WorkflowTraceEntry.Parents"/> 标明所属复合节点和圈序号，序号属于各自的子运行。
+    /// </param>
+    /// <returns>按发生时间排列的条目；<see cref="WorkflowTraceBatch.LastSequence"/> 始终是本层运行的最后序号。</returns>
+    public WorkflowTraceBatch GetTraceBatch(bool includeChildRuns)
     {
         var batch = _recorder?.GetRecent();
-        if (batch is null)
-            return new WorkflowTraceBatch(_runId, 0, Array.Empty<WorkflowTraceEntry>());
-        var entries = batch.Events.Select(ToTraceEntry).ToArray();
-        return new WorkflowTraceBatch(_runId, entries.Length == 0 ? 0 : entries[^1].Sequence, Array.AsReadOnly(entries));
+        var entries = batch?.Events.Select(ToTraceEntry).ToArray() ?? Array.Empty<WorkflowTraceEntry>();
+        var lastSequence = entries.Length == 0 ? 0 : entries[^1].Sequence;
+        // 以记录器的运行标识为准：新一轮刚开始、记录器尚未替换时，条目仍属于上一轮。
+        var runId = batch?.RunId ?? _runId;
+        if (!includeChildRuns)
+            return new WorkflowTraceBatch(runId, lastSequence, Array.AsReadOnly(entries));
+
+        List<WorkflowTraceEntry> merged;
+        (string ParentNodeId, WorkflowEngine Engine, int Cycle, Guid? ArchivedRunId)[] live;
+        lock (_stateSync)
+        {
+            merged = new List<WorkflowTraceEntry>(entries.Length + _childTraceHistory.Values.Sum(history => history.Count));
+            merged.AddRange(entries);
+            foreach (var history in _childTraceHistory.Values)
+                merged.AddRange(history);
+            live = _childTraceSources.Values
+                .Select(source => (source.ParentNodeId, source.Engine, source.Cycle, source.ArchivedRunId))
+                .ToArray();
+        }
+        // 子引擎有自己的锁；在本引擎锁外读取，避免父子锁嵌套。已归档的运行只从历史中读取。
+        foreach (var source in live)
+        {
+            var child = source.Engine.GetTraceBatch(includeChildRuns: true);
+            if (child.RunId == source.ArchivedRunId)
+                continue;
+            merged.AddRange(child.Entries.Select(entry => TagChildTrace(entry, source.ParentNodeId, source.Cycle)));
+        }
+        var ordered = merged.OrderBy(entry => entry.Timestamp).ToArray();
+        return new WorkflowTraceBatch(runId, lastSequence, Array.AsReadOnly(ordered));
     }
 
     private static WorkflowTraceEntry ToTraceEntry(WorkflowRunEvent @event)

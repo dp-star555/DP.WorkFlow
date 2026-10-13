@@ -45,7 +45,7 @@ public sealed class LoopBlockNodeTests
             {
                 // 每圈收到相同的输入，看不到上一圈写入的变量。
                 var limit = Assert.IsType<int>(context.SubflowInputs["Limit"]);
-                Assert.False(context.TryGetVariable<int>("Previous", out _));
+                Assert.False(context.TryGetVariable<int>("Previous", out int _));
                 cycles++;
                 context.SetVariable("Previous", cycles);
                 context.SetVariable("Stop", cycles >= limit);
@@ -106,6 +106,74 @@ public sealed class LoopBlockNodeTests
 
         Assert.Equal(E_WorkflowExecutionState.Canceled, result.State);
         Assert.Empty(created.RunState.Faults);
+    }
+
+    [Fact]
+    public async Task GetTraceBatch_IncludesEachCycleOfTheLoop_TaggedWithLoopNodeAndCycle()
+    {
+        var actions = new WorkflowActionRegistry()
+            .Register("Init", (_, _) => ValueTask.FromResult<object?>(null))
+            .Register("Work", (_, _) => ValueTask.FromResult<object?>(null));
+        var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
+        var (engine, loop) = CreateEngine(ChildDocument(withEnd: true), context, configured => configured.Iterations = 3);
+
+        var result = await engine.RunAsync();
+
+        Assert.True(result.Success, result.Message);
+        Assert.DoesNotContain(engine.GetTraceBatch().Entries, entry => entry.Parents is not null);
+        var merged = engine.GetTraceBatch(includeChildRuns: true).Entries;
+        var completedWork = merged
+            .Where(entry => entry.NodeId == "Work" && entry.Step == "NodeCompleted")
+            .Select(entry => Assert.Single(entry.Parents!))
+            .ToArray();
+        Assert.Equal(new[] { 1, 2, 3 }, completedWork.Select(parent => parent.Cycle));
+        Assert.All(completedWork, parent => Assert.Equal(loop.Id, parent.NodeId));
+        Assert.Equal(merged.OrderBy(entry => entry.Timestamp), merged);
+        // 父层自身的记录仍在，且不带子运行标记。
+        Assert.Contains(merged, entry => entry.NodeId == loop.Id && entry.Step == "NodeStarted" && entry.Parents is null);
+    }
+
+    [Fact]
+    public async Task RunningCycle_IsVisibleLive_InSnapshotTraceAndOutputs()
+    {
+        var cycles = 0;
+        WorkflowEngine? engine = null;
+        var actions = new WorkflowActionRegistry()
+            .Register("Init", (_, _) => ValueTask.FromResult<object?>(null))
+            .Register("Work", (_, _) =>
+            {
+                var cycle = Interlocked.Increment(ref cycles);
+                if (cycle == 2)
+                    engine!.Pause();
+                return ValueTask.FromResult<object?>(cycle);
+            });
+        var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
+        var (created, loop) = CreateEngine(ChildDocument(withEnd: true), context, configured => configured.Iterations = 0);
+        engine = created;
+        using var cancellation = new CancellationTokenSource();
+
+        var running = created.RunAsync(cancellation.Token);
+        await WaitUntilAsync(() => created.GetRuntimeSnapshot().EnumerateChildWorkflows()
+            .Any(info => info.Snapshot.ExecutionState == E_WorkflowExecutionState.Paused));
+
+        var child = Assert.Single(created.GetRuntimeSnapshot().ActiveChildWorkflows.Values);
+        Assert.Equal(loop.Id, child.ParentNodeId);
+        Assert.Equal(2, child.Cycle);
+        // 第2圈尚未结束：它的节点记录实时出现在父轨迹中，第1圈来自已归档历史。
+        var work = created.GetTraceBatch(includeChildRuns: true).Entries
+            .Where(entry => entry.NodeId == "Work" && entry.Step == "NodeCompleted")
+            .Select(entry => Assert.Single(entry.Parents!).Cycle)
+            .ToArray();
+        Assert.Equal(new[] { 1, 2 }, work);
+        // 子画布按子快照的运行标识读取内部节点输出。
+        var output = created.FindLatestNodeOutput(child.Snapshot.RunId, "Work");
+        Assert.NotNull(output);
+        Assert.Equal(2, output!.Value);
+        Assert.Null(created.FindLatestNodeOutput(Guid.NewGuid(), "Work"));
+
+        cancellation.Cancel();
+        created.Resume();
+        await running.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     [Fact]

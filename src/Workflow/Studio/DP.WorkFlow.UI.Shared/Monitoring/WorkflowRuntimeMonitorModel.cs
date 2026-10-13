@@ -77,12 +77,16 @@ public sealed record WorkflowNodeTimingTrendItem(
 /// <param name="State">当前运行状态。</param>
 /// <param name="Elapsed">执行耗时。</param>
 /// <param name="RunId">工作流运行实例标识。</param>
+/// <param name="Cycle">循环块当前（或最后）一圈的序号，从 1 开始；普通子流程为 0。</param>
+/// <param name="CurrentNodeId">子流程当前正在执行的节点；空闲或已结束时为空。</param>
 public sealed record WorkflowChildMonitorItem(
     string ParentNodeId,
     string WorkflowName,
     E_WorkflowExecutionState State,
     TimeSpan Elapsed,
-    Guid RunId);
+    Guid RunId,
+    int Cycle = 0,
+    string CurrentNodeId = "");
 
 /// <summary>将不可变 RuntimeSnapshot 投影为双 UI 可直接显示的监视列表。</summary>
 public sealed class WorkflowRuntimeMonitorModel
@@ -165,7 +169,11 @@ public sealed class WorkflowRuntimeMonitorModel
                 child.Snapshot.WorkflowName,
                 child.Snapshot.ExecutionState,
                 child.Snapshot.TotalElapsed,
-                child.Snapshot.RunId))
+                child.Snapshot.RunId,
+                child.Cycle,
+                child.Snapshot.ExecutionState is E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused
+                    ? child.Snapshot.CurrentNodeId ?? string.Empty
+                    : string.Empty))
             .ToArray() ?? Array.Empty<WorkflowChildMonitorItem>();
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -174,12 +182,13 @@ public sealed class WorkflowRuntimeMonitorModel
     /// <param name="batch">轨迹批次。</param>
     public void SetTraceBatch(WorkflowTraceBatch? batch)
     {
+        // 合并了子运行轨迹的批次按发生时间排列，子运行条目的序号属于各自的子运行，因此按时间而不是序号排序。
         _allTraceEntries = batch?.Entries
-            .OrderBy(entry => entry.Sequence)
+            .OrderBy(entry => entry.Timestamp)
             .Select(entry => new WorkflowTraceMonitorItem(
                 entry.Sequence,
                 entry.Timestamp,
-                entry.NodeId,
+                DescribeNode(entry),
                 entry.TokenId,
                 string.Join(" / ", entry.ScopeIds ?? Array.Empty<long>()),
                 entry.Step,
@@ -188,6 +197,31 @@ public sealed class WorkflowRuntimeMonitorModel
         OutputEntries = _allTraceEntries.Where(item => item.Step == "ScriptOutput").ToArray();
         if (!IsTracePaused) ApplyTraceFilter();
         else Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>子流程的进度说明，例如“第3圈 · 找线1”；没有圈序号和当前节点时为空。</summary>
+    /// <param name="item">子流程监视项。</param>
+    public static string DescribeChildProgress(WorkflowChildMonitorItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        var parts = new List<string>(2);
+        if (item.Cycle > 0) parts.Add($"第{item.Cycle}圈");
+        if (!string.IsNullOrEmpty(item.CurrentNodeId)) parts.Add(item.CurrentNodeId);
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>
+    /// 轨迹的节点列：子运行（子流程、循环块）中的记录带上所属复合节点和圈序号，例如“循环块1·第3圈 › 找线1”。
+    /// </summary>
+    /// <param name="entry">轨迹条目。</param>
+    public static string DescribeNode(WorkflowTraceEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        if (entry.Parents is not { Count: > 0 } parents) return entry.NodeId;
+        var parts = parents.Select(parent => parent.Cycle > 0 ? $"{parent.NodeId}·第{parent.Cycle}圈" : parent.NodeId)
+            .Append(entry.NodeId)
+            .Where(part => !string.IsNullOrEmpty(part));
+        return string.Join(" › ", parts);
     }
 
     /// <summary>暂停或恢复 Trace 列表刷新；暂停期间运行时仍继续收集有界 Trace。</summary>

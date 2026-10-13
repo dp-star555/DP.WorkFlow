@@ -128,7 +128,7 @@ public sealed class WorkflowSubWorkflowEditorPageProvider : IWorkflowNodeEditorP
     {
         if (context.Node is not IWorkflowSubDocumentNode node)
             yield break;
-        var subWorkflow = new WorkflowSubWorkflowEditorPageModel(context.Session, node);
+        var subWorkflow = new WorkflowSubWorkflowEditorPageModel(context.Session, node, context.RuntimeSession);
         yield return new WorkflowNodeEditorPageDescriptor(
             "SubWorkflow", "流程", WorkflowNodeEditorPageKind.SubWorkflow, 200, subWorkflow, "Workflow");
         if (node is IWorkflowSubflowNode subflow)

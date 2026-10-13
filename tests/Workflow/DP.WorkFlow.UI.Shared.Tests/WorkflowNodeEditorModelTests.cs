@@ -212,6 +212,68 @@ public sealed class WorkflowNodeEditorModelTests
         Assert.Equal("DemoRenderer", page.RendererKey);
     }
 
+    [Fact]
+    public async Task SubWorkflowPage_FollowsTheCompositeNodesLiveChildRun()
+    {
+        var work = new ActionNodeModel { Id = "Work", Title = "扫描", FunctionKey = "Work" };
+        var child = new WorkflowDocument { Name = "Child" };
+        child.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new StartNodeModel { Id = "ChildStart" } });
+        child.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = work });
+        child.EntryNodeId = "ChildStart";
+        var loop = new BlockNodeModel { Id = "Loop", Title = "循环", SubDocument = child };
+        var session = new WorkflowDesignerSession(Document(loop), new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes());
+        var childRunId = Guid.NewGuid();
+        session.RunNodeOutputProvider = (runId, nodeId) => runId == childRunId && nodeId == "Work"
+            ? new WorkflowNodeOutput(1, childRunId, "Work", 1, 1, Array.Empty<long>(), DateTimeOffset.UtcNow, 7)
+            : null;
+        await using var model = new WorkflowNodeEditorModel(session, loop.Id, loop.Id);
+        var page = Assert.IsType<WorkflowSubWorkflowEditorPageModel>(model.Pages.Single(item => item.PageId == "SubWorkflow").Model);
+        Assert.Null(page.Session.RuntimeSnapshot);
+
+        // 父画布收到快照（循环第2圈，子流程正在执行 Work）：编辑窗口的子画布随之显示子运行状态。
+        session.SetRuntimeSnapshot(RootWithChild(loop.Id, ChildSnapshot(childRunId, "Work"), cycle: 2));
+
+        Assert.Equal(childRunId, page.Session.RuntimeSnapshot?.RunId);
+        Assert.Equal(E_NodeState.Running, page.Session.GetNodeState("Work"));
+        Assert.Equal(7, page.Session.GetLatestNodeOutput("Work")?.Value);
+        await using (var inner = model.CreateSubWorkflowNodeEditor(page, "Work"))
+        {
+            var results = Assert.IsType<WorkflowNodeResultPageModel>(inner.Pages.Single(item => item.PageId == WorkflowNodeResultPageProvider.PageId).Model);
+            Assert.Contains(results.GetItems(), item => item.Name == "状态" && item.Value != "尚未运行");
+        }
+        var loopResults = Assert.IsType<WorkflowNodeResultPageModel>(model.Pages.Single(item => item.PageId == WorkflowNodeResultPageProvider.PageId).Model);
+        var items = loopResults.GetItems();
+        Assert.Contains(new WorkflowNodeResultItem(WorkflowNodeResultPageModel.StateCategory, "当前圈", "2"), items);
+        Assert.Contains(new WorkflowNodeResultItem(WorkflowNodeResultPageModel.StateCategory, "正在执行", "Work"), items);
+    }
+
+    private static WorkflowRuntimeSnapshot ChildSnapshot(Guid runId, string runningNodeId) => new(
+        runId, 5, DateTimeOffset.UtcNow, "Child", E_WorkflowExecutionState.Running, runningNodeId, new[] { runningNodeId },
+        new Dictionary<long, WorkflowActiveTokenInfo>(), TimeSpan.FromMilliseconds(30),
+        new Dictionary<string, WorkflowNodeRuntimeInfo>
+        {
+            [runningNodeId] = new(runningNodeId, E_NodeState.Running, 1, 1, DateTimeOffset.UtcNow, null, TimeSpan.FromMilliseconds(12))
+        },
+        new Dictionary<long, WorkflowParallelScopeInfo>(),
+        new Dictionary<string, WorkflowChildRuntimeInfo>(),
+        new Dictionary<string, WorkflowChildRuntimeInfo>(),
+        Array.Empty<string>());
+
+    private static WorkflowRuntimeSnapshot RootWithChild(string parentNodeId, WorkflowRuntimeSnapshot child, int cycle) => new(
+        Guid.NewGuid(), 9, DateTimeOffset.UtcNow, "Root", E_WorkflowExecutionState.Running, parentNodeId, new[] { parentNodeId },
+        new Dictionary<long, WorkflowActiveTokenInfo>(), TimeSpan.FromSeconds(1),
+        new Dictionary<string, WorkflowNodeRuntimeInfo>
+        {
+            [parentNodeId] = new(parentNodeId, E_NodeState.Running, 1, 1, DateTimeOffset.UtcNow, null, TimeSpan.FromSeconds(1))
+        },
+        new Dictionary<long, WorkflowParallelScopeInfo>(),
+        new Dictionary<string, WorkflowChildRuntimeInfo>
+        {
+            [$"{parentNodeId}:1:1"] = new(parentNodeId, new WorkflowExecutionIdentity(Guid.NewGuid(), 1, Array.Empty<long>(), Array.Empty<long>(), 1), child, cycle)
+        },
+        new Dictionary<string, WorkflowChildRuntimeInfo>(),
+        Array.Empty<string>());
+
     private static WorkflowDocument Document(IWorkflowNodeModel node)
     {
         var canvasDocument = new WorkflowDocument { Name = "Editor" };
