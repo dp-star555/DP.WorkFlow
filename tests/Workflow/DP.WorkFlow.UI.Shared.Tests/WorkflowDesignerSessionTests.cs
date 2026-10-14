@@ -24,20 +24,41 @@ public sealed class WorkflowDesignerSessionTests
     }
 
     [Fact]
-    public void SessionConstruction_DoesNotNormalizeLayoutUntilExplicitCommand()
+    public void SessionConstruction_FitsNodeSizeButDoesNotNormalizeLayoutUntilExplicitCommand()
     {
         var canvasDocument = new WorkflowDocument();
         var canvas = canvasDocument.CanvasProjection;
         var node = new DelayNodeModel { Id = "Delay", Title = "等待" };
-        canvas.Nodes.Add(new WorkflowCanvasNode { Node = node, Height = 140 });
+        // 旧版本保存的尺寸（宽 180、高 140）与当前标题行 + 正文行不一致，位置也不在栅格上。
+        canvas.Nodes.Add(new WorkflowCanvasNode { Node = node, X = 10, Y = 10, Width = 180, Height = 140 });
 
         var session = new WorkflowDesignerSession(canvasDocument, new WorkflowNodeCatalog().RegisterStandardNodes());
 
-        Assert.Equal(140, canvas.Nodes[0].Height);
+        // 打开时尺寸按内容重算（只有标题行），中心横坐标和上边保持，不吸附、不入撤销栈。
+        var fitted = canvas.Nodes[0];
+        Assert.Equal(WorkflowDesignerGeometry.HeaderHeight, fitted.Height);
+        Assert.Equal(0, fitted.Width % (2 * WorkflowDesignerGeometry.GridSize));
+        Assert.Equal(100, fitted.X + fitted.Width / 2, 6);
+        Assert.Equal(10, fitted.Y);
+        Assert.False(session.CanUndo);
+
+        // 位置吸附仍由显式规范化完成，并可撤销。
         Assert.True(session.NormalizeLayout());
-        Assert.Equal(WorkflowDesignerGeometry.QuantizeNodeHeight(WorkflowDesignerGeometry.MinimumNodeHeight), canvas.Nodes[0].Height);
+        Assert.Equal(0, fitted.Y % WorkflowDesignerGeometry.GridSize);
         Assert.True(session.Undo());
-        Assert.Equal(140, canvas.Nodes[0].Height);
+        Assert.Equal(10, fitted.Y);
+    }
+
+    [Fact]
+    public void SessionConstruction_KeepsSizeOfNodesMissingFromCatalog()
+    {
+        var canvasDocument = new WorkflowDocument();
+        var node = new DelayNodeModel { Id = "Delay", Title = "等待" };
+        canvasDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node, Width = 180, Height = 140 });
+
+        _ = new WorkflowDesignerSession(canvasDocument, new WorkflowNodeCatalog());
+
+        Assert.Equal(140, canvasDocument.CanvasProjection.Nodes[0].Height);
     }
 
     [Fact]
@@ -48,10 +69,9 @@ public sealed class WorkflowDesignerSessionTests
         var canvas = canvasDocument.CanvasProjection;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = model, Width = 180 });
 
-        var session = new WorkflowDesignerSession(canvasDocument, new WorkflowNodeCatalog().RegisterStandardNodes());
+        _ = new WorkflowDesignerSession(canvasDocument, new WorkflowNodeCatalog().RegisterStandardNodes());
 
-        Assert.Equal(180, canvas.Nodes[0].Width);
-        Assert.True(session.NormalizeLayout());
+        // 打开文档即按标题和标题行右侧的序号、耗时加宽，不需要先规范化布局。
         Assert.True(canvas.Nodes[0].Width > 260);
     }
 

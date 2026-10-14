@@ -64,24 +64,44 @@ public sealed partial class WorkflowEngine
     /// 这些条目的 <see cref="WorkflowTraceEntry.Parents"/> 标明所属复合节点和圈序号，序号属于各自的子运行。
     /// </param>
     /// <returns>按发生时间排列的条目；<see cref="WorkflowTraceBatch.LastSequence"/> 始终是本层运行的最后序号。</returns>
-    public WorkflowTraceBatch GetTraceBatch(bool includeChildRuns)
-    {
-        var batch = _recorder?.GetRecent();
-        var entries = batch?.Events.Select(ToTraceEntry).ToArray() ?? Array.Empty<WorkflowTraceEntry>();
-        var lastSequence = entries.Length == 0 ? 0 : entries[^1].Sequence;
-        // 以记录器的运行标识为准：新一轮刚开始、记录器尚未替换时，条目仍属于上一轮。
-        var runId = batch?.RunId ?? _runId;
-        if (!includeChildRuns)
-            return new WorkflowTraceBatch(runId, lastSequence, Array.AsReadOnly(entries));
+    public WorkflowTraceBatch GetTraceBatch(bool includeChildRuns) => GetTraceBatch(includeChildRuns, null);
 
-        List<WorkflowTraceEntry> merged;
+    /// <summary>
+    /// 增量读取 Trace：只返回 <paramref name="since"/> 之后新产生的条目（按发生时间排列），批次的
+    /// <see cref="WorkflowTraceBatch.Cursor"/> 是下次读取的位置。监视界面周期刷新时用它代替整窗读取，
+    /// 每次只转换、合并、排序新条目，开销与新增条目数成正比，而不是与保留窗口大小成正比。
+    /// </summary>
+    /// <param name="includeChildRuns">是否合并子运行的轨迹，见 <see cref="GetTraceBatch(bool)"/>。</param>
+    /// <param name="since">上次读取的位置；为空时返回整个保留窗口。</param>
+    public WorkflowTraceBatch GetTraceBatch(bool includeChildRuns, WorkflowTraceCursor? since)
+    {
+        var cursor = since ?? WorkflowTraceCursor.Empty;
+        var recorder = _recorder;
+        var batch = recorder?.GetRecent(cursor.LastSequence(_runId));
+        // 以记录器的运行标识为准：新一轮刚开始、记录器尚未替换时，条目仍属于上一轮。
+        if (batch is not null && batch.RunId != _runId)
+            batch = recorder!.GetRecent(cursor.LastSequence(batch.RunId));
+        var runId = batch?.RunId ?? _runId;
+        var entries = batch?.Events.Select(@event => ToTraceEntry(@event, runId)).ToArray() ?? Array.Empty<WorkflowTraceEntry>();
+        var lastSequence = entries.Length == 0 ? cursor.LastSequence(runId) : entries[^1].Sequence;
+        var visible = new Dictionary<Guid, long>();
+        if (runId != Guid.Empty) visible[runId] = lastSequence;
+        if (!includeChildRuns)
+            return new WorkflowTraceBatch(runId, lastSequence, Array.AsReadOnly(entries)) { Cursor = WorkflowTraceCursor.From(visible) };
+
+        var merged = new List<WorkflowTraceEntry>(entries);
         (string ParentNodeId, WorkflowEngine Engine, int Cycle, Guid? ArchivedRunId)[] live;
         lock (_stateSync)
         {
-            merged = new List<WorkflowTraceEntry>(entries.Length + _childTraceHistory.Values.Sum(history => history.Count));
-            merged.AddRange(entries);
+            // 已归档的子运行历史有界（每个父节点最多 MaxTraceEntries 条），只比较序号，不重新转换。
             foreach (var history in _childTraceHistory.Values)
-                merged.AddRange(history);
+            {
+                foreach (var entry in history)
+                {
+                    Advance(visible, entry.RunId, entry.Sequence);
+                    if (cursor.IsNew(entry)) merged.Add(entry);
+                }
+            }
             live = _childTraceSources.Values
                 .Select(source => (source.ParentNodeId, source.Engine, source.Cycle, source.ArchivedRunId))
                 .ToArray();
@@ -89,16 +109,24 @@ public sealed partial class WorkflowEngine
         // 子引擎有自己的锁；在本引擎锁外读取，避免父子锁嵌套。已归档的运行只从历史中读取。
         foreach (var source in live)
         {
-            var child = source.Engine.GetTraceBatch(includeChildRuns: true);
+            var child = source.Engine.GetTraceBatch(includeChildRuns: true, cursor);
             if (child.RunId == source.ArchivedRunId)
                 continue;
+            foreach (var pair in child.Cursor.Runs)
+                Advance(visible, pair.Key, pair.Value);
             merged.AddRange(child.Entries.Select(entry => TagChildTrace(entry, source.ParentNodeId, source.Cycle)));
         }
         var ordered = merged.OrderBy(entry => entry.Timestamp).ToArray();
-        return new WorkflowTraceBatch(runId, lastSequence, Array.AsReadOnly(ordered));
+        return new WorkflowTraceBatch(runId, lastSequence, Array.AsReadOnly(ordered)) { Cursor = WorkflowTraceCursor.From(visible) };
     }
 
-    private static WorkflowTraceEntry ToTraceEntry(WorkflowRunEvent @event)
+    private static void Advance(Dictionary<Guid, long> visible, Guid runId, long sequence)
+    {
+        if (!visible.TryGetValue(runId, out var current) || sequence > current)
+            visible[runId] = sequence;
+    }
+
+    private static WorkflowTraceEntry ToTraceEntry(WorkflowRunEvent @event, Guid runId)
     {
         string? message = null;
         IReadOnlyDictionary<string, object?>? data = null;
@@ -126,7 +154,10 @@ public sealed partial class WorkflowEngine
             message,
             data,
             @event.ExecutionIdentity?.TokenId ?? 0,
-            Array.AsReadOnly(@event.ExecutionIdentity?.ScopeIds.ToArray() ?? Array.Empty<long>()));
+            Array.AsReadOnly(@event.ExecutionIdentity?.ScopeIds.ToArray() ?? Array.Empty<long>()))
+        {
+            RunId = runId
+        };
     }
 
     private void MarkNodeStarted(IWorkflowNodeModel node, WorkflowExecutionIdentity identity)

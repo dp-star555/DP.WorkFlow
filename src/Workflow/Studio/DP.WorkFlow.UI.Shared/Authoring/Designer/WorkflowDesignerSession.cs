@@ -89,6 +89,24 @@ public sealed partial class WorkflowDesignerSession
         Document = document ?? throw new ArgumentNullException(nameof(document));
         Catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         PublicDataCatalog = publicDataCatalog ?? new WorkflowPublicDataCatalog();
+        FitNodeSizesToContent();
+    }
+
+    /// <summary>
+    /// 打开文档时按当前节点外观重算节点尺寸：旧版本保存的尺寸与现在的标题行、正文行不一致时，标题会被截断或下方留白。
+    /// 尺寸由内容决定，不入撤销栈、不触发修改事件；位置保持中心横坐标和上边，不做吸附（布局规范化仍由显式命令完成）。
+    /// 目录中没有的节点类型（插件未加载）保持原尺寸。
+    /// </summary>
+    private void FitNodeSizesToContent()
+    {
+        foreach (var node in Canvas.Nodes)
+        {
+            if (!Catalog.TryGet(node.Node.NodeType, out _)) continue;
+            var (centerX, top) = (node.X + node.Width / 2, node.Y);
+            EnsureNodeDisplaySize(node);
+            node.X = centerX - node.Width / 2;
+            node.Y = top;
+        }
     }
 
     /// <summary>获取当前正式工作流文档。</summary>

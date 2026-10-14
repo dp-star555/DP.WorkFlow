@@ -19,6 +19,13 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     private WorkflowStudioRuntimeBinding? _runtimeBinding;
     private IWorkflowRuntimeMonitorSource? _source;
     private ILocalizationContext _localizationContext = null!;
+    // 运行数据变化只置脏标记，由定时器合并刷新：快速循环时每秒可能有上千次变化，逐次重建表格会占满界面线程。
+    private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 250 };
+    private bool _runtimeDirty;
+    private bool _applyingRuntimeData;
+    private bool _traceReset = true;
+    private IReadOnlyList<WorkflowTraceMonitorItem> _shownTrace = Array.Empty<WorkflowTraceMonitorItem>();
+    private IReadOnlyList<WorkflowTraceMonitorItem> _shownOutput = Array.Empty<WorkflowTraceMonitorItem>();
 
     /// <summary>初始化运行时监视控件及其共享命令。</summary>
     public WorkflowRuntimeMonitorControl()
@@ -42,6 +49,15 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         foreach (var list in new ListView[] { tokensListView, scopesListView, childrenListView, traceListView, outputListView, timingListView })
             list.ContextMenuStrip = _listMenu;
         commandManager.Commands.Add(_exportCommand);
+
+        // 轨迹与输出可能有数千行，使用虚拟列表：刷新只更新行数，只为可见行创建条目。
+        traceListView.VirtualMode = true;
+        traceListView.RetrieveVirtualItem += (_, e) => e.Item = TraceItem(_shownTrace, e.ItemIndex);
+        outputListView.VirtualMode = true;
+        outputListView.RetrieveVirtualItem += (_, e) => e.Item = OutputItem(_shownOutput, e.ItemIndex);
+        _refreshTimer.Tick += (_, _) => FlushRuntimeData();
+        monitorTabs.SelectedIndexChanged += (_, _) => RefreshLists(autoScrollTrace: false);
+        VisibleChanged += (_, _) => { if (Visible) FlushRuntimeData(); };
 
         traceFilterTextBox.TextChanged += TraceFilterChanged;
         traceDateRange.RangeChanged += TraceDateRangeChanged;
@@ -101,6 +117,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
             if (ReferenceEquals(_source, value)) return;
             if (_source is not null) _source.Changed -= OnRuntimeChanged;
             _source = value;
+            _traceReset = true;
             if (_source is not null) _source.Changed += OnRuntimeChanged;
             RefreshRuntimeData();
         }
@@ -149,12 +166,30 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     private void OnRuntimeChanged(object? sender, EventArgs e)
     {
         if (IsDisposed) return;
-        if (InvokeRequired) BeginInvoke(RefreshRuntimeData); else RefreshRuntimeData();
+        if (InvokeRequired) { BeginInvoke(MarkRuntimeDirty); return; }
+        MarkRuntimeDirty();
+    }
+
+    /// <summary>记录运行数据已变化；定时器到期时合并为一次刷新。</summary>
+    private void MarkRuntimeDirty()
+    {
+        if (IsDisposed) return;
+        _runtimeDirty = true;
+        if (!_refreshTimer.Enabled) _refreshTimer.Start();
+    }
+
+    /// <summary>把累计的运行数据变化一次性应用到界面；控件不可见时推迟到重新显示。</summary>
+    private void FlushRuntimeData()
+    {
+        _refreshTimer.Stop();
+        if (!_runtimeDirty || IsDisposed || !Visible) return;
+        _runtimeDirty = false;
+        RefreshRuntimeData();
     }
 
     private void ModelChanged(object? sender, EventArgs e)
     {
-        if (IsDisposed) return;
+        if (IsDisposed || _applyingRuntimeData) return;
         if (InvokeRequired) BeginInvoke(() => RefreshLists()); else RefreshLists();
     }
 
@@ -188,45 +223,98 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
 
     private void PauseTraceChanged(object? sender, EventArgs e) => _model.SetTracePaused(pauseTraceCheckBox.Checked);
 
+    /// <summary>只刷新当前页签的表格（其余页签切换时再刷新），并更新摘要。</summary>
     private void RefreshLists(bool autoScrollTrace = true)
     {
         var culture = LocalizationContext.Current.Culture;
-        Replace(tokensListView, _model.Tokens.Select(item => ((object)item.TokenId, new[]
+        var page = monitorTabs.SelectedTab;
+        if (page == tokensPage)
+            Replace(tokensListView, _model.Tokens.Select(item => ((object)item.TokenId, new[]
+            {
+                item.TokenId.ToString(culture), item.CurrentNodeId, item.ScopePath, item.AncestorTokens
+            })));
+        else if (page == scopesPage)
+            Replace(scopesListView, _model.ParallelScopes.Select(item => ((object)item.ScopeId, new[]
+            {
+                item.ScopeId.ToString(culture), item.ScopeNodeId, item.MergeNodeId,
+                $"{item.CompletedBranches.ToString(culture)}/{item.TotalBranches.ToString(culture)}",
+                LocalizationContext.Text(item.IsCompleted ? WorkflowUiTextKeys.RuntimeYes : WorkflowUiTextKeys.RuntimeNo)
+            })));
+        else if (page == childrenPage)
+            Replace(childrenListView, _model.ChildWorkflows.Select(item => ((object)item.RunId, new[]
+            {
+                item.ParentNodeId, item.WorkflowName,
+                WorkflowRuntimeText.ExecutionState(LocalizationContext, item.State)
+                    + (WorkflowRuntimeMonitorModel.DescribeChildProgress(item) is { Length: > 0 } progress ? " · " + progress : string.Empty),
+                $"{item.Elapsed.TotalMilliseconds.ToString("F0", culture)} ms", item.RunId.ToString("N")
+            })));
+        else if (page == tracePage)
         {
-            item.TokenId.ToString(culture), item.CurrentNodeId, item.ScopePath, item.AncestorTokens
-        })));
-        Replace(scopesListView, _model.ParallelScopes.Select(item => ((object)item.ScopeId, new[]
-        {
-            item.ScopeId.ToString(culture), item.ScopeNodeId, item.MergeNodeId,
-            $"{item.CompletedBranches.ToString(culture)}/{item.TotalBranches.ToString(culture)}",
-            LocalizationContext.Text(item.IsCompleted ? WorkflowUiTextKeys.RuntimeYes : WorkflowUiTextKeys.RuntimeNo)
-        })));
-        Replace(childrenListView, _model.ChildWorkflows.Select(item => ((object)item.RunId, new[]
-        {
-            item.ParentNodeId, item.WorkflowName,
-            WorkflowRuntimeText.ExecutionState(LocalizationContext, item.State)
-                + (WorkflowRuntimeMonitorModel.DescribeChildProgress(item) is { Length: > 0 } progress ? " · " + progress : string.Empty),
-            $"{item.Elapsed.TotalMilliseconds.ToString("F0", culture)} ms", item.RunId.ToString("N")
-        })));
-        Replace(traceListView, _model.TraceEntries.Select(item => ((object)(item.Sequence, item.NodeId), new[]
-        {
-            item.Sequence.ToString(culture), item.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff", culture),
-            item.NodeId, item.TokenId.ToString(culture), item.ScopePath,
-            WorkflowRuntimeText.TraceStep(LocalizationContext, item.Step), item.Message
-        })));
-        Replace(outputListView, _model.OutputEntries.Select(item => ((object)item.Sequence, new[]
-        {
-            item.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff", culture), item.NodeId, item.Message
-        })));
-        Replace(timingListView, _model.TimingTrends.Select(item => ((object)item.NodeId, new[]
-        {
-            item.NodeId, item.ExecutionCount.ToString(culture), $"{item.Elapsed.TotalMilliseconds.ToString("F1", culture)} ms",
-            $"{item.AverageMilliseconds.ToString("F1", culture)} ms", WorkflowRuntimeText.NodeState(LocalizationContext, item.State)
-        })));
-        if (autoScrollTrace && !_model.IsTracePaused && traceListView.IsHandleCreated && traceListView.Items.Count > 0)
-            traceListView.Items[traceListView.Items.Count - 1].EnsureVisible();
+            _shownTrace = ReplaceVirtual(traceListView, _shownTrace, _model.TraceEntries);
+            if (autoScrollTrace && !_model.IsTracePaused && traceListView.IsHandleCreated && _shownTrace.Count > 0)
+                traceListView.EnsureVisible(_shownTrace.Count - 1);
+        }
+        else if (page == outputPage)
+            _shownOutput = ReplaceVirtual(outputListView, _shownOutput, _model.OutputEntries);
+        else if (page == timingPage)
+            Replace(timingListView, _model.TimingTrends.Select(item => ((object)item.NodeId, new[]
+            {
+                item.NodeId, item.ExecutionCount.ToString(culture), $"{item.Elapsed.TotalMilliseconds.ToString("F1", culture)} ms",
+                $"{item.AverageMilliseconds.ToString("F1", culture)} ms", WorkflowRuntimeText.NodeState(LocalizationContext, item.State)
+            })));
         UpdateSummary();
         _exportCommand.RaiseCanExecuteChanged();
+    }
+
+    private ListViewItem TraceItem(IReadOnlyList<WorkflowTraceMonitorItem> rows, int index)
+    {
+        var culture = LocalizationContext.Current.Culture;
+        var row = index >= 0 && index < rows.Count ? rows[index] : null;
+        var item = new ListViewItem(row?.Sequence.ToString(culture) ?? string.Empty) { Tag = row is null ? null : (row.Sequence, row.NodeId) };
+        if (row is not null)
+            item.SubItems.AddRange(new[]
+            {
+                row.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff", culture), row.NodeId, row.TokenId.ToString(culture),
+                row.ScopePath, WorkflowRuntimeText.TraceStep(LocalizationContext, row.Step), row.Message
+            });
+        return item;
+    }
+
+    private ListViewItem OutputItem(IReadOnlyList<WorkflowTraceMonitorItem> rows, int index)
+    {
+        var row = index >= 0 && index < rows.Count ? rows[index] : null;
+        var item = new ListViewItem(row?.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff", LocalizationContext.Current.Culture) ?? string.Empty)
+        {
+            Tag = row?.Sequence
+        };
+        if (row is not null) item.SubItems.AddRange(new[] { row.NodeId, row.Message });
+        return item;
+    }
+
+    /// <summary>
+    /// 更新虚拟列表：只改行数并重绘可见行；选中行按轨迹序号和节点跟随（有界缓存丢弃旧记录后行号会前移）。
+    /// </summary>
+    private static IReadOnlyList<WorkflowTraceMonitorItem> ReplaceVirtual(
+        ListView list, IReadOnlyList<WorkflowTraceMonitorItem> previous, IReadOnlyList<WorkflowTraceMonitorItem> rows)
+    {
+        if (ReferenceEquals(previous, rows) && list.VirtualListSize == rows.Count) return rows;
+        var selected = list.SelectedIndices.Cast<int>()
+            .Where(index => index < previous.Count)
+            .Select(index => (previous[index].Sequence, previous[index].NodeId))
+            .ToHashSet();
+        list.BeginUpdate();
+        try
+        {
+            list.SelectedIndices.Clear();
+            list.VirtualListSize = rows.Count;
+            if (selected.Count > 0)
+                for (var index = 0; index < rows.Count; index++)
+                    if (selected.Contains((rows[index].Sequence, rows[index].NodeId)))
+                        list.SelectedIndices.Add(index);
+            list.Invalidate();
+        }
+        finally { list.EndUpdate(); }
+        return rows;
     }
 
     private void UpdateSummary()
@@ -244,8 +332,19 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
 
     private void RefreshRuntimeData()
     {
-        _model.SetSnapshot(_source?.GetSnapshot());
-        _model.SetTraceBatch(_source?.GetTraceBatch());
+        _runtimeDirty = false;
+        // 快照和轨迹各自触发一次模型变化，合并成一次表格刷新。
+        _applyingRuntimeData = true;
+        try
+        {
+            _model.SetSnapshot(_source?.GetSnapshot());
+            // 换了来源后整窗读取一次，此后只按游标读取新条目。
+            if (_traceReset) _model.SetTraceBatch(_source?.GetTraceBatch());
+            else _model.AppendTraceBatch(_source?.GetTraceBatch(_model.TraceCursor));
+            _traceReset = false;
+        }
+        finally { _applyingRuntimeData = false; }
+        RefreshLists();
     }
 
     /// <summary>导出右键所在表格；轨迹表按完整轨迹字段导出，其余表格按当前列导出。</summary>
@@ -289,8 +388,9 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
             ? value ?? string.Empty
             : "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
         writer.WriteLine(string.Join(",", list.Columns.Cast<ColumnHeader>().Select(column => Csv(column.Text))));
-        foreach (ListViewItem item in list.Items)
-            writer.WriteLine(string.Join(",", item.SubItems.Cast<ListViewItem.ListViewSubItem>().Select(cell => Csv(cell.Text))));
+        // 虚拟列表不能枚举 Items，按行号逐行取。
+        for (var index = 0; index < list.Items.Count; index++)
+            writer.WriteLine(string.Join(",", list.Items[index].SubItems.Cast<ListViewItem.ListViewSubItem>().Select(cell => Csv(cell.Text))));
     }
 
     private void ShowApplicationError(ApplicationError error)
@@ -379,6 +479,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     private void DisposeRuntimeMonitor()
     {
         if (_source is not null) _source.Changed -= OnRuntimeChanged;
+        _refreshTimer.Dispose();
         _model.Changed -= ModelChanged;
         if (_localizationContext is not null) _localizationContext.Changed -= LocalizationChanged;
         commandManager.Owner = null;

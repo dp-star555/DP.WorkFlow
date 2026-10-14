@@ -35,6 +35,10 @@ public sealed class ModernTreeView : TreeView
     private bool _nativeScrollBarsHidden;
     private bool _updatingNativeScrollStyles;
     private FinalLayoutTransaction? _layoutTransaction;
+    private readonly Dictionary<int, Image> _imageCache = new();
+    private ImageList? _imageCacheSource;
+    private int _imageCacheCount;
+    private Size _imageCacheSize;
 
     private FinalLayoutTransaction LayoutTransaction =>
         _layoutTransaction ??= new FinalLayoutTransaction(this, ApplyFinalLayout);
@@ -540,12 +544,43 @@ public sealed class ModernTreeView : TreeView
     private void DrawNodeImage(Graphics graphics, TreeNode node, Rectangle bounds)
     {
         if (ImageList is null || bounds.IsEmpty) return;
-        Image? image = null;
         var key = node.IsSelected ? node.SelectedImageKey : node.ImageKey;
         var index = node.IsSelected ? node.SelectedImageIndex : node.ImageIndex;
-        if (!string.IsNullOrEmpty(key) && ImageList.Images.ContainsKey(key)) image = ImageList.Images[key];
-        else if ((uint)index < (uint)ImageList.Images.Count) image = ImageList.Images[index];
-        if (image is not null) graphics.DrawImage(image, bounds);
+        if (!string.IsNullOrEmpty(key)) index = ImageList.Images.IndexOfKey(key);
+        if (GetCachedImage(index) is { } image) graphics.DrawImage(image, bounds);
+    }
+
+    /// <summary>
+    /// 每次绘制都会重画全部可见行；ImageList.Images[i] 每次调用都从原生图像列表复制出一张新位图（32 位透明图尤其慢），
+    /// 滚动时每秒成百上千次分配会造成明显卡顿和闪烁。因此按索引缓存位图，图像列表、数量或尺寸变化时重建。
+    /// </summary>
+    private Image? GetCachedImage(int index)
+    {
+        var list = ImageList;
+        if (list is null || (uint)index >= (uint)list.Images.Count) return null;
+        if (!ReferenceEquals(list, _imageCacheSource) || _imageCacheCount != list.Images.Count || _imageCacheSize != list.ImageSize)
+        {
+            ClearImageCache();
+            _imageCacheSource = list;
+            _imageCacheCount = list.Images.Count;
+            _imageCacheSize = list.ImageSize;
+        }
+        if (!_imageCache.TryGetValue(index, out var image))
+            _imageCache[index] = image = list.Images[index];
+        return image;
+    }
+
+    private void ClearImageCache()
+    {
+        foreach (var image in _imageCache.Values) image.Dispose();
+        _imageCache.Clear();
+        _imageCacheSource = null;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) ClearImageCache();
+        base.Dispose(disposing);
     }
 
     private TreeNode? GetNodeAtRow(int y)

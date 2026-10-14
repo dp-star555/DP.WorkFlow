@@ -27,6 +27,12 @@ public sealed record WorkflowTraceEntry(
     /// 记录来自子运行（子流程、循环块）时，从外到内经过的复合节点；本层流程自身的记录为空。
     /// </summary>
     public IReadOnlyList<WorkflowTraceParent>? Parents { get; init; }
+
+    /// <summary>
+    /// 产生记录的运行 ID：本层流程的记录为本层运行，子运行（子流程、循环块每一圈）的记录为各自的子运行。
+    /// <see cref="Sequence"/> 只在同一运行内单调递增，增量读取按（运行 ID，序号）判断新旧。
+    /// </summary>
+    public Guid RunId { get; init; }
 }
 
 /// <summary>子运行记录经过的一层复合节点。</summary>

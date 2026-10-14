@@ -265,6 +265,43 @@ public sealed class LoopBlockNodeTests
         Assert.True((await running).Success);
     }
 
+    [Fact]
+    public async Task GetTraceBatch_WithCursor_ReturnsOnlyNewEntriesAcrossLiveAndArchivedCycles()
+    {
+        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cycles = 0;
+        var actions = new WorkflowActionRegistry()
+            .Register("Init", (_, _) => ValueTask.FromResult<object?>(null))
+            .Register("Work", async (_, _) =>
+            {
+                // 第 2 圈停住：此时第 1 圈已归档，第 2 圈是正在运行的子运行。
+                if (Interlocked.Increment(ref cycles) == 2) await gate.Task;
+                return null;
+            });
+        var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
+        var (engine, _) = CreateEngine(ChildDocument(withEnd: true), context, configured => configured.Iterations = 4);
+
+        var running = engine.RunAsync();
+        await WaitUntilAsync(() => Volatile.Read(ref cycles) == 2);
+        var first = engine.GetTraceBatch(includeChildRuns: true, since: null);
+        gate.SetResult(true);
+        Assert.True((await running).Success);
+
+        var rest = engine.GetTraceBatch(includeChildRuns: true, first.Cursor);
+        var full = engine.GetTraceBatch(includeChildRuns: true);
+        static (Guid, long) Key(WorkflowTraceEntry entry) => (entry.RunId, entry.Sequence);
+        // 两次增量读取恰好覆盖整窗读取，没有重复也没有遗漏；每条记录都带所属运行。
+        var incremental = first.Entries.Concat(rest.Entries).Select(Key).ToArray();
+        Assert.Equal(incremental.Length, incremental.Distinct().Count());
+        Assert.Equal(full.Entries.Select(Key).OrderBy(key => key), incremental.OrderBy(key => key));
+        Assert.DoesNotContain(full.Entries, entry => entry.RunId == Guid.Empty);
+        Assert.Contains(rest.Entries, entry => entry.NodeId == "Work" && entry.Parents![0].Cycle == 4);
+        // 读到末尾后再读为空；位置只保留仍可见的运行（本层 + 4 圈子运行）。
+        Assert.Empty(engine.GetTraceBatch(includeChildRuns: true, rest.Cursor).Entries);
+        Assert.Equal(5, rest.Cursor.RunCount);
+        Assert.Equal(full.LastSequence, rest.LastSequence);
+    }
+
     /// <summary>父流程：初始化 → 循环块 → 结束。</summary>
     private static (WorkflowEngine Engine, LoopBlockNodeModel Loop) CreateEngine(
         WorkflowDocument childDocument,
