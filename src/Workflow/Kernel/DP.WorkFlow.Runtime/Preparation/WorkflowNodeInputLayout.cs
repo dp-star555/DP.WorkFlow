@@ -163,6 +163,9 @@ internal sealed class WorkflowNodeInputMap
 
     internal WorkflowNodeInputMap(Dictionary<object, string> keys) => _keys = keys;
 
+    /// <summary>全部普通输入槽：输入实例和稳定键，按槽位顺序。</summary>
+    internal IEnumerable<KeyValuePair<object, string>> Entries => _keys;
+
     /// <summary>按引用查找输入实例对应的稳定键。</summary>
     /// <param name="input">Handler 实际传入的输入实例。</param>
     /// <param name="key">找到时返回稳定键；否则返回空字符串。</param>

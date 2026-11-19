@@ -3,6 +3,8 @@ namespace DP.WorkFlow;
 internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionContext, IWorkflowChildExecutionContext, IWorkflowNodeNoticeSink
 {
     private readonly Action<string, string>? _noticeRaiser;
+    // R2-c：执行前已取好的普通输入值，按输入实例引用索引。
+    private readonly Dictionary<object, object?> _prefetchedInputs = new(ReferenceEqualityComparer.Instance);
     private readonly WorkflowContext _context;
     private readonly Action<IWorkflowNodeModel, string, string?, IReadOnlyDictionary<string, object?>?, WorkflowEventWriteMode> _traceWriter;
     private readonly Action<WorkflowRunEventDraft, WorkflowEventWriteMode> _eventRecorder;
@@ -159,9 +161,40 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
         return existed;
     }
 
+    /// <summary>
+    /// R2-c：在执行代码运行前，按输入槽逐个解析本节点的全部普通输入并缓存，每个输入记一条 InputResolved。
+    /// 之后执行代码中的 <see cref="ResolveInput{T}"/> 直接返回已取好的值，不再访问上游。
+    /// </summary>
+    /// <exception cref="Exception">任何一个输入解析失败时抛出原始异常，节点不进入执行代码。</exception>
+    internal void ResolveAllInputs()
+    {
+        foreach (var entry in _inputMap.Entries)
+        {
+            var resolver = PrefetchResolvers.GetOrAdd(entry.Key.GetType(), CreatePrefetchResolver);
+            _prefetchedInputs[entry.Key] = resolver(this, entry.Key, entry.Value);
+        }
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Func<WorkflowNodeExecutionContext, object, string, object?>> PrefetchResolvers = new();
+
+    private static Func<WorkflowNodeExecutionContext, object, string, object?> CreatePrefetchResolver(Type inputType)
+    {
+        var valueType = inputType.GetGenericArguments()[0];
+        var method = typeof(WorkflowNodeExecutionContext)
+            .GetMethod(nameof(PrefetchInput), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
+            .MakeGenericMethod(valueType);
+        return (Func<WorkflowNodeExecutionContext, object, string, object?>)Delegate.CreateDelegate(
+            typeof(Func<WorkflowNodeExecutionContext, object, string, object?>), method);
+    }
+
+    private static object? PrefetchInput<T>(WorkflowNodeExecutionContext context, object input, string key) =>
+        context.ResolveAndRecord((WorkflowInput<T>)input, key, WorkflowInputMetadataStatus.Automatic);
+
     public T? ResolveInput<T>(WorkflowInput<T> input)
     {
         Guard.NotNull(input);
+        if (_prefetchedInputs.TryGetValue(input, out var prefetched))
+            return (T?)prefetched;
         // 用引用映射把"Handler 实际传入的输入实例"定位回它的公开属性名；查不到说明是动态输入。
         var inputKey = _inputMap.TryGetKey(input, out var key) ? key : null;
         var metadataStatus = inputKey is null

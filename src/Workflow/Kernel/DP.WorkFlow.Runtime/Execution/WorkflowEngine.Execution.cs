@@ -126,6 +126,8 @@ public sealed partial class WorkflowEngine
                     RunChildWorkflowAsync(node, identity, plan, childContext, childCancellation), PlanPath, BindingScopeId,
                 childContext => OpenChildWorkflowSession(node, identity, childContext),
                 (category, message) => RaiseNotice(node.Id, category, message, nodeType: node.NodeType));
+            // R2-c：进入执行代码前取齐全部普通输入；任何一个取不到，节点直接失败，不会执行到一半才发现。
+            executionContext.ResolveAllInputs();
             var operationKey = (token.TokenId, node.Id);
             // 上一次执行失败时留下的子运行投影不属于本次输出。
             _childOutputProjections.TryRemove(operationKey, out _);

@@ -39,8 +39,9 @@ public sealed class WorkflowRunRecordingRobotIntegrationTests
         // 三个绑定输入都真实到达了机器人服务，说明记录未改变业务结果。
         Assert.Equal(new WaferRobotTarget("LoadPort", 3, E_EndEffectorType.Arm2, false), service.LastTarget);
         var resolved = sink.Events.Where(item => item.EventType == "InputResolved").ToArray();
+        // R2-c：执行前按输入槽（属性名顺序）一次取齐，不再按执行代码调用的先后。
         Assert.Equal(
-            new[] { "StationIdBinding", "SlotBinding", "ArmBinding" },
+            new[] { "ArmBinding", "SlotBinding", "StationIdBinding" },
             resolved.Select(item => item.Data!["InputKey"].Text));
         Assert.All(resolved, item =>
         {
@@ -48,9 +49,9 @@ public sealed class WorkflowRunRecordingRobotIntegrationTests
             Assert.Equal("Literal", item.Data["SourceKind"].Text);
         });
         // 每个槽记录的是自己那份值，不能串到别的槽。
-        Assert.Equal("LoadPort", resolved[0].Data!["ResolvedValueSummary"].Text);
+        Assert.Equal((long)E_EndEffectorType.Arm2, Convert.ToInt64(resolved[0].Data!["ResolvedValueSummary"].Scalar));
         Assert.Equal(3L, Convert.ToInt64(resolved[1].Data!["ResolvedValueSummary"].Scalar));
-        Assert.Equal((long)E_EndEffectorType.Arm2, Convert.ToInt64(resolved[2].Data!["ResolvedValueSummary"].Scalar));
+        Assert.Equal("LoadPort", resolved[2].Data!["ResolvedValueSummary"].Text);
     }
 
     private sealed class RecordingRobotService : IWorkflowWaferRobotService
