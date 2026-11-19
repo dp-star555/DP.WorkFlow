@@ -297,8 +297,6 @@ public sealed class WorkflowDocumentJsonStore
                 LabelPosition = connection.LabelPosition,
                 Note = string.IsNullOrWhiteSpace(connection.Note) ? null : connection.Note,
                 Disabled = connection.Enabled ? null : true,
-                State = connection.State,
-                Diagnostic = connection.Diagnostic,
                 Waypoints = connection.Waypoints
                     .Select(point => new WorkflowJsonPoint { X = point.X, Y = point.Y })
                     .ToList()
@@ -561,9 +559,7 @@ public sealed class WorkflowDocumentJsonStore
                 ToSide = source.ToSide,
                 LabelPosition = Polyfill.Clamp(source.LabelPosition, 0, 1),
                 Note = string.IsNullOrWhiteSpace(source.Note) ? null : source.Note,
-                Enabled = source.Disabled != true,
-                State = source.State,
-                Diagnostic = source.Diagnostic
+                Enabled = source.Disabled != true
             };
             foreach (var point in source.Waypoints)
                 connection.Waypoints.Add(new WorkflowPoint(point.X, point.Y));

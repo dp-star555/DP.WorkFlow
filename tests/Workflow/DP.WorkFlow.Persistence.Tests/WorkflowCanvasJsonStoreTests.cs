@@ -52,6 +52,25 @@ public sealed class WorkflowDocumentJsonStoreTests
     }
 
     [Fact]
+    public void ConnectionValidationResults_AreNotSavedAndOldValuesAreIgnored()
+    {
+        // R6-c：连线的校验状态和诊断说明每次打开重新计算，不进文件；旧文件里的值读入时忽略。
+        var store = new WorkflowDocumentJsonStore(new WorkflowNodeCatalog().RegisterStandardNodes());
+        var document = BuildDocument();
+        document.CanvasProjection.Connections[0].State = WorkflowConnectionState.Detached;
+        document.CanvasProjection.Connections[0].Diagnostic = "旧诊断";
+
+        var json = store.Serialize(document);
+        Assert.DoesNotContain("\"Diagnostic\"", json);
+        Assert.DoesNotContain("\"State\"", json);
+
+        var legacy = json.Replace("\"ToPort\"", "\"State\": 1, \"Diagnostic\": \"旧诊断\", \"ToPort\"");
+        var loaded = store.Deserialize(legacy).Canvas.Connections[0];
+        Assert.Equal(WorkflowConnectionState.Active, loaded.State);
+        Assert.Null(loaded.Diagnostic);
+    }
+
+    [Fact]
     public void SerializeAndDeserialize_CSharpScript_PreservesIdentityAndDllReferences()
     {
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();

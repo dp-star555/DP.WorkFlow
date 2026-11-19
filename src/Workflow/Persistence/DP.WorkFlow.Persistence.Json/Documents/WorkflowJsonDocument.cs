@@ -95,10 +95,6 @@ internal sealed class WorkflowJsonConnection
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool? Disabled { get; set; }
 
-    public WorkflowConnectionState State { get; set; }
-
-    public string? Diagnostic { get; set; }
-
     public List<WorkflowJsonPoint> Waypoints { get; set; } = new();
 }
 

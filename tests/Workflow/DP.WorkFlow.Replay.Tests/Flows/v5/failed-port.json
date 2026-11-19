@@ -112,8 +112,6 @@
       "FromSide": null,
       "ToSide": null,
       "LabelPosition": 0.5,
-      "State": 0,
-      "Diagnostic": null,
       "Waypoints": []
     },
     {
@@ -124,8 +122,6 @@
       "FromSide": null,
       "ToSide": null,
       "LabelPosition": 0.5,
-      "State": 0,
-      "Diagnostic": null,
       "Waypoints": []
     },
     {
@@ -136,8 +132,6 @@
       "FromSide": null,
       "ToSide": null,
       "LabelPosition": 0.5,
-      "State": 0,
-      "Diagnostic": null,
       "Waypoints": []
     },
     {
@@ -148,8 +142,6 @@
       "FromSide": null,
       "ToSide": null,
       "LabelPosition": 0.5,
-      "State": 0,
-      "Diagnostic": null,
       "Waypoints": []
     },
     {
@@ -160,8 +152,6 @@
       "FromSide": null,
       "ToSide": null,
       "LabelPosition": 0.5,
-      "State": 0,
-      "Diagnostic": null,
       "Waypoints": []
     }
   ]
