@@ -285,13 +285,6 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
             WorkflowEventWriteMode.Buffered);
     }
 
-    public void RaiseWorkflowSignal(string signalKey) => _context.RaiseWorkflowSignal(signalKey);
-
-    public bool ContainsWorkflowSignal(string signalKey) => _context.ContainsWorkflowSignal(signalKey);
-
-    public ValueTask<bool> WaitAllWorkflowSignalsAsync(IReadOnlyList<string> signalKeys, TimeSpan? timeout, CancellationToken cancellationToken) =>
-        _context.WaitAllWorkflowSignalsAsync(signalKeys, timeout, cancellationToken);
-
     public void Trace(string step, string? message = null, IReadOnlyDictionary<string, object?>? data = null) =>
         _traceWriter(Node, step, message, data, WorkflowEventWriteMode.Buffered);
 

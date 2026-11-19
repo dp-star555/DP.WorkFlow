@@ -81,22 +81,6 @@ public interface IWorkflowNodeExecutionContext
     /// <remarks>只用于动态端口、集合元素和脚本输入等真实动态场景；内置普通节点应使用 <see cref="ResolveInput{T}(WorkflowInput{T})"/>。</remarks>
     T? ResolveDynamicInput<T>(string inputKey, WorkflowInput<T> input);
 
-    /// <summary>触发当前工作流上下文中的一个幂等信号。</summary>
-    /// <param name="signalKey">信号稳定键；同一运行中重复触发不会重复累积。</param>
-    void RaiseWorkflowSignal(string signalKey);
-
-    /// <summary>判断当前工作流上下文信号是否已触发。</summary>
-    /// <param name="signalKey">要检查的信号稳定键。</param>
-    /// <returns>该信号已在当前上下文触发时返回 <see langword="true"/>。</returns>
-    bool ContainsWorkflowSignal(string signalKey);
-
-    /// <summary>异步等待当前工作流上下文中的全部指定信号。</summary>
-    /// <param name="signalKeys">需要全部触发的信号键；空集合立即成功。</param>
-    /// <param name="timeout">最长等待时间；为空表示只受取消令牌限制。</param>
-    /// <param name="cancellationToken">由工作流取消或宿主停止操作触发的取消令牌。</param>
-    /// <returns>全部信号到达时返回 <see langword="true"/>；仅因配置超时到期时返回 <see langword="false"/>。</returns>
-    ValueTask<bool> WaitAllWorkflowSignalsAsync(IReadOnlyList<string> signalKeys, TimeSpan? timeout, CancellationToken cancellationToken);
-
     /// <summary>写入与当前节点和执行身份关联的结构化跟踪记录。</summary>
     /// <param name="step">稳定的跟踪步骤键，供监视器筛选和聚合。</param>
     /// <param name="message">面向使用者的可选说明。</param>

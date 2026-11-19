@@ -58,21 +58,6 @@ public sealed class WorkflowContextTests
     }
 
     [Fact]
-    public async Task WorkflowSignals_AreSharedWithChildScopeAndUseAsyncNotification()
-    {
-        var parent = new WorkflowContext();
-        var child = parent.CreateChildScope();
-        var waiting = parent.WaitAllWorkflowSignalsAsync(new[] { "A", "B" }, TimeSpan.FromSeconds(1), CancellationToken.None).AsTask();
-
-        child.RaiseWorkflowSignal("A");
-        Assert.False(waiting.IsCompleted);
-        child.RaiseWorkflowSignal("B");
-
-        Assert.True(await waiting);
-        Assert.True(parent.ContainsWorkflowSignal("A"));
-    }
-
-    [Fact]
     public async Task SuccessfulNode_CommitsStagedPublicData()
     {
         var node = new PublishNode { Id = "Publish" };

@@ -258,8 +258,6 @@ public sealed class LabelRecipeSelectionTests
         public void PublishData(string key, object value) => throw new NotSupportedException(); public bool RemovePublicData(string key) => false;
         public T? ResolveInput<T>(WorkflowInput<T> input) => throw new NotSupportedException();
         public T? ResolveDynamicInput<T>(string inputKey, WorkflowInput<T> input) => throw new NotSupportedException();
-        public void RaiseWorkflowSignal(string signalKey) => throw new NotSupportedException(); public bool ContainsWorkflowSignal(string signalKey) => false;
-        public ValueTask<bool> WaitAllWorkflowSignalsAsync(IReadOnlyList<string> keys, TimeSpan? timeout, CancellationToken token) => throw new NotSupportedException();
         public void Trace(string step, string? message = null, IReadOnlyDictionary<string, object?>? data = null) { }
         public void Trace(string step, string? message, IReadOnlyDictionary<string, object?>? data, WorkflowEventWriteMode mode) { }
     }

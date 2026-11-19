@@ -111,10 +111,6 @@ public sealed class WorkflowNodeTrialRunner
         }
         public T? ResolveDynamicInput<T>(string inputKey, WorkflowInput<T> input) => ResolveInput(input);
 
-        public void RaiseWorkflowSignal(string signalKey) { }
-        public bool ContainsWorkflowSignal(string signalKey) => false;
-        public ValueTask<bool> WaitAllWorkflowSignalsAsync(IReadOnlyList<string> signalKeys, TimeSpan? timeout, CancellationToken cancellationToken) =>
-            signalKeys.Count == 0 ? Polyfill.FromResult(true) : throw new InvalidOperationException("单节点试运行不能等待流程信号。");
         public void Trace(string step, string? message = null, IReadOnlyDictionary<string, object?>? data = null) { }
         public void Trace(string step, string? message, IReadOnlyDictionary<string, object?>? data, WorkflowEventWriteMode writeMode) { }
     }
