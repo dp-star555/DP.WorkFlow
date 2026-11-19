@@ -205,7 +205,7 @@ public sealed partial class WorkflowEngine
             try
             {
                 owner.AdoptChildOutputProjections(parentNode.Id, parentExecution.TokenId,
-                    engine.DetachOutputProjections(), _keepLastCycleOutputs);
+                    engine.DetachOutputProjections(_keepLastCycleOutputs ? GetReferencedChildOutputNodes(parentNode) : null), _keepLastCycleOutputs);
                 await engine._pendingRecordingCompletion.ConfigureAwait(false);
             }
             finally
@@ -270,7 +270,7 @@ public sealed partial class WorkflowEngine
             // 子运行的映射输出可能引用其节点输出（例如图像帧），资源随父节点本次输出的生命周期释放。
             if (adoptOutputs)
                 AdoptChildOutputProjections(parentNode.Id, parentExecution.TokenId,
-                    childEngine.DetachOutputProjections(), result.Success);
+                    childEngine.DetachOutputProjections(result.Success ? GetReferencedChildOutputNodes(parentNode) : null), result.Success);
             return result;
         }
         finally
