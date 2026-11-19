@@ -10,6 +10,8 @@ namespace DP.WorkFlow;
 /// 为 <see langword="false"/> 时首次使用自动登记，供还没有公共数据清单的旧流程使用，行为与过去一致。</para>
 /// <para>写入立即生效（其他流程可能在等待），节点失败也不撤销，与原来的队列、信号语义相同。</para>
 /// <para>不使用流程管理时，每个根 <see cref="WorkflowContext"/> 自建一个只供自己使用的中心。</para>
+/// <para>登记为"保持"的项在登记时恢复上次保存的值（形态和类型一致时，优先于默认值），每次写入后保存，
+/// 需要构造时传入 <see cref="IWorkflowPublicDataPersistence"/>。</para>
 /// </remarks>
 public sealed class WorkflowPublicDataCenter
 {
@@ -18,16 +20,27 @@ public sealed class WorkflowPublicDataCenter
     private readonly WorkflowSignalService _signals = new();
     private readonly WorkflowValueSignalService _values = new();
     private readonly WorkflowQueueService _queues = new();
+    private readonly IWorkflowPublicDataPersistence? _persistence;
+    private Dictionary<string, WorkflowPersistedPublicData>? _saved;
+    private long _persistenceFailureCount;
 
     /// <summary>初始化公共数据中心。</summary>
     /// <param name="requireDeclaration">是否只允许使用已登记的键。</param>
-    public WorkflowPublicDataCenter(bool requireDeclaration = false)
+    /// <param name="persistence">"保持"项的存取；为空时保持项只在内存中。</param>
+    public WorkflowPublicDataCenter(bool requireDeclaration = false, IWorkflowPublicDataPersistence? persistence = null)
     {
         RequireDeclaration = requireDeclaration;
+        _persistence = persistence;
         Signals = new CheckedSignals(this);
         Values = new CheckedValues(this);
         Queues = new CheckedQueues(this);
     }
+
+    /// <summary>保存或读出"保持"项失败时发生（参数为说明）；失败不影响流程。</summary>
+    public event Action<string>? PersistenceFailed;
+
+    /// <summary>累计的保存 / 读出失败次数。</summary>
+    public long PersistenceFailureCount => Interlocked.Read(ref _persistenceFailureCount);
 
     /// <summary>是否只允许使用已登记的键；否则首次使用时自动登记。</summary>
     public bool RequireDeclaration { get; set; }
@@ -104,6 +117,8 @@ public sealed class WorkflowPublicDataCenter
     private void AddLocked(WorkflowPublicDataDeclaration item)
     {
         _declarations[item.Key] = item;
+        if (item.Persistent && TryRestoreLocked(item))
+            return;
         switch (item.Kind)
         {
             case WorkflowPublicDataKind.Signal:
@@ -117,6 +132,100 @@ public sealed class WorkflowPublicDataCenter
             case WorkflowPublicDataKind.Queue:
                 _queues.EnsureExists(item.Key, item.ValueType);
                 break;
+        }
+    }
+
+    /// <summary>恢复保持项上次保存的值；没有保存过、形态或类型已变、值无法解析时返回 false（改用默认值）。</summary>
+    private bool TryRestoreLocked(WorkflowPublicDataDeclaration item)
+    {
+        if (_persistence is null)
+            return false;
+        if (_saved is null)
+        {
+            try
+            {
+                _saved = _persistence.Load()
+                    .Where(saved => saved is not null && !string.IsNullOrWhiteSpace(saved.Key))
+                    .GroupBy(saved => saved.Key.Trim(), StringComparer.Ordinal)
+                    .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+            }
+            catch (Exception exception)
+            {
+                _saved = new Dictionary<string, WorkflowPersistedPublicData>(StringComparer.Ordinal);
+                ReportPersistenceFailure($"读出保持的公共数据失败：{exception.Message}");
+            }
+        }
+        if (!_saved.TryGetValue(item.Key, out var saved) || saved.Kind != item.Kind || saved.ValueType != item.ValueType)
+            return false;
+        try
+        {
+            var values = saved.Values.Select(text => WorkflowPublicDataValues.Convert(text, item.ValueType)).ToArray();
+            switch (item.Kind)
+            {
+                case WorkflowPublicDataKind.Signal:
+                    _signals.Write(item.Key, values.Length > 0 && (bool)values[0]);
+                    break;
+                case WorkflowPublicDataKind.Value:
+                    if (values.Length == 0)
+                        return item.DefaultValueText is null;
+                    _values.WriteValue(item.Key, values[0]);
+                    break;
+                default:
+                    _queues.EnsureExists(item.Key, item.ValueType);
+                    _queues.Clear(item.Key, item.ValueType, false);
+                    foreach (var value in values)
+                        _queues.EnqueueValue(item.Key, value, item.ValueType, false, false);
+                    break;
+            }
+            return true;
+        }
+        catch (Exception exception) when (exception is FormatException or InvalidCastException or OverflowException)
+        {
+            ReportPersistenceFailure($"保持的公共数据 {item.Key} 无法按 {item.ValueType} 恢复，改用默认值：{exception.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>写入后保存保持项的当前值。</summary>
+    private void Persist(string key)
+    {
+        if (_persistence is null)
+            return;
+        WorkflowPublicDataDeclaration? declaration;
+        lock (_sync)
+            if (!_declarations.TryGetValue(key, out declaration) || !declaration.Persistent)
+                return;
+        IReadOnlyList<string> values = declaration.Kind switch
+        {
+            WorkflowPublicDataKind.Signal => new[] { Text(_signals.Read(key)) },
+            WorkflowPublicDataKind.Value => _values.ReadSnapshot(key) is { HasValue: true } snapshot
+                ? new[] { Text(snapshot.Value) }
+                : Array.Empty<string>(),
+            _ => (_queues.ReadSnapshot(key)?.Items ?? Array.Empty<object>()).Select(Text).ToArray()
+        };
+        try
+        {
+            _persistence.Save(new WorkflowPersistedPublicData(key, declaration.Kind, declaration.ValueType, values));
+        }
+        catch (Exception exception)
+        {
+            ReportPersistenceFailure($"保存公共数据 {key} 失败：{exception.Message}");
+        }
+    }
+
+    private static string Text(object? value) =>
+        System.Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+
+    private void ReportPersistenceFailure(string message)
+    {
+        Interlocked.Increment(ref _persistenceFailureCount);
+        try
+        {
+            PersistenceFailed?.Invoke(message);
+        }
+        catch
+        {
+            // 报告本身失败不影响公共数据读写。
         }
     }
 
@@ -180,8 +289,12 @@ public sealed class WorkflowPublicDataCenter
         public bool Read(string signalKey) =>
             owner._signals.Read(owner.Check(signalKey, WorkflowPublicDataKind.Signal, E_SignalValueType.Boolean));
 
-        public void Write(string signalKey, bool value) =>
-            owner._signals.Write(owner.Check(signalKey, WorkflowPublicDataKind.Signal, E_SignalValueType.Boolean), value);
+        public void Write(string signalKey, bool value)
+        {
+            var key = owner.Check(signalKey, WorkflowPublicDataKind.Signal, E_SignalValueType.Boolean);
+            owner._signals.Write(key, value);
+            owner.Persist(key);
+        }
 
         public ValueTask<bool> WaitAsync(string signalKey, bool expectedValue, TimeSpan timeout, CancellationToken cancellationToken) =>
             owner._signals.WaitAsync(owner.Check(signalKey, WorkflowPublicDataKind.Signal, E_SignalValueType.Boolean), expectedValue, timeout, cancellationToken);
@@ -196,7 +309,10 @@ public sealed class WorkflowPublicDataCenter
         {
             Guard.NotNull(value);
             var type = TypeOf(value) ?? throw new ArgumentException($"公共数据只支持 5 种基本类型，不能写入 {value.GetType().FullName}。", nameof(value));
-            return owner._values.WriteValue(owner.Check(signalKey, WorkflowPublicDataKind.Value, type), value);
+            var key = owner.Check(signalKey, WorkflowPublicDataKind.Value, type);
+            var snapshot = owner._values.WriteValue(key, value);
+            owner.Persist(key);
+            return snapshot;
         }
 
         public ValueTask<WorkflowValueSignalSnapshot?> WaitValueAsync(string signalKey, long minVersion, Func<object?, bool> predicate, TimeSpan? timeout, CancellationToken cancellationToken) =>
@@ -209,16 +325,31 @@ public sealed class WorkflowPublicDataCenter
             owner._queues.EnsureExists(owner.Check(queueKey, WorkflowPublicDataKind.Queue, valueType), valueType);
 
         public bool Clear(string queueKey, E_SignalValueType valueType, bool autoCreate) =>
-            owner._queues.Clear(owner.Check(queueKey, WorkflowPublicDataKind.Queue, valueType), valueType, autoCreate);
+            Mutate(queueKey, valueType, key => owner._queues.Clear(key, valueType, autoCreate));
 
         public bool EnqueueValue(string queueKey, object value, E_SignalValueType valueType, bool preventDuplicate, bool autoCreate) =>
-            owner._queues.EnqueueValue(owner.Check(queueKey, WorkflowPublicDataKind.Queue, valueType), value, valueType, preventDuplicate, autoCreate);
+            Mutate(queueKey, valueType, key => owner._queues.EnqueueValue(key, value, valueType, preventDuplicate, autoCreate));
 
-        public bool TryDequeueValue(string queueKey, E_SignalValueType valueType, bool autoCreate, out object? value) =>
-            owner._queues.TryDequeueValue(owner.Check(queueKey, WorkflowPublicDataKind.Queue, valueType), valueType, autoCreate, out value);
+        public bool TryDequeueValue(string queueKey, E_SignalValueType valueType, bool autoCreate, out object? value)
+        {
+            object? removed = null;
+            var changed = Mutate(queueKey, valueType, key => owner._queues.TryDequeueValue(key, valueType, autoCreate, out removed));
+            value = removed;
+            return changed;
+        }
 
         public bool RemoveValue(string queueKey, object value, E_SignalValueType valueType, bool autoCreate) =>
-            owner._queues.RemoveValue(owner.Check(queueKey, WorkflowPublicDataKind.Queue, valueType), value, valueType, autoCreate);
+            Mutate(queueKey, valueType, key => owner._queues.RemoveValue(key, value, valueType, autoCreate));
+
+        /// <summary>执行一次改变队列的操作；有变化时保存保持项。</summary>
+        private bool Mutate(string queueKey, E_SignalValueType valueType, Func<string, bool> change)
+        {
+            var key = owner.Check(queueKey, WorkflowPublicDataKind.Queue, valueType);
+            var changed = change(key);
+            if (changed)
+                owner.Persist(key);
+            return changed;
+        }
 
         public WorkflowQueueSnapshot? ReadSnapshot(string queueKey) =>
             owner._queues.ReadSnapshot(owner.Check(queueKey, WorkflowPublicDataKind.Queue, null));
