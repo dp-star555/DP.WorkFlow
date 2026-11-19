@@ -1,0 +1,247 @@
+{
+  "SchemaVersion": 4,
+  "Name": "\u5E76\u884C\u6C47\u805A",
+  "EntryNodeId": "Start",
+  "Nodes": [
+    {
+      "Id": "Start",
+      "Title": "\u5F00\u59CB",
+      "NodeType": "Start",
+      "NodeVersion": 1,
+      "X": 0,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Start",
+        "Id": "Start",
+        "Title": "\u5F00\u59CB"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Parallel",
+      "Title": "\u5E76\u884C",
+      "NodeType": "ParallelAll",
+      "NodeVersion": 1,
+      "X": 220,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "ParallelAll",
+        "Id": "Parallel",
+        "Title": "\u5E76\u884C"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Left",
+      "Title": "\u5DE6\u76F8\u673A",
+      "NodeType": "Action",
+      "NodeVersion": 1,
+      "X": 440,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Action",
+        "FunctionKey": "Measure",
+        "Id": "Left",
+        "Title": "\u5DE6\u76F8\u673A"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Right",
+      "Title": "\u53F3\u76F8\u673A",
+      "NodeType": "Action",
+      "NodeVersion": 1,
+      "X": 660,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Action",
+        "FunctionKey": "Pass",
+        "Id": "Right",
+        "Title": "\u53F3\u76F8\u673A"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Merge",
+      "Title": "\u6C47\u805A",
+      "NodeType": "WaitAllInputsCompleted",
+      "NodeVersion": 1,
+      "X": 880,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "WaitAllInputsCompleted",
+        "Id": "Merge",
+        "Title": "\u6C47\u805A"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Judge",
+      "Title": "\u5224\u65AD",
+      "NodeType": "Decision",
+      "NodeVersion": 1,
+      "X": 1100,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Decision",
+        "ConditionSource": 1,
+        "FunctionKey": "",
+        "Condition": {
+          "Source": 1,
+          "LiteralValue": false,
+          "Binding": "Left|Ok"
+        },
+        "Id": "Judge",
+        "Title": "\u5224\u65AD"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "End",
+      "Title": "\u7ED3\u675F",
+      "NodeType": "End",
+      "NodeVersion": 1,
+      "X": 1320,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "End",
+        "Id": "End",
+        "Title": "\u7ED3\u675F"
+      },
+      "SubDocument": null
+    }
+  ],
+  "Connections": [
+    {
+      "FromNodeId": "Start",
+      "FromPort": "Success",
+      "ToNodeId": "Parallel",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Parallel",
+      "FromPort": "Branch",
+      "ToNodeId": "Left",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Parallel",
+      "FromPort": "Branch",
+      "ToNodeId": "Right",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Left",
+      "FromPort": "Success",
+      "ToNodeId": "Merge",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Right",
+      "FromPort": "Success",
+      "ToNodeId": "Merge",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Merge",
+      "FromPort": "Success",
+      "ToNodeId": "Judge",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Judge",
+      "FromPort": "True",
+      "ToNodeId": "End",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Judge",
+      "FromPort": "False",
+      "ToNodeId": "End",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    }
+  ]
+}
