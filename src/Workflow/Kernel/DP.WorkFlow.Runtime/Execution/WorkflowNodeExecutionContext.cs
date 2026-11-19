@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
-internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionContext, IWorkflowChildExecutionContext
+internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionContext, IWorkflowChildExecutionContext, IWorkflowNodeNoticeSink
 {
+    private readonly Action<string, string>? _noticeRaiser;
     private readonly WorkflowContext _context;
     private readonly Action<IWorkflowNodeModel, string, string?, IReadOnlyDictionary<string, object?>?, WorkflowEventWriteMode> _traceWriter;
     private readonly Action<WorkflowRunEventDraft, WorkflowEventWriteMode> _eventRecorder;
@@ -28,6 +29,7 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     /// <param name="planPath">当前编译子计划路径。</param>
     /// <param name="bindingScopeId">已经准备的绑定作用域。</param>
     /// <param name="childSessionOpener">在父引擎监管下打开可反复运行子定义的会话的委托。</param>
+    /// <param name="noticeRaiser">为当前节点添加提示（类别、说明）的委托；为空时忽略提示。</param>
     public WorkflowNodeExecutionContext(
         WorkflowContext context,
         IWorkflowNodeModel node,
@@ -39,8 +41,10 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
         Action<string> degradedReporter,
         Func<WorkflowExecutionPlan, WorkflowContext, CancellationToken, Task<WorkflowRunResult>> childRunner,
         string planPath = "$", Guid bindingScopeId = default,
-        Func<WorkflowContext, IWorkflowChildWorkflowSession>? childSessionOpener = null)
+        Func<WorkflowContext, IWorkflowChildWorkflowSession>? childSessionOpener = null,
+        Action<string, string>? noticeRaiser = null)
     {
+        _noticeRaiser = noticeRaiser;
         _context = context;
         Node = node;
         PlanPath = planPath;
@@ -57,6 +61,9 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     }
 
     public IWorkflowNodeModel Node { get; }
+
+    /// <inheritdoc />
+    public void RaiseNotice(string category, string message) => _noticeRaiser?.Invoke(category, message);
 
     public IReadOnlyDictionary<string, object?> SubflowInputs => _context.SubflowInputs;
 

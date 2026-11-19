@@ -58,6 +58,8 @@ public sealed partial class WorkflowEngine
     private string? _changeMessage;
     // 正在运行本引擎（作为子运行）的父引擎；本引擎的变化同时递增父引擎的变化计数。
     private WorkflowEngine? _changeOwner;
+    // 已作为提示报告过的记录丢失 / 写入失败条数；记录健康变化时只报告新增部分。
+    private long _reportedRecordingLosses;
     private E_WorkflowExecutionState _state = E_WorkflowExecutionState.Idle;
 
     /// <summary>获取当前或最近一次运行的独立状态模型。</summary>
@@ -97,8 +99,11 @@ public sealed partial class WorkflowEngine
         _options.Validate();
         _outputValueExtractor = new WorkflowOutputValueExtractor(_options.Recording.MaxOutputProperties);
         // 订阅方异常不影响流程，但要看得见（AR-19）：计入记录健康状态的诊断。
-        _notifications.FailureReported = ReportRecordingDegraded;
+        _notifications.FailureReported = message => ReportRecordingDegraded(message);
     }
+
+    /// <summary>获取节点提示板（R1-01）：不影响运行结果的非致命提示，按节点和画布累计，确认后清除。</summary>
+    public WorkflowNoticeBoard Notices => _options.Notices;
 
     /// <summary>获取运行上下文。</summary>
     public WorkflowContext Context { get; }

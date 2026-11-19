@@ -25,7 +25,8 @@ public sealed class WorkflowWarningHandlerCoordinator : IWorkflowFaultRecoveryCo
             MaxTotalNodeExecutions = sourceOptions.MaxTotalNodeExecutions,
             MaxNodeExecutions = sourceOptions.MaxNodeExecutions,
             MaxTraceEntries = sourceOptions.MaxTraceEntries,
-            MaxRecoveryAttempts = sourceOptions.MaxRecoveryAttempts
+            MaxRecoveryAttempts = sourceOptions.MaxRecoveryAttempts,
+            Notices = sourceOptions.Notices
         };
     }
 
@@ -42,6 +43,7 @@ public sealed class WorkflowWarningHandlerCoordinator : IWorkflowFaultRecoveryCo
             MaxNodeExecutions = _options.MaxNodeExecutions,
             MaxTraceEntries = _options.MaxTraceEntries,
             MaxRecoveryAttempts = _options.MaxRecoveryAttempts,
+            Notices = _options.Notices,
             RecoveryCaseId = request.CaseId,
             RecoveryCoordinator = new TreatmentStepCoordinator(request, _treatmentPolicy)
         };

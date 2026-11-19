@@ -17,6 +17,11 @@ public interface IWorkflowRuntimeHost
     /// </summary>
     event Action<E_WorkflowExecutionState>? StateChanged;
 
+    /// <summary>
+    /// 节点提示板（R1-01）：每次运行及其子运行共用，提示跨运行保留，界面确认后清除。
+    /// </summary>
+    WorkflowNoticeBoard Notices { get; }
+
     /// <summary>获取当前引擎。</summary>
     WorkflowEngine? Engine { get; }
 

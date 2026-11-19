@@ -29,6 +29,11 @@ public sealed class WorkflowExecutionOptions
     /// <summary>获取或设置运行事件记录的有界容量、批量策略和顶层 Sink。</summary>
     public WorkflowRunRecordingOptions Recording { get; set; } = new();
 
+    /// <summary>
+    /// 获取或设置节点提示板（R1-01）。同一选项创建的每次运行及其子运行共用，提示跨运行保留直到确认清除。
+    /// </summary>
+    public WorkflowNoticeBoard Notices { get; set; } = new();
+
     /// <summary>验证所有安全上限可用于启动引擎。</summary>
     /// <exception cref="ArgumentOutOfRangeException">执行次数、Trace 容量或记录容量非正，或恢复次数为负。</exception>
     internal void Validate()

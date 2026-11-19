@@ -121,10 +121,11 @@ public sealed partial class WorkflowEngine
                 _boundPlan.GetInputLayout(node.Id),
                 (traceNode, step, message, data, writeMode) => WriteTrace(traceNode, identity, step, message, data, writeMode),
                 (draft, writeMode) => RecordRunEvent(draft, writeMode),
-                ReportRecordingDegraded,
+                message => ReportRecordingDegraded(message, node.Id),
                 (plan, childContext, childCancellation) =>
                     RunChildWorkflowAsync(node, identity, plan, childContext, childCancellation), PlanPath, BindingScopeId,
-                childContext => OpenChildWorkflowSession(node, identity, childContext));
+                childContext => OpenChildWorkflowSession(node, identity, childContext),
+                (category, message) => RaiseNotice(node.Id, category, message, nodeType: node.NodeType));
             var operationKey = (token.TokenId, node.Id);
             // 上一次执行失败时留下的子运行投影不属于本次输出。
             _childOutputProjections.TryRemove(operationKey, out _);
@@ -317,7 +318,7 @@ public sealed partial class WorkflowEngine
         }
         catch (Exception exception)
         {
-            ReportRecordingDegraded($"释放节点 {nodeId} 被取代输出的资源失败：{exception.Message}");
+            ReportRecordingDegraded($"释放节点 {nodeId} 被取代输出的资源失败：{exception.Message}", nodeId);
         }
     }
 
@@ -380,7 +381,7 @@ public sealed partial class WorkflowEngine
         // 输出键由提交值自动提取，Handler 不再手写；图像和二进制由编码器转换为引用，不写入完整内容。
         var extracted = _outputValueExtractor.Extract(output.Value);
         foreach (var diagnostic in extracted.Diagnostics)
-            ReportRecordingDegraded(diagnostic);
+            ReportRecordingDegraded(diagnostic, node.Id);
 
         // 输出值展开到 Payload 顶层稳定键；不能作为普通字典值交给编码器，否则会被压缩成"n 项"摘要。
         var data = new Dictionary<string, object?>(StringComparer.Ordinal)

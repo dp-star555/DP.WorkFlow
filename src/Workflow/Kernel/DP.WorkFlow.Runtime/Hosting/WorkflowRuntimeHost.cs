@@ -64,6 +64,9 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
     public event Action<WorkflowEngine>? EngineChanged;
 
     /// <inheritdoc />
+    public WorkflowNoticeBoard Notices => _executionOptions.Notices;
+
+    /// <inheritdoc />
     public event Action<E_WorkflowExecutionState>? StateChanged;
 
     /// <inheritdoc />

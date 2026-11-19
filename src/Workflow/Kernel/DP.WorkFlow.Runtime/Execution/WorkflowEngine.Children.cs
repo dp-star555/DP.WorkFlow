@@ -89,7 +89,7 @@ public sealed partial class WorkflowEngine
         catch (Exception exception)
         {
             // 轨迹只供观察，归档失败不改变子运行结果。
-            ReportRecordingDegraded($"归档子运行轨迹失败：{exception.Message}");
+            ReportRecordingDegraded($"归档子运行轨迹失败：{exception.Message}", source.ParentNodeId);
             entries = Array.Empty<WorkflowTraceEntry>();
         }
         lock (_stateSync)
