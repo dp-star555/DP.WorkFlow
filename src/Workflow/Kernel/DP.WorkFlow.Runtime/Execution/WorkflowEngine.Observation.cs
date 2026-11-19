@@ -269,50 +269,17 @@ public sealed partial class WorkflowEngine
         string step,
         string? message,
         IReadOnlyDictionary<string, object?>? data,
-        WorkflowEventWriteMode writeMode = WorkflowEventWriteMode.Buffered)
-    {
-        var receipt = TryRecordRunEvent(WorkflowRunEventDraft.Trace(step, node, identity, message, data), writeMode);
-        SafeInvoke(NodeTrace, new WorkflowTraceEntry(
-            receipt?.Sequence ?? 0,
-            WorkflowClock.UtcNow,
-            node.Id,
-            node.NodeType,
-            step,
-            message,
-            TryCopyTraceData(data),
-            identity.TokenId,
-            Array.AsReadOnly(identity.ScopeIds.ToArray())));
-    }
+        WorkflowEventWriteMode writeMode = WorkflowEventWriteMode.Buffered) =>
+        TryRecordRunEvent(WorkflowRunEventDraft.Trace(step, node, identity, message, data), writeMode);
 
-    /// <summary>把已记录的运行事件同时发布到轨迹订阅者（不再重复记录事件）。</summary>
-    private void PublishTraceEntry(WorkflowRunEventReceipt? receipt, IWorkflowNodeModel node, WorkflowExecutionIdentity identity, string step, string message) =>
-        SafeInvoke(NodeTrace, new WorkflowTraceEntry(
-            receipt?.Sequence ?? 0,
-            WorkflowClock.UtcNow,
-            node.Id,
-            node.NodeType,
-            step,
-            message,
-            null,
-            identity.TokenId,
-            Array.AsReadOnly(identity.ScopeIds.ToArray())));
-
-    /// <summary>复制一份跟踪数据快照；数据自身的枚举异常不得改变节点执行结果。</summary>
-    /// <param name="data">调用方提供的结构化跟踪数据。</param>
-    /// <returns>副本；数据为空或无法枚举时为 <see langword="null"/>。</returns>
-    private static IReadOnlyDictionary<string, object?>? TryCopyTraceData(IReadOnlyDictionary<string, object?>? data)
+    /// <summary>把一次回调交给后台分发（R1-04）；没有订阅方时不分配。</summary>
+    private void Notify<T>(Action<T>? handlers, T argument)
     {
-        if (data is null)
-            return null;
-        try
-        {
-            return new ReadOnlyDictionary<string, object?>(
-                data.ToDictionary(StringComparer.Ordinal));
-        }
-        catch
-        {
-            return null;
-        }
+        if (handlers is null)
+            return;
+        // 每个订阅方单独一条：一个订阅方抛异常不影响同一事件的其他订阅方。
+        foreach (Action<T> handler in handlers.GetInvocationList())
+            _notifications.Post(() => handler(argument));
     }
 
     private static void SafeInvoke<T>(Action<T>? handlers, T argument)

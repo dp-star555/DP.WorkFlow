@@ -98,7 +98,7 @@ public sealed partial class WorkflowEngine
     {
         if (!changedState.HasValue)
             return;
-        SafeInvoke(StateChanged, changedState.Value);
+        Notify(StateChanged, changedState.Value);
         PublishSnapshot();
     }
 }

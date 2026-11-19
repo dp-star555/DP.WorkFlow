@@ -105,7 +105,7 @@ public sealed partial class WorkflowEngine
             nodeExecutionCount,
             loopIteration);
         MarkNodeStarted(node, identity);
-        SafeInvoke(NodeStarted, node);
+        Notify(NodeStarted, node);
         RecordRunEvent(WorkflowRunEventDraft.Node("NodeStarted", node, identity, "节点开始执行。"));
         BeginNodeTiming(node.Id);
         var commitStarted = false;
@@ -186,7 +186,7 @@ public sealed partial class WorkflowEngine
                     token.CompleteLoop(node.Id);
             }
             MarkNodeFinished(node.Id, token.TokenId, E_NodeState.Completed, null);
-            SafeInvoke(NodeCompleted, node);
+            Notify(NodeCompleted, node);
             RecordRunEvent(WorkflowRunEventDraft.Node(
                 "NodeCompleted",
                 node,
@@ -224,7 +224,7 @@ public sealed partial class WorkflowEngine
             lock (_stateSync)
                 _currentFault = fault;
             MarkNodeFinished(node.Id, token.TokenId, E_NodeState.Failed, pathException.Message);
-            var faultReceipt = TryRecordRunEvent(WorkflowRunEventDraft.Fault(
+            TryRecordRunEvent(WorkflowRunEventDraft.Fault(
                 "NodeFailed",
                 node,
                 faultIdentity,
@@ -235,8 +235,6 @@ public sealed partial class WorkflowEngine
                     ["InterruptAlarmCode"] = fault.InterruptAlarmCode,
                     ["CommitStarted"] = commitStarted
                 }));
-            // 节点失败同时进入运行轨迹，界面在“运行监控”中查看，不依赖弹窗。
-            PublishTraceEntry(faultReceipt, node, faultIdentity, "NodeFailed", pathException.Message);
             throw pathException;
         }
     }
@@ -249,13 +247,12 @@ public sealed partial class WorkflowEngine
         var identity = fault.ExecutionIdentity
             ?? new WorkflowExecutionIdentity(_runId, token.TokenId, token.AncestorTokenIds, token.ScopeIds, 0);
         var message = $"节点失败，沿失败出口继续：{fault.Message}";
-        var receipt = TryRecordRunEvent(WorkflowRunEventDraft.Node(
+        TryRecordRunEvent(WorkflowRunEventDraft.Node(
             "NodeFaultRouted",
             node,
             identity,
             message,
             new Dictionary<string, object?> { ["SelectedPort"] = WorkflowPorts.Failed, ["Message"] = fault.Message }));
-        PublishTraceEntry(receipt, node, identity, "NodeFaultRouted", message);
     }
 
     /// <summary>合并节点自身投影与本次执行中子运行剩余的投影；两者都没有时为空。</summary>

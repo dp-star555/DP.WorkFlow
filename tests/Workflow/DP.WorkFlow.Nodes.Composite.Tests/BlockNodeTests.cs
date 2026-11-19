@@ -27,6 +27,7 @@ public sealed class BlockNodeTests
         engine.NodeCompleted += node => completed.Add(node.Id);
 
         var result = await engine.RunAsync();
+        await engine.FlushNotificationsAsync(); // 回调在后台送达（R1-04）。
         var snapshot = engine.GetRuntimeSnapshot();
 
         Assert.True(result.Success, result.Message);

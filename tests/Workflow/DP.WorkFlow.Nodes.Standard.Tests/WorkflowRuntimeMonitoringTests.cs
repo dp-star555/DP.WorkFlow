@@ -5,19 +5,12 @@ public sealed class WorkflowRuntimeMonitoringTests
     [Fact]
     public async Task Pause_AfterFirstNode_BlocksNextNodeUntilResume()
     {
-        var (definition, handlers, context) = CreateTwoActionWorkflow();
-        var engine = new WorkflowEngine(definition, handlers, context);
+        // 回调不再在执行线程上同步执行（R1-04），不能靠 NodeCompleted 回调"卡住"下一个节点；
+        // 改为在第一个节点的动作里请求暂停，验证暂停在节点边界生效。
+        WorkflowEngine? engine = null;
         var secondStarted = false;
-        engine.NodeStarted += node =>
-        {
-            if (node.Id == "Action2")
-                secondStarted = true;
-        };
-        engine.NodeCompleted += node =>
-        {
-            if (node.Id == "Action1")
-                engine.Pause();
-        };
+        var (definition, handlers, context) = CreateTwoActionWorkflow(onFirst: () => engine!.Pause(), onSecond: () => secondStarted = true);
+        engine = new WorkflowEngine(definition, handlers, context);
 
         var runTask = engine.RunAsync();
         await WaitUntilAsync(() => engine.State == E_WorkflowExecutionState.Paused);
@@ -47,6 +40,7 @@ public sealed class WorkflowRuntimeMonitoringTests
         Assert.Contains("DeviceNotReady", engine.GetRuntimeSnapshot().ExternalHoldReasons);
         engine.RemoveExternalHold("DeviceNotReady");
         var result = await runTask;
+        await engine.FlushNotificationsAsync();
 
         Assert.True(result.Success, result.Message);
         Assert.True(anyNodeStarted);
@@ -92,7 +86,7 @@ public sealed class WorkflowRuntimeMonitoringTests
     }
 
     private static (WorkflowExecutionPlan Definition, WorkflowNodeHandlerCatalog Handlers, WorkflowContext Context)
-        CreateTwoActionWorkflow()
+        CreateTwoActionWorkflow(Action? onFirst = null, Action? onSecond = null)
     {
         var first = new ActionNodeModel { Id = "Action1", Title = "动作1", FunctionKey = "First" };
         var second = new ActionNodeModel { Id = "Action2", Title = "动作2", FunctionKey = "Second" };
@@ -102,8 +96,16 @@ public sealed class WorkflowRuntimeMonitoringTests
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = second });
         canvas.Connections.Add(new WorkflowConnectionModel { FromNodeId = first.Id, ToNodeId = second.Id });
         var actions = new WorkflowActionRegistry()
-            .Register("First", (_, _) => ValueTask.FromResult<object?>(1))
-            .Register("Second", (_, _) => ValueTask.FromResult<object?>(2));
+            .Register("First", (_, _) =>
+            {
+                onFirst?.Invoke();
+                return ValueTask.FromResult<object?>(1);
+            })
+            .Register("Second", (_, _) =>
+            {
+                onSecond?.Invoke();
+                return ValueTask.FromResult<object?>(2);
+            });
         var services = new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions);
         canvasDocument.EntryNodeId = first.Id;
         return (

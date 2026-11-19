@@ -37,6 +37,7 @@ public sealed class SequentialWorkflowTests
         engine.NodeStarted += node => startedNodes.Add(node.Id);
 
         var result = await engine.RunAsync();
+        await engine.FlushNotificationsAsync(); // 回调在后台送达（R1-04）。
 
         Assert.True(result.Success, result.Message);
         Assert.Equal(E_WorkflowExecutionState.Completed, result.State);

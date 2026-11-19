@@ -14,6 +14,7 @@ public sealed partial class WorkflowEngine
     private readonly WorkflowExecutionOptions _options;
     private readonly WorkflowOutputValueExtractor _outputValueExtractor;
     private readonly AsyncManualResetEvent _resumeGate = new();
+    private readonly WorkflowNotificationDispatcher _notifications = new();
     private readonly object _stateSync = new();
     private readonly HashSet<string> _externalHoldReasons = new(StringComparer.Ordinal);
     private readonly HashSet<string> _activeNodeIds = new(StringComparer.Ordinal);
@@ -90,6 +91,8 @@ public sealed partial class WorkflowEngine
         _options = options ?? new WorkflowExecutionOptions();
         _options.Validate();
         _outputValueExtractor = new WorkflowOutputValueExtractor(_options.Recording.MaxOutputProperties);
+        // 订阅方异常不影响流程，但要看得见（AR-19）：计入记录健康状态的诊断。
+        _notifications.FailureReported = ReportRecordingDegraded;
     }
 
     /// <summary>获取运行上下文。</summary>
@@ -115,6 +118,15 @@ public sealed partial class WorkflowEngine
         }
     }
 
+    // 以下回调都不在执行线程上同步调用：执行线程只把通知放入队列，由后台按发生顺序逐个送达（R1-04）。
+    // 订阅方的异常不影响流程，计入记录健康状态的诊断。需要确认此前的通知已送达时调用 FlushNotificationsAsync。
+
+    /// <summary>运行开始时发生，参数为本次运行的身份。</summary>
+    public event Action<Guid>? RunStarted;
+
+    /// <summary>运行结束时发生，参数为运行结果（完成 / 取消 / 失败及原因）；在本次运行的其他回调之后送达。</summary>
+    public event Action<WorkflowRunResult>? RunEnded;
+
     /// <summary>运行状态变化时发生。</summary>
     public event Action<E_WorkflowExecutionState>? StateChanged;
 
@@ -124,14 +136,15 @@ public sealed partial class WorkflowEngine
     /// <summary>节点成功完成时发生。</summary>
     public event Action<IWorkflowNodeModel>? NodeCompleted;
 
-    /// <summary>产生节点跟踪时发生。</summary>
-    public event Action<WorkflowTraceEntry>? NodeTrace;
-
     /// <summary>运行快照变化时发生。</summary>
     public event Action<WorkflowRuntimeSnapshot>? SnapshotChanged;
 
     /// <summary>记录链路健康状态变化时发生；记录失败不影响工作流运行结果。</summary>
     public event Action<WorkflowRecordingHealth>? RecordingHealthChanged;
+
+    /// <summary>等待此前发出的回调全部送达订阅方。</summary>
+    /// <returns>队列中已有通知全部调用完成时结束的任务。</returns>
+    public Task FlushNotificationsAsync() => _notifications.FlushAsync();
 
     /// <summary>获取当前运行的事件记录健康状态；未启动运行时为初始健康状态。</summary>
     public WorkflowRecordingHealth RecordingHealth => _recorder?.Health ?? WorkflowRecordingHealth.Initial;

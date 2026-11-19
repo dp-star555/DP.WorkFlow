@@ -13,6 +13,13 @@ public sealed partial class WorkflowEngine
         if (Interlocked.Exchange(ref _isRunning, 1) != 0)
             throw new InvalidOperationException("当前 WorkflowEngine 已经处于运行中。");
 
+        var result = await RunCoreAsync(cancellationToken).ConfigureAwait(false);
+        Notify(RunEnded, result);
+        return result;
+    }
+
+    private async Task<WorkflowRunResult> RunCoreAsync(CancellationToken cancellationToken)
+    {
         BeginRun(_plan.EntryNodeId);
         try
         {
@@ -202,10 +209,11 @@ public sealed partial class WorkflowEngine
         TryRecordRunEvent(
             WorkflowRunEventDraft.Lifecycle("RunStarted", "流程开始执行。"),
             WorkflowEventWriteMode.FlushRequested);
+        Notify(RunStarted, runId);
     }
 
     private void OnRecordingHealthChanged(WorkflowRecordingHealth health) =>
-        SafeInvoke(RecordingHealthChanged, health);
+        Notify(RecordingHealthChanged, health);
 
     /// <summary>报告一次不改变节点结果的记录元数据降级；记录链路未启动时静默忽略。</summary>
     /// <param name="message">面向诊断的说明。</param>
@@ -228,7 +236,7 @@ public sealed partial class WorkflowEngine
             _state = state;
             _terminalMessage = message;
         }
-        SafeInvoke(StateChanged, state);
+        Notify(StateChanged, state);
         PublishSnapshot(message);
     }
 }
