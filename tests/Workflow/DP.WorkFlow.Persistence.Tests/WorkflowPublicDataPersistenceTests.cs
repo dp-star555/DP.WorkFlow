@@ -62,7 +62,7 @@ public sealed class WorkflowPublicDataPersistenceTests
         });
         canvas.Nodes.Add(new WorkflowCanvasNode
         {
-            Node = new SignalValueSetNodeModel { Id = "Count", Title = "计数", SignalKey = "Count", ValueType = E_SignalValueType.Int32, LiteralValue = "1" }
+            Node = new SignalValueSetNodeModel { Id = "Count", Title = "计数", SignalKey = "Count", ValueType = E_SignalValueType.Int32, Value = WorkflowInput<string>.FromLiteral("1") }
         });
         canvas.Nodes.Add(new WorkflowCanvasNode
         {
@@ -72,5 +72,38 @@ public sealed class WorkflowPublicDataPersistenceTests
         canvas.Connections.Add(new WorkflowConnectionModel { FromNodeId = "Set", FromPort = WorkflowPorts.Success, ToNodeId = "Count", ToPort = WorkflowPorts.Input });
         canvas.Connections.Add(new WorkflowConnectionModel { FromNodeId = "Count", FromPort = WorkflowPorts.Success, ToNodeId = "Add", ToPort = WorkflowPorts.Input });
         return document;
+    }
+}
+
+public sealed class WorkflowLegacyValueInputMigrationTests
+{
+    [Fact]
+    public void ThreePieceInputs_AreMergedIntoOneInput()
+    {
+        var store = new WorkflowDocumentJsonStore(new WorkflowNodeCatalog().RegisterStandardNodes());
+        var document = new WorkflowDocument { Name = "迁移", EntryNodeId = "Add" };
+        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new QueueAddNodeModel { Id = "Add", Title = "入队", QueueKey = "Jobs" } });
+        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new SignalValueWaitNodeModel { Id = "Wait", Title = "等待", SignalKey = "Count" } });
+        var root = System.Text.Json.Nodes.JsonNode.Parse(store.Serialize(document))!.AsObject();
+        var add = root["Nodes"]![0]!["Config"]!.AsObject();
+        add.Remove("Value");
+        add["ValueSource"] = 0;
+        add["LiteralValue"] = "42";
+        add["BindingValue"] = new System.Text.Json.Nodes.JsonObject { ["Source"] = 0 };
+        var wait = root["Nodes"]![1]!["Config"]!.AsObject();
+        wait.Remove("CompareValue");
+        wait["CompareValueSource"] = 1;
+        wait["CompareLiteralValue"] = "";
+        wait["CompareBinding"] = new System.Text.Json.Nodes.JsonObject { ["Source"] = 1, ["Binding"] = "Add|Count" };
+
+        var loaded = store.Deserialize(root.ToJsonString());
+
+        var addNode = Assert.IsType<QueueAddNodeModel>(loaded.Document.Graph.Nodes.Single(node => node.Id == "Add"));
+        Assert.Equal(WorkflowValueSource.Literal, addNode.Value.Source);
+        Assert.Equal("42", addNode.Value.LiteralValue);
+        var waitNode = Assert.IsType<SignalValueWaitNodeModel>(loaded.Document.Graph.Nodes.Single(node => node.Id == "Wait"));
+        Assert.Equal(WorkflowValueSource.Binding, waitNode.CompareValue.Source);
+        Assert.Equal(new WorkflowBindingKey("Add", "Count"), waitNode.CompareValue.Binding);
+        Assert.Equal(2, loaded.Migration.Warnings.Count(warning => warning.Contains("已合并为", StringComparison.Ordinal)));
     }
 }

@@ -455,6 +455,7 @@ public sealed class WorkflowDocumentJsonStore
             changed = true;
             report.AddWarning($"节点 {nodeId}/{nodeType} 的旧属性 SafePointKey 已迁移为 TargetNodeId。");
         }
+        changed |= MergeLegacyValueInputs(root, modelType, nodeId, nodeType, report);
         foreach (var pair in root.ToArray())
         {
             if (!pair.Key.EndsWith("BindingKey", StringComparison.OrdinalIgnoreCase) || pair.Value is null) continue;
@@ -473,6 +474,52 @@ public sealed class WorkflowDocumentJsonStore
             report.AddWarning($"节点 {nodeId}/{nodeType} 的旧属性 {pair.Key} 已迁移为 {target.Name}。");
         }
         return changed ? JsonSerializer.SerializeToElement(root) : config;
+    }
+
+    /// <summary>
+    /// R2-d：队列、数值、类型转换节点旧的"三件套"输入（来源 + 固定值文本 + 绑定值）合并为一个 <c>WorkflowInput&lt;string&gt;</c>。
+    /// 按属性名识别，与文件版本无关：来源为绑定且有绑定键时转为绑定，否则转为固定文本。
+    /// </summary>
+    private static bool MergeLegacyValueInputs(JsonObject root, Type modelType, string nodeId, string nodeType, WorkflowMigrationReport report)
+    {
+        var changed = false;
+        foreach (var (source, literal, binding, target) in new[]
+                 {
+                     ("ValueSource", "LiteralValue", "BindingValue", "Value"),
+                     ("CompareValueSource", "CompareLiteralValue", "CompareBinding", "CompareValue")
+                 })
+        {
+            if (!root.ContainsKey(source) && !root.ContainsKey(literal) && !root.ContainsKey(binding))
+                continue;
+            var property = modelType.GetProperty(target, BindingFlags.Instance | BindingFlags.Public);
+            if (property?.PropertyType != typeof(WorkflowInput<string>) || root.ContainsKey(target))
+                continue;
+            var useBinding = root[source] is JsonValue sourceValue
+                && (sourceValue.TryGetValue<int>(out var number) ? number == 1
+                    : sourceValue.TryGetValue<string>(out var name) && string.Equals(name, "Binding", StringComparison.OrdinalIgnoreCase));
+            var bindingKey = root[binding] is JsonObject bindingObject
+                && bindingObject[nameof(WorkflowInput<object>.Binding)] is JsonValue keyValue
+                && keyValue.TryGetValue<string>(out var key) && !string.IsNullOrWhiteSpace(key)
+                    ? key
+                    : null;
+            root[target] = useBinding && bindingKey is not null
+                ? new JsonObject
+                {
+                    [nameof(WorkflowInput<object>.Source)] = (int)WorkflowValueSource.Binding,
+                    [nameof(WorkflowInput<object>.Binding)] = bindingKey
+                }
+                : new JsonObject
+                {
+                    [nameof(WorkflowInput<object>.Source)] = (int)WorkflowValueSource.Literal,
+                    [nameof(WorkflowInput<object>.LiteralValue)] = root[literal] is JsonValue text && text.TryGetValue<string>(out var literalText) ? literalText : string.Empty
+                };
+            root.Remove(source);
+            root.Remove(literal);
+            root.Remove(binding);
+            changed = true;
+            report.AddWarning($"节点 {nodeId}/{nodeType} 的 {source} / {literal} / {binding} 已合并为 {target}。");
+        }
+        return changed;
     }
 
     private static string NormalizeLegacyNodeType(string nodeType) => nodeType switch

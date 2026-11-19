@@ -13,12 +13,8 @@ public sealed class QueueRemoveNodeModel : WorkflowNodeModel, IWorkflowPublicDat
     public E_SignalValueType ValueType { get; set; }
     /// <summary>移除模式。</summary>
     public E_WorkflowQueueRemoveMode RemoveMode { get; set; }
-    /// <summary>目标值来源。</summary>
-    public E_SignalValueSource ValueSource { get; set; }
-    /// <summary>固定目标值。</summary>
-    public string LiteralValue { get; set; } = string.Empty;
-    /// <summary>绑定目标值。</summary>
-    public WorkflowInput<object> BindingValue { get; set; } = WorkflowInput<object>.FromLiteral(null);
+    /// <summary>按值移除时要移除的值。固定值按 <see cref="ValueType"/> 解析；绑定时来源值先转为文本再按类型转换。</summary>
+    public WorkflowInput<string> Value { get; set; } = WorkflowInput<string>.FromLiteral(string.Empty);
     /// <summary>缺失时是否自动创建。</summary>
     public bool AutoCreateIfMissing { get; set; } = true;
     /// <inheritdoc />
@@ -36,7 +32,7 @@ public sealed class QueueRemoveNodeHandler : WorkflowNodeHandler<QueueRemoveNode
         object? affected;
         bool changed;
         if (node.RemoveMode == E_WorkflowQueueRemoveMode.DequeueFirst) changed = service.TryDequeueValue(node.QueueKey.Trim(), node.ValueType, node.AutoCreateIfMissing, out affected);
-        else { affected = WorkflowQueueNodeRuntime.Resolve(node.ValueSource, node.LiteralValue, node.BindingValue, node.ValueType, context); changed = service.RemoveValue(node.QueueKey.Trim(), affected, node.ValueType, node.AutoCreateIfMissing); }
+        else { affected = WorkflowQueueNodeRuntime.Resolve(node.Value, node.ValueType, context); changed = service.RemoveValue(node.QueueKey.Trim(), affected, node.ValueType, node.AutoCreateIfMissing); }
         var output = WorkflowQueueNodeRuntime.BuildResult(node.QueueKey.Trim(), node.ValueType, service.ReadSnapshot(node.QueueKey.Trim()), changed, affected);
         return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }

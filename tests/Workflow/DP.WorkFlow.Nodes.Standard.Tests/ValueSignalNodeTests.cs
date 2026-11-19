@@ -17,7 +17,7 @@ public sealed class ValueSignalNodeTests
     {
         var service = new WorkflowValueSignalService();
         service.WriteValue("Count", 4);
-        var node = new SignalValueSetNodeModel { Id = "Set", Title = "增加", SignalKey = "Count", ValueType = E_SignalValueType.Int32, WriteMode = E_SignalValueWriteMode.Increment, LiteralValue = "3" };
+        var node = new SignalValueSetNodeModel { Id = "Set", Title = "增加", SignalKey = "Count", ValueType = E_SignalValueType.Int32, WriteMode = E_SignalValueWriteMode.Increment, Value = WorkflowInput<string>.FromLiteral("3") };
         var canvasDocument = new WorkflowDocument { Name = "数据信号" };
         var canvas = canvasDocument.CanvasProjection;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });

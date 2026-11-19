@@ -15,12 +15,8 @@ public sealed class SignalValueWaitNodeModel : WorkflowNodeModel, IWorkflowPubli
     public E_SignalValueWaitMode WaitMode { get; set; }
     /// <summary>比较操作。</summary>
     public E_SignalWaitOperator Operator { get; set; }
-    /// <summary>比较值来源。</summary>
-    public E_SignalValueSource CompareValueSource { get; set; }
-    /// <summary>固定比较值。</summary>
-    public string CompareLiteralValue { get; set; } = string.Empty;
-    /// <summary>绑定比较值。</summary>
-    public WorkflowInput<object> CompareBinding { get; set; } = WorkflowInput<object>.FromLiteral(null);
+    /// <summary>比较值。固定值按 <see cref="ValueType"/> 解析；绑定时来源值先转为文本再按类型转换。</summary>
+    public WorkflowInput<string> CompareValue { get; set; } = WorkflowInput<string>.FromLiteral(string.Empty);
     /// <summary>超时毫秒数；0 表示不超时。</summary>
     public int TimeoutMs { get; set; } = 5000;
     /// <inheritdoc />
@@ -34,7 +30,7 @@ public sealed class SignalValueWaitNodeHandler : WorkflowNodeHandler<SignalValue
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(SignalValueWaitNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
         var service = SignalValueSetNodeHandler.GetService(context, node.SignalKey);
-        var compare = SignalValueSetNodeHandler.ConvertValue(node.CompareValueSource == E_SignalValueSource.Binding ? context.ResolveInput(node.CompareBinding) : node.CompareLiteralValue, node.ValueType);
+        var compare = SignalValueSetNodeHandler.ConvertValue(context.ResolveInput(node.CompareValue), node.ValueType);
         var current = service.ReadSnapshot(node.SignalKey.Trim());
         WorkflowValueSignalSnapshot? matched = null;
         if (node.WaitMode == E_SignalValueWaitMode.ExistingOrNextWrite && current?.HasValue == true && SignalValueSetNodeHandler.Compare(current.Value, compare, node.ValueType, node.Operator)) matched = current;

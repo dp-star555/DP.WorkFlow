@@ -195,3 +195,17 @@ public sealed class WorkflowPublicDataPersistenceTests
         }
     }
 }
+
+public sealed class WorkflowPublicDataValuesTests
+{
+    [Theory]
+    [InlineData("12", E_SignalValueType.Int32, 12)]
+    [InlineData("12.6", E_SignalValueType.Int32, 13)]
+    [InlineData("3", E_SignalValueType.Int64, 3L)]
+    [InlineData("True", E_SignalValueType.Boolean, true)]
+    [InlineData("0", E_SignalValueType.Boolean, false)]
+    [InlineData("2.5", E_SignalValueType.Boolean, true)]
+    [InlineData("12.5", E_SignalValueType.Double, 12.5)]
+    public void Convert_TextFollowsNumericSemantics(string text, E_SignalValueType type, object expected) =>
+        Assert.Equal(expected, WorkflowPublicDataValues.Convert(text, type));
+}

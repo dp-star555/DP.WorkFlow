@@ -17,8 +17,6 @@ public sealed record SignalSetNodeResult([property: DisplayName("信号键")] st
 /// <summary>表示信号等待结果。</summary>
 public sealed record SignalWaitNodeResult([property: DisplayName("信号键")] string SignalKey, [property: DisplayName("期望状态")] bool ExpectedState, [property: DisplayName("是否成功")] bool Success, [property: DisplayName("自动复位")] bool AutoReset);
 
-/// <summary>数据信号值来源。</summary>
-public enum E_SignalValueSource { Literal = 0, Binding = 1 }
 /// <summary>数据信号等待模式。</summary>
 public enum E_SignalValueWaitMode { NextWrite = 0, ExistingOrNextWrite = 1 }
 /// <summary>数据信号写入模式。</summary>

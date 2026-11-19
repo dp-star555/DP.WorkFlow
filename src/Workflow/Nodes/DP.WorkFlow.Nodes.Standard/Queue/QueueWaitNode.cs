@@ -15,12 +15,8 @@ public sealed class QueueWaitNodeModel : WorkflowNodeModel, IWorkflowPublicDataU
     public E_SignalValueType ValueType { get; set; }
     /// <summary>等待条件。</summary>
     public E_WorkflowQueueWaitCondition Condition { get; set; }
-    /// <summary>目标值来源。</summary>
-    public E_SignalValueSource ValueSource { get; set; }
-    /// <summary>固定目标值。</summary>
-    public string LiteralValue { get; set; } = string.Empty;
-    /// <summary>绑定目标值。</summary>
-    public WorkflowInput<object> BindingValue { get; set; } = WorkflowInput<object>.FromLiteral(null);
+    /// <summary>首项比较的目标值。固定值按 <see cref="ValueType"/> 解析；绑定时来源值先转为文本再按类型转换。</summary>
+    public WorkflowInput<string> Value { get; set; } = WorkflowInput<string>.FromLiteral(string.Empty);
     /// <summary>缺失时是否自动创建。</summary>
     public bool AutoCreateIfMissing { get; set; } = true;
     /// <summary>数量阈值。</summary>
@@ -38,7 +34,7 @@ public sealed class QueueWaitNodeHandler : WorkflowNodeHandler<QueueWaitNodeMode
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(QueueWaitNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
         var service = WorkflowQueueNodeRuntime.GetService(context, node.QueueKey);
-        object? expected = node.Condition is E_WorkflowQueueWaitCondition.FirstEquals or E_WorkflowQueueWaitCondition.FirstNotEquals ? WorkflowQueueNodeRuntime.Resolve(node.ValueSource, node.LiteralValue, node.BindingValue, node.ValueType, context) : null;
+        object? expected = node.Condition is E_WorkflowQueueWaitCondition.FirstEquals or E_WorkflowQueueWaitCondition.FirstNotEquals ? WorkflowQueueNodeRuntime.Resolve(node.Value, node.ValueType, context) : null;
         bool Match(WorkflowQueueSnapshot snapshot) => node.Condition switch { E_WorkflowQueueWaitCondition.HasData => snapshot.Count > 0, E_WorkflowQueueWaitCondition.FirstEquals => snapshot.HasFirstValue && Equals(snapshot.FirstValue, expected), E_WorkflowQueueWaitCondition.FirstNotEquals => snapshot.HasFirstValue && !Equals(snapshot.FirstValue, expected), E_WorkflowQueueWaitCondition.CountGreaterThan => snapshot.Count > node.CountThreshold, _ => false };
         TimeSpan? timeout = node.TimeoutMs > 0 ? TimeSpan.FromMilliseconds(node.TimeoutMs) : null;
         using var wait = context.BeginWait($"队列 {node.QueueKey.Trim()} {node.Condition}", timeout);

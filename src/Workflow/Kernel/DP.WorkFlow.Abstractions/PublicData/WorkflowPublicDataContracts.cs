@@ -84,11 +84,30 @@ public static class WorkflowPublicDataValues
         _ => throw new ArgumentOutOfRangeException(nameof(type))
     };
 
-    /// <summary>把值转换为指定基本类型（使用不变区域性）。</summary>
+    /// <summary>
+    /// 把值转换为指定基本类型（使用不变区域性）。文本按数值语义转换：整数类型接受小数文本并按
+    /// <see cref="System.Convert.ToInt32(double)"/> 的规则取整，bool 接受 true/false 和数值文本（非 0 为 true），
+    /// 与直接转换数值本身的结果一致（绑定来源值会先转为文本）。
+    /// </summary>
     /// <param name="value">原始值，可以是文本。</param>
     /// <param name="type">目标类型。</param>
     /// <returns>转换后的值。</returns>
-    public static object Convert(object? value, E_SignalValueType type) => type switch
+    public static object Convert(object? value, E_SignalValueType type)
+    {
+        if (value is string text && type is E_SignalValueType.Int32 or E_SignalValueType.Int64 or E_SignalValueType.Boolean)
+        {
+            var trimmed = text.Trim();
+            if (type == E_SignalValueType.Boolean && bool.TryParse(trimmed, out var flag))
+                return flag;
+            if (type != E_SignalValueType.Boolean && long.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer))
+                return type == E_SignalValueType.Int32 ? (object)System.Convert.ToInt32(integer) : integer;
+            if (double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
+                value = number;
+        }
+        return ConvertCore(value, type);
+    }
+
+    private static object ConvertCore(object? value, E_SignalValueType type) => type switch
     {
         E_SignalValueType.String => System.Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,
         E_SignalValueType.Int32 => System.Convert.ToInt32(value, CultureInfo.InvariantCulture),

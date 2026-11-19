@@ -9,7 +9,7 @@ public sealed class PublicDataManifestTests
     {
         var plan = new WorkflowCompiler(Catalog).Compile(Build(new SignalValueSetNodeModel
         {
-            Id = "Set", Title = "设置", SignalKey = "Count", ValueType = E_SignalValueType.Int32, LiteralValue = "1"
+            Id = "Set", Title = "设置", SignalKey = "Count", ValueType = E_SignalValueType.Int32, Value = WorkflowInput<string>.FromLiteral("1")
         }));
 
         var warning = Assert.Single(plan.Diagnostics, item => item.Code == WorkflowPublicDataManifest.UndeclaredCode);
@@ -59,7 +59,7 @@ public sealed class PublicDataManifestTests
         var document = Build(new SignalValueSetNodeModel
         {
             Id = "Add", Title = "加一", SignalKey = "Count", ValueType = E_SignalValueType.Int32,
-            WriteMode = E_SignalValueWriteMode.Increment, LiteralValue = "1"
+            WriteMode = E_SignalValueWriteMode.Increment, Value = WorkflowInput<string>.FromLiteral("1")
         });
         document.PublicData.Add(WorkflowPublicDataDeclaration.Value("Count", E_SignalValueType.Int32, "10"));
         var context = new WorkflowContext();

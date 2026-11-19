@@ -15,12 +15,8 @@ public sealed class SignalValueSetNodeModel : WorkflowNodeModel, IWorkflowPublic
     public E_SignalValueType ValueType { get; set; }
     /// <summary>写入模式。</summary>
     public E_SignalValueWriteMode WriteMode { get; set; }
-    /// <summary>值来源。</summary>
-    public E_SignalValueSource ValueSource { get; set; }
-    /// <summary>固定值文本。</summary>
-    public string LiteralValue { get; set; } = string.Empty;
-    /// <summary>绑定值。</summary>
-    public WorkflowInput<object> BindingValue { get; set; } = WorkflowInput<object>.FromLiteral(null);
+    /// <summary>写入值或加减量。固定值按 <see cref="ValueType"/> 解析；绑定时来源值先转为文本再按类型转换。</summary>
+    public WorkflowInput<string> Value { get; set; } = WorkflowInput<string>.FromLiteral(string.Empty);
     /// <inheritdoc />
     public IEnumerable<WorkflowPublicDataDeclaration> GetPublicDataUses() => PublicDataUses.Value(SignalKey, ValueType);
 }
@@ -33,7 +29,7 @@ public sealed class SignalValueSetNodeHandler : WorkflowNodeHandler<SignalValueS
     {
         cancellationToken.ThrowIfCancellationRequested();
         var service = GetService(context, node.SignalKey);
-        var operand = ConvertValue(node.ValueSource == E_SignalValueSource.Binding ? context.ResolveInput(node.BindingValue) : node.LiteralValue, node.ValueType);
+        var operand = ConvertValue(context.ResolveInput(node.Value), node.ValueType);
         var value = node.WriteMode == E_SignalValueWriteMode.Set ? operand : Calculate(service.ReadSnapshot(node.SignalKey.Trim())?.Value, operand, node.ValueType, node.WriteMode);
         var snapshot = service.WriteValue(node.SignalKey.Trim(), value);
         var output = BuildResult(snapshot, node.ValueType, node.WriteMode, true);

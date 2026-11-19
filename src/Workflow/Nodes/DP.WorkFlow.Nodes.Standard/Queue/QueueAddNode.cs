@@ -11,12 +11,8 @@ public sealed class QueueAddNodeModel : WorkflowNodeModel, IWorkflowPublicDataUs
     public string QueueKey { get; set; } = string.Empty;
     /// <summary>固定值类型。</summary>
     public E_SignalValueType ValueType { get; set; }
-    /// <summary>值来源。</summary>
-    public E_SignalValueSource ValueSource { get; set; }
-    /// <summary>固定值。</summary>
-    public string LiteralValue { get; set; } = string.Empty;
-    /// <summary>绑定值。</summary>
-    public WorkflowInput<object> BindingValue { get; set; } = WorkflowInput<object>.FromLiteral(null);
+    /// <summary>入队的值。固定值按 <see cref="ValueType"/> 解析；绑定时来源值先转为文本再按类型转换。</summary>
+    public WorkflowInput<string> Value { get; set; } = WorkflowInput<string>.FromLiteral(string.Empty);
     /// <summary>是否防止重复。</summary>
     public bool PreventDuplicate { get; set; } = true;
     /// <summary>缺失时是否自动创建。</summary>
@@ -33,7 +29,7 @@ public sealed class QueueAddNodeHandler : WorkflowNodeHandler<QueueAddNodeModel>
     {
         cancellationToken.ThrowIfCancellationRequested();
         var service = WorkflowQueueNodeRuntime.GetService(context, node.QueueKey);
-        var value = WorkflowQueueNodeRuntime.Resolve(node.ValueSource, node.LiteralValue, node.BindingValue, node.ValueType, context);
+        var value = WorkflowQueueNodeRuntime.Resolve(node.Value, node.ValueType, context);
         var changed = service.EnqueueValue(node.QueueKey.Trim(), value, node.ValueType, node.PreventDuplicate, node.AutoCreateIfMissing);
         var output = WorkflowQueueNodeRuntime.BuildResult(node.QueueKey.Trim(), node.ValueType, service.ReadSnapshot(node.QueueKey.Trim()), changed, value);
         return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
