@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>触发扫码设备采集。</summary>
-[WorkflowNode("CodeReaderTrigger", DisplayName = "触发扫码枪", Category = "4.Motion/CodeReader")]
+[WorkflowNode("CodeReaderTrigger", DisplayName = "触发扫码枪", Category = "4.Motion/CodeReader", OutputType = typeof(string))]
 public sealed class CodeReaderTriggerNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -17,6 +17,10 @@ public sealed class CodeReaderTriggerNodeModel : WorkflowNodeModel, IRecoverable
 /// <summary>执行触发扫码节点。</summary>
 public sealed class CodeReaderTriggerNodeHandler : WorkflowNodeHandler<CodeReaderTriggerNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(CodeReaderTriggerNodeModel node) =>
+        new[] { MotionCapabilities.CodeReaderCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(CodeReaderTriggerNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>按当前批次创建产品并放入指定工站。</summary>
-[WorkflowNode("ProductCreate", DisplayName = "产品创建节点", Category = "8.Process/ProductFlow")]
+[WorkflowNode("ProductCreate", DisplayName = "产品创建节点", Category = "8.Process/ProductFlow", OutputType = typeof(ProductCreateNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Failed)]
 public sealed class ProductCreateNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />
@@ -43,6 +44,10 @@ public sealed class ProductCreateNodeModel : WorkflowNodeModel
 /// <summary>执行产品创建节点。</summary>
 public sealed class ProductCreateNodeHandler : WorkflowNodeHandler<ProductCreateNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(ProductCreateNodeModel node) =>
+        new[] { ProcessCapabilities.ProcessCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(ProductCreateNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

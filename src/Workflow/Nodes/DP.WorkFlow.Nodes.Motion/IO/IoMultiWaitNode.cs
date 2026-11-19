@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>按旧版组合和保持规则等待多条 IO 条件。</summary>
-[WorkflowNode("IOMultiWait", DisplayName = "等待多 IO", Category = "4.Motion/IO")]
+[WorkflowNode("IOMultiWait", DisplayName = "等待多 IO", Category = "4.Motion/IO", OutputType = typeof(IoMultiNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class IoMultiWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -27,6 +28,10 @@ public sealed class IoMultiWaitNodeModel : WorkflowNodeModel, IRecoverableWorkfl
 /// <summary>执行多 IO 等待节点。</summary>
 public sealed class IoMultiWaitNodeHandler : WorkflowNodeHandler<IoMultiWaitNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(IoMultiWaitNodeModel node) =>
+        new[] { MotionCapabilities.IoCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(IoMultiWaitNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

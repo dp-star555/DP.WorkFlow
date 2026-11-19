@@ -48,7 +48,8 @@ public sealed class WorkflowVisionCoordinateSample
 public sealed record WorkflowVisionCoordinateChoice(string Id, string Name, int Version, EVisionCoordinateUnit Unit);
 
 /// <summary>定义坐标系（名称、版本、单位）并用本帧来源构建它；不持久化运行矩阵。</summary>
-[WorkflowNode("Vision.BuildCoordinateSystem", DisplayName = "构建本帧坐标系", Category = WorkflowVisionCategories.Location)]
+[WorkflowNode("Vision.BuildCoordinateSystem", DisplayName = "构建本帧坐标系", Category = WorkflowVisionCategories.Location, OutputType = typeof(DP.Vision.Algorithms.VisionCoordinateSystemResult), Icon = "axes")]
+[WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometryNodeModel, IWorkflowNodeDocumentConfigurationValidator,
     IWorkflowVisionCoordinateProducerNode, IWorkflowDocumentPropertyChoices
 {
@@ -224,6 +225,10 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
 /// <summary>构建同帧坐标，检查退化/残差，再发布有身份的矩阵。</summary>
 public sealed class BuildVisionCoordinateSystemNodeHandler : WorkflowNodeHandler<BuildVisionCoordinateSystemNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(BuildVisionCoordinateSystemNodeModel node) =>
+        new[] { WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>() };
+
     /// <inheritdoc/>
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(BuildVisionCoordinateSystemNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

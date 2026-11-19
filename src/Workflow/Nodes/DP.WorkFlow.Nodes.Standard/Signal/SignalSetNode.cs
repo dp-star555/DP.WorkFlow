@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>设置或翻转命名布尔信号。</summary>
-[WorkflowNode("SignalSet", DisplayName = "信号设置", Category = "3.Control/信号")]
+[WorkflowNode("SignalSet", DisplayName = "信号设置", Category = "3.Control/信号", OutputType = typeof(SignalSetNodeResult))]
 public sealed class SignalSetNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
@@ -23,6 +23,10 @@ public sealed class SignalSetNodeModel : WorkflowNodeModel, IWorkflowPublicDataU
 /// <summary>执行信号设置节点。</summary>
 public sealed class SignalSetNodeHandler : WorkflowNodeHandler<SignalSetNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(SignalSetNodeModel node) =>
+        StandardCapabilities.Signal;
+
     /// <inheritdoc />
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(
         SignalSetNodeModel node,

@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>显示告警信息并等待操作员确认后继续。</summary>
-[WorkflowNode("WarningPrompt", DisplayName = "告警提示", Category = "8.Process/异常恢复")]
+[WorkflowNode("WarningPrompt", DisplayName = "告警提示", Category = "8.Process/异常恢复", OutputType = typeof(bool))]
 public sealed class WarningPromptNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />
@@ -13,6 +13,10 @@ public sealed class WarningPromptNodeModel : WorkflowNodeModel
 /// <summary>执行告警提示节点。</summary>
 public sealed class WarningPromptNodeHandler : WorkflowNodeHandler<WarningPromptNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(WarningPromptNodeModel node) =>
+        new[] { ProcessCapabilities.OperatorCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(WarningPromptNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

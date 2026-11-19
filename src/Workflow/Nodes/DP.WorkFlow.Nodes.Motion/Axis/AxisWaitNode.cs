@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>等待指定轴满足旧版六种状态条件之一。</summary>
-[WorkflowNode("AxisWait", DisplayName = "轴等待", Category = "4.Motion/Axis")]
+[WorkflowNode("AxisWait", DisplayName = "轴等待", Category = "4.Motion/Axis", OutputType = typeof(AxisWaitNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class AxisWaitNodeModel : WorkflowAxisNodeModel
 {
     /// <inheritdoc />
@@ -27,6 +28,10 @@ public sealed class AxisWaitNodeModel : WorkflowAxisNodeModel
 /// <summary>执行轴等待节点。</summary>
 public sealed class AxisWaitNodeHandler : WorkflowNodeHandler<AxisWaitNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(AxisWaitNodeModel node) =>
+        new[] { MotionCapabilities.AxisCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(AxisWaitNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

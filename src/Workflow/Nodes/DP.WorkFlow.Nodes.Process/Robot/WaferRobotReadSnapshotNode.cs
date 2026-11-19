@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>读取晶圆机器人当前快照。</summary>
-[WorkflowNode("WaferRobotReadSnapshot", DisplayName = "读取机器人快照节点", Category = "8.Process/WaferRobot")]
+[WorkflowNode("WaferRobotReadSnapshot", DisplayName = "读取机器人快照节点", Category = "8.Process/WaferRobot", OutputType = typeof(WaferRobotSnapshotResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Failed)]
 public sealed class WaferRobotReadSnapshotNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />
@@ -13,6 +14,10 @@ public sealed class WaferRobotReadSnapshotNodeModel : WorkflowNodeModel
 /// <summary>执行机器人快照读取。</summary>
 public sealed class WaferRobotReadSnapshotNodeHandler : WorkflowNodeHandler<WaferRobotReadSnapshotNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(WaferRobotReadSnapshotNodeModel node) =>
+        new[] { ProcessCapabilities.WaferRobotCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(WaferRobotReadSnapshotNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

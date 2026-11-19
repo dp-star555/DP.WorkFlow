@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>告警处理子流程入口，暴露当前中断上下文。</summary>
-[WorkflowNode("WarningHandlerStart", DisplayName = "告警处理起点", Category = "8.Process/异常恢复")]
+[WorkflowNode("WarningHandlerStart", DisplayName = "告警处理起点", Category = "8.Process/异常恢复", OutputType = typeof(WorkflowInterruptContext))]
 public sealed class WarningHandlerStartNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />

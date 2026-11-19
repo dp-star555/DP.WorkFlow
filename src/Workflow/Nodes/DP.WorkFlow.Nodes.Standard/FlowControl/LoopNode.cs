@@ -14,7 +14,8 @@ public sealed record LoopNodeResult(
 /// 退出条件（R3-c，可组合）：到达次数（0 = 不限）；循环体中走到指向本节点的"退出循环"节点；外部 bool 信号为真。
 /// 后两者在每圈结束（回到本节点）时检查，跑完当前这一圈后退出。
 /// </summary>
-[WorkflowNode("Loop", DisplayName = "循环节点", Category = "3.Control/流程控制")]
+[WorkflowNode("Loop", DisplayName = "循环节点", Category = "3.Control/流程控制", OutputType = typeof(LoopNodeResult), Icon = "loop")]
+[WorkflowOutputPorts(WorkflowPorts.Loop, WorkflowPorts.Completed)]
 public sealed class LoopNodeModel : WorkflowNodeModel, IWorkflowLoopNode, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
@@ -40,6 +41,10 @@ public sealed class LoopNodeModel : WorkflowNodeModel, IWorkflowLoopNode, IWorkf
 /// <summary>执行循环节点。</summary>
 public sealed class LoopNodeHandler : WorkflowNodeHandler<LoopNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(LoopNodeModel node) =>
+        string.IsNullOrWhiteSpace(node.ExitSignalKey) ? StandardCapabilities.None : StandardCapabilities.Signal;
+
     /// <inheritdoc />
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(
         LoopNodeModel node,
@@ -88,7 +93,7 @@ public sealed class LoopNodeHandler : WorkflowNodeHandler<LoopNodeModel>
 /// 退出循环节点（R3-c）：在循环体中走到它，循环在本圈结束时退出。
 /// 在画布回边循环中指定要退出的循环节点，并把出口连回该循环节点；在循环块的子画布中留空，走到即结束本圈并退出循环块。
 /// </summary>
-[WorkflowNode("ExitLoop", DisplayName = "退出循环", Category = "3.Control/流程控制")]
+[WorkflowNode("ExitLoop", DisplayName = "退出循环", Category = "3.Control/流程控制", Icon = "loop")]
 public sealed class ExitLoopNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />

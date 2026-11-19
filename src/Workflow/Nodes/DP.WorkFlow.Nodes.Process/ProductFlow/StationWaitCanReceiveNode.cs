@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>循环等待工站允许进料。</summary>
-[WorkflowNode("StationWaitCanReceive", DisplayName = "等待可进料节点", Category = "8.Process/ProductFlow")]
+[WorkflowNode("StationWaitCanReceive", DisplayName = "等待可进料节点", Category = "8.Process/ProductFlow", OutputType = typeof(StationWaitNodeResult), Icon = "station")]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout, WorkflowPorts.Failed)]
 public sealed class StationWaitCanReceiveNodeModel : ProductFlowStationSlotNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -19,6 +20,10 @@ public sealed class StationWaitCanReceiveNodeModel : ProductFlowStationSlotNodeM
 /// <summary>执行等待可进料节点。</summary>
 public sealed class StationWaitCanReceiveNodeHandler : WorkflowNodeHandler<StationWaitCanReceiveNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(StationWaitCanReceiveNodeModel node) =>
+        new[] { ProcessCapabilities.ProductFlowCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(StationWaitCanReceiveNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>立即读取并判断多条 IO 条件。</summary>
-[WorkflowNode("IOMultiCheck", DisplayName = "判断多 IO 条件", Category = "4.Motion/IO")]
+[WorkflowNode("IOMultiCheck", DisplayName = "判断多 IO 条件", Category = "4.Motion/IO", OutputType = typeof(IoMultiNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.True, WorkflowPorts.False)]
 public sealed class IoMultiCheckNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />
@@ -15,6 +16,10 @@ public sealed class IoMultiCheckNodeModel : WorkflowNodeModel
 /// <summary>执行多 IO 判断节点。</summary>
 public sealed class IoMultiCheckNodeHandler : WorkflowNodeHandler<IoMultiCheckNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(IoMultiCheckNodeModel node) =>
+        new[] { MotionCapabilities.IoCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(IoMultiCheckNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

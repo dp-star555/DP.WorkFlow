@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>按旧版触发与匹配规则等待扫码结果。</summary>
-[WorkflowNode("CodeReaderWaitScan", DisplayName = "等待扫码结果", Category = "4.Motion/CodeReader")]
+[WorkflowNode("CodeReaderWaitScan", DisplayName = "等待扫码结果", Category = "4.Motion/CodeReader", OutputType = typeof(CodeReaderScanResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class CodeReaderWaitScanNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -27,6 +28,10 @@ public sealed class CodeReaderWaitScanNodeModel : WorkflowNodeModel, IRecoverabl
 /// <summary>执行等待扫码结果节点。</summary>
 public sealed class CodeReaderWaitScanNodeHandler : WorkflowNodeHandler<CodeReaderWaitScanNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(CodeReaderWaitScanNodeModel node) =>
+        new[] { MotionCapabilities.CodeReaderCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(CodeReaderWaitScanNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

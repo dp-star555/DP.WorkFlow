@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>停止指定轴并可等待停止完成。</summary>
-[WorkflowNode("AxisStop", DisplayName = "轴停止", Category = "4.Motion/Axis")]
+[WorkflowNode("AxisStop", DisplayName = "轴停止", Category = "4.Motion/Axis", OutputType = typeof(AxisStopNodeResult))]
 public sealed class AxisStopNodeModel : WorkflowAxisNodeModel
 {
     /// <inheritdoc />
@@ -17,6 +17,10 @@ public sealed class AxisStopNodeModel : WorkflowAxisNodeModel
 /// <summary>执行轴停止节点。</summary>
 public sealed class AxisStopNodeHandler : WorkflowNodeHandler<AxisStopNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(AxisStopNodeModel node) =>
+        new[] { MotionCapabilities.AxisCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(AxisStopNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>按旧版 DriveId、Index 和 IOType 读取 IO 点位。</summary>
-[WorkflowNode("IORead", DisplayName = "读 IO", Category = "4.Motion/IO")]
+[WorkflowNode("IORead", DisplayName = "读 IO", Category = "4.Motion/IO", OutputType = typeof(WorkflowIoNodeResult))]
 public sealed class IoReadNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />
@@ -17,6 +17,10 @@ public sealed class IoReadNodeModel : WorkflowNodeModel
 /// <summary>执行 IO 读取节点。</summary>
 public sealed class IoReadNodeHandler : WorkflowNodeHandler<IoReadNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(IoReadNodeModel node) =>
+        new[] { MotionCapabilities.IoCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(IoReadNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

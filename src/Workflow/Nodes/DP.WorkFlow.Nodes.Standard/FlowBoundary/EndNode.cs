@@ -3,7 +3,8 @@ namespace DP.WorkFlow;
 /// <summary>
 /// 表示工作流当前路径的标准结束节点。
 /// </summary>
-[WorkflowNode("End", DisplayName = "结束节点", Category = "1.Base/流程边界")]
+[WorkflowNode("End", DisplayName = "结束节点", Category = "1.Base/流程边界", Icon = "stop")]
+[WorkflowOutputPorts]
 public sealed class EndNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />

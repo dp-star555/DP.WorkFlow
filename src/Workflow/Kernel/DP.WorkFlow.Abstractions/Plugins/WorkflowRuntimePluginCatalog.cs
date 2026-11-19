@@ -109,6 +109,7 @@ public sealed class WorkflowRuntimePluginCatalog
 
             // 第一步：在候选配置上完整校验。此阶段不得产生任何状态变更。
             Nodes.Validate();
+            var samples = new List<IWorkflowNodeModel>();
             foreach (var descriptor in Nodes.Snapshot().Values)
             {
                 IWorkflowNodeModel sample;
@@ -124,6 +125,7 @@ public sealed class WorkflowRuntimePluginCatalog
 
                 try
                 {
+                    samples.Add(sample);
                     _ = Handlers.ResolveWithRequirements(sample);
                 }
                 catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
@@ -132,6 +134,11 @@ public sealed class WorkflowRuntimePluginCatalog
                         $"节点类型 {descriptor.NodeType} 的运行处理器配置无效：{exception.Message}", exception);
                 }
             }
+
+            // 启动自检（R7-a）：每个处理器都要有对应的节点模型，避免节点漏注册而处理器白白留在目录里。
+            var orphan = Handlers.Snapshot().FirstOrDefault(handler => !samples.Any(handler.CanHandle));
+            if (orphan is not null)
+                throw new InvalidOperationException($"运行处理器 {orphan.GetType().FullName} 没有对应的已注册节点模型。");
 
             // 第二步：校验全部通过，此时发布（冻结）才是安全的。
             Nodes.Freeze();

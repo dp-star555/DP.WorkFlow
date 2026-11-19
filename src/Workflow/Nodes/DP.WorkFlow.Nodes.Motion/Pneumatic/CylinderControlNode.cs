@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>控制气缸伸出、缩回或全部断电。</summary>
-[WorkflowNode("CylinderControl", DisplayName = "气缸控制节点", Category = "4.Motion/Pneumatic")]
+[WorkflowNode("CylinderControl", DisplayName = "气缸控制节点", Category = "4.Motion/Pneumatic", OutputType = typeof(PneumaticNodeResult))]
 public sealed class CylinderControlNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -21,6 +21,10 @@ public sealed class CylinderControlNodeModel : WorkflowNodeModel, IRecoverableWo
 /// <summary>执行气缸控制节点。</summary>
 public sealed class CylinderControlNodeHandler : WorkflowNodeHandler<CylinderControlNodeModel>, IWorkflowNodeOperationFactory
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(CylinderControlNodeModel node) =>
+        new[] { MotionCapabilities.PneumaticCapability };
+
     /// <inheritdoc />
     public ValueTask<IWorkflowNodeOperation> CreateOperationAsync(Guid operationId, IWorkflowNodeModel node,
         IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)

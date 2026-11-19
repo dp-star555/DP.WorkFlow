@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>工艺流程中的命名恢复入口；不是设备位置快照。</summary>
-[WorkflowNode("RecoveryEntry", DisplayName = "恢复入口", Category = "8.Process/异常恢复")]
+[WorkflowNode("RecoveryEntry", DisplayName = "恢复入口", Category = "8.Process/异常恢复", OutputType = typeof(string))]
 public sealed class RecoveryEntryNodeModel : WorkflowNodeModel, IWorkflowRecoveryEntryNode, IWorkflowNodeConfigurationValidator
 {
     /// <inheritdoc />
@@ -30,7 +30,8 @@ public sealed class RecoveryEntryNodeHandler : WorkflowNodeHandler<RecoveryEntry
 }
 
 /// <summary>异常处理出口：请求继续故障操作实例。</summary>
-[WorkflowNode("WarnContinueOperation", DisplayName = "继续原操作", Category = "8.Process/异常恢复")]
+[WorkflowNode("WarnContinueOperation", DisplayName = "继续原操作", Category = "8.Process/异常恢复", OutputType = typeof(WarningResolution))]
+[WorkflowOutputPorts]
 public sealed class ContinueOperationNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />
@@ -55,7 +56,8 @@ public sealed class ContinueOperationNodeHandler : WorkflowNodeHandler<ContinueO
 }
 
 /// <summary>异常处理出口：请求从工程师指定的命名入口重执行。</summary>
-[WorkflowNode("WarnRestartFromEntry", DisplayName = "从恢复入口重执行", Category = "8.Process/异常恢复")]
+[WorkflowNode("WarnRestartFromEntry", DisplayName = "从恢复入口重执行", Category = "8.Process/异常恢复", OutputType = typeof(WarningResolution))]
+[WorkflowOutputPorts]
 public sealed class RestartFromEntryNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
 {
     /// <inheritdoc />
@@ -74,6 +76,10 @@ public sealed class RestartFromEntryNodeModel : WorkflowNodeModel, IWorkflowNode
 /// <summary>生成命名入口请求，由引擎验证并失效旧派生数据。</summary>
 public sealed class RestartFromEntryNodeHandler : WorkflowNodeHandler<RestartFromEntryNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(RestartFromEntryNodeModel node) =>
+        new[] { ProcessCapabilities.EntryGuardCapability };
+
     /// <inheritdoc />
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(RestartFromEntryNodeModel node,
         IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)

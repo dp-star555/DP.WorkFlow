@@ -3,7 +3,8 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>两直线或两有限线段的最短距离。</summary>
-[WorkflowNode("Vision.MeasureLineDistance", DisplayName = "线到线距离", Category = WorkflowVisionCategories.Measurement)]
+[WorkflowNode("Vision.MeasureLineDistance", DisplayName = "线到线距离", Category = WorkflowVisionCategories.Measurement, OutputType = typeof(DP.Vision.Algorithms.GeometricDistanceResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class MeasureVisionLineDistanceNodeModel : WorkflowVisionGeometryAlgorithmNodeModel
 {
     /// <inheritdoc/>
@@ -30,6 +31,10 @@ public sealed class MeasureVisionLineDistanceNodeModel : WorkflowVisionGeometryA
 /// <summary>返回最近点而非仅返回无来源的double。</summary>
 public sealed class MeasureVisionLineDistanceNodeHandler : WorkflowNodeHandler<MeasureVisionLineDistanceNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(MeasureVisionLineDistanceNodeModel node) =>
+        new[] { WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>(), WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionAlgorithmBindings>(), WorkflowRuntimeCapabilityRequirement.Require<IGeometryMeasurer>() };
+
     /// <inheritdoc/>
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(MeasureVisionLineDistanceNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

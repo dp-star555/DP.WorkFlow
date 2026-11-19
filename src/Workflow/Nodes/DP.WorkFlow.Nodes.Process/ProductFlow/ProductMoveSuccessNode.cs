@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>提交流转成功，完成产品出站与入站。</summary>
-[WorkflowNode("ProductMoveSuccess", DisplayName = "流转成功节点", Category = "8.Process/ProductFlow")]
+[WorkflowNode("ProductMoveSuccess", DisplayName = "流转成功节点", Category = "8.Process/ProductFlow", OutputType = typeof(ProductMoveFinishNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Failed)]
 public sealed class ProductMoveSuccessNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />
@@ -17,6 +18,10 @@ public sealed class ProductMoveSuccessNodeModel : WorkflowNodeModel
 /// <summary>执行流转成功节点。</summary>
 public sealed class ProductMoveSuccessNodeHandler : WorkflowNodeHandler<ProductMoveSuccessNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(ProductMoveSuccessNodeModel node) =>
+        new[] { ProcessCapabilities.ProductFlowCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(ProductMoveSuccessNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

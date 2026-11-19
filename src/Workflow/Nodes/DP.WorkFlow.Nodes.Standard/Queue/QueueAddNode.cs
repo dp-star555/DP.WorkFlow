@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>向强类型命名队列添加数据。</summary>
-[WorkflowNode("QueueAdd", DisplayName = "队列添加节点", Category = "3.Control/队列")]
+[WorkflowNode("QueueAdd", DisplayName = "队列添加节点", Category = "3.Control/队列", OutputType = typeof(WorkflowQueueNodeResult))]
 public sealed class QueueAddNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
@@ -24,6 +24,10 @@ public sealed class QueueAddNodeModel : WorkflowNodeModel, IWorkflowPublicDataUs
 /// <summary>执行队列添加。</summary>
 public sealed class QueueAddNodeHandler : WorkflowNodeHandler<QueueAddNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(QueueAddNodeModel node) =>
+        StandardCapabilities.Queue;
+
     /// <inheritdoc />
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(QueueAddNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

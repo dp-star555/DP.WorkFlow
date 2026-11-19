@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>标记指定工站槽位当前产品处理完成。</summary>
-[WorkflowNode("StationFinished", DisplayName = "工站完成节点", Category = "8.Process/ProductFlow")]
+[WorkflowNode("StationFinished", DisplayName = "工站完成节点", Category = "8.Process/ProductFlow", OutputType = typeof(StationFinishedNodeResult), Icon = "station")]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Failed)]
 public sealed class StationFinishedNodeModel : ProductFlowStationSlotNodeModel
 {
     /// <inheritdoc />
@@ -11,6 +12,10 @@ public sealed class StationFinishedNodeModel : ProductFlowStationSlotNodeModel
 /// <summary>执行工站完成标记。</summary>
 public sealed class StationFinishedNodeHandler : WorkflowNodeHandler<StationFinishedNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(StationFinishedNodeModel node) =>
+        new[] { ProcessCapabilities.ProductFlowCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(StationFinishedNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

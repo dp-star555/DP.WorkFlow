@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>循环刷新机器人状态并等待进入空闲状态。</summary>
-[WorkflowNode("WaferRobotWaitIdle", DisplayName = "等待机器人空闲节点", Category = "8.Process/WaferRobot")]
+[WorkflowNode("WaferRobotWaitIdle", DisplayName = "等待机器人空闲节点", Category = "8.Process/WaferRobot", OutputType = typeof(WaferRobotWaitIdleNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout, WorkflowPorts.Failed)]
 public sealed class WaferRobotWaitIdleNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -21,6 +22,10 @@ public sealed class WaferRobotWaitIdleNodeModel : WorkflowNodeModel, IRecoverabl
 /// <summary>执行机器人空闲等待。</summary>
 public sealed class WaferRobotWaitIdleNodeHandler : WorkflowNodeHandler<WaferRobotWaitIdleNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(WaferRobotWaitIdleNodeModel node) =>
+        new[] { ProcessCapabilities.WaferRobotCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(WaferRobotWaitIdleNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

@@ -3,7 +3,8 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>带身份的点间距；旧裸坐标距离节点保持兼容。</summary>
-[WorkflowNode("Vision.MeasurePointDistance", DisplayName = "视觉点间距", Category = WorkflowVisionCategories.Measurement)]
+[WorkflowNode("Vision.MeasurePointDistance", DisplayName = "视觉点间距", Category = WorkflowVisionCategories.Measurement, OutputType = typeof(DP.Vision.Algorithms.GeometricDistanceResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class MeasureVisionPointDistanceNodeModel : WorkflowVisionGeometryAlgorithmNodeModel
 {
     /// <inheritdoc/>
@@ -25,6 +26,10 @@ public sealed class MeasureVisionPointDistanceNodeModel : WorkflowVisionGeometry
 /// <summary>保持帧及定位身份的点间距调用。</summary>
 public sealed class MeasureVisionPointDistanceNodeHandler : WorkflowNodeHandler<MeasureVisionPointDistanceNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(MeasureVisionPointDistanceNodeModel node) =>
+        new[] { WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>(), WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionAlgorithmBindings>(), WorkflowRuntimeCapabilityRequirement.Require<IGeometryMeasurer>() };
+
     /// <inheritdoc/>
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(MeasureVisionPointDistanceNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

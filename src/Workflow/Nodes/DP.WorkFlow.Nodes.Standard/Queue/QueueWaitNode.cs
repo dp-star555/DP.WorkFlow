@@ -3,7 +3,8 @@ using System.Globalization;
 namespace DP.WorkFlow;
 
 /// <summary>等待命名队列满足有数据、首项比较或数量条件。</summary>
-[WorkflowNode("QueueWait", DisplayName = "队列等待节点", Category = "3.Control/队列")]
+[WorkflowNode("QueueWait", DisplayName = "队列等待节点", Category = "3.Control/队列", OutputType = typeof(QueueWaitNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class QueueWaitNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
@@ -30,6 +31,10 @@ public sealed class QueueWaitNodeModel : WorkflowNodeModel, IWorkflowPublicDataU
 /// <summary>执行队列条件等待。</summary>
 public sealed class QueueWaitNodeHandler : WorkflowNodeHandler<QueueWaitNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(QueueWaitNodeModel node) =>
+        StandardCapabilities.Queue;
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(QueueWaitNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

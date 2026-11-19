@@ -3,7 +3,7 @@ namespace DP.WorkFlow;
 /// <summary>
 /// 表示显式跳转节点。新版跳转目标由 Success 端口连接表达，不再在节点配置中保存目标 ID。
 /// </summary>
-[WorkflowNode("Jump", DisplayName = "跳转节点", Category = "3.Control/流程控制")]
+[WorkflowNode("Jump", DisplayName = "跳转节点", Category = "3.Control/流程控制", Icon = "jump")]
 public sealed class JumpNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />

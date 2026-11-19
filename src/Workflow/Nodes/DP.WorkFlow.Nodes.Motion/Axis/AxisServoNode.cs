@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>设置轴伺服使能状态。</summary>
-[WorkflowNode("AxisServo", DisplayName = "伺服使能", Category = "4.Motion/Axis")]
+[WorkflowNode("AxisServo", DisplayName = "伺服使能", Category = "4.Motion/Axis", OutputType = typeof(AxisServoNodeResult))]
 public sealed class AxisServoNodeModel : WorkflowAxisNodeModel, IWorkflowRetrySafetyNode
 {
     /// <inheritdoc />
@@ -21,6 +21,10 @@ public sealed class AxisServoNodeModel : WorkflowAxisNodeModel, IWorkflowRetrySa
 /// <summary>执行轴伺服节点。</summary>
 public sealed class AxisServoNodeHandler : WorkflowNodeHandler<AxisServoNodeModel>, IWorkflowNodeOperationFactory
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(AxisServoNodeModel node) =>
+        new[] { MotionCapabilities.AxisCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(AxisServoNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

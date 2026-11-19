@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>发起正常或虚拟创建型产品流转会话。</summary>
-[WorkflowNode("ProductMoveStart", DisplayName = "开始流转节点", Category = "8.Process/ProductFlow")]
+[WorkflowNode("ProductMoveStart", DisplayName = "开始流转节点", Category = "8.Process/ProductFlow", OutputType = typeof(ProductMoveStartNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Failed)]
 public sealed class ProductMoveStartNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />
@@ -57,6 +58,10 @@ public sealed class ProductMoveStartNodeModel : WorkflowNodeModel
 /// <summary>执行开始产品流转节点。</summary>
 public sealed class ProductMoveStartNodeHandler : WorkflowNodeHandler<ProductMoveStartNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(ProductMoveStartNodeModel node) =>
+        new[] { ProcessCapabilities.ProductFlowCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(ProductMoveStartNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

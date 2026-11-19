@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>批量创建或清空强类型命名队列。</summary>
-[WorkflowNode("QueueInitialize", DisplayName = "队列初始化节点", Category = "3.Control/队列")]
+[WorkflowNode("QueueInitialize", DisplayName = "队列初始化节点", Category = "3.Control/队列", OutputType = typeof(QueueInitializeResult))]
 public sealed class QueueInitializeNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
@@ -15,6 +15,10 @@ public sealed class QueueInitializeNodeModel : WorkflowNodeModel, IWorkflowPubli
 /// <summary>执行批量队列初始化。</summary>
 public sealed class QueueInitializeNodeHandler : WorkflowNodeHandler<QueueInitializeNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(QueueInitializeNodeModel node) =>
+        StandardCapabilities.Queue;
+
     /// <inheritdoc />
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(QueueInitializeNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

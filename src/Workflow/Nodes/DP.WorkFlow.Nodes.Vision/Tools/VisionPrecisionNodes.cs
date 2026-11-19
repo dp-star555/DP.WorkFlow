@@ -4,7 +4,8 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>显式采样带卡尺（直线或圆弧），参数为原图像素边界坐标。</summary>
-[WorkflowNode("Vision.MeasureCaliper", DisplayName = "亚像素采样卡尺", Category = WorkflowVisionCategories.Measurement)]
+[WorkflowNode("Vision.MeasureCaliper", DisplayName = "亚像素采样卡尺", Category = WorkflowVisionCategories.Measurement, OutputType = typeof(VisionCaliperMeasurement), Icon = "caliper")]
+[WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
@@ -151,6 +152,10 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
 /// <summary>产生真实采样剖面及梯度峰插值证据。</summary>
 public sealed class MeasureVisionCaliperNodeHandler : WorkflowNodeHandler<MeasureVisionCaliperNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(MeasureVisionCaliperNodeModel node) =>
+        new[] { WorkflowRuntimeCapabilityRequirement.Require<ICaliperMeasurer>() };
+
     /// <inheritdoc/>
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(MeasureVisionCaliperNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
@@ -169,7 +174,8 @@ public sealed class MeasureVisionCaliperNodeHandler : WorkflowNodeHandler<Measur
 }
 
 /// <summary>聚合同帧多个卡尺证据，以RANSAC和正交TLS拟合直线。</summary>
-[WorkflowNode("Vision.FitRobustLine", DisplayName = "鲁棒拟合直线", Category = WorkflowVisionCategories.Measurement)]
+[WorkflowNode("Vision.FitRobustLine", DisplayName = "鲁棒拟合直线", Category = WorkflowVisionCategories.Measurement, OutputType = typeof(DP.Vision.Algorithms.RobustLineResult), Icon = "line")]
+[WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class FitVisionRobustLineNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>节点专属实现选择；旧配方缺字段时保持原实现。</summary>
@@ -210,6 +216,10 @@ public sealed class FitVisionRobustLineNodeModel : AnalyzeVisionFrameNodeModel, 
 /// <summary>拒绝混帧采样和超过预算的证据，失败不提交输出。</summary>
 public sealed class FitVisionRobustLineNodeHandler : WorkflowNodeHandler<FitVisionRobustLineNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(FitVisionRobustLineNodeModel node) =>
+        new[] { WorkflowRuntimeCapabilityRequirement.Require<IRobustLineFitter>() };
+
     /// <inheritdoc/>
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(FitVisionRobustLineNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

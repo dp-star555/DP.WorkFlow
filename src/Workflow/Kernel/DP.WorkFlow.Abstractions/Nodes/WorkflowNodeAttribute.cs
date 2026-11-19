@@ -38,4 +38,37 @@ public sealed class WorkflowNodeAttribute : Attribute
     /// 为空时设计器按节点类型和分类选择图标。
     /// </summary>
     public string? Icon { get; set; }
+
+    /// <summary>节点配置格式版本，默认 1。</summary>
+    public int Version { get; set; } = 1;
+
+    /// <summary>节点标准输出的静态类型；为空表示设计期无法确定。</summary>
+    public Type? OutputType { get; set; }
+
+    /// <summary>是否有输入端口（<see cref="WorkflowPorts.Input"/>，不限连接数，显示在上边）。只有入口类节点为 false。</summary>
+    public bool HasInput { get; set; } = true;
+}
+
+/// <summary>
+/// 节点的输出端口（R7-a：端口写在节点模型上）。未标注时节点只有一个 <see cref="WorkflowPorts.Success"/> 出口；
+/// 标注但不给端口键表示没有输出端口（例如结束节点）。可标注多次，按出现顺序排列。
+/// </summary>
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+public sealed class WorkflowOutputPortsAttribute : Attribute
+{
+    /// <summary>声明输出端口。</summary>
+    /// <param name="keys">端口键，按显示顺序。</param>
+    public WorkflowOutputPortsAttribute(params string[] keys)
+    {
+        Keys = keys ?? Array.Empty<string>();
+    }
+
+    /// <summary>端口键。</summary>
+    public IReadOnlyList<string> Keys { get; }
+
+    /// <summary>每个端口允许引出的最大连线数，默认 1。</summary>
+    public int MaxConnections { get; set; } = 1;
+
+    /// <summary>是否在这些端口之后加默认不显示的失败出口（<see cref="WorkflowPortDescriptor.Failure"/>）。</summary>
+    public bool FailurePort { get; set; }
 }

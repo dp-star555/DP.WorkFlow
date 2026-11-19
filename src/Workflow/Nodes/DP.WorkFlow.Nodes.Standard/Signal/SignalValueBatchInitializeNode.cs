@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>批量初始化强类型数据信号到默认值。</summary>
-[WorkflowNode("SignalValueBatchInitialize", DisplayName = "批量初始化数据信号节点", Category = "3.Control/信号")]
+[WorkflowNode("SignalValueBatchInitialize", DisplayName = "批量初始化数据信号节点", Category = "3.Control/信号", OutputType = typeof(SignalValueBatchInitializeResult))]
 public sealed class SignalValueBatchInitializeNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
@@ -15,6 +15,10 @@ public sealed class SignalValueBatchInitializeNodeModel : WorkflowNodeModel, IWo
 /// <summary>执行数据信号批量初始化。</summary>
 public sealed class SignalValueBatchInitializeNodeHandler : WorkflowNodeHandler<SignalValueBatchInitializeNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(SignalValueBatchInitializeNodeModel node) =>
+        StandardCapabilities.ValueSignal;
+
     /// <inheritdoc />
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(SignalValueBatchInitializeNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

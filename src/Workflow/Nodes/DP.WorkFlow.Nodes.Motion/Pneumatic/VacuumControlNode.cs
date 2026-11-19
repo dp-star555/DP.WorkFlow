@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>控制真空打开、关闭和破真空时序。</summary>
-[WorkflowNode("VacuumControl", DisplayName = "真空控制", Category = "4.Motion/Pneumatic")]
+[WorkflowNode("VacuumControl", DisplayName = "真空控制", Category = "4.Motion/Pneumatic", OutputType = typeof(PneumaticNodeResult), Icon = "vacuum")]
 public sealed class VacuumControlNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -23,6 +23,10 @@ public sealed class VacuumControlNodeModel : WorkflowNodeModel, IRecoverableWork
 /// <summary>执行真空控制节点。</summary>
 public sealed class VacuumControlNodeHandler : WorkflowNodeHandler<VacuumControlNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(VacuumControlNodeModel node) =>
+        new[] { MotionCapabilities.PneumaticCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(VacuumControlNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

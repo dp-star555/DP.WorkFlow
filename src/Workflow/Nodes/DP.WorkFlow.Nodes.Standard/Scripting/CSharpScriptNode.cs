@@ -8,7 +8,8 @@ using ScriptEngine;
 namespace DP.WorkFlow;
 
 /// <summary>在宿主进程内执行受信任 Roslyn C# 脚本。</summary>
-[WorkflowNode("CSharpScript", DisplayName = "C# 脚本", Category = "2.Function/脚本")]
+[WorkflowNode("CSharpScript", DisplayName = "C# 脚本", Category = "2.Function/脚本", OutputType = typeof(CSharpScriptNodeResult), Icon = "code")]
+[WorkflowOutputPorts(WorkflowPorts.Success, "Error")]
 public sealed class CSharpScriptNodeModel : WorkflowNodeModel, IWorkflowDynamicPortProvider, IWorkflowScriptReferenceNode
 {
     /// <inheritdoc />

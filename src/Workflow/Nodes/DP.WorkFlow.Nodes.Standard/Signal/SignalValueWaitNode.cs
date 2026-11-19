@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>等待强类型数据信号满足比较条件。</summary>
-[WorkflowNode("SignalValueWait", DisplayName = "数据信号等待节点", Category = "3.Control/信号")]
+[WorkflowNode("SignalValueWait", DisplayName = "数据信号等待节点", Category = "3.Control/信号", OutputType = typeof(SignalValueNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class SignalValueWaitNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
@@ -26,6 +27,10 @@ public sealed class SignalValueWaitNodeModel : WorkflowNodeModel, IWorkflowPubli
 /// <summary>执行数据信号等待。</summary>
 public sealed class SignalValueWaitNodeHandler : WorkflowNodeHandler<SignalValueWaitNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(SignalValueWaitNodeModel node) =>
+        StandardCapabilities.ValueSignal;
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(SignalValueWaitNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

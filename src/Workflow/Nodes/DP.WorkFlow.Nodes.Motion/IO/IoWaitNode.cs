@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>等待指定 DriveId/Index IO 达到期望值。</summary>
-[WorkflowNode("IOWait", DisplayName = "等待 IO 等于", Category = "4.Motion/IO")]
+[WorkflowNode("IOWait", DisplayName = "等待 IO 等于", Category = "4.Motion/IO", OutputType = typeof(WorkflowIoNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class IoWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -31,6 +32,10 @@ public sealed class IoWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNod
 /// <summary>执行 IO 等待节点。</summary>
 public sealed class IoWaitNodeHandler : WorkflowNodeHandler<IoWaitNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(IoWaitNodeModel node) =>
+        new[] { MotionCapabilities.IoCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(IoWaitNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

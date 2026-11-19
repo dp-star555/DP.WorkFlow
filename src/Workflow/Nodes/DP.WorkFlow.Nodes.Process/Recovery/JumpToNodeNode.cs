@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>旧版跳转出口，仅用于保留旧配置；引擎拒绝该裁决，请改用命名恢复入口。</summary>
-[WorkflowNode("WarnJumpToNode", DisplayName = "旧跳转（已禁用）", Category = "8.Process/异常恢复")]
+[WorkflowNode("WarnJumpToNode", DisplayName = "旧跳转（已禁用）", Category = "8.Process/异常恢复", OutputType = typeof(WarningResolution))]
+[WorkflowOutputPorts]
 public sealed class JumpToNodeNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />

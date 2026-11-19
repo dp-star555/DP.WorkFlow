@@ -3,7 +3,8 @@ using System.Text.Json.Serialization;
 namespace DP.WorkFlow;
 
 /// <summary>包含宿主告警切入流程的专用不可连线子画布。</summary>
-[WorkflowNode("WarningHandlerBlock", DisplayName = "告警处理块", Category = "8.Process/异常恢复")]
+[WorkflowNode("WarningHandlerBlock", DisplayName = "告警处理块", Category = "8.Process/异常恢复", HasInput = false)]
+[WorkflowOutputPorts]
 public sealed class WarningHandlerBlockNodeModel : WorkflowNodeModel, IWorkflowSubDocumentNode
 {
     private WorkflowDocument _subDocument = new() { Name = "告警处理" };

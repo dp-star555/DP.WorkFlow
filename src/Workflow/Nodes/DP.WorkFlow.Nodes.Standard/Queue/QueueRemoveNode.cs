@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>从强类型命名队列移除首项或指定值。</summary>
-[WorkflowNode("QueueRemove", DisplayName = "队列移除节点", Category = "3.Control/队列")]
+[WorkflowNode("QueueRemove", DisplayName = "队列移除节点", Category = "3.Control/队列", OutputType = typeof(WorkflowQueueNodeResult))]
 public sealed class QueueRemoveNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
@@ -24,6 +24,10 @@ public sealed class QueueRemoveNodeModel : WorkflowNodeModel, IWorkflowPublicDat
 /// <summary>执行队列移除。</summary>
 public sealed class QueueRemoveNodeHandler : WorkflowNodeHandler<QueueRemoveNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(QueueRemoveNodeModel node) =>
+        StandardCapabilities.Queue;
+
     /// <inheritdoc />
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(QueueRemoveNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

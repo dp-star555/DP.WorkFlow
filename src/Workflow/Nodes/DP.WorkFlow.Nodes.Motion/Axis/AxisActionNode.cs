@@ -10,7 +10,7 @@ public enum E_AxisStepValueSource
 }
 
 /// <summary>按 AxisStep 仓库中的 StepKey 执行完整轴步骤。</summary>
-[WorkflowNode("AxisAction", DisplayName = "轴动作", Category = "4.Motion/Axis")]
+[WorkflowNode("AxisAction", DisplayName = "轴动作", Category = "4.Motion/Axis", OutputType = typeof(WorkflowAxisStepResult))]
 public sealed class AxisActionNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -44,6 +44,10 @@ public sealed class AxisActionNodeModel : WorkflowNodeModel, IRecoverableWorkflo
 /// <summary>执行轴步骤节点。</summary>
 public sealed class AxisActionNodeHandler : WorkflowNodeHandler<AxisActionNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(AxisActionNodeModel node) =>
+        new[] { MotionCapabilities.AxisCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(
         AxisActionNodeModel node,

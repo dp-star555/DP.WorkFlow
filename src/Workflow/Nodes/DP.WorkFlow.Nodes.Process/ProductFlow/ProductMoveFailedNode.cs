@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>提交流转失败并回滚目标工站预接料状态。</summary>
-[WorkflowNode("ProductMoveFailed", DisplayName = "流转失败节点", Category = "8.Process/ProductFlow")]
+[WorkflowNode("ProductMoveFailed", DisplayName = "流转失败节点", Category = "8.Process/ProductFlow", OutputType = typeof(ProductMoveFinishNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Failed)]
 public sealed class ProductMoveFailedNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />
@@ -19,6 +20,10 @@ public sealed class ProductMoveFailedNodeModel : WorkflowNodeModel
 /// <summary>执行流转失败节点。</summary>
 public sealed class ProductMoveFailedNodeHandler : WorkflowNodeHandler<ProductMoveFailedNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(ProductMoveFailedNodeModel node) =>
+        new[] { ProcessCapabilities.ProductFlowCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(ProductMoveFailedNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

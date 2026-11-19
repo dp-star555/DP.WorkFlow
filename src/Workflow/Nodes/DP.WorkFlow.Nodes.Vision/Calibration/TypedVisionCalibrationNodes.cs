@@ -17,7 +17,8 @@ public sealed class WorkflowCalibrationSample
 }
 
 /// <summary>输出独立DP.Vision标定事实，不写旧变量。</summary>
-[WorkflowNode("Vision.SolveCalibration", DisplayName = "求解仿射标定", Category = WorkflowVisionCategories.Calibration)]
+[WorkflowNode("Vision.SolveCalibration", DisplayName = "求解仿射标定", Category = WorkflowVisionCategories.Calibration, OutputType = typeof(DP.Vision.Algorithms.AffineCalibration))]
+[WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class SolveVisionCalibrationNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
 {
     /// <inheritdoc/>
@@ -47,7 +48,8 @@ public sealed class SolveVisionCalibrationNodeHandler : WorkflowNodeHandler<Solv
 }
 
 /// <summary>强类型标定与数值绑定坐标转换。</summary>
-[WorkflowNode("Vision.MapCoordinate", DisplayName = "映射标定坐标", Category = WorkflowVisionCategories.Calibration)]
+[WorkflowNode("Vision.MapCoordinate", DisplayName = "映射标定坐标", Category = WorkflowVisionCategories.Calibration, OutputType = typeof(DP.Vision.Algorithms.Coordinate2D))]
+[WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class MapVisionCoordinateNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
 {
     /// <inheritdoc/>

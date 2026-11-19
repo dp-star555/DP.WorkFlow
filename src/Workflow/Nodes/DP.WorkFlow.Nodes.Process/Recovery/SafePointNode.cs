@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>记录当前流程最近一次安全点。</summary>
-[WorkflowNode("SafePoint", DisplayName = "安全点节点", Category = "8.Process/异常恢复")]
+[WorkflowNode("SafePoint", DisplayName = "安全点节点", Category = "8.Process/异常恢复", OutputType = typeof(WorkflowSafePointContext))]
 public sealed class SafePointNodeModel : WorkflowNodeModel, IWorkflowRecoveryTargetNode
 {
     /// <inheritdoc />

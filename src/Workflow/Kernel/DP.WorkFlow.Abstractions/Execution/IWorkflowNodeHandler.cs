@@ -103,14 +103,39 @@ public interface IWorkflowNodeHandler
         CancellationToken cancellationToken);
 }
 
+/// <summary>在执行代码中声明宿主能力要求的处理器（R7-a）；目录注册时自动读取。</summary>
+public interface IWorkflowCapabilityDeclaringHandler
+{
+    /// <summary>执行指定节点需要的宿主能力。</summary>
+    /// <param name="node">节点配置。</param>
+    /// <returns>能力要求。</returns>
+    IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(IWorkflowNodeModel node);
+}
+
 /// <summary>
 /// 为强类型节点处理器提供模型匹配和安全转换。
 /// </summary>
 /// <typeparam name="TNode">当前处理器支持的节点模型类型。</typeparam>
-public abstract class WorkflowNodeHandler<TNode> : IWorkflowNodeHandler where TNode : class, IWorkflowNodeModel
+public abstract class WorkflowNodeHandler<TNode> : IWorkflowNodeHandler, IWorkflowCapabilityDeclaringHandler where TNode : class, IWorkflowNodeModel
 {
     /// <inheritdoc />
     public bool CanHandle(IWorkflowNodeModel node) => node is TNode;
+
+    /// <summary>
+    /// 执行该节点需要的宿主能力（R7-a：能力要求写在执行代码里）。可按节点配置返回不同要求，
+    /// 例如判断节点选"函数条件"时才需要条件注册表。默认没有要求。
+    /// </summary>
+    /// <param name="node">节点配置。</param>
+    /// <returns>能力要求。</returns>
+    protected virtual IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(TNode node) =>
+        Array.Empty<WorkflowRuntimeCapabilityRequirement>();
+
+    /// <inheritdoc />
+    IEnumerable<WorkflowRuntimeCapabilityRequirement> IWorkflowCapabilityDeclaringHandler.GetRequiredCapabilities(IWorkflowNodeModel node) =>
+        node is TNode typed ? GetRequiredCapabilities(typed) : Array.Empty<WorkflowRuntimeCapabilityRequirement>();
+
+    /// <summary>该处理器执行的节点模型类型。</summary>
+    public Type NodeModelType => typeof(TNode);
 
     /// <inheritdoc />
     /// <exception cref="ArgumentException"><paramref name="node"/> 不是 <typeparamref name="TNode"/> 实例。</exception>
