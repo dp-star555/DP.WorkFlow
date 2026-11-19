@@ -615,6 +615,24 @@
 
 ---
 
+## 整体框架（2026-11-19，讨论中）
+
+### 两层包
+
+1. **Foundation 功能包**：Workflow 整体（流程管理 + 设计器）是**一个** Foundation 功能包，在 `Declare` 中登记流程管理等服务，从 Foundation 拿到 `IServiceProvider`，并通过 `DeclarePages` 把设计器、流程列表等页面挂到外壳。
+2. **Workflow 扩展包**：标签检测、视觉、运动这类写节点的包只认 Workflow，不直接接触 Foundation，由 Workflow 的插件机制（plugin.json）加载。
+
+### 已定
+
+- 扩展包自己的服务（例如标签检测运行服务）由 Workflow 统一收集登记，宿主不再手写 `new` 后塞进服务表（现状见 `samples/DP.WorkFlow.WinForms.Sample/Form1.cs`）；节点通过 `GetRequiredCapability<T>()` 使用 Foundation 或其他包的服务；
+- 节点靠特性自动发现（R7-a）；
+- 扩展包的页面只交给 Workflow，是否出现在 Foundation 外壳中由 Workflow 功能包决定，扩展包不直接登记外壳页面；
+- 界面先只维护 WinForms 一套，WPF 以后再适配。
+
+### 待定
+
+- 扩展包页面与基座样式（主题、DPI、字体、多语言、权限与运行锁）的衔接方式。现状：扩展包渲染器返回普通 `Control`，主题写死 `ModernTheme.Dark`，与 `FeaturePage` 无关联。
+
 ## 讨论日志
 
 | 日期 | 类别 | 内容 |
@@ -641,3 +659,4 @@
 | 2026-11-19 | 7 | R7-a 节点启动时自动发现、端口和图标写在节点上；R7-b 暂不做版本升级，旧配置项忽略；R7-c 运行中修改不生效，配置复制改为序列化往返。七类全部讨论完毕 |
 | 2026-11-19 | 2 | R2-d 补充：流程数据只由引擎和节点自己读写，用户不可见；脚本不再读写流程变量。故障恢复另开专题 |
 | 2026-11-19 | 2 | R2-d 补充：流程数据按节点（画布路径 + 节点 ID）记录，随作用域自动清理。开始讨论整体框架：扩展包写法、包专用页面适配 |
+| 2026-11-19 | 框架 | 明确两层包（Workflow 是一个 Foundation 功能包，节点扩展包只认 Workflow）；扩展包服务由 Workflow 统一收集、节点自动发现、页面交给 Workflow；先只维护 WinForms |
