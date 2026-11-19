@@ -8,7 +8,8 @@ using ScriptEngine;
 namespace DP.WorkFlow;
 
 /// <summary>在宿主进程内执行受信任 Roslyn C# 脚本。</summary>
-[WorkflowNode("CSharpScript", DisplayName = "C# 脚本", Category = "2.Function/脚本")]
+[WorkflowNode("CSharpScript", DisplayName = "C# 脚本", Category = "2.Function/脚本", OutputType = typeof(CSharpScriptNodeResult), Icon = "code")]
+[WorkflowOutputPorts(WorkflowPorts.Success, "Error")]
 public sealed class CSharpScriptNodeModel : WorkflowNodeModel, IWorkflowDynamicPortProvider, IWorkflowScriptReferenceNode
 {
     /// <inheritdoc />
@@ -26,8 +27,6 @@ public sealed class CSharpScriptNodeModel : WorkflowNodeModel, IWorkflowDynamicP
     /// <inheritdoc />
     public IList<string> ScriptReferencePaths { get; set; } = new List<string>();
 
-    /// <summary>非空时将脚本返回值写入该流程变量。</summary>
-    public string ResultVarKey { get; set; } = "ScriptResult";
 
     /// <summary>协作式执行超时；小于等于零表示只使用工作流取消令牌。</summary>
     public int TimeoutMilliseconds { get; set; } = 30000;
@@ -155,9 +154,6 @@ public sealed class WorkflowScriptGlobals : IWorkflowScriptHostContext
     /// <summary>删除流程变量。</summary>
     public bool RemoveVariable(string key) => Context.RemoveVariable(key);
 
-    /// <summary>显式暂存公共数据发布。</summary>
-    public void PublishData(string key, object value) => Context.PublishData(key, value);
-
     /// <summary>写入脚本 Trace。</summary>
     public void Trace(string message) => Context.Trace("Script", message);
 }
@@ -253,8 +249,6 @@ public sealed class CSharpScriptNodeHandler : WorkflowNodeHandler<CSharpScriptNo
             }
 
             var output = new CSharpScriptNodeResult(true, result.ReturnValue, null, diagnostics);
-            if (!string.IsNullOrWhiteSpace(node.ResultVarKey) && result.ReturnValue is not null)
-                context.SetVariable(node.ResultVarKey.Trim(), result.ReturnValue);
             context.Trace("ScriptCompleted", "C# 脚本执行完成。", new Dictionary<string, object?> { ["ResultType"] = result.ReturnValue?.GetType().FullName });
             return NodeExecutionResult.Continue(output: output);
         }

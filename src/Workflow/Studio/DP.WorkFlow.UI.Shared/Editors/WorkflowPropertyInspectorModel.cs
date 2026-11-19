@@ -447,7 +447,6 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
         _choiceProvider = choiceProvider;
         _additionalProperties = additionalProperties;
         _session.Changed += OnSessionChanged;
-        _session.PublicDataCatalog.Changed += OnPublicDataChanged;
         Refresh();
     }
 
@@ -522,17 +521,22 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
             return Array.Empty<WorkflowBindingCandidate>();
         var analysis = new WorkflowBindingAnalyzer(_session.Catalog).Analyze(_session.Document);
         var nodeCandidates = analysis.GetCandidates(SelectedNode.Id, entry.WorkflowInputType);
-        var globalCandidates = _session.PublicDataCatalog.Items
-            .SelectMany(item => WorkflowBindingAnalyzer.EnumerateBindableMembers(item.ValueType)
-                .Where(member => WorkflowBindingAnalyzer.IsTypeCompatible(member.Type, entry.WorkflowInputType))
-                .Select(member => new WorkflowBindingCandidate(
-                    item.Key,
-                    member.Path,
-                    member.Type,
-                    $"{item.Category}/{item.DisplayName}/{member.Path}",
-                    WorkflowBindingCandidateSourceKind.PublicData,
-                    item.DisplayName,
-                    item.Category)))
+        // 公共数据来源只取流程清单中的登记项（R2-d）：bool 信号、数值、队列快照。
+        var globalCandidates = _session.PublicData
+            .SelectMany(item =>
+            {
+                var displayName = string.IsNullOrWhiteSpace(item.DisplayName) ? item.Key : item.DisplayName!;
+                return WorkflowBindingAnalyzer.EnumerateBindableMembers(item.GetClrType())
+                    .Where(member => WorkflowBindingAnalyzer.IsTypeCompatible(member.Type, entry.WorkflowInputType))
+                    .Select(member => new WorkflowBindingCandidate(
+                        item.Key,
+                        member.Path,
+                        member.Type,
+                        $"公共数据/{displayName}/{member.Path}",
+                        WorkflowBindingCandidateSourceKind.PublicData,
+                        displayName,
+                        "公共数据"));
+            })
             .ToArray();
         return nodeCandidates.Concat(globalCandidates)
             .DistinctBy(candidate => candidate.ToBindingKey())
@@ -543,11 +547,7 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     public void Dispose()
     {
         _session.Changed -= OnSessionChanged;
-        _session.PublicDataCatalog.Changed -= OnPublicDataChanged;
     }
-
-    /// <summary>处理公共数据声明变化并通知属性面板刷新。</summary>
-    private void OnPublicDataChanged(object? sender, EventArgs e) => Changed?.Invoke(this, EventArgs.Empty);
 
     /// <summary>处理设计会话变更，并同步刷新派生模型。</summary>
     private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
@@ -562,7 +562,7 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
         SelectedNode = _session.SelectedNodeId is { } selectedId
             ? _session.Canvas.Nodes.FirstOrDefault(item => item.Node.Id == selectedId)?.Node
             : null;
-        _entries = SelectedNode is null ? Array.Empty<WorkflowPropertyEntry>() : BuildEntries(SelectedNode, _choiceProvider, _session.Canvas.Nodes.Select(item => item.Node).ToArray())
+        _entries = SelectedNode is null ? Array.Empty<WorkflowPropertyEntry>() : BuildEntries(SelectedNode, _choiceProvider, _session.Canvas.Nodes.Select(item => item.Node).ToArray(), _session.PublicData)
             .Concat(_additionalProperties?.Invoke(SelectedNode) ?? Array.Empty<WorkflowPropertyEntry>()).ToArray();
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -581,8 +581,9 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     /// <param name="node">目标画布节点或节点模型。</param>
     /// <param name="choiceProvider">可选候选提供者。</param>
     /// <param name="documentNodes">同文档节点，供节点自己提供的文档候选使用。</param>
+    /// <param name="publicData">根流程的公共数据清单，供公共数据键的候选使用。</param>
     private static IReadOnlyList<WorkflowPropertyEntry> BuildEntries(IWorkflowNodeModel node, WorkflowPropertyChoiceProvider? choiceProvider,
-        IReadOnlyList<IWorkflowNodeModel> documentNodes)
+        IReadOnlyList<IWorkflowNodeModel> documentNodes, IReadOnlyList<WorkflowPublicDataDeclaration>? publicData = null)
     {
         var entries = new List<WorkflowPropertyEntry>();
         foreach (var property in node.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public)
@@ -596,7 +597,9 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
             var propertyEditor = property.GetCustomAttribute<WorkflowPropertyEditorAttribute>();
             var candidates = propertyEditor?.EditorKey == WorkflowPropertyEditorKeys.DocumentChoice
                 ? ResolveDocumentChoices(node, property.Name, documentNodes)
-                : ResolveChoices(propertyEditor, property.Name, choiceProvider);
+                : PublicDataKind(propertyEditor) is { } publicDataKind
+                    ? ResolvePublicDataChoices(publicDataKind, property.GetValue(node) as string, publicData)
+                    : ResolveChoices(propertyEditor, property.Name, choiceProvider);
             Type? inputType = null;
             WorkflowPropertyEditorKind kind;
             if (propertyEditor?.IsAction == true)
@@ -670,7 +673,8 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
 
     /// <summary>判断属性是否声明了候选编辑器；该键允许作用在非字符串的取值对象上。</summary>
     private static bool IsChoiceEditor(WorkflowPropertyEditorAttribute? propertyEditor) =>
-        propertyEditor?.EditorKey is WorkflowPropertyEditorKeys.VisionAreaSource
+        PublicDataKind(propertyEditor) is not null
+        || propertyEditor?.EditorKey is WorkflowPropertyEditorKeys.VisionAreaSource
             or WorkflowPropertyEditorKeys.VisionLineScanSource
             or WorkflowPropertyEditorKeys.DocumentChoice
         || propertyEditor?.EditorKey.StartsWith(WorkflowPropertyEditorKeys.VisionAlgorithmPrefix, StringComparison.Ordinal) == true;
@@ -694,6 +698,32 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
         {
             return Array.Empty<WorkflowPropertyChoice>();
         }
+    }
+
+    private static WorkflowPublicDataKind? PublicDataKind(WorkflowPropertyEditorAttribute? propertyEditor) => propertyEditor?.EditorKey switch
+    {
+        WorkflowPropertyEditorKeys.PublicDataSignal => WorkflowPublicDataKind.Signal,
+        WorkflowPropertyEditorKeys.PublicDataValue => WorkflowPublicDataKind.Value,
+        WorkflowPropertyEditorKeys.PublicDataQueue => WorkflowPublicDataKind.Queue,
+        _ => null
+    };
+
+    /// <summary>
+    /// 公共数据键的候选：流程清单中同形态的登记项（R2-d，先登记后使用）。当前值不在清单中时作为"未登记"项保留，
+    /// 不会因为打开属性面板而被清掉；清单中没有该形态时退回文本输入。
+    /// </summary>
+    private static IReadOnlyList<WorkflowPropertyChoice> ResolvePublicDataChoices(WorkflowPublicDataKind kind, string? current,
+        IReadOnlyList<WorkflowPublicDataDeclaration>? publicData)
+    {
+        var choices = (publicData ?? Array.Empty<WorkflowPublicDataDeclaration>())
+            .Where(item => item.Kind == kind)
+            .Select(item => new WorkflowPropertyChoice(
+                string.IsNullOrWhiteSpace(item.DisplayName) ? $"{item.Key}（{item.Describe()}）" : $"{item.DisplayName}：{item.Key}（{item.Describe()}）",
+                item.Key))
+            .ToList();
+        if (choices.Count > 0 && !string.IsNullOrWhiteSpace(current) && choices.All(choice => !Equals(choice.Value, current)))
+            choices.Insert(0, new WorkflowPropertyChoice($"{current}（未登记）", current));
+        return choices;
     }
 
     /// <summary>由节点按同文档内容提供候选；节点未实现或出错时退回无候选。</summary>

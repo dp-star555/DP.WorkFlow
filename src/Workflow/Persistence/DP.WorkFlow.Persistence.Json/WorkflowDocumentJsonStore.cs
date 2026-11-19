@@ -7,12 +7,12 @@ using System.Text.Json.Nodes;
 namespace DP.WorkFlow.Persistence.Json;
 
 /// <summary>
-/// 提供 Schema 4 工作流文档持久化以及 Schema 1/2/3 的显式迁移。
+/// 提供 Schema 5 工作流文档持久化以及 Schema 1～4 的显式迁移。
 /// </summary>
 public sealed class WorkflowDocumentJsonStore
 {
     /// <summary>当前流程文档版本。</summary>
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
 
     private readonly WorkflowNodeCatalog _catalog;
     private readonly JsonSerializerOptions _options;
@@ -29,17 +29,27 @@ public sealed class WorkflowDocumentJsonStore
 
     /// <summary>将正式工作流文档序列化为当前版本 JSON。</summary>
     /// <param name="document">包含入口、语义图和布局的文档。</param>
-    /// <returns>Schema 4 JSON。</returns>
+    /// <returns>当前版本 JSON。</returns>
     public string Serialize(WorkflowDocument document)
     {
         Guard.NotNull(document);
         ValidateEntry(document);
-        return JsonSerializer.Serialize(
-            CreateDocument(
-                document,
-                new HashSet<WorkflowDocument>(ReferenceEqualityComparer.Instance),
-                allowEntryInference: false),
-            _options);
+        var root = CreateDocument(
+            document,
+            new HashSet<WorkflowDocument>(ReferenceEqualityComparer.Instance),
+            allowEntryInference: false);
+        root.PublicData = document.PublicData
+            .Select(item => new WorkflowJsonPublicData
+            {
+                Key = item.Key,
+                Kind = item.Kind,
+                ValueType = item.ValueType,
+                DefaultValue = item.DefaultValueText,
+                Persistent = item.Persistent,
+                DisplayName = item.DisplayName
+            })
+            .ToList();
+        return JsonSerializer.Serialize(root, _options);
     }
 
     /// <summary>加载当前或旧版流程 JSON，并返回迁移报告。</summary>
@@ -89,9 +99,36 @@ public sealed class WorkflowDocumentJsonStore
             ?? throw new InvalidOperationException("流程 JSON 反序列化失败。");
         var report = CreateReport(schemaVersion);
         var workflowDocument = ReadDocument(document, report, schemaVersion);
+        ReadPublicData(document, workflowDocument, report, schemaVersion);
         if (schemaVersion < CurrentSchemaVersion)
-            report.AddWarning($"Schema {schemaVersion} 已迁移到 Schema {CurrentSchemaVersion}，根入口已写入正式文档语义。");
+            report.AddWarning(schemaVersion < 4
+                ? $"Schema {schemaVersion} 已迁移到 Schema {CurrentSchemaVersion}，根入口已写入正式文档语义。"
+                : $"Schema {schemaVersion} 已迁移到 Schema {CurrentSchemaVersion}。");
         return new WorkflowLoadResult(workflowDocument, report);
+    }
+
+    /// <summary>读入根文档的公共数据清单；Schema 5 之前的文件没有清单，按节点的使用推断。</summary>
+    private static void ReadPublicData(
+        WorkflowJsonDocument source,
+        WorkflowDocument target,
+        WorkflowMigrationReport report,
+        int schemaVersion)
+    {
+        foreach (var item in source.PublicData ?? new List<WorkflowJsonPublicData>())
+        {
+            target.PublicData.Add(new WorkflowPublicDataDeclaration(
+                item.Key?.Trim() ?? string.Empty,
+                item.Kind,
+                item.Kind == WorkflowPublicDataKind.Signal ? E_SignalValueType.Boolean : item.ValueType,
+                item.DefaultValue,
+                item.Persistent,
+                item.DisplayName));
+        }
+        if (schemaVersion >= 5)
+            return;
+        var added = WorkflowPublicDataManifest.AddMissing(target);
+        if (added.Count > 0)
+            report.AddWarning($"已按节点的使用生成公共数据清单：{string.Join("、", added.Select(item => $"{item.Key}（{item.Describe()}）"))}。");
     }
 
     private WorkflowLoadResult ReadLegacy(string json, int schemaVersion)
@@ -145,6 +182,7 @@ public sealed class WorkflowDocumentJsonStore
         }
 
         workflowDocument.EntryNodeId = ResolveCompatibilityEntry(workflowDocument);
+        ReadPublicData(new WorkflowJsonDocument(), workflowDocument, report, schemaVersion);
         report.AddWarning($"旧版 Schema {schemaVersion} 已迁移到 Schema {CurrentSchemaVersion}；保存前请检查分支端口和节点配置。");
         return new WorkflowLoadResult(workflowDocument, report);
     }
@@ -259,8 +297,6 @@ public sealed class WorkflowDocumentJsonStore
                 LabelPosition = connection.LabelPosition,
                 Note = string.IsNullOrWhiteSpace(connection.Note) ? null : connection.Note,
                 Disabled = connection.Enabled ? null : true,
-                State = connection.State,
-                Diagnostic = connection.Diagnostic,
                 Waypoints = connection.Waypoints
                     .Select(point => new WorkflowJsonPoint { X = point.X, Y = point.Y })
                     .ToList()
@@ -417,6 +453,7 @@ public sealed class WorkflowDocumentJsonStore
             changed = true;
             report.AddWarning($"节点 {nodeId}/{nodeType} 的旧属性 SafePointKey 已迁移为 TargetNodeId。");
         }
+        changed |= MergeLegacyValueInputs(root, modelType, nodeId, nodeType, report);
         foreach (var pair in root.ToArray())
         {
             if (!pair.Key.EndsWith("BindingKey", StringComparison.OrdinalIgnoreCase) || pair.Value is null) continue;
@@ -435,6 +472,52 @@ public sealed class WorkflowDocumentJsonStore
             report.AddWarning($"节点 {nodeId}/{nodeType} 的旧属性 {pair.Key} 已迁移为 {target.Name}。");
         }
         return changed ? JsonSerializer.SerializeToElement(root) : config;
+    }
+
+    /// <summary>
+    /// R2-d：队列、数值、类型转换节点旧的"三件套"输入（来源 + 固定值文本 + 绑定值）合并为一个 <c>WorkflowInput&lt;string&gt;</c>。
+    /// 按属性名识别，与文件版本无关：来源为绑定且有绑定键时转为绑定，否则转为固定文本。
+    /// </summary>
+    private static bool MergeLegacyValueInputs(JsonObject root, Type modelType, string nodeId, string nodeType, WorkflowMigrationReport report)
+    {
+        var changed = false;
+        foreach (var (source, literal, binding, target) in new[]
+                 {
+                     ("ValueSource", "LiteralValue", "BindingValue", "Value"),
+                     ("CompareValueSource", "CompareLiteralValue", "CompareBinding", "CompareValue")
+                 })
+        {
+            if (!root.ContainsKey(source) && !root.ContainsKey(literal) && !root.ContainsKey(binding))
+                continue;
+            var property = modelType.GetProperty(target, BindingFlags.Instance | BindingFlags.Public);
+            if (property?.PropertyType != typeof(WorkflowInput<string>) || root.ContainsKey(target))
+                continue;
+            var useBinding = root[source] is JsonValue sourceValue
+                && (sourceValue.TryGetValue<int>(out var number) ? number == 1
+                    : sourceValue.TryGetValue<string>(out var name) && string.Equals(name, "Binding", StringComparison.OrdinalIgnoreCase));
+            var bindingKey = root[binding] is JsonObject bindingObject
+                && bindingObject[nameof(WorkflowInput<object>.Binding)] is JsonValue keyValue
+                && keyValue.TryGetValue<string>(out var key) && !string.IsNullOrWhiteSpace(key)
+                    ? key
+                    : null;
+            root[target] = useBinding && bindingKey is not null
+                ? new JsonObject
+                {
+                    [nameof(WorkflowInput<object>.Source)] = (int)WorkflowValueSource.Binding,
+                    [nameof(WorkflowInput<object>.Binding)] = bindingKey
+                }
+                : new JsonObject
+                {
+                    [nameof(WorkflowInput<object>.Source)] = (int)WorkflowValueSource.Literal,
+                    [nameof(WorkflowInput<object>.LiteralValue)] = root[literal] is JsonValue text && text.TryGetValue<string>(out var literalText) ? literalText : string.Empty
+                };
+            root.Remove(source);
+            root.Remove(literal);
+            root.Remove(binding);
+            changed = true;
+            report.AddWarning($"节点 {nodeId}/{nodeType} 的 {source} / {literal} / {binding} 已合并为 {target}。");
+        }
+        return changed;
     }
 
     private static string NormalizeLegacyNodeType(string nodeType) => nodeType switch
@@ -476,9 +559,7 @@ public sealed class WorkflowDocumentJsonStore
                 ToSide = source.ToSide,
                 LabelPosition = Polyfill.Clamp(source.LabelPosition, 0, 1),
                 Note = string.IsNullOrWhiteSpace(source.Note) ? null : source.Note,
-                Enabled = source.Disabled != true,
-                State = source.State,
-                Diagnostic = source.Diagnostic
+                Enabled = source.Disabled != true
             };
             foreach (var point in source.Waypoints)
                 connection.Waypoints.Add(new WorkflowPoint(point.X, point.Y));

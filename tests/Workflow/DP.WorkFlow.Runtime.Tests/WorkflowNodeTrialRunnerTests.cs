@@ -25,9 +25,8 @@ public sealed class WorkflowNodeTrialRunnerTests
             .RunAsync(consumer, new Dictionary<object, object?>(ReferenceEqualityComparer.Instance) { [consumer.Input] = 21L });
 
         Assert.Equal(42L, result.Output);
-        // 流程运行写下的变量、公共数据和输出保持不变；试运行的写入被丢弃。
+        // 流程运行写下的变量和输出保持不变；试运行的写入被丢弃。
         Assert.True(context.TryGetVariable<long>("Seen", out var seen)); Assert.Equal(7L, seen);
-        Assert.True(context.PublicData.TryGet<long>("Trial", out var published)); Assert.Equal(7L, published);
         Assert.True(context.TryGetNodeOutput("Consumer", out var output)); Assert.Equal(14L, output!.Value);
     }
 
@@ -79,7 +78,6 @@ public sealed class WorkflowNodeTrialRunnerTests
         {
             var value = context.ResolveInput(node.Input);
             context.SetVariable("Seen", value);
-            context.PublishData("Trial", value);
             return ValueTask.FromResult(NodeExecutionResult.Continue(output: value * 2));
         }
     }

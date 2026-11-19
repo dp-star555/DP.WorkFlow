@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>按旧版触发与匹配规则等待扫码结果。</summary>
-[WorkflowNode("CodeReaderWaitScan", DisplayName = "等待扫码结果", Category = "4.Motion/CodeReader")]
+[WorkflowNode("CodeReaderWaitScan", DisplayName = "等待扫码结果", Category = "4.Motion/CodeReader", OutputType = typeof(CodeReaderScanResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class CodeReaderWaitScanNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -20,8 +21,6 @@ public sealed class CodeReaderWaitScanNodeModel : WorkflowNodeModel, IRecoverabl
     public CodeReaderScanMatchMode MatchMode { get; set; }
     /// <summary>获取或设置期望码值。</summary>
     public string ExpectedCode { get; set; } = string.Empty;
-    /// <summary>获取或设置结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "CodeReaderWaitScan.Result";
     /// <summary>获取或设置超时是否走 Timeout 分支。</summary>
     public bool TimeoutAsFalseBranch { get; set; } = true;
 }
@@ -29,6 +28,10 @@ public sealed class CodeReaderWaitScanNodeModel : WorkflowNodeModel, IRecoverabl
 /// <summary>执行等待扫码结果节点。</summary>
 public sealed class CodeReaderWaitScanNodeHandler : WorkflowNodeHandler<CodeReaderWaitScanNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(CodeReaderWaitScanNodeModel node) =>
+        new[] { MotionCapabilities.CodeReaderCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(CodeReaderWaitScanNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
@@ -41,7 +44,6 @@ public sealed class CodeReaderWaitScanNodeHandler : WorkflowNodeHandler<CodeRead
                 return WorkflowRecoverableNodeFailure.Create(node, "等待扫码结果超时: " + node.ReaderKey.Trim());
             return NodeExecutionResult.Continue(WorkflowPorts.Timeout);
         }
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         return NodeExecutionResult.Continue(WorkflowPorts.Success, output);
     }
 }

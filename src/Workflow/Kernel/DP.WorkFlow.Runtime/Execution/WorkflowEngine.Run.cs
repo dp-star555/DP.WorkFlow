@@ -13,9 +13,19 @@ public sealed partial class WorkflowEngine
         if (Interlocked.Exchange(ref _isRunning, 1) != 0)
             throw new InvalidOperationException("当前 WorkflowEngine 已经处于运行中。");
 
+        var result = await RunCoreAsync(cancellationToken).ConfigureAwait(false);
+        Notify(RunEnded, result);
+        return result;
+    }
+
+    private async Task<WorkflowRunResult> RunCoreAsync(CancellationToken cancellationToken)
+    {
         BeginRun(_plan.EntryNodeId);
         try
         {
+            // 流程的公共数据清单登记到公共数据中心；与已有登记不一致时整批拒绝，运行以故障结束。
+            if (_plan.PublicData.Count > 0)
+                Context.PublicDataCenter.DeclareAll(_plan.PublicData);
             var rootToken = new ExecutionToken(
                 Interlocked.Increment(ref _tokenSequence),
                 Array.Empty<long>(),
@@ -182,9 +192,13 @@ public sealed partial class WorkflowEngine
             _state = E_WorkflowExecutionState.Running;
             Context.BeginRun(RunState);
             changedState = ApplyPauseStateLocked() ?? _state;
+            // RunStarted 进入 Recorder 后立即开始调度；后续 Sink 推送失败不能阻止或终止运行。
+            // 在状态锁内创建记录器：状态一变为运行，暂停、挂起等控制调用就能写入同一份记录，不会先于 RunStarted。
+            StartRecorder(runId);
+            // 带着暂停或挂起开始的运行：RunStarted 之后紧接一条 Paused，说明为什么没有开始调度。
+            if (changedState == E_WorkflowExecutionState.Paused)
+                RecordControl(CaptureControlRecordLocked(changedState, null, null));
         }
-        // RunStarted 进入 Recorder 后立即开始调度；后续 Sink 推送失败不能阻止或终止运行。
-        StartRecorder(runId);
         PublishStateChange(changedState);
     }
 
@@ -197,19 +211,42 @@ public sealed partial class WorkflowEngine
             _options.Recording,
             _parentRunId,
             _parentExecution);
+        Interlocked.Exchange(ref _reportedRecordingLosses, 0);
         _recorder.HealthChanged += OnRecordingHealthChanged;
         // 与后续事件一样走 fail-open 入口：RunStarted 的记录失败不得让 Run 在启动阶段就 Fault。
+        // 流程身份（R4-a）：名称、在根流程中的路径、入口和节点数。流程版本随流程管理（阶段 D）加入。
         TryRecordRunEvent(
-            WorkflowRunEventDraft.Lifecycle("RunStarted", "流程开始执行。"),
+            WorkflowRunEventDraft.Lifecycle("RunStarted", "流程开始执行。", new Dictionary<string, object?>
+            {
+                ["WorkflowName"] = _plan.Name,
+                ["PlanPath"] = PlanPath,
+                ["EntryNodeId"] = _plan.EntryNodeId,
+                ["NodeCount"] = _plan.NodeIds.Count
+            }),
             WorkflowEventWriteMode.FlushRequested);
+        Notify(RunStarted, runId);
     }
 
-    private void OnRecordingHealthChanged(WorkflowRecordingHealth health) =>
-        SafeInvoke(RecordingHealthChanged, health);
+    private void OnRecordingHealthChanged(WorkflowRecordingHealth health)
+    {
+        Notify(RecordingHealthChanged, health);
+        // 记录丢失让人看得到（R1-01）：作为画布级提示，只报告新增的条数。
+        var losses = health.DroppedCount + health.FailedWriteCount;
+        var previous = Interlocked.Exchange(ref _reportedRecordingLosses, losses);
+        if (losses > previous)
+            RaiseNotice(null, "记录丢失",
+                $"运行记录丢失或写入失败 {losses - previous} 条（累计丢失 {health.DroppedCount}、写入失败 {health.FailedWriteCount}）"
+                + (health.LastError is { } error ? $"：{error}" : "。"),
+                recordEvent: false);
+    }
 
-    /// <summary>报告一次不改变节点结果的记录元数据降级；记录链路未启动时静默忽略。</summary>
+    /// <summary>
+    /// 报告一次不改变节点结果的降级（记录元数据、资源归还、回调失败等）：计入记录健康状态，
+    /// 并作为提示显示在对应节点上（无法归属到节点时为画布级提示）。
+    /// </summary>
     /// <param name="message">面向诊断的说明。</param>
-    private void ReportRecordingDegraded(string message)
+    /// <param name="nodeId">相关节点；无法归属时为空。</param>
+    private void ReportRecordingDegraded(string message, string? nodeId = null)
     {
         try
         {
@@ -218,6 +255,41 @@ public sealed partial class WorkflowEngine
         catch
         {
             // 降级报告属于可观测性，绝不能改变节点执行或 Run 终态。
+        }
+        // 降级本身可能来自记录失败，这里不再写事件，避免循环。
+        RaiseNotice(nodeId, "记录", message, recordEvent: false);
+    }
+
+    /// <summary>
+    /// 添加一条提示（R1-01）：写入提示板、记一条 NodeNoticeRaised 事件，并让界面在下一帧刷新。绝不抛异常。
+    /// </summary>
+    /// <param name="nodeId">所属节点；画布级提示为空。</param>
+    /// <param name="category">类别。</param>
+    /// <param name="message">说明。</param>
+    /// <param name="recordEvent">是否写入运行记录；来自记录链路自身的提示不写，避免循环。</param>
+    /// <param name="nodeType">所属节点的类型，写入事件。</param>
+    internal void RaiseNotice(string? nodeId, string category, string message, bool recordEvent = true, string? nodeType = null)
+    {
+        try
+        {
+            var notice = _options.Notices.Raise(_runId, PlanPath, nodeId, category, message);
+            if (recordEvent)
+                RecordRunEvent(new WorkflowRunEventDraft(
+                    WorkflowRunEventCategory.Trace,
+                    "NodeNoticeRaised",
+                    message,
+                    NodeId: nodeId,
+                    NodeType: nodeType,
+                    Data: new Dictionary<string, object?>
+                    {
+                        ["Category"] = category,
+                        ["Count"] = notice.Count
+                    }));
+            MarkChanged();
+        }
+        catch
+        {
+            // 提示只供观察，任何失败都不能影响运行。
         }
     }
 
@@ -228,7 +300,7 @@ public sealed partial class WorkflowEngine
             _state = state;
             _terminalMessage = message;
         }
-        SafeInvoke(StateChanged, state);
+        Notify(StateChanged, state);
         PublishSnapshot(message);
     }
 }

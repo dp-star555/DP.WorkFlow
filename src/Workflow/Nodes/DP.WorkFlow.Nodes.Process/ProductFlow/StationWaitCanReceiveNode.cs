@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>循环等待工站允许进料。</summary>
-[WorkflowNode("StationWaitCanReceive", DisplayName = "等待可进料节点", Category = "8.Process/ProductFlow")]
+[WorkflowNode("StationWaitCanReceive", DisplayName = "等待可进料节点", Category = "8.Process/ProductFlow", OutputType = typeof(StationWaitNodeResult), Icon = "station")]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout, WorkflowPorts.Failed)]
 public sealed class StationWaitCanReceiveNodeModel : ProductFlowStationSlotNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -20,11 +21,17 @@ public sealed class StationWaitCanReceiveNodeModel : ProductFlowStationSlotNodeM
 public sealed class StationWaitCanReceiveNodeHandler : WorkflowNodeHandler<StationWaitCanReceiveNodeModel>
 {
     /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(StationWaitCanReceiveNodeModel node) =>
+        new[] { ProcessCapabilities.ProductFlowCapability };
+
+    /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(StationWaitCanReceiveNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
         var address = ProductFlowNodeRuntime.ResolveAddress(node, context);
         var service = ProductFlowNodeRuntime.GetService(context);
+        using var wait = context.BeginWait($"工站 {address.StationId} 可进料", node.TimeoutMs);
         var matched = await ProductFlowNodeRuntime.WaitAsync(ct => service.CanReceiveAsync(address.StationId, address.SlotId, ct), node.TimeoutMs, node.PollIntervalMs, cancellationToken).ConfigureAwait(false);
+        wait.End(matched);
         var output = new StationWaitNodeResult(address.StationId, address.SlotId, matched);
         if (!matched && !node.TimeoutAsFalseBranch)
             return WorkflowRecoverableNodeFailure.Create(node, $"等待工站可进料超时: {address.StationId}");

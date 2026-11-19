@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>循环刷新机器人状态并等待进入空闲状态。</summary>
-[WorkflowNode("WaferRobotWaitIdle", DisplayName = "等待机器人空闲节点", Category = "8.Process/WaferRobot")]
+[WorkflowNode("WaferRobotWaitIdle", DisplayName = "等待机器人空闲节点", Category = "8.Process/WaferRobot", OutputType = typeof(WaferRobotWaitIdleNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout, WorkflowPorts.Failed)]
 public sealed class WaferRobotWaitIdleNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -16,13 +17,15 @@ public sealed class WaferRobotWaitIdleNodeModel : WorkflowNodeModel, IRecoverabl
     public int PollIntervalMs { get; set; } = 100;
     /// <summary>超时是否走 Timeout 分支。</summary>
     public bool TimeoutAsFalseBranch { get; set; } = true;
-    /// <summary>结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "WaferRobotWaitIdleResult";
 }
 
 /// <summary>执行机器人空闲等待。</summary>
 public sealed class WaferRobotWaitIdleNodeHandler : WorkflowNodeHandler<WaferRobotWaitIdleNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(WaferRobotWaitIdleNodeModel node) =>
+        new[] { ProcessCapabilities.WaferRobotCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(WaferRobotWaitIdleNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
@@ -31,6 +34,7 @@ public sealed class WaferRobotWaitIdleNodeHandler : WorkflowNodeHandler<WaferRob
         var service = WaferRobotNodeRuntime.GetService(context);
         WaferRobotStateResult? state = null;
         var started = System.Diagnostics.Stopwatch.StartNew();
+        using var wait = context.BeginWait($"机器人 {key} 空闲", node.TimeoutMs);
         while (node.TimeoutMs <= 0 || started.ElapsedMilliseconds < node.TimeoutMs)
         {
             state = await service.RefreshStateAsync(key, cancellationToken).ConfigureAwait(false);
@@ -38,8 +42,8 @@ public sealed class WaferRobotWaitIdleNodeHandler : WorkflowNodeHandler<WaferRob
             await Task.Delay(Math.Max(10, node.PollIntervalMs), cancellationToken).ConfigureAwait(false);
         }
         var matched = state?.CanStartMotion == true;
+        wait.End(matched);
         var output = new WaferRobotWaitIdleNodeResult(key, matched, state?.IsConnected ?? false, state?.IsInitialized ?? false, state?.IsBusy ?? false, state?.IsPaused ?? false, state?.HasAlarm ?? false, state?.CanStartMotion ?? false, state?.StatusCode, state?.StatusText);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         if (!matched && !node.TimeoutAsFalseBranch)
             return WorkflowRecoverableNodeFailure.Create(node, "等待机器人空闲超时。");
         return NodeExecutionResult.Continue(matched ? WorkflowPorts.Success : WorkflowPorts.Timeout, output);

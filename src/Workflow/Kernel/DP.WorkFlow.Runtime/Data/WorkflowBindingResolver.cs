@@ -49,8 +49,8 @@ public sealed class WorkflowBindingResolver
         if (binding.IsPublicData)
         {
             var publicDataKey = binding.PublicDataKey!;
-            if (!_context.PublicData.TryGet<object>(publicDataKey, out root))
-                throw new WorkflowBindingException(binding, $"公共数据 {publicDataKey} 不存在或尚未发布。");
+            if (!_context.TryReadPublicData(publicDataKey, out root))
+                throw new WorkflowBindingException(binding, $"公共数据 {publicDataKey} 没有登记或尚无值。");
         }
         else
         {
@@ -90,8 +90,8 @@ public sealed class WorkflowBindingResolver
         if (binding.IsPublicData)
         {
             var publicDataKey = binding.PublicDataKey!;
-            if (!_context.PublicData.TryGet<object>(publicDataKey, out root))
-                throw new WorkflowBindingException(binding, $"公共数据 {publicDataKey} 不存在或尚未发布。");
+            if (!_context.TryReadPublicData(publicDataKey, out root))
+                throw new WorkflowBindingException(binding, $"公共数据 {publicDataKey} 没有登记或尚无值。");
             return new WorkflowInputBindingResult<T>(
                 ConvertValue<T>(binding, ReadMemberPath(binding, root)), "PublicData", null, null);
         }
@@ -121,8 +121,8 @@ public sealed class WorkflowBindingResolver
         if (binding.IsPublicData)
         {
             var publicDataKey = binding.PublicDataKey!;
-            if (!context.PublicData.TryGet<object>(publicDataKey, out root))
-                throw new WorkflowBindingException(binding, $"公共数据 {publicDataKey} 不存在或尚未发布。");
+            if (!context.TryReadPublicData(publicDataKey, out root))
+                throw new WorkflowBindingException(binding, $"公共数据 {publicDataKey} 没有登记或尚无值。");
         }
         else
         {

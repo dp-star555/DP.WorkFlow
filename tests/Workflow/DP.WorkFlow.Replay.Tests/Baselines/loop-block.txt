@@ -1,0 +1,68 @@
+运行 [循环块]
+  [主线]
+    RunStarted EntryNodeId=Start Message=流程开始执行。 NodeCount=3 PlanPath=$ WorkflowName=循环块
+    NodeStarted Start#1 Message=节点开始执行。
+    Start Start#1 Message=流程由启动节点进入。
+    OutputCommitted Start#1 OutputExecutionSequence=Start#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=
+    NodeCompleted Start#1 Message=节点执行完成。 SelectedPort=Success
+    NodeStarted LoopBlock#1 Message=节点开始执行。
+    RunLoop LoopBlock#1 ChildNodeCount=3 ExitSignal=null Iterations=3 Message=循环运行子流程入口 ChildStart。
+    LoopCompleted LoopBlock#1 Cycles=3 ExitReason=达到循环次数 Message=循环结束：达到循环次数，共 3 圈。 OutputCount=0
+    OutputCommitted LoopBlock#1 OutputExecutionSequence=LoopBlock#1 OutputKeys=CompletedCycles, Elapsed, ExitReason, LastChildRunId, ResultRows OutputType=DP.WorkFlow.LoopBlockNodeOutput OutputValue.CompletedCycles=3 OutputValue.ExitReason=达到循环次数 OutputValue.ResultRows=
+    NodeCompleted LoopBlock#1 Message=节点执行完成。 SelectedPort=Success
+    NodeStarted End#1 Message=节点开始执行。
+    End End#1 Message=当前执行路径结束。
+    OutputCommitted End#1 OutputExecutionSequence=End#1 OutputKeys=$ OutputType=null OutputValue.$=null
+    NodeCompleted End#1 Message=节点执行完成。 SelectedPort=Success
+    RunCompleted Message=流程执行完成。 State=Completed
+    运行 [循环体] 父节点第 1 次执行
+      [主线]
+        RunStarted EntryNodeId=ChildStart Message=流程开始执行。 NodeCount=3 PlanPath=$/LoopBlock WorkflowName=循环体
+        NodeStarted ChildStart#1 Message=节点开始执行。
+        Start ChildStart#1 Message=流程由启动节点进入。
+        OutputCommitted ChildStart#1 OutputExecutionSequence=ChildStart#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=[CurrentIteration, 1]
+        NodeCompleted ChildStart#1 Message=节点执行完成。 SelectedPort=Success
+        NodeStarted Work#1 Message=节点开始执行。
+        Invoke Work#1 FunctionKey=Count Message=开始调用工作流动作。
+        Invoked Work#1 FunctionKey=Count Message=工作流动作调用完成。
+        OutputCommitted Work#1 OutputExecutionSequence=Work#1 OutputKeys=Value OutputType=DP.WorkFlow.Tests.Replay.CountOutput OutputValue.Value=1
+        NodeCompleted Work#1 Message=节点执行完成。 SelectedPort=Success
+        NodeStarted ChildEnd#1 Message=节点开始执行。
+        End ChildEnd#1 Message=当前执行路径结束。
+        OutputCommitted ChildEnd#1 OutputExecutionSequence=ChildEnd#1 OutputKeys=$ OutputType=null OutputValue.$=null
+        NodeCompleted ChildEnd#1 Message=节点执行完成。 SelectedPort=Success
+        RunCompleted Message=流程执行完成。 State=Completed
+    运行 [循环体] 父节点第 1 次执行
+      [主线]
+        RunStarted EntryNodeId=ChildStart Message=流程开始执行。 NodeCount=3 PlanPath=$/LoopBlock WorkflowName=循环体
+        NodeStarted ChildStart#1 Message=节点开始执行。
+        Start ChildStart#1 Message=流程由启动节点进入。
+        OutputCommitted ChildStart#1 OutputExecutionSequence=ChildStart#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=[CurrentIteration, 2]
+        NodeCompleted ChildStart#1 Message=节点执行完成。 SelectedPort=Success
+        NodeStarted Work#1 Message=节点开始执行。
+        Invoke Work#1 FunctionKey=Count Message=开始调用工作流动作。
+        Invoked Work#1 FunctionKey=Count Message=工作流动作调用完成。
+        OutputCommitted Work#1 OutputExecutionSequence=Work#1 OutputKeys=Value OutputType=DP.WorkFlow.Tests.Replay.CountOutput OutputValue.Value=2
+        NodeCompleted Work#1 Message=节点执行完成。 SelectedPort=Success
+        NodeStarted ChildEnd#1 Message=节点开始执行。
+        End ChildEnd#1 Message=当前执行路径结束。
+        OutputCommitted ChildEnd#1 OutputExecutionSequence=ChildEnd#1 OutputKeys=$ OutputType=null OutputValue.$=null
+        NodeCompleted ChildEnd#1 Message=节点执行完成。 SelectedPort=Success
+        RunCompleted Message=流程执行完成。 State=Completed
+    运行 [循环体] 父节点第 1 次执行
+      [主线]
+        RunStarted EntryNodeId=ChildStart Message=流程开始执行。 NodeCount=3 PlanPath=$/LoopBlock WorkflowName=循环体
+        NodeStarted ChildStart#1 Message=节点开始执行。
+        Start ChildStart#1 Message=流程由启动节点进入。
+        OutputCommitted ChildStart#1 OutputExecutionSequence=ChildStart#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=[CurrentIteration, 3]
+        NodeCompleted ChildStart#1 Message=节点执行完成。 SelectedPort=Success
+        NodeStarted Work#1 Message=节点开始执行。
+        Invoke Work#1 FunctionKey=Count Message=开始调用工作流动作。
+        Invoked Work#1 FunctionKey=Count Message=工作流动作调用完成。
+        OutputCommitted Work#1 OutputExecutionSequence=Work#1 OutputKeys=Value OutputType=DP.WorkFlow.Tests.Replay.CountOutput OutputValue.Value=3
+        NodeCompleted Work#1 Message=节点执行完成。 SelectedPort=Success
+        NodeStarted ChildEnd#1 Message=节点开始执行。
+        End ChildEnd#1 Message=当前执行路径结束。
+        OutputCommitted ChildEnd#1 OutputExecutionSequence=ChildEnd#1 OutputKeys=$ OutputType=null OutputValue.$=null
+        NodeCompleted ChildEnd#1 Message=节点执行完成。 SelectedPort=Success
+        RunCompleted Message=流程执行完成。 State=Completed

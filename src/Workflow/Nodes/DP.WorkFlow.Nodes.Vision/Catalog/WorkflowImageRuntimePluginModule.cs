@@ -27,70 +27,15 @@ public static class WorkflowImageNodes
     {
         Guard.NotNull(catalog);
         WorkflowVisionOutputNames.EnsureRegistered();
-        var ports = new[] { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success), WorkflowPortDescriptor.Failure() };
-        return catalog
-            .Register(WorkflowNodeDescriptor.Create<AcquireVisionImageNodeModel, ImageFrame>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<AnalyzeVisionBlobsNodeModel, BlobAnalysisResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<AnalyzeVisionColorNodeModel, ColorAnalysisResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<SolveVisionCalibrationNodeModel, AffineCalibration>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<MapVisionCoordinateNodeModel, Coordinate2D>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<PreprocessVisionImageNodeModel, ImageFrame>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<ThresholdVisionRegionNodeModel, RegionAnalysisResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<CreateVisionRegionNodeModel, RegionAnalysisResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<MorphVisionRegionNodeModel, RegionAnalysisResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<SelectVisionBlobsNodeModel, BlobAnalysisResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<MeasureVisionCaliperNodeModel, VisionCaliperMeasurement>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<FitVisionRobustLineNodeModel, RobustLineResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<FindVisionLineNodeModel, VisionFindLineResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<FindVisionCircleNodeModel, VisionFindCircleResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<FindVisionRectangleNodeModel, VisionFindRectangleResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<MeasureVisionGroupNodeModel, VisionMeasureGroupResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<LocateVisionTemplatePoseNodeModel, TemplatePoseResult>(ports: ports));
+        return catalog.RegisterAssembly(typeof(WorkflowImageNodes).Assembly);
     }
 
-    /// <summary>成组注册处理器及启动前能力要求。</summary>
+    /// <summary>注册处理器；能力要求写在各处理器里（R7-a）。</summary>
     /// <param name="handlers">宿主处理器目录。</param>
     /// <returns>目录。</returns>
     public static WorkflowNodeHandlerCatalog RegisterImageNodeHandlers(this WorkflowNodeHandlerCatalog handlers)
     {
         Guard.NotNull(handlers);
-        var frames = WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>();
-        return handlers
-            .Register(new AcquireVisionImageNodeHandler(), node =>
-            {
-                var input = (AcquireVisionImageNodeModel)node;
-                var source = input.SourceMode switch
-                {
-                    EWorkflowVisionImageSource.File => WorkflowRuntimeCapabilityRequirement.Require<IImageFileReader>(),
-                    EWorkflowVisionImageSource.Folder => WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFolderSource>(),
-                    EWorkflowVisionImageSource.AreaCamera or EWorkflowVisionImageSource.LineCamera => WorkflowRuntimeCapabilityRequirement.Require<IVisionAcquisition>(),
-                    _ => throw new InvalidOperationException("图像来源类型未定义。")
-                };
-                return new[] { source, frames };
-            })
-            .Register(new AnalyzeVisionBlobsNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IBlobAnalyzer>())
-            .Register(new AnalyzeVisionColorNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IColorAnalyzer>())
-            .Register(new SolveVisionCalibrationNodeHandler()).Register(new MapVisionCoordinateNodeHandler())
-            .Register(new PreprocessVisionImageNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IImagePreprocessor>(), frames)
-            .Register(new ThresholdVisionRegionNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IRegionProcessor>())
-            .Register(new CreateVisionRegionNodeHandler(), frames)
-            .Register(new MorphVisionRegionNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IRegionProcessor>())
-            .Register(new SelectVisionBlobsNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IBlobSelector>())
-            .Register(new MeasureVisionCaliperNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<ICaliperMeasurer>())
-            .Register(new FitVisionRobustLineNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IRobustLineFitter>())
-            .Register(new FindVisionLineNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<ICaliperMeasurer>(), WorkflowRuntimeCapabilityRequirement.Require<IRobustLineFitter>())
-            .Register(new FindVisionCircleNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<ICaliperMeasurer>(), WorkflowRuntimeCapabilityRequirement.Require<IRobustCircleFitter>())
-            .Register(new FindVisionRectangleNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<ICaliperMeasurer>(), WorkflowRuntimeCapabilityRequirement.Require<IRobustLineFitter>())
-            .Register(new MeasureVisionGroupNodeHandler(), node =>
-            {
-                // 只要求实际用到的拟合能力：没有找圆项时不要求圆拟合。
-                var kinds = ((MeasureVisionGroupNodeModel)node).Items.Where(i => i.Enabled).Select(i => i.Kind).ToHashSet();
-                var requirements = new List<WorkflowRuntimeCapabilityRequirement> { WorkflowRuntimeCapabilityRequirement.Require<ICaliperMeasurer>() };
-                if (kinds.Contains(EVisionMeasureKind.Line) || kinds.Contains(EVisionMeasureKind.Rectangle)) requirements.Add(WorkflowRuntimeCapabilityRequirement.Require<IRobustLineFitter>());
-                if (kinds.Contains(EVisionMeasureKind.Circle)) requirements.Add(WorkflowRuntimeCapabilityRequirement.Require<IRobustCircleFitter>());
-                return requirements;
-            })
-            .Register(new LocateVisionTemplatePoseNodeHandler(), node => new[] { ((LocateVisionTemplatePoseNodeModel)node).TemplateSource == EWorkflowVisionTemplateSource.Resource
-                ? WorkflowRuntimeCapabilityRequirement.Require<IPreparedVisionTemplateMatcher>() : WorkflowRuntimeCapabilityRequirement.Require<ITemplatePoseLocator>() });
+        return handlers.RegisterAssembly(typeof(WorkflowImageNodes).Assembly);
     }
 }

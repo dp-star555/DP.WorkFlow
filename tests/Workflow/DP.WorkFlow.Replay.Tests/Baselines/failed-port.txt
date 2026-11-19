@@ -1,0 +1,20 @@
+运行 [失败出口]
+  [主线]
+    RunStarted EntryNodeId=Start Message=流程开始执行。 NodeCount=5 PlanPath=$ WorkflowName=失败出口
+    NodeStarted Start#1 Message=节点开始执行。
+    Start Start#1 Message=流程由启动节点进入。
+    OutputCommitted Start#1 OutputExecutionSequence=Start#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=
+    NodeCompleted Start#1 Message=节点执行完成。 SelectedPort=Success
+    NodeStarted Inspect#1 Message=节点开始执行。
+    NodeFailed Inspect#1 CommitStarted=False ExceptionType=System.InvalidOperationException InterruptAlarmCode=0 Message=检测NG：未找到边缘。
+    NodeFaultRouted Inspect#1 Message=检测NG：未找到边缘。 SelectedPort=Failed
+    NodeStarted Ng#1 Message=节点开始执行。
+    Invoke Ng#1 FunctionKey=Pass Message=开始调用工作流动作。
+    Invoked Ng#1 FunctionKey=Pass Message=工作流动作调用完成。
+    OutputCommitted Ng#1 OutputExecutionSequence=Ng#1 OutputKeys=$ OutputType=null OutputValue.$=null
+    NodeCompleted Ng#1 Message=节点执行完成。 SelectedPort=Success
+    NodeStarted End#1 Message=节点开始执行。
+    End End#1 Message=当前执行路径结束。
+    OutputCommitted End#1 OutputExecutionSequence=End#1 OutputKeys=$ OutputType=null OutputValue.$=null
+    NodeCompleted End#1 Message=节点执行完成。 SelectedPort=Success
+    RunCompleted Message=流程执行完成。 State=Completed

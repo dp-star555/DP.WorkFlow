@@ -16,7 +16,7 @@ public sealed record WorkflowNodeIcon(string Key, IReadOnlyList<WorkflowVectorFi
 
 /// <summary>
 /// 节点图标目录：图标是展示元数据，与节点实现分开，节点程序集不需要引用任何界面类型。
-/// 查找顺序：节点定义声明的图标（<see cref="WorkflowNodeAttribute.Icon"/>：图标键或路径数据）→ 节点类型 → 类别（最长前缀匹配）→ 默认图标。
+/// 查找顺序：节点定义声明的图标（<see cref="WorkflowNodeAttribute.Icon"/>：图标键或路径数据，内置节点都写在特性上）→ 宿主用 <see cref="MapNodeType"/> 登记的节点类型 → 类别（最长前缀匹配）→ 默认图标。
 /// 插件或宿主也可以调用 <see cref="RegisterIcon"/>、
 /// <see cref="MapNodeType"/>、<see cref="MapCategory"/> 补充或覆盖，画布节点和工具箱都从这里取同一个图标。
 /// </summary>
@@ -34,7 +34,6 @@ public static class WorkflowNodeIcons
     static WorkflowNodeIcons()
     {
         foreach (var (key, path) in BuiltInIcons()) Paths[key] = path;
-        foreach (var (nodeType, key) in BuiltInNodeTypes()) NodeTypes[nodeType] = key;
         foreach (var (category, key) in BuiltInCategories()) Categories[category] = key;
     }
 
@@ -164,25 +163,6 @@ public static class WorkflowNodeIcons
         ("calibration", "M4 4h16v16H4zM12 4v16M4 12h16" + Circle(12, 12, 2.5)),
         ("tag", "M4 12V5h7l9 9-7 7z" + Circle(8, 9, 1.3)),
         ("color", Circle(12, 12, 8) + "M12 4v16M4.7 8.5l14.6 7M4.7 15.5l14.6-7")
-    };
-
-    private static IEnumerable<(string NodeType, string Key)> BuiltInNodeTypes() => new[]
-    {
-        ("Start", "play"), ("End", "stop"),
-        ("ParallelAll", "split"), ("WaitAllInputsCompleted", "merge"),
-        ("Delay", "clock"), ("Jump", "jump"), ("Loop", "loop"), ("LoopBlock", "loop"), ("Block", "layers"),
-        ("Decision", "decision"), ("ValueCompare", "compare"), ("StringCompare", "compare"),
-        ("Action", "bolt"), ("WaitFunction", "hourglass"), ("CSharpScript", "code"), ("ConvertValue", "convert"),
-        ("VacuumControl", "vacuum"), ("VacuumWait", "vacuum"),
-        ("StationCanReceive", "station"), ("StationCanSend", "station"), ("StationFinished", "station"),
-        ("StationSlotHasProduct", "station"), ("StationWaitCanReceive", "station"), ("StationWaitCanSend", "station"),
-        ("OperatorChoice", "user"), ("OperatorStepConfirm", "user"),
-        ("Vision.BuildCoordinateSystem", "axes"),
-        ("Vision.FindLine", "line"), ("Vision.FitRobustLine", "line"), ("Vision.FindCircle", "circle"),
-        ("Vision.FindRectangle", "rectangle"), ("Vision.MeasureCaliper", "caliper"),
-        ("Vision.AnalyzeBlobs", "blobs"), ("Vision.SelectBlobs", "blobs"), ("Vision.AnalyzeColor", "color"),
-        ("Vision.ReadBarcode", "barcode"), ("Vision.RecognizeTextLine", "text"),
-        ("LabelInspection.Inspect", "tag")
     };
 
     private static IEnumerable<(string Category, string Key)> BuiltInCategories() => new[]

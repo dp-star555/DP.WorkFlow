@@ -10,15 +10,22 @@ public sealed partial class WorkflowEngine
     /// <returns>包含活动 Token、节点最近状态、并行进度和子流程状态的不可变快照；不携带随运行增长的历史。</returns>
     /// <remarks>
     /// 这是**纯查询**：不改变引擎状态，也不把结果写回 <see cref="WorkflowRunState"/>。
-    /// 需要"每次状态迁移自动取快照"的调用方应订阅 <see cref="SnapshotChanged"/>；
-    /// 这里不保留"最近一次快照"的缓存，因为宿主侧的轮询入口是 <c>WorkflowRuntimeHost.GetSnapshot()</c>。
+    /// 快照只在调用方需要时构造（R1-04）：界面按帧率比较 <see cref="ChangeVersion"/>，变了才来取。
+    /// 正在运行的子运行的状态在这里向子引擎拉取，子引擎不再逐层推送。
     /// </remarks>
     public WorkflowRuntimeSnapshot GetRuntimeSnapshot(string? message = null)
     {
+        message ??= Volatile.Read(ref _changeMessage);
+        ActiveChildWorkflow[] activeChildList;
+        lock (_stateSync)
+            activeChildList = _activeChildWorkflows.Values.ToArray();
+        // 子引擎有自己的锁；在本引擎锁外读取，避免父子锁嵌套。
+        var activeChildren = new ReadOnlyDictionary<string, WorkflowChildRuntimeInfo>(
+            activeChildList.ToDictionary(child => child.Key, child => child.Capture(), StringComparer.Ordinal));
         WorkflowRuntimeSnapshot snapshot;
         lock (_stateSync)
         {
-            var now = DateTimeOffset.UtcNow;
+            var now = WorkflowClock.UtcNow;
             var nodes = new ReadOnlyDictionary<string, WorkflowNodeRuntimeInfo>(
                 _nodeRuntime.ToDictionary(
                     pair => pair.Key,
@@ -28,8 +35,6 @@ public sealed partial class WorkflowEngine
                 _parallelScopes.ToDictionary(pair => pair.Key, pair => pair.Value.ToSnapshot()));
             var tokens = new ReadOnlyDictionary<long, WorkflowActiveTokenInfo>(
                 _activeTokens.ToDictionary(pair => pair.Key, pair => pair.Value));
-            var activeChildren = new ReadOnlyDictionary<string, WorkflowChildRuntimeInfo>(
-                _activeChildWorkflows.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
             var latestChildren = new ReadOnlyDictionary<string, WorkflowChildRuntimeInfo>(
                 _latestChildWorkflowByParentNode.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
             snapshot = new WorkflowRuntimeSnapshot(
@@ -177,7 +182,7 @@ public sealed partial class WorkflowEngine
                 State = E_NodeState.Running,
                 ExecutionCount = identity.NodeExecutionCount,
                 ExecutionSequence = ++_nodeExecutionSequence,
-                StartedAt = DateTimeOffset.UtcNow
+                StartedAt = WorkflowClock.UtcNow
             };
         }
         PublishSnapshot();
@@ -197,7 +202,7 @@ public sealed partial class WorkflowEngine
             if (_nodeRuntime.TryGetValue(nodeId, out var info))
             {
                 info.State = state;
-                info.CompletedAt = DateTimeOffset.UtcNow;
+                info.CompletedAt = WorkflowClock.UtcNow;
                 info.Elapsed = info.ExecutionStartedTimestamp > 0
                     ? Polyfill.GetElapsedTime(info.ExecutionStartedTimestamp)
                     : info.CompletedAt.Value - info.StartedAt.GetValueOrDefault(info.CompletedAt.Value);
@@ -217,20 +222,20 @@ public sealed partial class WorkflowEngine
     }
 
     /// <summary>
-    /// 在状态迁移后向订阅者发布一份新快照；**没有订阅者时直接返回，不构造快照**。
+    /// 标记一次可观察的状态迁移（R1-04）：只递增 <see cref="ChangeVersion"/> 并记下说明，不构造快照、不调用订阅方。
     /// </summary>
-    /// <remarks>
-    /// AR-17：发布点落在节点开始/结束这类热路径上，一次全量构造是 O(节点数)。
-    /// <c>SafeInvoke</c> 虽然对空处理器有保护，但实参是提前求值的，所以必须在调用之前判断。
-    /// 这里先把委托读进局部变量再判断，避免"判断为空、调用前又被订阅"的撕裂。
-    /// </remarks>
-    /// <param name="message">快照携带的触发原因或终态说明。</param>
+    /// <param name="message">下一份快照携带的触发原因或终态说明。</param>
     private void PublishSnapshot(string? message = null)
     {
-        var handlers = SnapshotChanged;
-        if (handlers is null)
-            return;
-        SafeInvoke(handlers, GetRuntimeSnapshot(message));
+        Volatile.Write(ref _changeMessage, message);
+        MarkChanged();
+    }
+
+    /// <summary>递增变化计数，并沿父链递增：子画布内部的变化同样让顶层界面在下一帧重新取快照。</summary>
+    private void MarkChanged()
+    {
+        Interlocked.Increment(ref _changeVersion);
+        Volatile.Read(ref _changeOwner)?.MarkChanged();
     }
 
     /// <summary>向 Recorder 提交一条事件草稿；未配置记录器时静默忽略，绝不改变运行结果。</summary>
@@ -269,50 +274,17 @@ public sealed partial class WorkflowEngine
         string step,
         string? message,
         IReadOnlyDictionary<string, object?>? data,
-        WorkflowEventWriteMode writeMode = WorkflowEventWriteMode.Buffered)
-    {
-        var receipt = TryRecordRunEvent(WorkflowRunEventDraft.Trace(step, node, identity, message, data), writeMode);
-        SafeInvoke(NodeTrace, new WorkflowTraceEntry(
-            receipt?.Sequence ?? 0,
-            DateTimeOffset.UtcNow,
-            node.Id,
-            node.NodeType,
-            step,
-            message,
-            TryCopyTraceData(data),
-            identity.TokenId,
-            Array.AsReadOnly(identity.ScopeIds.ToArray())));
-    }
+        WorkflowEventWriteMode writeMode = WorkflowEventWriteMode.Buffered) =>
+        TryRecordRunEvent(WorkflowRunEventDraft.Trace(step, node, identity, message, data), writeMode);
 
-    /// <summary>把已记录的运行事件同时发布到轨迹订阅者（不再重复记录事件）。</summary>
-    private void PublishTraceEntry(WorkflowRunEventReceipt? receipt, IWorkflowNodeModel node, WorkflowExecutionIdentity identity, string step, string message) =>
-        SafeInvoke(NodeTrace, new WorkflowTraceEntry(
-            receipt?.Sequence ?? 0,
-            DateTimeOffset.UtcNow,
-            node.Id,
-            node.NodeType,
-            step,
-            message,
-            null,
-            identity.TokenId,
-            Array.AsReadOnly(identity.ScopeIds.ToArray())));
-
-    /// <summary>复制一份跟踪数据快照；数据自身的枚举异常不得改变节点执行结果。</summary>
-    /// <param name="data">调用方提供的结构化跟踪数据。</param>
-    /// <returns>副本；数据为空或无法枚举时为 <see langword="null"/>。</returns>
-    private static IReadOnlyDictionary<string, object?>? TryCopyTraceData(IReadOnlyDictionary<string, object?>? data)
+    /// <summary>把一次回调交给后台分发（R1-04）；没有订阅方时不分配。</summary>
+    private void Notify<T>(Action<T>? handlers, T argument)
     {
-        if (data is null)
-            return null;
-        try
-        {
-            return new ReadOnlyDictionary<string, object?>(
-                data.ToDictionary(StringComparer.Ordinal));
-        }
-        catch
-        {
-            return null;
-        }
+        if (handlers is null)
+            return;
+        // 每个订阅方单独一条：一个订阅方抛异常不影响同一事件的其他订阅方。
+        foreach (Action<T> handler in handlers.GetInvocationList())
+            _notifications.Post(() => handler(argument));
     }
 
     private static void SafeInvoke<T>(Action<T>? handlers, T argument)

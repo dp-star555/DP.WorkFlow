@@ -2,46 +2,6 @@ using System.Collections.Concurrent;
 
 namespace DP.WorkFlow;
 
-/// <summary>强类型队列快照。</summary>
-public sealed record WorkflowQueueSnapshot(string QueueKey, E_SignalValueType ValueType, IReadOnlyList<object> Items, long Version)
-{
-    /// <summary>元素数。</summary>
-    public int Count => Items.Count;
-    /// <summary>是否存在首项。</summary>
-    public bool HasFirstValue => Items.Count > 0;
-    /// <summary>首项。</summary>
-    public object? FirstValue => Items.Count > 0 ? Items[0] : null;
-}
-
-/// <summary>提供线程安全、固定值类型的命名队列。</summary>
-public interface IWorkflowQueueService
-{
-    /// <summary>确保队列存在，返回是否新建。</summary>
-    bool EnsureExists(string queueKey, E_SignalValueType valueType);
-    /// <summary>清空队列并返回是否移除了数据。</summary>
-    bool Clear(string queueKey, E_SignalValueType valueType, bool autoCreate);
-    /// <summary>入队。</summary>
-    bool EnqueueValue(string queueKey, object value, E_SignalValueType valueType, bool preventDuplicate, bool autoCreate);
-    /// <summary>移除首项。</summary>
-    bool TryDequeueValue(string queueKey, E_SignalValueType valueType, bool autoCreate, out object? value);
-    /// <summary>移除第一条匹配值。</summary>
-    bool RemoveValue(string queueKey, object value, E_SignalValueType valueType, bool autoCreate);
-    /// <summary>读取快照。</summary>
-    WorkflowQueueSnapshot? ReadSnapshot(string queueKey);
-    /// <summary>等待队列条件成立。</summary>
-    ValueTask<WorkflowQueueSnapshot?> WaitAsync(string queueKey, E_SignalValueType valueType, Func<WorkflowQueueSnapshot, bool> predicate, TimeSpan? timeout, bool autoCreate, CancellationToken cancellationToken);
-    /// <summary>兼容字符串入队。</summary>
-    bool Enqueue(string queueKey, string value, bool preventDuplicates);
-    /// <summary>兼容字符串出队。</summary>
-    bool TryDequeue(string queueKey, out string? value);
-    /// <summary>兼容按字符串移除。</summary>
-    bool Remove(string queueKey, string value);
-    /// <summary>兼容字符串快照。</summary>
-    IReadOnlyList<string> Snapshot(string queueKey);
-    /// <summary>兼容等待并移除首项。</summary>
-    ValueTask<string?> WaitDequeueAsync(string queueKey, TimeSpan timeout, CancellationToken cancellationToken);
-}
-
 /// <summary>默认进程内命名队列服务。</summary>
 public sealed class WorkflowQueueService : IWorkflowQueueService
 {
@@ -138,20 +98,6 @@ public sealed class WorkflowQueueService : IWorkflowQueueService
             try { await changed.WaitAsync(linked.Token).ConfigureAwait(false); }
             catch (OperationCanceledException) when (timeoutSource?.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested) { return null; }
         }
-    }
-    /// <inheritdoc />
-    public bool Enqueue(string queueKey, string value, bool preventDuplicates) => EnqueueValue(queueKey, value, E_SignalValueType.String, preventDuplicates, true);
-    /// <inheritdoc />
-    public bool TryDequeue(string queueKey, out string? value) { var changed = TryDequeueValue(queueKey, E_SignalValueType.String, true, out var raw); value = raw as string; return changed; }
-    /// <inheritdoc />
-    public bool Remove(string queueKey, string value) => RemoveValue(queueKey, value, E_SignalValueType.String, true);
-    /// <inheritdoc />
-    public IReadOnlyList<string> Snapshot(string queueKey) => ReadSnapshot(queueKey)?.Items.Cast<string>().ToArray() ?? Array.Empty<string>();
-    /// <inheritdoc />
-    public async ValueTask<string?> WaitDequeueAsync(string queueKey, TimeSpan timeout, CancellationToken cancellationToken)
-    {
-        var snapshot = await WaitAsync(queueKey, E_SignalValueType.String, s => s.Count > 0, timeout, true, cancellationToken).ConfigureAwait(false);
-        return snapshot is not null && TryDequeue(queueKey, out var value) ? value : null;
     }
     private Entry? Get(string queueKey, E_SignalValueType type, bool autoCreate)
     {

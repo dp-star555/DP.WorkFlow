@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>告警处理出口：请求从故障节点重新执行。</summary>
-[WorkflowNode("WarnRetryCurrentNode", DisplayName = "重试当前节点", Category = "8.Process/异常恢复")]
+[WorkflowNode("WarnRetryCurrentNode", DisplayName = "重试当前节点", Category = "8.Process/异常恢复", OutputType = typeof(WarningResolution))]
+[WorkflowOutputPorts]
 public sealed class RetryCurrentNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />

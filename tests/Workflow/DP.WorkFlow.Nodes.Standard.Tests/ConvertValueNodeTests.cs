@@ -9,7 +9,7 @@ public sealed class ConvertValueNodeTests
         {
             Id = "Convert",
             Title = "转换",
-            LiteralValue = "12.5",
+            Value = WorkflowInput<string>.FromLiteral("12.5"),
             TargetType = E_SignalValueType.Double
         };
         var canvasDocument = new WorkflowDocument { Name = "转换" };

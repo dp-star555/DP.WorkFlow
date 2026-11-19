@@ -11,9 +11,33 @@ internal sealed class WorkflowJsonDocument
 
     public string EntryNodeId { get; set; } = string.Empty;
 
+    // Schema 5 起根文档写出公共数据清单（子画布不写）；旧文件没有该字段，打开时按节点推断。
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<WorkflowJsonPublicData>? PublicData { get; set; }
+
     public List<WorkflowJsonNode> Nodes { get; set; } = new();
 
     public List<WorkflowJsonConnection> Connections { get; set; } = new();
+}
+
+internal sealed class WorkflowJsonPublicData
+{
+    public string Key { get; set; } = string.Empty;
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public WorkflowPublicDataKind Kind { get; set; }
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public E_SignalValueType ValueType { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DefaultValue { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Persistent { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DisplayName { get; set; }
 }
 
 internal sealed class WorkflowJsonNode
@@ -70,10 +94,6 @@ internal sealed class WorkflowJsonConnection
     // 旧文件没有该字段，按启用读入；只在停用时写出，保持旧文件格式不变。
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool? Disabled { get; set; }
-
-    public WorkflowConnectionState State { get; set; }
-
-    public string? Diagnostic { get; set; }
 
     public List<WorkflowJsonPoint> Waypoints { get; set; } = new();
 }

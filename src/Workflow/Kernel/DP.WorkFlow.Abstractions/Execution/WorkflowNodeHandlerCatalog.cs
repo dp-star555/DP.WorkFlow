@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace DP.WorkFlow;
 
 /// <summary>
@@ -20,12 +22,42 @@ public sealed class WorkflowNodeHandlerCatalog
         lock (_syncRoot)
         {
             EnsureMutable();
-            _registrations.Add(new HandlerRegistration(
-                handler,
-                static _ => Array.Empty<WorkflowRuntimeCapabilityRequirement>()));
+            _registrations.Add(new HandlerRegistration(handler, node => Declared(handler, node)));
         }
         return this;
     }
+
+    /// <summary>
+    /// 注册程序集中全部有公开无参构造函数的强类型处理器（R7-a：执行代码按 <see cref="WorkflowNodeHandler{TNode}"/> 泛型自动对应模型），
+    /// 能力要求取自处理器自己的声明。需要构造参数的处理器仍用 <see cref="Register(IWorkflowNodeHandler)"/> 手工注册。
+    /// </summary>
+    /// <param name="assembly">处理器所在程序集。</param>
+    /// <returns>当前目录实例。</returns>
+    public WorkflowNodeHandlerCatalog RegisterAssembly(Assembly assembly)
+    {
+        Guard.NotNull(assembly);
+        foreach (var type in assembly.GetExportedTypes()
+                     .Where(type => type.IsClass && !type.IsAbstract && IsTypedHandler(type) && type.GetConstructor(Type.EmptyTypes) is not null)
+                     .OrderBy(type => type.FullName, StringComparer.Ordinal))
+            Register((IWorkflowNodeHandler)Activator.CreateInstance(type)!);
+        return this;
+    }
+
+    private static bool IsTypedHandler(Type type)
+    {
+        for (var current = type.BaseType; current is not null; current = current.BaseType)
+        {
+            if (current.IsGenericType && current.GetGenericTypeDefinition() == typeof(WorkflowNodeHandler<>))
+                return true;
+        }
+        return false;
+    }
+
+    private static IEnumerable<WorkflowRuntimeCapabilityRequirement> Declared(IWorkflowNodeHandler handler, IWorkflowNodeModel node) =>
+        handler is IWorkflowCapabilityDeclaringHandler declaring
+            ? declaring.GetRequiredCapabilities(node)
+                ?? throw new InvalidOperationException($"处理器 {handler.GetType().FullName} 返回了 null 运行能力集合。")
+            : Array.Empty<WorkflowRuntimeCapabilityRequirement>();
 
     /// <summary>注册节点处理器及其固定运行能力要求。</summary>
     /// <param name="handler">参与运行时匹配的处理器。</param>
@@ -41,7 +73,7 @@ public sealed class WorkflowNodeHandlerCatalog
         lock (_syncRoot)
         {
             EnsureMutable();
-            _registrations.Add(new HandlerRegistration(handler, _ => requirements));
+            _registrations.Add(new HandlerRegistration(handler, node => requirements.Concat(Declared(handler, node))));
         }
         return this;
     }
@@ -60,8 +92,9 @@ public sealed class WorkflowNodeHandlerCatalog
         {
             EnsureMutable();
             _registrations.Add(new HandlerRegistration(handler, node =>
-                ValidateRequirements(requirementResolver(node)
-                    ?? throw new InvalidOperationException($"处理器 {handler.GetType().FullName} 返回了 null 运行能力集合。"))));
+                ValidateRequirements((requirementResolver(node)
+                    ?? throw new InvalidOperationException($"处理器 {handler.GetType().FullName} 返回了 null 运行能力集合。"))
+                    .Concat(Declared(handler, node)))));
         }
         return this;
     }

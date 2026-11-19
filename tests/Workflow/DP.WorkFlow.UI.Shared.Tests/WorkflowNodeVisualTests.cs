@@ -127,7 +127,9 @@ public sealed class WorkflowNodeVisualTests
         Assert.Equal("camera", WorkflowNodeIcons.Resolve("Vision.Unknown", "5.Vision/1.取图/相机").Key);
         Assert.Equal(WorkflowNodeIcons.DefaultKey, WorkflowNodeIcons.Resolve("Unknown", "Unknown").Key);
         Assert.Equal("clock", WorkflowNodeIcons.Resolve("Unknown", null, "clock").Key);
-        Assert.NotEqual(WorkflowNodeIcons.DefaultKey, WorkflowNodeIcons.Resolve("Delay", null).Key);
+        // 节点图标写在节点特性上（R7-a），界面不再按节点类型映射。
+        var delay = new WorkflowNodeCatalog().RegisterStandardNodes().GetOrThrow("Delay");
+        Assert.Equal("clock", WorkflowNodeIcons.Resolve(delay.NodeType, delay.Category, delay.Icon).Key);
 
         // 节点定义可以直接声明路径数据；无法解析的声明被忽略，按类型和分类继续查找。
         var custom = WorkflowNodeIcons.Resolve("Unknown", null, "M4 4L20 20");

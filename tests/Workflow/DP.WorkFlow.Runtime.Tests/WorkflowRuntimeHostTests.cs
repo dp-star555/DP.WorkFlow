@@ -15,9 +15,8 @@ public sealed class WorkflowRuntimeHostTests
         var handlerCatalog = new WorkflowNodeHandlerCatalog().Register(handler);
         using var host = new WorkflowRuntimeHost(nodeCatalog, handlerCatalog);
         var engineChanges = 0;
-        var snapshots = 0;
         host.EngineChanged += _ => engineChanges++;
-        host.SnapshotChanged += _ => snapshots++;
+        var initialVersion = host.ChangeVersion;
         canvasDocument.EntryNodeId = node.Id;
         host.Configure(canvasDocument);
 
@@ -29,7 +28,7 @@ public sealed class WorkflowRuntimeHostTests
         Assert.Same(firstTask, secondTask);
         Assert.True(result.Success, result.Message);
         Assert.Equal(1, engineChanges);
-        Assert.True(snapshots > 0);
+        Assert.NotEqual(initialVersion, host.ChangeVersion);
         Assert.Equal(result, host.LastRunResult);
     }
 

@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>弹出单步操作提示，人工确认后继续。</summary>
-[WorkflowNode("OperatorStepConfirm", DisplayName = "单步确认节点", Category = "8.Process/异常恢复")]
+[WorkflowNode("OperatorStepConfirm", DisplayName = "单步确认节点", Category = "8.Process/异常恢复", OutputType = typeof(bool), Icon = "user")]
 public sealed class OperatorStepConfirmNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />
@@ -13,6 +13,10 @@ public sealed class OperatorStepConfirmNodeModel : WorkflowNodeModel
 /// <summary>执行人工单步确认。</summary>
 public sealed class OperatorStepConfirmNodeHandler : WorkflowNodeHandler<OperatorStepConfirmNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(OperatorStepConfirmNodeModel node) =>
+        new[] { ProcessCapabilities.OperatorCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(OperatorStepConfirmNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

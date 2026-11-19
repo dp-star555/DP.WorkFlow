@@ -1,0 +1,39 @@
+运行 [并行汇聚]
+  [主线]
+    RunStarted EntryNodeId=Start Message=流程开始执行。 NodeCount=7 PlanPath=$ WorkflowName=并行汇聚
+    NodeStarted Start#1 Message=节点开始执行。
+    Start Start#1 Message=流程由启动节点进入。
+    OutputCommitted Start#1 OutputExecutionSequence=Start#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=
+    NodeCompleted Start#1 Message=节点执行完成。 SelectedPort=Success
+    NodeStarted Parallel#1 Message=节点开始执行。
+    ParallelDispatch Parallel#1 Message=请求派发 Branch 端口上的全部并行分支。
+    OutputCommitted Parallel#1 OutputExecutionSequence=Parallel#1 OutputKeys=$ OutputType=null OutputValue.$=null
+    NodeCompleted Parallel#1 Message=节点执行完成。 SelectedPort=Branch
+    ParallelStarted Parallel BranchCount=2 Branches=Left,Right MergeNodeId=Merge Message=派发 2 个分支，汇聚节点 Merge。
+    ParallelMerged Parallel Message=2 个分支全部到达汇聚节点 Merge。
+    NodeStarted Merge#1 Message=节点开始执行。
+    ParallelMerged Merge#1 Message=全部并行分支已经到达汇聚点。
+    OutputCommitted Merge#1 OutputExecutionSequence=Merge#1 OutputKeys=$ OutputType=null OutputValue.$=null
+    NodeCompleted Merge#1 Message=节点执行完成。 SelectedPort=Success
+    NodeStarted Judge#1 Message=节点开始执行。
+    InputResolved Judge#1 InputKey=Condition InputMetadataStatus=Automatic PublicDataKey=null ResolvedValueSummary=True SourceKind=NodeOutput SourceNodeId=Left SourceOutputKey=Ok SourceOutputSequence=Left#1 TargetType=System.Boolean
+    Decision Judge#1 Message=判断结果为 True，选择 True 端口。 Port=True Value=True
+    OutputCommitted Judge#1 OutputExecutionSequence=Judge#1 OutputKeys=Value OutputType=DP.WorkFlow.DecisionNodeResult OutputValue.Value=True
+    NodeCompleted Judge#1 Message=节点执行完成。 SelectedPort=True
+    NodeStarted End#1 Message=节点开始执行。
+    End End#1 Message=当前执行路径结束。
+    OutputCommitted End#1 OutputExecutionSequence=End#1 OutputKeys=$ OutputType=null OutputValue.$=null
+    NodeCompleted End#1 Message=节点执行完成。 SelectedPort=Success
+    RunCompleted Message=流程执行完成。 State=Completed
+  [主线/Left]
+    NodeStarted Left#1 Message=节点开始执行。
+    Invoke Left#1 FunctionKey=Measure Message=开始调用工作流动作。
+    Invoked Left#1 FunctionKey=Measure Message=工作流动作调用完成。
+    OutputCommitted Left#1 OutputExecutionSequence=Left#1 OutputKeys=Ok, Value OutputType=DP.WorkFlow.Tests.Replay.MeasureOutput OutputValue.Ok=True OutputValue.Value=21
+    NodeCompleted Left#1 Message=节点执行完成。 SelectedPort=Success
+  [主线/Right]
+    NodeStarted Right#1 Message=节点开始执行。
+    Invoke Right#1 FunctionKey=Pass Message=开始调用工作流动作。
+    Invoked Right#1 FunctionKey=Pass Message=工作流动作调用完成。
+    OutputCommitted Right#1 OutputExecutionSequence=Right#1 OutputKeys=$ OutputType=null OutputValue.$=null
+    NodeCompleted Right#1 Message=节点执行完成。 SelectedPort=Success

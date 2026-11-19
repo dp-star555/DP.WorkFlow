@@ -18,7 +18,8 @@ public sealed record DecisionNodeResult([property: DisplayName("判定结果")] 
 /// <summary>
 /// 根据布尔条件选择 True 或 False 出口。
 /// </summary>
-[WorkflowNode("Decision", DisplayName = "函数判断节点", Category = "2.Function/判断")]
+[WorkflowNode("Decision", DisplayName = "函数判断节点", Category = "2.Function/判断", OutputType = typeof(DecisionNodeResult), Icon = "decision")]
+[WorkflowOutputPorts(WorkflowPorts.True, WorkflowPorts.False)]
 public sealed class DecisionNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />
@@ -37,6 +38,10 @@ public sealed class DecisionNodeModel : WorkflowNodeModel
 /// <summary>执行布尔判断节点。</summary>
 public sealed class DecisionNodeHandler : WorkflowNodeHandler<DecisionNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(DecisionNodeModel node) =>
+        node.ConditionSource == E_DecisionConditionSource.Function ? StandardCapabilities.ConditionRegistry : StandardCapabilities.None;
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(
         DecisionNodeModel node,

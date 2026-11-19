@@ -5,7 +5,7 @@ namespace DP.WorkFlow;
 public sealed partial class WorkflowEngine
 {
     // 仍保留在运行历史中的输出所登记的投影；输出退出历史时由投影释放派生资源。
-    private readonly ConcurrentDictionary<long, IWorkflowNodeOutputProjection> _outputProjections = new();
+    private readonly ConcurrentDictionary<long, (string NodeId, IWorkflowNodeOutputProjection Projection)> _outputProjections = new();
     // 子流程节点本次执行的子运行剩余投影；节点输出提交后挂到该输出上，随它被取代而释放。
     private readonly ConcurrentDictionary<(long TokenId, string NodeId), IReadOnlyList<IWorkflowNodeOutputProjection>> _childOutputProjections = new();
 
@@ -105,7 +105,7 @@ public sealed partial class WorkflowEngine
             nodeExecutionCount,
             loopIteration);
         MarkNodeStarted(node, identity);
-        SafeInvoke(NodeStarted, node);
+        Notify(NodeStarted, node);
         RecordRunEvent(WorkflowRunEventDraft.Node("NodeStarted", node, identity, "节点开始执行。"));
         BeginNodeTiming(node.Id);
         var commitStarted = false;
@@ -121,10 +121,13 @@ public sealed partial class WorkflowEngine
                 _boundPlan.GetInputLayout(node.Id),
                 (traceNode, step, message, data, writeMode) => WriteTrace(traceNode, identity, step, message, data, writeMode),
                 (draft, writeMode) => RecordRunEvent(draft, writeMode),
-                ReportRecordingDegraded,
+                message => ReportRecordingDegraded(message, node.Id),
                 (plan, childContext, childCancellation) =>
                     RunChildWorkflowAsync(node, identity, plan, childContext, childCancellation), PlanPath, BindingScopeId,
-                childContext => OpenChildWorkflowSession(node, identity, childContext));
+                childContext => OpenChildWorkflowSession(node, identity, childContext),
+                (category, message) => RaiseNotice(node.Id, category, message, nodeType: node.NodeType));
+            // R2-c：进入执行代码前取齐全部普通输入；任何一个取不到，节点直接失败，不会执行到一半才发现。
+            executionContext.ResolveAllInputs();
             var operationKey = (token.TokenId, node.Id);
             // 上一次执行失败时留下的子运行投影不属于本次输出。
             _childOutputProjections.TryRemove(operationKey, out _);
@@ -169,7 +172,7 @@ public sealed partial class WorkflowEngine
             // 取消、失败或提交失败的执行不会走到这里，界面因此看不到未被调度承认的结果。
             result.Projection?.Commit(committedOutput.ExecutionSequence);
             if (ComposeOutputProjection(result.Projection, operationKey) is { } outputProjection)
-                _outputProjections[committedOutput.ExecutionSequence] = outputProjection;
+                _outputProjections[committedOutput.ExecutionSequence] = (node.Id, outputProjection);
             // 新输出已发布，被它取代的上一次输出不会再被读到，释放其资源（环形流程的内存因此不随循环次数增长）。
             RetireOutputs(superseded);
             // 变量键只供命名入口重执行回退；该能力限于无环串行计划，其他计划不记录，避免循环中无限累计。
@@ -186,7 +189,7 @@ public sealed partial class WorkflowEngine
                     token.CompleteLoop(node.Id);
             }
             MarkNodeFinished(node.Id, token.TokenId, E_NodeState.Completed, null);
-            SafeInvoke(NodeCompleted, node);
+            Notify(NodeCompleted, node);
             RecordRunEvent(WorkflowRunEventDraft.Node(
                 "NodeCompleted",
                 node,
@@ -219,12 +222,12 @@ public sealed partial class WorkflowEngine
                 pathException.Message,
                 pathException.InterruptAlarmCode,
                 (exception.InnerException ?? exception).GetType().FullName,
-                DateTimeOffset.UtcNow);
+                WorkflowClock.UtcNow);
             RunState.RecordFault(fault);
             lock (_stateSync)
                 _currentFault = fault;
             MarkNodeFinished(node.Id, token.TokenId, E_NodeState.Failed, pathException.Message);
-            var faultReceipt = TryRecordRunEvent(WorkflowRunEventDraft.Fault(
+            TryRecordRunEvent(WorkflowRunEventDraft.Fault(
                 "NodeFailed",
                 node,
                 faultIdentity,
@@ -235,8 +238,6 @@ public sealed partial class WorkflowEngine
                     ["InterruptAlarmCode"] = fault.InterruptAlarmCode,
                     ["CommitStarted"] = commitStarted
                 }));
-            // 节点失败同时进入运行轨迹，界面在“运行监控”中查看，不依赖弹窗。
-            PublishTraceEntry(faultReceipt, node, faultIdentity, "NodeFailed", pathException.Message);
             throw pathException;
         }
     }
@@ -249,13 +250,12 @@ public sealed partial class WorkflowEngine
         var identity = fault.ExecutionIdentity
             ?? new WorkflowExecutionIdentity(_runId, token.TokenId, token.AncestorTokenIds, token.ScopeIds, 0);
         var message = $"节点失败，沿失败出口继续：{fault.Message}";
-        var receipt = TryRecordRunEvent(WorkflowRunEventDraft.Node(
+        TryRecordRunEvent(WorkflowRunEventDraft.Node(
             "NodeFaultRouted",
             node,
             identity,
             message,
             new Dictionary<string, object?> { ["SelectedPort"] = WorkflowPorts.Failed, ["Message"] = fault.Message }));
-        PublishTraceEntry(receipt, node, identity, "NodeFaultRouted", message);
     }
 
     /// <summary>合并节点自身投影与本次执行中子运行剩余的投影；两者都没有时为空。</summary>
@@ -268,13 +268,35 @@ public sealed partial class WorkflowEngine
         return new CompositeOutputProjection(own is null ? children : children.Prepend(own).ToArray());
     }
 
-    /// <summary>移交本次运行仍保留的输出投影并清空登记；父引擎据此在子流程节点输出被取代时释放子运行资源。</summary>
-    internal IReadOnlyList<IWorkflowNodeOutputProjection> DetachOutputProjections()
+    /// <summary>
+    /// 移交本次运行仍保留的输出投影并清空登记；父引擎据此在子流程节点输出被取代时释放子运行资源。
+    /// 给出 <paramref name="keepNodeIds"/> 时只移交这些节点的投影（R2-e：被子流程输出映射引用、要往外交的资源），
+    /// 其余在此立即归还。
+    /// </summary>
+    /// <param name="keepNodeIds">要移交的节点；为空时全部移交。</param>
+    internal IReadOnlyList<IWorkflowNodeOutputProjection> DetachOutputProjections(IReadOnlyCollection<string>? keepNodeIds = null)
     {
-        var detached = _outputProjections.Values.ToArray();
+        var entries = _outputProjections.Values.ToArray();
         _outputProjections.Clear();
-        return detached;
+        if (keepNodeIds is null)
+            return entries.Select(entry => entry.Projection).ToArray();
+        var kept = new List<IWorkflowNodeOutputProjection>();
+        foreach (var entry in entries)
+        {
+            if (keepNodeIds.Contains(entry.NodeId))
+                kept.Add(entry.Projection);
+            else
+                RetireProjection(entry.NodeId, entry.Projection);
+        }
+        return kept;
     }
+
+    /// <summary>子流程输出映射引用的子画布节点；不是带接口的子流程节点时为空（全部移交）。</summary>
+    /// <param name="parentNode">拥有子画布的父节点。</param>
+    internal static IReadOnlyCollection<string>? GetReferencedChildOutputNodes(IWorkflowNodeModel parentNode) =>
+        parentNode is IWorkflowSubflowNode subflow
+            ? new HashSet<string>(subflow.Outputs.Where(output => output.Source is not null).Select(output => output.Source!.Value.NodeId), StringComparer.Ordinal)
+            : null;
 
     /// <summary>接管子运行剩余投影：子流程成功时挂到本次节点输出上，失败时没有输出可引用，立即释放。</summary>
     private void AdoptChildOutputProjections(
@@ -307,8 +329,8 @@ public sealed partial class WorkflowEngine
     {
         foreach (var output in outputs)
         {
-            if (_outputProjections.TryRemove(output.ExecutionSequence, out var projection))
-                RetireProjection(output.NodeId, projection);
+            if (_outputProjections.TryRemove(output.ExecutionSequence, out var entry))
+                RetireProjection(output.NodeId, entry.Projection);
         }
     }
 
@@ -320,7 +342,7 @@ public sealed partial class WorkflowEngine
         }
         catch (Exception exception)
         {
-            ReportRecordingDegraded($"释放节点 {nodeId} 被取代输出的资源失败：{exception.Message}");
+            ReportRecordingDegraded($"释放节点 {nodeId} 被取代输出的资源失败：{exception.Message}", nodeId);
         }
     }
 
@@ -364,15 +386,6 @@ public sealed partial class WorkflowEngine
                 NodeType: node.NodeType,
                 ExecutionIdentity: identity,
                 Data: new Dictionary<string, object?> { ["Keys"] = variableKeys }));
-        var publicDataKeys = executionContext.ChangedPublicDataKeys;
-        if (publicDataKeys.Count > 0)
-            RecordRunEvent(new WorkflowRunEventDraft(
-                WorkflowRunEventCategory.DataFlow,
-                "PublicDataChangesCommitted",
-                NodeId: node.Id,
-                NodeType: node.NodeType,
-                ExecutionIdentity: identity,
-                Data: new Dictionary<string, object?> { ["Keys"] = publicDataKeys }));
     }
 
     private void RecordOutputCommitted(
@@ -383,7 +396,7 @@ public sealed partial class WorkflowEngine
         // 输出键由提交值自动提取，Handler 不再手写；图像和二进制由编码器转换为引用，不写入完整内容。
         var extracted = _outputValueExtractor.Extract(output.Value);
         foreach (var diagnostic in extracted.Diagnostics)
-            ReportRecordingDegraded(diagnostic);
+            ReportRecordingDegraded(diagnostic, node.Id);
 
         // 输出值展开到 Payload 顶层稳定键；不能作为普通字典值交给编码器，否则会被压缩成"n 项"摘要。
         var data = new Dictionary<string, object?>(StringComparer.Ordinal)

@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>等待真空达到或离开吸附状态。</summary>
-[WorkflowNode("VacuumWait", DisplayName = "真空等待节点", Category = "4.Motion/Pneumatic")]
+[WorkflowNode("VacuumWait", DisplayName = "真空等待节点", Category = "4.Motion/Pneumatic", OutputType = typeof(PneumaticNodeResult), Icon = "vacuum")]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class VacuumWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -23,6 +24,10 @@ public sealed class VacuumWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflo
 /// <summary>执行真空等待节点。</summary>
 public sealed class VacuumWaitNodeHandler : WorkflowNodeHandler<VacuumWaitNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(VacuumWaitNodeModel node) =>
+        new[] { MotionCapabilities.PneumaticCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(VacuumWaitNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

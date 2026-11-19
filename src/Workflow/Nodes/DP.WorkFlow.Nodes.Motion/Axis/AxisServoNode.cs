@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>设置轴伺服使能状态。</summary>
-[WorkflowNode("AxisServo", DisplayName = "伺服使能", Category = "4.Motion/Axis")]
+[WorkflowNode("AxisServo", DisplayName = "伺服使能", Category = "4.Motion/Axis", OutputType = typeof(AxisServoNodeResult))]
 public sealed class AxisServoNodeModel : WorkflowAxisNodeModel, IWorkflowRetrySafetyNode
 {
     /// <inheritdoc />
@@ -14,8 +14,6 @@ public sealed class AxisServoNodeModel : WorkflowAxisNodeModel, IWorkflowRetrySa
     public int TimeoutMs { get; set; } = 5000;
     /// <summary>获取或设置轮询间隔毫秒数。</summary>
     public int PollIntervalMs { get; set; } = 20;
-    /// <summary>获取或设置结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "AxisServoResult";
     /// <inheritdoc />
     public WorkflowRetrySafety RetrySafety => WorkflowRetrySafety.Idempotent;
 }
@@ -23,6 +21,10 @@ public sealed class AxisServoNodeModel : WorkflowAxisNodeModel, IWorkflowRetrySa
 /// <summary>执行轴伺服节点。</summary>
 public sealed class AxisServoNodeHandler : WorkflowNodeHandler<AxisServoNodeModel>, IWorkflowNodeOperationFactory
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(AxisServoNodeModel node) =>
+        new[] { MotionCapabilities.AxisCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(AxisServoNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
@@ -39,18 +41,17 @@ public sealed class AxisServoNodeHandler : WorkflowNodeHandler<AxisServoNodeMode
         ValidateWait(servo.TimeoutMs, servo.PollIntervalMs);
         return Polyfill.FromResult<IWorkflowNodeOperation>(new ServoOperation(GetService(context), servo.ResolveAxis(context),
             servo.Enabled, servo.WaitForCompleted, servo.TimeoutMs, servo.PollIntervalMs,
-            servo.ResultVarKey, servo.Interrupt?.AlarmCode ?? 0));
+            servo.Interrupt?.AlarmCode ?? 0));
     }
 
     private sealed class ServoOperation(IWorkflowAxisService service, WorkflowAxisAddress axis, bool enabled,
-        bool wait, int timeoutMs, int pollIntervalMs, string resultKey, int alarmCode) : IWorkflowNodeOperation
+        bool wait, int timeoutMs, int pollIntervalMs, int alarmCode) : IWorkflowNodeOperation
     {
         public bool CanContinue => true;
         public async ValueTask<NodeExecutionResult> ExecuteAsync(IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
             // SetServo是既有目标状态契约，不把Toggle/Pulse或任意AxisStep视为可重复动作。
             var output = await service.SetServoAsync(axis, enabled, wait, timeoutMs, pollIntervalMs, cancellationToken).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(resultKey)) context.SetVariable(resultKey.Trim(), output);
             if (!output.Success) return NodeExecutionResult.Fail(
                 $"Axis servo wait timeout: target={enabled}, axis={axis.DeviceId}[{axis.AxisId}]",
                 alarmCode > 0 ? WorkflowFaultDisposition.RequestRecovery : WorkflowFaultDisposition.HandleAtScope, alarmCode);

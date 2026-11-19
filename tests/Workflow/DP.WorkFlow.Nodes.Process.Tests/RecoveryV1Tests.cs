@@ -13,7 +13,7 @@ public sealed class RecoveryV1Tests
 
         Assert.True(result.Success, result.Message);
         Assert.Equal(1, rig.Feed.Count);
-        Assert.True(rig.Context.PublicData.TryGet<int>("recorded-feed", out var feedRecord));
+        Assert.True(rig.Context.TryReadPublicData("recorded-feed", out var feedRecord));
         Assert.Equal(1, feedRecord);
         Assert.Equal(creations, rig.Motion.Created);
         Assert.Equal(commands, rig.Axis.Commands);
@@ -338,7 +338,7 @@ public sealed class RecoveryV1Tests
     {
         public int Count;
         protected override ValueTask<NodeExecutionResult> ExecuteAsync(FeedNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
-        { Count++; context.PublishData("recorded-feed", Count); return ValueTask.FromResult(NodeExecutionResult.Continue(output: "P007")); }
+        { Count++; context.GetRequiredCapability<IWorkflowValueSignalService>().WriteValue("recorded-feed", Count); return ValueTask.FromResult(NodeExecutionResult.Continue(output: "P007")); }
     }
     [WorkflowNode("TestV1Prepare")]
     private sealed class PrepareNode : WorkflowNodeModel { public override string NodeType => "TestV1Prepare"; }

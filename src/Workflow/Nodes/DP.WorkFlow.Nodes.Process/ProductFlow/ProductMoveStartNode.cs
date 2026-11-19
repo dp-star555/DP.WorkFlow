@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>发起正常或虚拟创建型产品流转会话。</summary>
-[WorkflowNode("ProductMoveStart", DisplayName = "开始流转节点", Category = "8.Process/ProductFlow")]
+[WorkflowNode("ProductMoveStart", DisplayName = "开始流转节点", Category = "8.Process/ProductFlow", OutputType = typeof(ProductMoveStartNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Failed)]
 public sealed class ProductMoveStartNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />
@@ -52,13 +53,15 @@ public sealed class ProductMoveStartNodeModel : WorkflowNodeModel
     public string Recipe { get; set; } = string.Empty;
     /// <summary>绑定配方。</summary>
     public WorkflowInput<string> RecipeBinding { get; set; } = WorkflowInput<string>.FromLiteral(string.Empty);
-    /// <summary>结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "ProductMoveStartResult";
 }
 
 /// <summary>执行开始产品流转节点。</summary>
 public sealed class ProductMoveStartNodeHandler : WorkflowNodeHandler<ProductMoveStartNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(ProductMoveStartNodeModel node) =>
+        new[] { ProcessCapabilities.ProductFlowCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(ProductMoveStartNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
@@ -68,7 +71,6 @@ public sealed class ProductMoveStartNodeHandler : WorkflowNodeHandler<ProductMov
         if (node.MoveMode == E_ProductMoveStartMode.VirtualCreate && productId is null && !node.AutoGenerateProductId) throw new InvalidOperationException("ProductId 为空，且未启用自动生成。");
         var request = new ProductMoveStartRequest(node.MoveMode, fromStation, ProductFlowNodeRuntime.ResolveOptional(node.FromSlotIdSource, node.FromSlotId, node.FromSlotIdBinding, context), toStation, ProductFlowNodeRuntime.ResolveOptional(node.ToSlotIdSource, node.ToSlotId, node.ToSlotIdBinding, context), ProductFlowNodeRuntime.ResolveOptional(node.ReasonSource, node.Reason, node.ReasonBinding, context), productId, node.AutoGenerateProductId, ProductFlowNodeRuntime.ResolveOptional(node.RecipeSource, node.Recipe, node.RecipeBinding, context) ?? string.Empty);
         var output = await ProductFlowNodeRuntime.GetService(context).StartMoveAsync(request, cancellationToken).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         return NodeExecutionResult.Continue(output: output);
     }
 }

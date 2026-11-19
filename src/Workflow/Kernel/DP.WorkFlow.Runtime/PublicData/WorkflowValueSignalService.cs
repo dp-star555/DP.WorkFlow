@@ -2,23 +2,6 @@ using System.Collections.Concurrent;
 
 namespace DP.WorkFlow;
 
-/// <summary>提供带版本的强类型命名数据信号。</summary>
-public interface IWorkflowValueSignalService
-{
-    /// <summary>读取当前快照。</summary>
-    WorkflowValueSignalSnapshot? ReadSnapshot(string signalKey);
-    /// <summary>写入值并递增版本。</summary>
-    WorkflowValueSignalSnapshot WriteValue(string signalKey, object value);
-    /// <summary>等待版本大于指定版本且满足谓词的值。</summary>
-    ValueTask<WorkflowValueSignalSnapshot?> WaitValueAsync(string signalKey, long minVersion, Func<object?, bool> predicate, TimeSpan? timeout, CancellationToken cancellationToken);
-    /// <summary>兼容读取字符串值。</summary>
-    string? Read(string signalKey);
-    /// <summary>兼容写入字符串值。</summary>
-    void Write(string signalKey, string value);
-    /// <summary>兼容等待字符串相等。</summary>
-    ValueTask<bool> WaitAsync(string signalKey, string expectedValue, TimeSpan timeout, CancellationToken cancellationToken);
-}
-
 /// <summary>默认线程安全、广播变更通知的数据信号服务。</summary>
 public sealed class WorkflowValueSignalService : IWorkflowValueSignalService
 {
@@ -79,17 +62,6 @@ public sealed class WorkflowValueSignalService : IWorkflowValueSignalService
             try { await changed.WaitAsync(linked.Token).ConfigureAwait(false); }
             catch (OperationCanceledException) when (timeoutSource?.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested) { return null; }
         }
-    }
-    /// <inheritdoc />
-    public string? Read(string signalKey) => Convert.ToString(ReadSnapshot(signalKey)?.Value, System.Globalization.CultureInfo.InvariantCulture);
-    /// <inheritdoc />
-    public void Write(string signalKey, string value) => WriteValue(signalKey, value);
-    /// <inheritdoc />
-    public async ValueTask<bool> WaitAsync(string signalKey, string expectedValue, TimeSpan timeout, CancellationToken cancellationToken)
-    {
-        var current = ReadSnapshot(signalKey);
-        if (string.Equals(Convert.ToString(current?.Value, System.Globalization.CultureInfo.InvariantCulture), expectedValue, StringComparison.Ordinal)) return true;
-        return await WaitValueAsync(signalKey, current?.Version ?? 0, value => string.Equals(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture), expectedValue, StringComparison.Ordinal), timeout, cancellationToken).ConfigureAwait(false) is not null;
     }
     private static string Normalize(string key)
     {

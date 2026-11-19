@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>按旧版命令集写入数字输出。</summary>
-[WorkflowNode("IOWrite", DisplayName = "写 IO", Category = "4.Motion/IO")]
+[WorkflowNode("IOWrite", DisplayName = "写 IO", Category = "4.Motion/IO", OutputType = typeof(WorkflowIoWriteResult))]
 public sealed class IoWriteNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -27,6 +27,10 @@ public sealed class IoWriteNodeModel : WorkflowNodeModel, IRecoverableWorkflowNo
 /// <summary>执行 IO 写入节点。</summary>
 public sealed class IoWriteNodeHandler : WorkflowNodeHandler<IoWriteNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(IoWriteNodeModel node) =>
+        new[] { MotionCapabilities.IoCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(IoWriteNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

@@ -7,8 +7,8 @@ namespace DP.WorkFlow;
 /// 反复运行一个子流程画布，适合设备的长期循环扫描：循环块之前的节点只执行一次，子画布每圈运行一次。
 /// 每圈是一次独立的子运行，执行次数上限、恢复次数和运行记录按圈计算，上一圈的输出和资源在下一圈开始前释放。
 /// </summary>
-[WorkflowNode("LoopBlock", DisplayName = "循环块", Category = "Control", Description = "反复运行一个隔离的子流程画布，按次数或退出变量结束。")]
-public sealed class LoopBlockNodeModel : WorkflowNodeModel, IWorkflowSubflowNode, IWorkflowDynamicOutputNode, IWorkflowBindingDeclarationProvider
+[WorkflowNode("LoopBlock", DisplayName = "循环块", Category = "Control", Description = "反复运行一个隔离的子流程画布，按次数、退出循环节点或外部退出信号结束。", OutputType = typeof(LoopBlockNodeOutput), Icon = "loop")]
+public sealed class LoopBlockNodeModel : WorkflowNodeModel, IWorkflowLoopSubflowNode, IWorkflowDynamicOutputNode, IWorkflowBindingDeclarationProvider, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
     public override string NodeType => "LoopBlock";
@@ -37,12 +37,17 @@ public sealed class LoopBlockNodeModel : WorkflowNodeModel, IWorkflowSubflowNode
     public IReadOnlyList<WorkflowBindableMember> SubflowOutputs { get; set; } = Array.Empty<WorkflowBindableMember>();
 
     /// <summary>获取或设置子流程运行的圈数；0 表示一直循环。</summary>
-    [WorkflowProperty("循环次数", "子流程运行的圈数；0 表示一直循环，直到退出变量为真、子流程失败或流程停止。", Category = "循环")]
+    [WorkflowProperty("循环次数", "子流程运行的圈数；0 表示一直循环，直到走到退出循环节点、外部退出信号为真、子流程失败或流程停止。", Category = "循环")]
     public int Iterations { get; set; }
 
-    /// <summary>获取或设置退出变量名；一圈结束时该子流程变量为 true 则退出循环。</summary>
-    [WorkflowProperty("退出变量", "子流程中的布尔变量名；一圈结束时该变量为真则退出循环。为空时不按变量退出。", Category = "循环")]
-    public string ExitVariableName { get; set; } = string.Empty;
+    /// <summary>外部退出信号：公共数据 bool 信号，每圈结束时为真则退出。为空时不检查。</summary>
+    [WorkflowProperty("退出信号", "公共数据 bool 信号；外部程序、界面或其他流程置为真后，跑完当前这一圈退出。为空时不检查。", Category = "循环")]
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.PublicDataSignal)]
+    public string ExitSignalKey { get; set; } = string.Empty;
+
+    /// <summary>因退出信号退出后是否把信号复位为 false。</summary>
+    [WorkflowProperty("退出后复位信号", "因退出信号退出后把信号置回假，下次进入循环块不会立刻退出。", Category = "循环")]
+    public bool ResetExitSignal { get; set; } = true;
 
     /// <summary>获取子画布节点数量。</summary>
     [JsonIgnore]
@@ -54,9 +59,15 @@ public sealed class LoopBlockNodeModel : WorkflowNodeModel, IWorkflowSubflowNode
 
     /// <inheritdoc />
     public IEnumerable<WorkflowDeclaredBinding> GetDeclaredBindings() => WorkflowSubflowInterfaces.DeclareBindings(this);
+
+    /// <inheritdoc />
+    public IEnumerable<WorkflowPublicDataDeclaration> GetPublicDataUses() =>
+        string.IsNullOrWhiteSpace(ExitSignalKey)
+            ? Array.Empty<WorkflowPublicDataDeclaration>()
+            : new[] { WorkflowPublicDataDeclaration.Signal(ExitSignalKey.Trim()) };
 }
 
-/// <summary>按圈运行循环块子流程，直到达到次数、退出变量为真、子流程失败或被取消。</summary>
+/// <summary>按圈运行循环块子流程，直到达到次数、走到退出循环节点、外部退出信号为真、子流程失败或被取消。</summary>
 public sealed class LoopBlockNodeHandler : WorkflowNodeHandler<LoopBlockNodeModel>
 {
     /// <inheritdoc />
@@ -72,15 +83,15 @@ public sealed class LoopBlockNodeHandler : WorkflowNodeHandler<LoopBlockNodeMode
         if (context is not IWorkflowChildExecutionContext childExecution)
             throw new InvalidOperationException("当前运行时不支持受监管的子流程执行。");
 
-        var exitVariable = string.IsNullOrWhiteSpace(node.ExitVariableName) ? null : node.ExitVariableName.Trim();
         var definition = childExecution.GetChildWorkflowExecutionPlan();
         var childContext = childExecution.CreateChildScope();
-        // 父流程在循环期间停在本节点，输入值不会变化：只解析一次，每圈由启动节点以相同的值提供。
-        childContext.SetSubflowInputs(WorkflowSubflowRuntime.ResolveInputs(node, context));
+        // 父流程在循环期间停在本节点，输入值不会变化：只解析一次，每圈由启动节点以相同的值提供，另加当前圈数。
+        var inputs = WorkflowSubflowRuntime.ResolveInputs(node, context);
+        var addIteration = !inputs.ContainsKey(WorkflowSubflowInterfaces.CurrentIterationName);
         context.Trace("RunLoop", $"循环运行子流程入口 {definition.EntryNodeId}。", new Dictionary<string, object?>
         {
             ["Iterations"] = node.Iterations,
-            ["ExitVariable"] = exitVariable,
+            ["ExitSignal"] = string.IsNullOrWhiteSpace(node.ExitSignalKey) ? null : node.ExitSignalKey.Trim(),
             ["ChildNodeCount"] = node.SubDocument.Graph.Nodes.Count
         });
 
@@ -93,14 +104,26 @@ public sealed class LoopBlockNodeHandler : WorkflowNodeHandler<LoopBlockNodeMode
             {
                 if (cycles > 0)
                     ClearVariables(childContext);
+                if (addIteration)
+                    childContext.SetSubflowInputs(new Dictionary<string, object?>(inputs.ToDictionary(pair => pair.Key, pair => pair.Value), StringComparer.Ordinal)
+                    {
+                        [WorkflowSubflowInterfaces.CurrentIterationName] = cycles + 1
+                    });
+                else
+                    childContext.SetSubflowInputs(inputs);
                 var result = await session.RunCycleAsync(cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!result.Success)
                     throw new InvalidOperationException($"循环块 {node.Id} 第 {cycles + 1} 圈子流程失败：{result.Message}");
                 cycles++;
-                if (exitVariable is not null && childContext.TryGetVariable<bool>(exitVariable, out var exit) && exit)
+                if (childContext.TryGetVariable<bool>(WorkflowLoopExit.BlockRequestKey, out var exit) && exit)
                 {
-                    exitReason = "退出变量为真";
+                    exitReason = "退出循环节点";
+                    break;
+                }
+                if (WorkflowLoopExit.CheckSignal(context, node.ExitSignalKey, node.ResetExitSignal))
+                {
+                    exitReason = "外部退出信号";
                     break;
                 }
                 if (node.Iterations > 0 && cycles >= node.Iterations)

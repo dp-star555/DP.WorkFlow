@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>告警处理出口：停止当前工站并交由人工或上位机处置。</summary>
-[WorkflowNode("WarnStopStation", DisplayName = "停止当前工站", Category = "8.Process/异常恢复")]
+[WorkflowNode("WarnStopStation", DisplayName = "停止当前工站", Category = "8.Process/异常恢复", OutputType = typeof(WarningResolution))]
+[WorkflowOutputPorts]
 public sealed class StopCurrentStationNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />

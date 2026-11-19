@@ -52,6 +52,25 @@ public sealed class WorkflowDocumentJsonStoreTests
     }
 
     [Fact]
+    public void ConnectionValidationResults_AreNotSavedAndOldValuesAreIgnored()
+    {
+        // R6-c：连线的校验状态和诊断说明每次打开重新计算，不进文件；旧文件里的值读入时忽略。
+        var store = new WorkflowDocumentJsonStore(new WorkflowNodeCatalog().RegisterStandardNodes());
+        var document = BuildDocument();
+        document.CanvasProjection.Connections[0].State = WorkflowConnectionState.Detached;
+        document.CanvasProjection.Connections[0].Diagnostic = "旧诊断";
+
+        var json = store.Serialize(document);
+        Assert.DoesNotContain("\"Diagnostic\"", json);
+        Assert.DoesNotContain("\"State\"", json);
+
+        var legacy = json.Replace("\"ToPort\"", "\"State\": 1, \"Diagnostic\": \"旧诊断\", \"ToPort\"");
+        var loaded = store.Deserialize(legacy).Canvas.Connections[0];
+        Assert.Equal(WorkflowConnectionState.Active, loaded.State);
+        Assert.Null(loaded.Diagnostic);
+    }
+
+    [Fact]
     public void SerializeAndDeserialize_CSharpScript_PreservesIdentityAndDllReferences()
     {
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
@@ -232,7 +251,7 @@ public sealed class WorkflowDocumentJsonStoreTests
     }
 
     [Fact]
-    public void Schema4_RoundTripsExplicitDocumentEntry()
+    public void Schema5_RoundTripsExplicitDocumentEntry()
     {
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var document = new WorkflowDocument { Name = "Entry", EntryNodeId = "Start1" };
@@ -247,7 +266,7 @@ public sealed class WorkflowDocumentJsonStoreTests
         var json = store.Serialize(document);
         var loaded = store.Deserialize(json).Document;
 
-        Assert.Contains("\"SchemaVersion\": 4", json, StringComparison.Ordinal);
+        Assert.Contains("\"SchemaVersion\": 5", json, StringComparison.Ordinal);
         Assert.Contains("\"EntryNodeId\": \"Start1\"", json, StringComparison.Ordinal);
         Assert.Equal("Start1", loaded.EntryNodeId);
         Assert.Equal("Start1", Assert.Single(loaded.Graph.Nodes).Id);

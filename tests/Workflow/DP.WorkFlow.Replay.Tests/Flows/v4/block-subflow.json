@@ -1,0 +1,226 @@
+{
+  "SchemaVersion": 4,
+  "Name": "\u5B50\u6D41\u7A0B\u5757",
+  "EntryNodeId": "Start",
+  "Nodes": [
+    {
+      "Id": "Start",
+      "Title": "\u5F00\u59CB",
+      "NodeType": "Start",
+      "NodeVersion": 1,
+      "X": 0,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Start",
+        "Id": "Start",
+        "Title": "\u5F00\u59CB"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Counter",
+      "Title": "\u8BA1\u6570",
+      "NodeType": "Action",
+      "NodeVersion": 1,
+      "X": 220,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Action",
+        "FunctionKey": "Count",
+        "Id": "Counter",
+        "Title": "\u8BA1\u6570"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Block",
+      "Title": "\u5B50\u6D41\u7A0B",
+      "NodeType": "Block",
+      "NodeVersion": 1,
+      "X": 440,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Block",
+        "Inputs": [
+          {
+            "Name": "Value",
+            "Source": "Counter|Value",
+            "ValueType": 0,
+            "Value": null
+          }
+        ],
+        "Outputs": [
+          {
+            "Name": "Doubled",
+            "Source": "Double|Value"
+          }
+        ],
+        "Id": "Block",
+        "Title": "\u5B50\u6D41\u7A0B"
+      },
+      "SubDocument": {
+        "SchemaVersion": 4,
+        "Name": "\u52A0\u500D\u5B50\u6D41\u7A0B",
+        "EntryNodeId": "ChildStart",
+        "Nodes": [
+          {
+            "Id": "ChildStart",
+            "Title": "\u5F00\u59CB",
+            "NodeType": "Start",
+            "NodeVersion": 1,
+            "X": 0,
+            "Y": 0,
+            "Width": 180,
+            "Height": 60,
+            "PortSides": {},
+            "HiddenOutputPorts": [],
+            "ExposedOutputMembers": [],
+            "Config": {
+              "NodeType": "Start",
+              "Id": "ChildStart",
+              "Title": "\u5F00\u59CB"
+            },
+            "SubDocument": null
+          },
+          {
+            "Id": "Double",
+            "Title": "\u52A0\u500D",
+            "NodeType": "Action",
+            "NodeVersion": 1,
+            "X": 220,
+            "Y": 0,
+            "Width": 180,
+            "Height": 60,
+            "PortSides": {},
+            "HiddenOutputPorts": [],
+            "ExposedOutputMembers": [],
+            "Config": {
+              "NodeType": "Action",
+              "FunctionKey": "Double",
+              "Id": "Double",
+              "Title": "\u52A0\u500D"
+            },
+            "SubDocument": null
+          },
+          {
+            "Id": "ChildEnd",
+            "Title": "\u7ED3\u675F",
+            "NodeType": "End",
+            "NodeVersion": 1,
+            "X": 440,
+            "Y": 0,
+            "Width": 180,
+            "Height": 60,
+            "PortSides": {},
+            "HiddenOutputPorts": [],
+            "ExposedOutputMembers": [],
+            "Config": {
+              "NodeType": "End",
+              "Id": "ChildEnd",
+              "Title": "\u7ED3\u675F"
+            },
+            "SubDocument": null
+          }
+        ],
+        "Connections": [
+          {
+            "FromNodeId": "ChildStart",
+            "FromPort": "Success",
+            "ToNodeId": "Double",
+            "ToPort": "Input",
+            "FromSide": null,
+            "ToSide": null,
+            "LabelPosition": 0.5,
+            "State": 0,
+            "Diagnostic": null,
+            "Waypoints": []
+          },
+          {
+            "FromNodeId": "Double",
+            "FromPort": "Success",
+            "ToNodeId": "ChildEnd",
+            "ToPort": "Input",
+            "FromSide": null,
+            "ToSide": null,
+            "LabelPosition": 0.5,
+            "State": 0,
+            "Diagnostic": null,
+            "Waypoints": []
+          }
+        ]
+      }
+    },
+    {
+      "Id": "End",
+      "Title": "\u7ED3\u675F",
+      "NodeType": "End",
+      "NodeVersion": 1,
+      "X": 660,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "End",
+        "Id": "End",
+        "Title": "\u7ED3\u675F"
+      },
+      "SubDocument": null
+    }
+  ],
+  "Connections": [
+    {
+      "FromNodeId": "Start",
+      "FromPort": "Success",
+      "ToNodeId": "Counter",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Counter",
+      "FromPort": "Success",
+      "ToNodeId": "Block",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Block",
+      "FromPort": "Success",
+      "ToNodeId": "End",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    }
+  ]
+}

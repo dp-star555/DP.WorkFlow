@@ -8,10 +8,9 @@ public sealed class WorkflowFailedPortTests
     {
         var (document, catalog, handlers, executed) = Create(connectFailed: true);
         var engine = new WorkflowEngine(new WorkflowCompiler(catalog).Compile(document), handlers);
-        var traces = new List<WorkflowTraceEntry>();
-        engine.NodeTrace += traces.Add;
 
         var result = await engine.RunAsync();
+        var traces = engine.GetTraceBatch().Entries;
 
         Assert.True(result.Success, result.Message);
         Assert.Equal(E_WorkflowExecutionState.Completed, result.State);

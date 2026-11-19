@@ -1,13 +1,18 @@
 namespace DP.WorkFlow;
 
 /// <summary>驱动晶圆机器人向指定站位放片。</summary>
-[WorkflowNode("WaferRobotPlace", DisplayName = "晶圆机器人放片节点", Category = "8.Process/WaferRobot")]
+[WorkflowNode("WaferRobotPlace", DisplayName = "晶圆机器人放片节点", Category = "8.Process/WaferRobot", OutputType = typeof(WaferRobotCommandNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Failed)]
 public sealed class WaferRobotPlaceNodeModel : WaferRobotTargetCommandNodeModel { /// <inheritdoc />
     public override string NodeType => "WaferRobotPlace"; }
 
 /// <summary>执行机器人放片。</summary>
 public sealed class WaferRobotPlaceNodeHandler : WorkflowNodeHandler<WaferRobotPlaceNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(WaferRobotPlaceNodeModel node) =>
+        new[] { ProcessCapabilities.WaferRobotCapability };
+
     /// <inheritdoc />
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(WaferRobotPlaceNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

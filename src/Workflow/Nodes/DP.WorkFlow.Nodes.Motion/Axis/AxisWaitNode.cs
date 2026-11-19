@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>等待指定轴满足旧版六种状态条件之一。</summary>
-[WorkflowNode("AxisWait", DisplayName = "轴等待", Category = "4.Motion/Axis")]
+[WorkflowNode("AxisWait", DisplayName = "轴等待", Category = "4.Motion/Axis", OutputType = typeof(AxisWaitNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class AxisWaitNodeModel : WorkflowAxisNodeModel
 {
     /// <inheritdoc />
@@ -22,13 +23,15 @@ public sealed class AxisWaitNodeModel : WorkflowAxisNodeModel
     public int PollIntervalMs { get; set; } = 20;
     /// <summary>获取或设置超时是否走 Timeout 分支。</summary>
     public bool TimeoutAsFalseBranch { get; set; } = true;
-    /// <summary>获取或设置结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "AxisWaitResult";
 }
 
 /// <summary>执行轴等待节点。</summary>
 public sealed class AxisWaitNodeHandler : WorkflowNodeHandler<AxisWaitNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(AxisWaitNodeModel node) =>
+        new[] { MotionCapabilities.AxisCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(AxisWaitNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
@@ -40,8 +43,9 @@ public sealed class AxisWaitNodeHandler : WorkflowNodeHandler<AxisWaitNodeModel>
             : null;
         var request = new WorkflowAxisWaitRequest(
             node.ResolveAxis(context), node.Condition, target, node.PositionTolerance, node.TimeoutMs, node.PollIntervalMs);
+        using var wait = context.BeginWait($"轴 {request.Axis.DeviceId}[{request.Axis.AxisId}] {node.Condition}", node.TimeoutMs);
         var output = await AxisServoNodeHandler.GetService(context).WaitAsync(request, cancellationToken).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
+        wait.End(output.Success);
         if (!output.Success && !node.TimeoutAsFalseBranch)
             return WorkflowRecoverableNodeFailure.Create(node, $"Axis wait timeout: {output.DeviceId}[{output.AxisId}] {output.Condition}.");
         return NodeExecutionResult.Continue(output.Success ? WorkflowPorts.Success : WorkflowPorts.Timeout, output);

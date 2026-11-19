@@ -1,0 +1,43 @@
+运行 [画布循环]
+  [主线]
+    RunStarted EntryNodeId=Start Message=流程开始执行。 NodeCount=4 PlanPath=$ WorkflowName=画布循环
+    NodeStarted Start#1 Message=节点开始执行。
+    Start Start#1 Message=流程由启动节点进入。
+    OutputCommitted Start#1 OutputExecutionSequence=Start#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=
+    NodeCompleted Start#1 Message=节点执行完成。 SelectedPort=Success
+    NodeStarted Loop#1 圈1 Message=节点开始执行。
+    Loop Loop#1 圈1 CurrentIteration=1 ExitReason=null Message=进入第 1/3 次循环。 Port=Loop TotalIterations=3
+    OutputCommitted Loop#1 圈1 OutputExecutionSequence=Loop#1 OutputKeys=Completed, CurrentIteration, ExitReason, TotalIterations OutputType=DP.WorkFlow.LoopNodeResult OutputValue.Completed=False OutputValue.CurrentIteration=1 OutputValue.ExitReason= OutputValue.TotalIterations=3
+    NodeCompleted Loop#1 圈1 Message=节点执行完成。 SelectedPort=Loop
+    NodeStarted Body#1 Message=节点开始执行。
+    Invoke Body#1 FunctionKey=Count Message=开始调用工作流动作。
+    Invoked Body#1 FunctionKey=Count Message=工作流动作调用完成。
+    OutputCommitted Body#1 OutputExecutionSequence=Body#1 OutputKeys=Value OutputType=DP.WorkFlow.Tests.Replay.CountOutput OutputValue.Value=1
+    NodeCompleted Body#1 Message=节点执行完成。 SelectedPort=Success
+    NodeStarted Loop#2 圈2 Message=节点开始执行。
+    Loop Loop#2 圈2 CurrentIteration=2 ExitReason=null Message=进入第 2/3 次循环。 Port=Loop TotalIterations=3
+    OutputCommitted Loop#2 圈2 OutputExecutionSequence=Loop#2 OutputKeys=Completed, CurrentIteration, ExitReason, TotalIterations OutputType=DP.WorkFlow.LoopNodeResult OutputValue.Completed=False OutputValue.CurrentIteration=2 OutputValue.ExitReason= OutputValue.TotalIterations=3
+    NodeCompleted Loop#2 圈2 Message=节点执行完成。 SelectedPort=Loop
+    NodeStarted Body#2 Message=节点开始执行。
+    Invoke Body#2 FunctionKey=Count Message=开始调用工作流动作。
+    Invoked Body#2 FunctionKey=Count Message=工作流动作调用完成。
+    OutputCommitted Body#2 OutputExecutionSequence=Body#2 OutputKeys=Value OutputType=DP.WorkFlow.Tests.Replay.CountOutput OutputValue.Value=2
+    NodeCompleted Body#2 Message=节点执行完成。 SelectedPort=Success
+    NodeStarted Loop#3 圈3 Message=节点开始执行。
+    Loop Loop#3 圈3 CurrentIteration=3 ExitReason=null Message=进入第 3/3 次循环。 Port=Loop TotalIterations=3
+    OutputCommitted Loop#3 圈3 OutputExecutionSequence=Loop#3 OutputKeys=Completed, CurrentIteration, ExitReason, TotalIterations OutputType=DP.WorkFlow.LoopNodeResult OutputValue.Completed=False OutputValue.CurrentIteration=3 OutputValue.ExitReason= OutputValue.TotalIterations=3
+    NodeCompleted Loop#3 圈3 Message=节点执行完成。 SelectedPort=Loop
+    NodeStarted Body#3 Message=节点开始执行。
+    Invoke Body#3 FunctionKey=Count Message=开始调用工作流动作。
+    Invoked Body#3 FunctionKey=Count Message=工作流动作调用完成。
+    OutputCommitted Body#3 OutputExecutionSequence=Body#3 OutputKeys=Value OutputType=DP.WorkFlow.Tests.Replay.CountOutput OutputValue.Value=3
+    NodeCompleted Body#3 Message=节点执行完成。 SelectedPort=Success
+    NodeStarted Loop#4 圈4 Message=节点开始执行。
+    Loop Loop#4 圈4 CurrentIteration=4 ExitReason=达到循环次数 Message=循环结束：达到循环次数，共执行 3 次。 Port=Completed TotalIterations=3
+    OutputCommitted Loop#4 圈4 OutputExecutionSequence=Loop#4 OutputKeys=Completed, CurrentIteration, ExitReason, TotalIterations OutputType=DP.WorkFlow.LoopNodeResult OutputValue.Completed=True OutputValue.CurrentIteration=3 OutputValue.ExitReason=达到循环次数 OutputValue.TotalIterations=3
+    NodeCompleted Loop#4 圈4 Message=节点执行完成。 SelectedPort=Completed
+    NodeStarted End#1 Message=节点开始执行。
+    End End#1 Message=当前执行路径结束。
+    OutputCommitted End#1 OutputExecutionSequence=End#1 OutputKeys=$ OutputType=null OutputValue.$=null
+    NodeCompleted End#1 Message=节点执行完成。 SelectedPort=Success
+    RunCompleted Message=流程执行完成。 State=Completed

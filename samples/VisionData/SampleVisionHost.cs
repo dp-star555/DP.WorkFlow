@@ -84,11 +84,4 @@ public static class SampleVisionHost
                         source.Kind)));
         return (runtime, sources);
     }
-
-    /// <summary>在根会话中声明示例流程显式发布的视觉公共数据。</summary>
-    public static void RegisterPublicData(WorkflowDesignerSession session) =>
-        session.PublicDataCatalog
-            .Register<DP.Vision.ImageFrame>("VisionFrame", "显式发布的图像帧", "视觉数据")
-            .Register<BlobAnalysisResult>("VisionBlobs", "显式发布的连通域事实", "视觉数据")
-            .Register<ColorAnalysisResult>("VisionColor", "显式发布的颜色事实", "视觉数据");
 }

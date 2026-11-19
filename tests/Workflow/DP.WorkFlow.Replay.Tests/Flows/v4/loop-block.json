@@ -1,0 +1,184 @@
+{
+  "SchemaVersion": 4,
+  "Name": "\u5FAA\u73AF\u5757",
+  "EntryNodeId": "Start",
+  "Nodes": [
+    {
+      "Id": "Start",
+      "Title": "\u5F00\u59CB",
+      "NodeType": "Start",
+      "NodeVersion": 1,
+      "X": 0,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Start",
+        "Id": "Start",
+        "Title": "\u5F00\u59CB"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "LoopBlock",
+      "Title": "\u5FAA\u73AF\u5757",
+      "NodeType": "LoopBlock",
+      "NodeVersion": 1,
+      "X": 220,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "LoopBlock",
+        "Inputs": [],
+        "Outputs": [],
+        "Iterations": 3,
+        "ExitVariableName": "",
+        "Id": "LoopBlock",
+        "Title": "\u5FAA\u73AF\u5757"
+      },
+      "SubDocument": {
+        "SchemaVersion": 4,
+        "Name": "\u5FAA\u73AF\u4F53",
+        "EntryNodeId": "ChildStart",
+        "Nodes": [
+          {
+            "Id": "ChildStart",
+            "Title": "\u5F00\u59CB",
+            "NodeType": "Start",
+            "NodeVersion": 1,
+            "X": 0,
+            "Y": 0,
+            "Width": 180,
+            "Height": 60,
+            "PortSides": {},
+            "HiddenOutputPorts": [],
+            "ExposedOutputMembers": [],
+            "Config": {
+              "NodeType": "Start",
+              "Id": "ChildStart",
+              "Title": "\u5F00\u59CB"
+            },
+            "SubDocument": null
+          },
+          {
+            "Id": "Work",
+            "Title": "\u8BA1\u6570",
+            "NodeType": "Action",
+            "NodeVersion": 1,
+            "X": 220,
+            "Y": 0,
+            "Width": 180,
+            "Height": 60,
+            "PortSides": {},
+            "HiddenOutputPorts": [],
+            "ExposedOutputMembers": [],
+            "Config": {
+              "NodeType": "Action",
+              "FunctionKey": "Count",
+              "Id": "Work",
+              "Title": "\u8BA1\u6570"
+            },
+            "SubDocument": null
+          },
+          {
+            "Id": "ChildEnd",
+            "Title": "\u7ED3\u675F",
+            "NodeType": "End",
+            "NodeVersion": 1,
+            "X": 440,
+            "Y": 0,
+            "Width": 180,
+            "Height": 60,
+            "PortSides": {},
+            "HiddenOutputPorts": [],
+            "ExposedOutputMembers": [],
+            "Config": {
+              "NodeType": "End",
+              "Id": "ChildEnd",
+              "Title": "\u7ED3\u675F"
+            },
+            "SubDocument": null
+          }
+        ],
+        "Connections": [
+          {
+            "FromNodeId": "ChildStart",
+            "FromPort": "Success",
+            "ToNodeId": "Work",
+            "ToPort": "Input",
+            "FromSide": null,
+            "ToSide": null,
+            "LabelPosition": 0.5,
+            "State": 0,
+            "Diagnostic": null,
+            "Waypoints": []
+          },
+          {
+            "FromNodeId": "Work",
+            "FromPort": "Success",
+            "ToNodeId": "ChildEnd",
+            "ToPort": "Input",
+            "FromSide": null,
+            "ToSide": null,
+            "LabelPosition": 0.5,
+            "State": 0,
+            "Diagnostic": null,
+            "Waypoints": []
+          }
+        ]
+      }
+    },
+    {
+      "Id": "End",
+      "Title": "\u7ED3\u675F",
+      "NodeType": "End",
+      "NodeVersion": 1,
+      "X": 440,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "End",
+        "Id": "End",
+        "Title": "\u7ED3\u675F"
+      },
+      "SubDocument": null
+    }
+  ],
+  "Connections": [
+    {
+      "FromNodeId": "Start",
+      "FromPort": "Success",
+      "ToNodeId": "LoopBlock",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "LoopBlock",
+      "FromPort": "Success",
+      "ToNodeId": "End",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    }
+  ]
+}

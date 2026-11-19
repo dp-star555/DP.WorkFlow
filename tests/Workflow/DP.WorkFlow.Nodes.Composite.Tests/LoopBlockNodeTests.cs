@@ -36,26 +36,39 @@ public sealed class LoopBlockNodeTests
     }
 
     [Fact]
-    public async Task RunAsync_ExitsWhenExitVariableIsTrue_AndVariablesDoNotCarryOverBetweenCycles()
+    public async Task RunAsync_ExitsAtExitLoopNode_AndVariablesDoNotCarryOverBetweenCycles()
     {
         var cycles = 0;
         var actions = new WorkflowActionRegistry()
             .Register("Init", (_, _) => ValueTask.FromResult<object?>(null))
             .Register("Work", (context, _) =>
             {
-                // 每圈收到相同的输入，看不到上一圈写入的变量。
+                // 每圈收到相同的输入和当前圈数，看不到上一圈写入的变量。
                 var limit = Assert.IsType<int>(context.SubflowInputs["Limit"]);
-                Assert.False(context.TryGetVariable<int>("Previous", out int _));
                 cycles++;
+                Assert.Equal(cycles, Assert.IsType<int>(context.SubflowInputs[WorkflowSubflowInterfaces.CurrentIterationName]));
+                Assert.False(context.TryGetVariable<int>("Previous", out int _));
                 context.SetVariable("Previous", cycles);
-                context.SetVariable("Stop", cycles >= limit);
-                return ValueTask.FromResult<object?>(null);
+                return ValueTask.FromResult<object?>(cycles >= limit);
             });
         var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
-        var (engine, loop) = CreateEngine(ChildDocument(withEnd: true), context, configured =>
+        var start = new StartNodeModel { Id = "ChildStart", Title = "开始" };
+        var work = new ActionNodeModel { Id = "Work", Title = "扫描", FunctionKey = "Work" };
+        var gate = new DecisionNodeModel
+        {
+            Id = "Gate", Title = "够了吗", ConditionSource = E_DecisionConditionSource.Binding,
+            Condition = WorkflowInput<bool>.FromBinding(new WorkflowBindingKey(work.Id, "$"))
+        };
+        var exit = new ExitLoopNodeModel { Id = "Exit", Title = "退出循环" };
+        var child = new WorkflowDocument { Name = "Child", EntryNodeId = start.Id };
+        foreach (var node in new IWorkflowNodeModel[] { start, work, gate, exit })
+            child.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        child.CanvasProjection.Connections.Add(Connect(start.Id, work.Id));
+        child.CanvasProjection.Connections.Add(Connect(work.Id, gate.Id));
+        child.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = gate.Id, FromPort = WorkflowPorts.True, ToNodeId = exit.Id, ToPort = WorkflowPorts.Input });
+        var (engine, loop) = CreateEngine(child, context, configured =>
         {
             configured.Iterations = 0;
-            configured.ExitVariableName = "Stop";
             configured.Inputs.Add(new WorkflowSubflowInput
             {
                 Name = "Limit",
@@ -68,10 +81,42 @@ public sealed class LoopBlockNodeTests
 
         Assert.True(result.Success, result.Message);
         Assert.Equal(3, cycles);
+        Assert.Contains(start.SubflowInputs, member => member.Path == WorkflowSubflowInterfaces.CurrentIterationName && member.Type == typeof(int));
         Assert.True(context.TryGetNodeOutput(loop.Id, out var output));
         var loopOutput = Assert.IsType<LoopBlockNodeOutput>(output!.Value);
         Assert.Equal(3, loopOutput.CompletedCycles);
-        Assert.Equal("退出变量为真", loopOutput.ExitReason);
+        Assert.Equal("退出循环节点", loopOutput.ExitReason);
+    }
+
+    [Fact]
+    public async Task RunAsync_ExitSignal_FinishesCurrentCycleThenExitsAndResets()
+    {
+        var cycles = 0;
+        WorkflowContext? captured = null;
+        var actions = new WorkflowActionRegistry()
+            .Register("Init", (_, _) => ValueTask.FromResult<object?>(null))
+            .Register("Work", (_, _) =>
+            {
+                // 第 2 圈中途外部置位：本圈照常跑完，圈末退出。
+                if (++cycles == 2)
+                    captured!.PublicDataCenter.Signals.Write("StopScan", true);
+                return ValueTask.FromResult<object?>(null);
+            });
+        var context = captured = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
+        var (engine, loop) = CreateEngine(ChildDocument(withEnd: true), context, configured =>
+        {
+            configured.Iterations = 0;
+            configured.ExitSignalKey = "StopScan";
+        });
+
+        var result = await engine.RunAsync();
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(2, cycles);
+        Assert.True(context.TryGetNodeOutput(loop.Id, out var output));
+        Assert.Equal("外部退出信号", Assert.IsType<LoopBlockNodeOutput>(output!.Value).ExitReason);
+        Assert.False(context.PublicDataCenter.Signals.Read("StopScan"));
+        Assert.True(context.PublicDataCenter.TryGetDeclaration("StopScan", out _));
     }
 
     [Fact]
@@ -131,6 +176,32 @@ public sealed class LoopBlockNodeTests
         Assert.Equal(merged.OrderBy(entry => entry.Timestamp), merged);
         // 父层自身的记录仍在，且不带子运行标记。
         Assert.Contains(merged, entry => entry.NodeId == loop.Id && entry.Step == "NodeStarted" && entry.Parents is null);
+    }
+
+    [Fact]
+    public async Task ChildChanges_AdvanceParentChangeVersion()
+    {
+        // R1-04：子画布内部的变化同样递增父引擎的变化计数，界面只看顶层计数就能发现子流程里的进展。
+        var versions = new List<long>();
+        WorkflowEngine? engine = null;
+        var actions = new WorkflowActionRegistry()
+            .Register("Init", (_, _) => ValueTask.FromResult<object?>(null))
+            .Register("Work", (_, _) =>
+            {
+                versions.Add(engine!.ChangeVersion);
+                return ValueTask.FromResult<object?>(versions.Count);
+            });
+        var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
+        var (created, _) = CreateEngine(ChildDocument(withEnd: true), context, configured => configured.Iterations = 3);
+        engine = created;
+
+        var result = await created.RunAsync();
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(3, versions.Count);
+        // 循环块节点在三圈之间一直处于运行中，父引擎自身没有状态迁移；计数的增长全部来自子运行。
+        Assert.True(versions[0] < versions[1] && versions[1] < versions[2], string.Join(",", versions));
+        Assert.Equal(1, created.GetRuntimeSnapshot().Sequence);
     }
 
     [Fact]
@@ -319,6 +390,8 @@ public sealed class LoopBlockNodeTests
         .RegisterCompositeNodeHandlers()
         .Register(new StartNodeHandler())
         .Register(new ActionNodeHandler())
+        .Register(new DecisionNodeHandler())
+        .Register(new ExitLoopNodeHandler())
         .Register(new EndNodeHandler());
 
     private static (WorkflowDocument Document, LoopBlockNodeModel Loop) ParentDocument(

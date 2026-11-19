@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>按当前批次创建产品并放入指定工站。</summary>
-[WorkflowNode("ProductCreate", DisplayName = "产品创建节点", Category = "8.Process/ProductFlow")]
+[WorkflowNode("ProductCreate", DisplayName = "产品创建节点", Category = "8.Process/ProductFlow", OutputType = typeof(ProductCreateNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Failed)]
 public sealed class ProductCreateNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />
@@ -38,13 +39,15 @@ public sealed class ProductCreateNodeModel : WorkflowNodeModel
     public string Reason { get; set; } = "WorkflowCreateProduct";
     /// <summary>获取或设置绑定原因。</summary>
     public WorkflowInput<string> ReasonBinding { get; set; } = WorkflowInput<string>.FromLiteral(string.Empty);
-    /// <summary>获取或设置结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "ProductCreateResult";
 }
 
 /// <summary>执行产品创建节点。</summary>
 public sealed class ProductCreateNodeHandler : WorkflowNodeHandler<ProductCreateNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(ProductCreateNodeModel node) =>
+        new[] { ProcessCapabilities.ProcessCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(ProductCreateNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
@@ -63,7 +66,6 @@ public sealed class ProductCreateNodeHandler : WorkflowNodeHandler<ProductCreate
             Resolve(node.SlotIdSource, node.SlotId, node.SlotIdBinding, context));
         var service = context.GetRequiredCapability<IWorkflowProcessService>();
         var output = await service.CreateProductAsync(request, cancellationToken).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         return NodeExecutionResult.Continue(output: output);
     }
 }

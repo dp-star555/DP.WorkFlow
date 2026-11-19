@@ -20,6 +20,7 @@ public sealed class WorkflowExecutionPlan
     /// <param name="parallelScopes">按 ParallelAll 节点 ID 索引的静态分支入口和汇聚边界。</param>
     /// <param name="childPlans">按复合节点 ID 索引、已经递归编译的子流程定义。</param>
     /// <param name="diagnostics">不会阻止运行的编译警告，例如不可达节点。</param>
+    /// <param name="publicData">根流程的公共数据清单；子计划为空。</param>
     internal WorkflowExecutionPlan(
         string name,
         string startNodeId,
@@ -27,9 +28,11 @@ public sealed class WorkflowExecutionPlan
         IDictionary<WorkflowPortAddress, IReadOnlyList<string>> outgoing,
         IReadOnlyDictionary<string, WorkflowParallelScopePlan>? parallelScopes = null,
         IReadOnlyDictionary<string, WorkflowExecutionPlan>? childPlans = null,
-        IReadOnlyList<WorkflowValidationError>? diagnostics = null)
+        IReadOnlyList<WorkflowValidationError>? diagnostics = null,
+        IEnumerable<WorkflowPublicDataDeclaration>? publicData = null)
     {
         Name = name;
+        PublicData = Array.AsReadOnly((publicData ?? Array.Empty<WorkflowPublicDataDeclaration>()).ToArray());
         EntryNodeId = startNodeId;
         Diagnostics = Array.AsReadOnly((diagnostics ?? Array.Empty<WorkflowValidationError>()).ToArray());
 
@@ -78,6 +81,9 @@ public sealed class WorkflowExecutionPlan
         }
         return visited == edges.Count;
     }
+
+    /// <summary>根流程的公共数据清单（R2-d），运行开始时登记到公共数据中心；子计划为空。</summary>
+    public IReadOnlyList<WorkflowPublicDataDeclaration> PublicData { get; }
 
     /// <summary>当前文档的全部控制边是否无环；V1命名恢复入口只支持无环串行计划。</summary>
     public bool IsAcyclic { get; }

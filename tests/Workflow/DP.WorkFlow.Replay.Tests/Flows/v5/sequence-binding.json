@@ -1,0 +1,194 @@
+{
+  "SchemaVersion": 5,
+  "Name": "\u987A\u5E8F\u4E0E\u7ED1\u5B9A",
+  "EntryNodeId": "Start",
+  "PublicData": [],
+  "Nodes": [
+    {
+      "Id": "Start",
+      "Title": "\u5F00\u59CB",
+      "NodeType": "Start",
+      "NodeVersion": 1,
+      "X": 0,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Start",
+        "Id": "Start",
+        "Title": "\u5F00\u59CB"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Measure",
+      "Title": "\u6D4B\u91CF",
+      "NodeType": "Action",
+      "NodeVersion": 1,
+      "X": 220,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Action",
+        "FunctionKey": "Measure",
+        "Id": "Measure",
+        "Title": "\u6D4B\u91CF"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Judge",
+      "Title": "\u5224\u65AD",
+      "NodeType": "Decision",
+      "NodeVersion": 1,
+      "X": 440,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Decision",
+        "ConditionSource": 1,
+        "FunctionKey": "",
+        "Condition": {
+          "Source": 1,
+          "LiteralValue": false,
+          "Binding": "Measure|Ok"
+        },
+        "Id": "Judge",
+        "Title": "\u5224\u65AD"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Accept",
+      "Title": "\u5408\u683C",
+      "NodeType": "Action",
+      "NodeVersion": 1,
+      "X": 660,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Action",
+        "FunctionKey": "Pass",
+        "Id": "Accept",
+        "Title": "\u5408\u683C"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Reject",
+      "Title": "\u4E0D\u5408\u683C",
+      "NodeType": "Action",
+      "NodeVersion": 1,
+      "X": 880,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Action",
+        "FunctionKey": "Pass",
+        "Id": "Reject",
+        "Title": "\u4E0D\u5408\u683C"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "End",
+      "Title": "\u7ED3\u675F",
+      "NodeType": "End",
+      "NodeVersion": 1,
+      "X": 1100,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "End",
+        "Id": "End",
+        "Title": "\u7ED3\u675F"
+      },
+      "SubDocument": null
+    }
+  ],
+  "Connections": [
+    {
+      "FromNodeId": "Start",
+      "FromPort": "Success",
+      "ToNodeId": "Measure",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Measure",
+      "FromPort": "Success",
+      "ToNodeId": "Judge",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Judge",
+      "FromPort": "True",
+      "ToNodeId": "Accept",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Judge",
+      "FromPort": "False",
+      "ToNodeId": "Reject",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Accept",
+      "FromPort": "Success",
+      "ToNodeId": "End",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Reject",
+      "FromPort": "Success",
+      "ToNodeId": "End",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "Waypoints": []
+    }
+  ]
+}
