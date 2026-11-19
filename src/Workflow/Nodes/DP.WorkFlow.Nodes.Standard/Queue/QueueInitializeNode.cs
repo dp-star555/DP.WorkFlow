@@ -2,12 +2,14 @@ namespace DP.WorkFlow;
 
 /// <summary>批量创建或清空强类型命名队列。</summary>
 [WorkflowNode("QueueInitialize", DisplayName = "队列初始化节点", Category = "3.Control/队列")]
-public sealed class QueueInitializeNodeModel : WorkflowNodeModel
+public sealed class QueueInitializeNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
     public override string NodeType => "QueueInitialize";
     /// <summary>初始化项。</summary>
     public List<QueueInitializeItem> Items { get; set; } = new();
+    /// <inheritdoc />
+    public IEnumerable<WorkflowPublicDataDeclaration> GetPublicDataUses() => Items.Where(item => item is not null).SelectMany(item => PublicDataUses.Queue(item.QueueKey, item.ValueType));
 }
 
 /// <summary>执行批量队列初始化。</summary>

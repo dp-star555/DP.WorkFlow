@@ -1,0 +1,168 @@
+{
+  "SchemaVersion": 5,
+  "Name": "\u5931\u8D25\u51FA\u53E3",
+  "EntryNodeId": "Start",
+  "PublicData": [],
+  "Nodes": [
+    {
+      "Id": "Start",
+      "Title": "\u5F00\u59CB",
+      "NodeType": "Start",
+      "NodeVersion": 1,
+      "X": 0,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Start",
+        "Id": "Start",
+        "Title": "\u5F00\u59CB"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Inspect",
+      "Title": "\u68C0\u6D4B",
+      "NodeType": "ReplayInspect",
+      "NodeVersion": 1,
+      "X": 220,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "ReplayInspect",
+        "Fail": true,
+        "Id": "Inspect",
+        "Title": "\u68C0\u6D4B"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Ok",
+      "Title": "OK",
+      "NodeType": "Action",
+      "NodeVersion": 1,
+      "X": 440,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Action",
+        "FunctionKey": "Pass",
+        "Id": "Ok",
+        "Title": "OK"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Ng",
+      "Title": "NG",
+      "NodeType": "Action",
+      "NodeVersion": 1,
+      "X": 660,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Action",
+        "FunctionKey": "Pass",
+        "Id": "Ng",
+        "Title": "NG"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "End",
+      "Title": "\u7ED3\u675F",
+      "NodeType": "End",
+      "NodeVersion": 1,
+      "X": 880,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "End",
+        "Id": "End",
+        "Title": "\u7ED3\u675F"
+      },
+      "SubDocument": null
+    }
+  ],
+  "Connections": [
+    {
+      "FromNodeId": "Start",
+      "FromPort": "Success",
+      "ToNodeId": "Inspect",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Inspect",
+      "FromPort": "Success",
+      "ToNodeId": "Ok",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Inspect",
+      "FromPort": "Failed",
+      "ToNodeId": "Ng",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Ok",
+      "FromPort": "Success",
+      "ToNodeId": "End",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Ng",
+      "FromPort": "Success",
+      "ToNodeId": "End",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "State": 0,
+      "Diagnostic": null,
+      "Waypoints": []
+    }
+  ]
+}

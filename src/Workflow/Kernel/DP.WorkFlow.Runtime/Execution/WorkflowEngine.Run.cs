@@ -23,6 +23,9 @@ public sealed partial class WorkflowEngine
         BeginRun(_plan.EntryNodeId);
         try
         {
+            // 流程的公共数据清单登记到公共数据中心；与已有登记不一致时整批拒绝，运行以故障结束。
+            if (_plan.PublicData.Count > 0)
+                Context.PublicDataCenter.DeclareAll(_plan.PublicData);
             var rootToken = new ExecutionToken(
                 Interlocked.Increment(ref _tokenSequence),
                 Array.Empty<long>(),

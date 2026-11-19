@@ -2,12 +2,14 @@ namespace DP.WorkFlow;
 
 /// <summary>批量初始化布尔信号到默认状态。</summary>
 [WorkflowNode("SignalStateBatchInitialize", DisplayName = "批量初始化布尔信号节点", Category = "3.Control/信号")]
-public sealed class SignalStateBatchInitializeNodeModel : WorkflowNodeModel
+public sealed class SignalStateBatchInitializeNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
     public override string NodeType => "SignalStateBatchInitialize";
     /// <summary>初始化项。</summary>
     public List<SignalStateInitItem> Items { get; set; } = new();
+    /// <inheritdoc />
+    public IEnumerable<WorkflowPublicDataDeclaration> GetPublicDataUses() => Items.Where(item => item is not null).SelectMany(item => PublicDataUses.Signal(item.SignalKey, item.DefaultState));
 }
 
 /// <summary>执行布尔信号批量初始化。</summary>

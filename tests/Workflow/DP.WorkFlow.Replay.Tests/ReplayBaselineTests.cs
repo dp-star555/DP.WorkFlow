@@ -4,7 +4,7 @@ using DP.WorkFlow.Persistence.Json;
 namespace DP.WorkFlow.Tests.Replay;
 
 /// <summary>
-/// R5-c 回放基准：打开 Flows/v4 中的流程文件，用模拟设备运行，规整后的事件序列必须与
+/// R5-c 回放基准：打开 Flows/ 各格式目录中的流程文件，用模拟设备运行，规整后的事件序列必须与
 /// Baselines/ 中的基准一致。基准由改造前的引擎生成，改造后对比，确保除刻意修改外行为不变。
 /// </summary>
 /// <remarks>
@@ -14,7 +14,7 @@ namespace DP.WorkFlow.Tests.Replay;
 public sealed class ReplayBaselineTests
 {
     /// <summary>当前流程文件格式版本；格式升级时新增目录，旧目录保留，作为旧文件兼容样本。</summary>
-    internal const string FlowFormatFolder = "v4";
+    internal const string FlowFormatFolder = "v5";
 
     public static TheoryData<string> FlowNames()
     {

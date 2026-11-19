@@ -2,12 +2,13 @@ namespace DP.WorkFlow;
 
 /// <summary>等待命名布尔信号达到期望状态。</summary>
 [WorkflowNode("SignalWait", DisplayName = "信号等待", Category = "3.Control/信号")]
-public sealed class SignalWaitNodeModel : WorkflowNodeModel
+public sealed class SignalWaitNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
     public override string NodeType => "SignalWait";
 
     /// <summary>获取或设置稳定信号键。</summary>
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.PublicDataSignal)]
     public string SignalKey { get; set; } = string.Empty;
 
     /// <summary>获取或设置期望状态。</summary>
@@ -18,6 +19,8 @@ public sealed class SignalWaitNodeModel : WorkflowNodeModel
 
     /// <summary>获取或设置匹配后是否将信号复位为 false。</summary>
     public bool AutoResetAfterMatched { get; set; }
+    /// <inheritdoc />
+    public IEnumerable<WorkflowPublicDataDeclaration> GetPublicDataUses() => PublicDataUses.Signal(SignalKey);
 }
 
 /// <summary>执行信号等待节点。</summary>

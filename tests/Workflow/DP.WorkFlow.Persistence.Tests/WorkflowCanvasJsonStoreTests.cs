@@ -232,7 +232,7 @@ public sealed class WorkflowDocumentJsonStoreTests
     }
 
     [Fact]
-    public void Schema4_RoundTripsExplicitDocumentEntry()
+    public void Schema5_RoundTripsExplicitDocumentEntry()
     {
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var document = new WorkflowDocument { Name = "Entry", EntryNodeId = "Start1" };
@@ -247,7 +247,7 @@ public sealed class WorkflowDocumentJsonStoreTests
         var json = store.Serialize(document);
         var loaded = store.Deserialize(json).Document;
 
-        Assert.Contains("\"SchemaVersion\": 4", json, StringComparison.Ordinal);
+        Assert.Contains("\"SchemaVersion\": 5", json, StringComparison.Ordinal);
         Assert.Contains("\"EntryNodeId\": \"Start1\"", json, StringComparison.Ordinal);
         Assert.Equal("Start1", loaded.EntryNodeId);
         Assert.Equal("Start1", Assert.Single(loaded.Graph.Nodes).Id);

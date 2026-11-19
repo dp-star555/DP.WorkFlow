@@ -81,14 +81,17 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="document">目标工作流文档。</param>
     /// <param name="catalog">用于创建和查询节点的节点目录。</param>
     /// <param name="publicDataCatalog">宿主可绑定公共数据目录。</param>
+    /// <param name="publicData">根流程的公共数据清单；编辑子画布时传入根文档的清单，为空时使用本文档的清单。</param>
     public WorkflowDesignerSession(
         WorkflowDocument document,
         WorkflowNodeCatalog catalog,
-        WorkflowPublicDataCatalog? publicDataCatalog = null)
+        WorkflowPublicDataCatalog? publicDataCatalog = null,
+        List<WorkflowPublicDataDeclaration>? publicData = null)
     {
         Document = document ?? throw new ArgumentNullException(nameof(document));
         Catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         PublicDataCatalog = publicDataCatalog ?? new WorkflowPublicDataCatalog();
+        PublicData = publicData ?? document.PublicData;
         FitNodeSizesToContent();
     }
 
@@ -120,6 +123,56 @@ public sealed partial class WorkflowDesignerSession
 
     /// <summary>获取宿主声明的公共可绑定数据目录。</summary>
     public WorkflowPublicDataCatalog PublicDataCatalog { get; }
+
+    /// <summary>获取根流程的公共数据清单（R2-d）；子画布会话与根会话共用同一个清单。</summary>
+    public List<WorkflowPublicDataDeclaration> PublicData { get; }
+
+    /// <summary>登记或替换一项公共数据（按键），可撤销。</summary>
+    /// <param name="declaration">登记项。</param>
+    public void DeclarePublicData(WorkflowPublicDataDeclaration declaration)
+    {
+        Guard.NotNull(declaration);
+        if (string.IsNullOrWhiteSpace(declaration.Key))
+            throw new ArgumentException("公共数据键不能为空。", nameof(declaration));
+        var item = declaration with { Key = declaration.Key.Trim() };
+        var before = PublicData.ToArray();
+        var after = before.ToList();
+        var index = after.FindIndex(existing => string.Equals(existing.Key, item.Key, StringComparison.Ordinal));
+        if (index >= 0) after[index] = item; else after.Add(item);
+        ReplacePublicData(before, after.ToArray());
+    }
+
+    /// <summary>移除一项公共数据登记，可撤销；不存在时返回 <see langword="false"/>。</summary>
+    /// <param name="key">键。</param>
+    public bool RemovePublicData(string key)
+    {
+        var before = PublicData.ToArray();
+        var after = before.Where(item => !string.Equals(item.Key, key, StringComparison.Ordinal)).ToArray();
+        if (after.Length == before.Length) return false;
+        ReplacePublicData(before, after);
+        return true;
+    }
+
+    /// <summary>按节点的使用把尚未登记的公共数据补进清单，可撤销；返回补进的项。</summary>
+    /// <param name="rootDocument">根文档；清单覆盖根画布和全部子画布。为空时使用本会话的文档。</param>
+    public IReadOnlyList<WorkflowPublicDataDeclaration> DeclareMissingPublicData(WorkflowDocument? rootDocument = null)
+    {
+        var known = new HashSet<string>(PublicData.Select(item => item.Key), StringComparer.Ordinal);
+        var added = WorkflowPublicDataManifest.Infer(rootDocument ?? Document).Where(item => known.Add(item.Key)).ToArray();
+        if (added.Length > 0)
+            ReplacePublicData(PublicData.ToArray(), PublicData.Concat(added).ToArray());
+        return added;
+    }
+
+    private void ReplacePublicData(WorkflowPublicDataDeclaration[] before, WorkflowPublicDataDeclaration[] after)
+    {
+        void Apply(WorkflowPublicDataDeclaration[] items)
+        {
+            PublicData.Clear();
+            PublicData.AddRange(items);
+        }
+        Execute(new DesignerOperation(() => Apply(after), () => Apply(before)));
+    }
 
     /// <summary>获取或设置节点与手工路径点是否吸附到设计栅格（<see cref="WorkflowDesignerGeometry.GridSize"/>）。</summary>
     public bool SnapToGrid { get; set; } = true;

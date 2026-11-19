@@ -26,6 +26,12 @@ public sealed class WorkflowDocument
     /// <summary>Gets or sets the stable ID of the root control-flow entry node.</summary>
     public string EntryNodeId { get; set; } = string.Empty;
 
+    /// <summary>
+    /// 获取流程的公共数据清单（R2-d）：本流程用到的公共数据登记项。只在根文档上有意义，
+    /// 子画布用到的公共数据也登记在根文档上；加载到流程管理时逐项核对。
+    /// </summary>
+    public List<WorkflowPublicDataDeclaration> PublicData { get; } = new();
+
     /// <summary>Gets the semantic control graph. Layout changes never alter this projection.</summary>
     public WorkflowGraph Graph { get; }
 

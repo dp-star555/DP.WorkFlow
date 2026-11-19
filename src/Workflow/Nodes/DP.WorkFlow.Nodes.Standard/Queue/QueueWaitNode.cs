@@ -4,11 +4,12 @@ namespace DP.WorkFlow;
 
 /// <summary>等待命名队列满足有数据、首项比较或数量条件。</summary>
 [WorkflowNode("QueueWait", DisplayName = "队列等待节点", Category = "3.Control/队列")]
-public sealed class QueueWaitNodeModel : WorkflowNodeModel
+public sealed class QueueWaitNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
     public override string NodeType => "QueueWait";
     /// <summary>队列键。</summary>
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.PublicDataQueue)]
     public string QueueKey { get; set; } = string.Empty;
     /// <summary>固定值类型。</summary>
     public E_SignalValueType ValueType { get; set; }
@@ -26,6 +27,8 @@ public sealed class QueueWaitNodeModel : WorkflowNodeModel
     public int CountThreshold { get; set; }
     /// <summary>超时毫秒数；0 表示不超时。</summary>
     public int TimeoutMs { get; set; } = 5000;
+    /// <inheritdoc />
+    public IEnumerable<WorkflowPublicDataDeclaration> GetPublicDataUses() => PublicDataUses.Queue(QueueKey, ValueType);
 }
 
 /// <summary>执行队列条件等待。</summary>

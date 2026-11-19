@@ -4,11 +4,12 @@ namespace DP.WorkFlow;
 
 /// <summary>写入强类型数据信号，支持直接写入、自加和自减。</summary>
 [WorkflowNode("SignalValueSet", DisplayName = "数据信号设置节点", Category = "3.Control/信号")]
-public sealed class SignalValueSetNodeModel : WorkflowNodeModel
+public sealed class SignalValueSetNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
     public override string NodeType => "SignalValueSet";
     /// <summary>信号键。</summary>
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.PublicDataValue)]
     public string SignalKey { get; set; } = string.Empty;
     /// <summary>值类型。</summary>
     public E_SignalValueType ValueType { get; set; }
@@ -20,6 +21,8 @@ public sealed class SignalValueSetNodeModel : WorkflowNodeModel
     public string LiteralValue { get; set; } = string.Empty;
     /// <summary>绑定值。</summary>
     public WorkflowInput<object> BindingValue { get; set; } = WorkflowInput<object>.FromLiteral(null);
+    /// <inheritdoc />
+    public IEnumerable<WorkflowPublicDataDeclaration> GetPublicDataUses() => PublicDataUses.Value(SignalKey, ValueType);
 }
 
 /// <summary>执行数据信号写入。</summary>

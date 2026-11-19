@@ -80,19 +80,32 @@ public sealed class WorkflowRuntimeMonitoringTests
     public async Task SlowObserver_IsExcludedFromNodeExecutionTime()
     {
         // 慢的状态订阅方在通知队列里排队，不占用执行线程，也不计入节点耗时。
+        // 订阅方一直阻塞到运行结束之后才放行：若回调在执行线程上同步调用，运行无法结束（最多等到 5 秒超时），
+        // 用这个因果关系判断，而不是比较毫秒数，避免测试并行时线程池排队造成的计时抖动。
         var (definition, handlers, context) = CreateTwoActionWorkflow();
         var engine = new WorkflowEngine(definition, handlers, context);
-        engine.StateChanged += _ => Thread.Sleep(15);
-        engine.NodeStarted += _ => Thread.Sleep(15);
-        engine.NodeCompleted += _ => Thread.Sleep(15);
+        using var release = new ManualResetEventSlim(false);
+        var blocked = 0;
+        void Block()
+        {
+            Interlocked.Increment(ref blocked);
+            release.Wait(TimeSpan.FromSeconds(5));
+        }
+        engine.StateChanged += _ => Block();
+        engine.NodeStarted += _ => Block();
+        engine.NodeCompleted += _ => Block();
 
         var result = await engine.RunAsync();
         var snapshot = engine.GetRuntimeSnapshot();
+        var stillBlocked = !release.IsSet;
+        release.Set();
         await engine.FlushNotificationsAsync();
 
         Assert.True(result.Success, result.Message);
-        Assert.True(snapshot.Nodes["Action1"].Elapsed < TimeSpan.FromMilliseconds(10),
-            $"节点执行时间不应包含监视器耗时，实际为 {snapshot.Nodes["Action1"].Elapsed.TotalMilliseconds:F3} ms。");
+        Assert.True(stillBlocked);
+        Assert.True(result.Elapsed < TimeSpan.FromSeconds(4), $"运行等到了订阅方，耗时 {result.Elapsed.TotalMilliseconds:F0} ms。");
+        Assert.True(snapshot.Nodes["Action1"].Elapsed < TimeSpan.FromSeconds(4));
+        Assert.True(Volatile.Read(ref blocked) > 1);
     }
 
     private static (WorkflowExecutionPlan Definition, WorkflowNodeHandlerCatalog Handlers, WorkflowContext Context)

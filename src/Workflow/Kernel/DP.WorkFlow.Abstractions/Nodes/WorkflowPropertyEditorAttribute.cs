@@ -23,6 +23,15 @@ public static class WorkflowPropertyEditorKeys
 
     /// <summary>候选由节点按所在文档提供（见 <see cref="IWorkflowDocumentPropertyChoices"/>），可作用在非字符串的取值对象上。</summary>
     public const string DocumentChoice = "DocumentChoice";
+
+    /// <summary>从流程公共数据清单中选择 bool 信号键；清单为空时退回文本输入。</summary>
+    public const string PublicDataSignal = "PublicData/Signal";
+
+    /// <summary>从流程公共数据清单中选择数值键；清单为空时退回文本输入。</summary>
+    public const string PublicDataValue = "PublicData/Value";
+
+    /// <summary>从流程公共数据清单中选择队列键；清单为空时退回文本输入。</summary>
+    public const string PublicDataQueue = "PublicData/Queue";
 }
 
 /// <summary>为节点属性显式指定跨 WinForms/WPF 的专用编辑器。</summary>

@@ -103,6 +103,7 @@ public static class WorkflowNodeConfigurationSnapshotter
             Name = source.Name,
             EntryNodeId = source.EntryNodeId
         };
+        clone.PublicData.AddRange(source.PublicData);
         visited[source] = clone;
         visited[source.CanvasProjection] = clone.CanvasProjection;
         PopulateCanvas(source.CanvasProjection, clone.CanvasProjection, visited);

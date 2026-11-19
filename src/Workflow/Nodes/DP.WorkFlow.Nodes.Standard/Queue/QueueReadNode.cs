@@ -2,16 +2,19 @@ namespace DP.WorkFlow;
 
 /// <summary>读取强类型命名队列快照而不修改内容。</summary>
 [WorkflowNode("QueueRead", DisplayName = "队列读取节点", Category = "3.Control/队列")]
-public sealed class QueueReadNodeModel : WorkflowNodeModel
+public sealed class QueueReadNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
     public override string NodeType => "QueueRead";
     /// <summary>队列键。</summary>
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.PublicDataQueue)]
     public string QueueKey { get; set; } = string.Empty;
     /// <summary>固定值类型。</summary>
     public E_SignalValueType ValueType { get; set; }
     /// <summary>缺失时是否自动创建。</summary>
     public bool AutoCreateIfMissing { get; set; } = true;
+    /// <inheritdoc />
+    public IEnumerable<WorkflowPublicDataDeclaration> GetPublicDataUses() => PublicDataUses.Queue(QueueKey, ValueType);
 }
 
 /// <summary>执行队列读取。</summary>

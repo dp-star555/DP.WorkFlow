@@ -2,12 +2,13 @@ namespace DP.WorkFlow;
 
 /// <summary>设置或翻转命名布尔信号。</summary>
 [WorkflowNode("SignalSet", DisplayName = "信号设置", Category = "3.Control/信号")]
-public sealed class SignalSetNodeModel : WorkflowNodeModel
+public sealed class SignalSetNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
     public override string NodeType => "SignalSet";
 
     /// <summary>获取或设置稳定信号键。</summary>
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.PublicDataSignal)]
     public string SignalKey { get; set; } = string.Empty;
 
     /// <summary>获取或设置写入模式。</summary>
@@ -15,6 +16,8 @@ public sealed class SignalSetNodeModel : WorkflowNodeModel
 
     /// <summary>获取或设置 Set 模式下的固定值或绑定值。</summary>
     public WorkflowInput<bool> State { get; set; } = WorkflowInput<bool>.FromLiteral(true);
+    /// <inheritdoc />
+    public IEnumerable<WorkflowPublicDataDeclaration> GetPublicDataUses() => PublicDataUses.Signal(SignalKey);
 }
 
 /// <summary>执行信号设置节点。</summary>

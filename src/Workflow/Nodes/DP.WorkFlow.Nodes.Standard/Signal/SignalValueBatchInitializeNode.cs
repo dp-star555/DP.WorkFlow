@@ -2,12 +2,14 @@ namespace DP.WorkFlow;
 
 /// <summary>批量初始化强类型数据信号到默认值。</summary>
 [WorkflowNode("SignalValueBatchInitialize", DisplayName = "批量初始化数据信号节点", Category = "3.Control/信号")]
-public sealed class SignalValueBatchInitializeNodeModel : WorkflowNodeModel
+public sealed class SignalValueBatchInitializeNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
     public override string NodeType => "SignalValueBatchInitialize";
     /// <summary>初始化项。</summary>
     public List<SignalValueInitItem> Items { get; set; } = new();
+    /// <inheritdoc />
+    public IEnumerable<WorkflowPublicDataDeclaration> GetPublicDataUses() => Items.Where(item => item is not null).SelectMany(item => PublicDataUses.Value(item.SignalKey, item.ValueType, item.DefaultValueText));
 }
 
 /// <summary>执行数据信号批量初始化。</summary>

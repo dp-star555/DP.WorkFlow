@@ -2,11 +2,12 @@ namespace DP.WorkFlow;
 
 /// <summary>等待强类型数据信号满足比较条件。</summary>
 [WorkflowNode("SignalValueWait", DisplayName = "数据信号等待节点", Category = "3.Control/信号")]
-public sealed class SignalValueWaitNodeModel : WorkflowNodeModel
+public sealed class SignalValueWaitNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
     public override string NodeType => "SignalValueWait";
     /// <summary>信号键。</summary>
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.PublicDataValue)]
     public string SignalKey { get; set; } = string.Empty;
     /// <summary>值类型。</summary>
     public E_SignalValueType ValueType { get; set; }
@@ -22,6 +23,8 @@ public sealed class SignalValueWaitNodeModel : WorkflowNodeModel
     public WorkflowInput<object> CompareBinding { get; set; } = WorkflowInput<object>.FromLiteral(null);
     /// <summary>超时毫秒数；0 表示不超时。</summary>
     public int TimeoutMs { get; set; } = 5000;
+    /// <inheritdoc />
+    public IEnumerable<WorkflowPublicDataDeclaration> GetPublicDataUses() => PublicDataUses.Value(SignalKey, ValueType);
 }
 
 /// <summary>执行数据信号等待。</summary>
