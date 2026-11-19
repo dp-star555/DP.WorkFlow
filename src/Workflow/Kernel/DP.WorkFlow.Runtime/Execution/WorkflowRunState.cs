@@ -163,7 +163,7 @@ public sealed class WorkflowRunState
                 identity.NodeExecutionCount,
                 identity.TokenId,
                 Array.AsReadOnly(identity.ScopeIds.ToArray()),
-                DateTimeOffset.UtcNow,
+                WorkflowClock.UtcNow,
                 value);
             if (!_outputsByNode.TryGetValue(nodeId, out var outputs))
                 _outputsByNode[nodeId] = outputs = new List<WorkflowNodeOutput>(1);

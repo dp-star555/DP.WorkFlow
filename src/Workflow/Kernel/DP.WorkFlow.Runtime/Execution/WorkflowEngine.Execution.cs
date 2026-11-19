@@ -219,7 +219,7 @@ public sealed partial class WorkflowEngine
                 pathException.Message,
                 pathException.InterruptAlarmCode,
                 (exception.InnerException ?? exception).GetType().FullName,
-                DateTimeOffset.UtcNow);
+                WorkflowClock.UtcNow);
             RunState.RecordFault(fault);
             lock (_stateSync)
                 _currentFault = fault;

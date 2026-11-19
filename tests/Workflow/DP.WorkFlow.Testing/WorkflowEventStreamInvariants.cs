@@ -47,12 +47,19 @@ public static class WorkflowEventStreamInvariants
         return violations;
     }
 
-    /// <summary>规则 1：同一运行内事件序号从 1 开始连续递增，不重复、不跳号（继续运行接着原序号）。</summary>
+    /// <summary>
+    /// 规则 1：同一运行内事件序号从 1 开始连续递增，不重复、不跳号（继续运行接着原序号）；
+    /// 时间戳随序号单调不减（R1-01 高精度单调时钟）。
+    /// </summary>
     private static void CheckSequence(WorkflowRunEvent[] ordered, List<string> violations)
     {
         long expected = 1;
+        WorkflowRunEvent? previous = null;
         foreach (var item in ordered)
         {
+            if (previous is not null && item.Timestamp < previous.Timestamp)
+                violations.Add($"时间倒退：#{previous.Sequence} {previous.Timestamp:O} 之后 #{item.Sequence} {item.Timestamp:O}。");
+            previous = item;
             if (item.Sequence != expected)
             {
                 violations.Add($"序号不连续：期望 #{expected}，实际 #{item.Sequence}（{item.EventType}）。");

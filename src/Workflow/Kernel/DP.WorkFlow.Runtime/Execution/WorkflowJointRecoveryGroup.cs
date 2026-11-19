@@ -308,7 +308,7 @@ public sealed class WorkflowJointRecoveryGroup : IDisposable
     private void Record(string stage, string? role, string message)
     {
         if (_events.Count == 2000) _events.RemoveAt(0);
-        _events.Add(new(CaseId, _epoch, stage, role, message, DateTimeOffset.UtcNow));
+        _events.Add(new(CaseId, _epoch, stage, role, message, WorkflowClock.UtcNow));
     }
     private void EnsureConfigurable()
     {

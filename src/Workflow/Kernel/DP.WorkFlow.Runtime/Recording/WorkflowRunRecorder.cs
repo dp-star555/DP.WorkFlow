@@ -126,7 +126,7 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
             recorded = new WorkflowRunEvent(
                 _runId,
                 sequence,
-                DateTimeOffset.UtcNow,
+                WorkflowClock.UtcNow,
                 @event.Category,
                 @event.EventType,
                 writeMode,

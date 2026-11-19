@@ -193,7 +193,7 @@ public sealed partial class WorkflowEngine
     private void RecordRecovery(WorkflowFaultRecoveryRequest request, string stage, string? message)
     {
         var recovery = new WorkflowRecoveryEvent(request.CaseId, request.FaultNodeId,
-            request.Attempt, stage, message, request.OperationId, DateTimeOffset.UtcNow);
+            request.Attempt, stage, message, request.OperationId, WorkflowClock.UtcNow);
         RunState.RecordRecovery(recovery);
         var node = _plan.GetNodeOrThrow(request.FaultNodeId);
         string eventType;
@@ -241,7 +241,7 @@ public sealed partial class WorkflowEngine
             {
                 var identity = new WorkflowExecutionIdentity(_runId, pair.Key.TokenId, Array.Empty<long>(), Array.Empty<long>(), 0);
                 var fault = new WorkflowNodeFault(pair.Key.NodeId, identity,
-                    "操作清理失败：" + failure.Message, 0, failure.GetType().FullName, DateTimeOffset.UtcNow);
+                    "操作清理失败：" + failure.Message, 0, failure.GetType().FullName, WorkflowClock.UtcNow);
                 RunState.RecordFault(fault);
                 lock (_stateSync)
                     _currentFault = fault;

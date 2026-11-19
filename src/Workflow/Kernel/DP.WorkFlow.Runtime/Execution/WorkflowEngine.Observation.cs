@@ -18,7 +18,7 @@ public sealed partial class WorkflowEngine
         WorkflowRuntimeSnapshot snapshot;
         lock (_stateSync)
         {
-            var now = DateTimeOffset.UtcNow;
+            var now = WorkflowClock.UtcNow;
             var nodes = new ReadOnlyDictionary<string, WorkflowNodeRuntimeInfo>(
                 _nodeRuntime.ToDictionary(
                     pair => pair.Key,
@@ -177,7 +177,7 @@ public sealed partial class WorkflowEngine
                 State = E_NodeState.Running,
                 ExecutionCount = identity.NodeExecutionCount,
                 ExecutionSequence = ++_nodeExecutionSequence,
-                StartedAt = DateTimeOffset.UtcNow
+                StartedAt = WorkflowClock.UtcNow
             };
         }
         PublishSnapshot();
@@ -197,7 +197,7 @@ public sealed partial class WorkflowEngine
             if (_nodeRuntime.TryGetValue(nodeId, out var info))
             {
                 info.State = state;
-                info.CompletedAt = DateTimeOffset.UtcNow;
+                info.CompletedAt = WorkflowClock.UtcNow;
                 info.Elapsed = info.ExecutionStartedTimestamp > 0
                     ? Polyfill.GetElapsedTime(info.ExecutionStartedTimestamp)
                     : info.CompletedAt.Value - info.StartedAt.GetValueOrDefault(info.CompletedAt.Value);
@@ -274,7 +274,7 @@ public sealed partial class WorkflowEngine
         var receipt = TryRecordRunEvent(WorkflowRunEventDraft.Trace(step, node, identity, message, data), writeMode);
         SafeInvoke(NodeTrace, new WorkflowTraceEntry(
             receipt?.Sequence ?? 0,
-            DateTimeOffset.UtcNow,
+            WorkflowClock.UtcNow,
             node.Id,
             node.NodeType,
             step,
@@ -288,7 +288,7 @@ public sealed partial class WorkflowEngine
     private void PublishTraceEntry(WorkflowRunEventReceipt? receipt, IWorkflowNodeModel node, WorkflowExecutionIdentity identity, string step, string message) =>
         SafeInvoke(NodeTrace, new WorkflowTraceEntry(
             receipt?.Sequence ?? 0,
-            DateTimeOffset.UtcNow,
+            WorkflowClock.UtcNow,
             node.Id,
             node.NodeType,
             step,
