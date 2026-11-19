@@ -1,6 +1,6 @@
 运行 [并行汇聚]
   [主线]
-    RunStarted Message=流程开始执行。
+    RunStarted EntryNodeId=Start Message=流程开始执行。 NodeCount=7 PlanPath=$ WorkflowName=并行汇聚
     NodeStarted Start#1 Message=节点开始执行。
     Start Start#1 Message=流程由启动节点进入。
     OutputCommitted Start#1 OutputExecutionSequence=Start#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=
@@ -9,6 +9,7 @@
     ParallelDispatch Parallel#1 Message=请求派发 Branch 端口上的全部并行分支。
     OutputCommitted Parallel#1 OutputExecutionSequence=Parallel#1 OutputKeys=$ OutputType=null OutputValue.$=null
     NodeCompleted Parallel#1 Message=节点执行完成。 SelectedPort=Branch
+    ParallelStarted Parallel BranchCount=2 Branches=Left,Right MergeNodeId=Merge Message=派发 2 个分支，汇聚节点 Merge。
     ParallelMerged Parallel Message=2 个分支全部到达汇聚节点 Merge。
     NodeStarted Merge#1 Message=节点开始执行。
     ParallelMerged Merge#1 Message=全部并行分支已经到达汇聚点。

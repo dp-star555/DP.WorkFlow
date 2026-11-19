@@ -1,6 +1,6 @@
 运行 [顺序与绑定]
   [主线]
-    RunStarted Message=流程开始执行。
+    RunStarted EntryNodeId=Start Message=流程开始执行。 NodeCount=6 PlanPath=$ WorkflowName=顺序与绑定
     NodeStarted Start#1 Message=节点开始执行。
     Start Start#1 Message=流程由启动节点进入。
     OutputCommitted Start#1 OutputExecutionSequence=Start#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=

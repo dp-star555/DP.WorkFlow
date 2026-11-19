@@ -170,6 +170,49 @@ public sealed class WorkflowEventStreamInvariantsTests
     }
 
     [Fact]
+    public void ParallelMergedWithoutStart_IsReported()
+    {
+        var events = new Stream()
+            .Run("RunStarted")
+            .Node("NodeStarted", "P", 1)
+            .Node("NodeCompleted", "P", 1)
+            .Structure("ParallelMerged", "P")
+            .Run("RunCompleted")
+            .Build();
+
+        Assert.Contains(WorkflowEventStreamInvariants.Check(events), item => item.Contains("没有对应的 ParallelStarted"));
+    }
+
+    [Fact]
+    public void PairedParallelAndPause_HaveNoViolations()
+    {
+        var events = new Stream()
+            .Run("RunStarted")
+            .Run("Paused")
+            .Run("Resumed")
+            .Node("NodeStarted", "P", 1)
+            .Structure("ParallelStarted", "P")
+            .Node("NodeCompleted", "P", 1)
+            .Structure("ParallelMerged", "P")
+            .Run("RunCompleted")
+            .Build();
+
+        Assert.Empty(WorkflowEventStreamInvariants.Check(events));
+    }
+
+    [Fact]
+    public void ResumedWithoutPause_IsReported()
+    {
+        var events = new Stream()
+            .Run("RunStarted")
+            .Run("Resumed")
+            .Run("RunCompleted")
+            .Build();
+
+        Assert.Contains(WorkflowEventStreamInvariants.Check(events), item => item.Contains("此前没有暂停"));
+    }
+
+    [Fact]
     public void ChildStartedAfterParentEnded_IsReported()
     {
         var parentId = Guid.NewGuid();
@@ -215,6 +258,9 @@ public sealed class WorkflowEventStreamInvariantsTests
 
         public Stream Node(string type, string nodeId, int count) =>
             Add(type == "NodeFailed" ? WorkflowRunEventCategory.Fault : WorkflowRunEventCategory.NodeExecution, type, nodeId, count, null);
+
+        public Stream Structure(string type, string nodeId) =>
+            Add(WorkflowRunEventCategory.Trace, type, nodeId, 0, null);
 
         public Stream Output(string nodeId, int count, long outputSequence) =>
             Add(WorkflowRunEventCategory.DataFlow, "OutputCommitted", nodeId, count,

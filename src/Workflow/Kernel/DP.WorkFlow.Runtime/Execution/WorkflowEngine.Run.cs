@@ -189,9 +189,13 @@ public sealed partial class WorkflowEngine
             _state = E_WorkflowExecutionState.Running;
             Context.BeginRun(RunState);
             changedState = ApplyPauseStateLocked() ?? _state;
+            // RunStarted 进入 Recorder 后立即开始调度；后续 Sink 推送失败不能阻止或终止运行。
+            // 在状态锁内创建记录器：状态一变为运行，暂停、挂起等控制调用就能写入同一份记录，不会先于 RunStarted。
+            StartRecorder(runId);
+            // 带着暂停或挂起开始的运行：RunStarted 之后紧接一条 Paused，说明为什么没有开始调度。
+            if (changedState == E_WorkflowExecutionState.Paused)
+                RecordControl(CaptureControlRecordLocked(changedState, null, null));
         }
-        // RunStarted 进入 Recorder 后立即开始调度；后续 Sink 推送失败不能阻止或终止运行。
-        StartRecorder(runId);
         PublishStateChange(changedState);
     }
 
@@ -206,8 +210,15 @@ public sealed partial class WorkflowEngine
             _parentExecution);
         _recorder.HealthChanged += OnRecordingHealthChanged;
         // 与后续事件一样走 fail-open 入口：RunStarted 的记录失败不得让 Run 在启动阶段就 Fault。
+        // 流程身份（R4-a）：名称、在根流程中的路径、入口和节点数。流程版本随流程管理（阶段 D）加入。
         TryRecordRunEvent(
-            WorkflowRunEventDraft.Lifecycle("RunStarted", "流程开始执行。"),
+            WorkflowRunEventDraft.Lifecycle("RunStarted", "流程开始执行。", new Dictionary<string, object?>
+            {
+                ["WorkflowName"] = _plan.Name,
+                ["PlanPath"] = PlanPath,
+                ["EntryNodeId"] = _plan.EntryNodeId,
+                ["NodeCount"] = _plan.NodeIds.Count
+            }),
             WorkflowEventWriteMode.FlushRequested);
         Notify(RunStarted, runId);
     }

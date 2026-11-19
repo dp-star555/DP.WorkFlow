@@ -19,7 +19,7 @@ public static class WorkflowEventStreamInvariants
     /// <summary>作用域级事件：记在作用域节点名下，发生在该节点执行结束之后。</summary>
     private static readonly HashSet<string> StructureEvents = new(StringComparer.Ordinal)
     {
-        "ParallelMerged"
+        "ParallelStarted", "ParallelMerged"
     };
 
     /// <summary>
@@ -74,7 +74,8 @@ public static class WorkflowEventStreamInvariants
     /// 2. RunStarted 只出现一次且在最前；运行结束（完成/取消/失败）后只能出现 RunContinued 开始新的一段；
     /// 3. 每次节点开始（节点 + 第几次执行）恰好有一个完成 / 失败 / 取消，且在开始之后；
     /// 4. 节点名下的数据和步骤事件只出现在该次执行开始之后、结束之前（作用域级事件除外，只要求作用域节点已开始过）；
-    /// 5. 每段运行结束时，没有仍未结束的节点执行；失败出口路由必须跟在该次执行的失败之后。
+    /// 5. 每段运行结束时，没有仍未结束的节点执行；失败出口路由必须跟在该次执行的失败之后；
+    /// 8. 并行汇聚之前必须有同一作用域节点、同一令牌的并行开始；Paused 与 Resumed 交替出现。
     /// </summary>
     private static void CheckLifecycleAndNodes(WorkflowRunEvent[] ordered, List<string> violations)
     {
@@ -82,9 +83,17 @@ public static class WorkflowEventStreamInvariants
         var open = new Dictionary<(string NodeId, int Count), WorkflowRunEvent>();
         var started = new HashSet<(string NodeId, int Count)>();
         var failed = new HashSet<(string NodeId, int Count)>();
+        var openParallel = new Dictionary<(string NodeId, long TokenId), int>();
+        var paused = false;
         foreach (var item in ordered)
         {
             var type = item.EventType;
+            if (type is "Paused" or "Resumed")
+            {
+                if (type == "Paused" == paused)
+                    violations.Add($"#{item.Sequence} {type}：" + (paused ? "已经处于暂停。" : "此前没有暂停。"));
+                paused = type == "Paused";
+            }
             if (type == "RunStarted")
             {
                 if (item.Sequence != 1)
@@ -108,6 +117,7 @@ public static class WorkflowEventStreamInvariants
                         $"#{item.Sequence} {type} 时节点 {pending.NodeId} 第 {pending.ExecutionIdentity!.NodeExecutionCount} 次执行"
                         + $"（#{pending.Sequence} 开始）没有完成 / 失败 / 取消事件。");
                 open.Clear();
+                paused = false;
                 running = false;
                 continue;
             }
@@ -137,11 +147,23 @@ public static class WorkflowEventStreamInvariants
                     failed.Add(key);
                 continue;
             }
-            if (StructureEvents.Contains(type))
+            // 作用域级事件的执行次数为 0；汇聚节点自己执行时写的同名步骤属于普通步骤，按规则 4 检查。
+            if (StructureEvents.Contains(type) && key.NodeExecutionCount == 0)
             {
                 // 作用域级事件（如并行汇聚）挂在作用域节点名下，但不属于该节点的某一次执行。
                 if (!started.Any(value => value.NodeId == key.NodeId))
                     violations.Add($"#{item.Sequence} {type}：作用域节点 {key.NodeId} 此前没有开始过。");
+                var scope = (key.NodeId, item.ExecutionIdentity.TokenId);
+                openParallel.TryGetValue(scope, out var depth);
+                if (type == "ParallelStarted")
+                    openParallel[scope] = depth + 1;
+                else if (type == "ParallelMerged")
+                {
+                    if (depth == 0)
+                        violations.Add($"#{item.Sequence} ParallelMerged：作用域节点 {key.NodeId} 此前没有对应的 ParallelStarted。");
+                    else
+                        openParallel[scope] = depth - 1;
+                }
                 continue;
             }
             if (type == "NodeFaultRouted")

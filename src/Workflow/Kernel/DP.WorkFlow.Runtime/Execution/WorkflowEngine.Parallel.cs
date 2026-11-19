@@ -25,6 +25,15 @@ public sealed partial class WorkflowEngine
             };
         }
         Context.RegisterParallelScope(runtimeScopeId, parentToken.TokenId);
+        // 与 ParallelMerged 成对（R4-a）：记下派发了哪些分支、在哪里汇聚。
+        WriteTrace(scopeNode, ScopeIdentity(parentToken), "ParallelStarted",
+            $"派发 {plan.BranchEntryNodeIds.Count} 个分支，汇聚节点 {plan.MergeNodeId}。",
+            new Dictionary<string, object?>
+            {
+                ["BranchCount"] = plan.BranchEntryNodeIds.Count,
+                ["Branches"] = string.Join(",", plan.BranchEntryNodeIds),
+                ["MergeNodeId"] = plan.MergeNodeId
+            });
         PublishSnapshot();
 
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -76,16 +85,15 @@ public sealed partial class WorkflowEngine
         Context.CompleteParallelScope(runtimeScopeId, out var superseded);
         // 循环中的并行每轮使用新的分支 Token；作用域汇聚后上一轮的分支输出不会再被读到。
         RetireOutputs(superseded);
-        var parentIdentity = new WorkflowExecutionIdentity(
-            _runId,
-            parentToken.TokenId,
-            parentToken.AncestorTokenIds,
-            parentToken.ScopeIds,
-            0);
+        var parentIdentity = ScopeIdentity(parentToken);
         // 已完成作用域不再留在实时集合；合并事实只进入事件流，避免循环中无限累计。
         WriteTrace(scopeNode, parentIdentity, "ParallelMerged", $"{plan.BranchEntryNodeIds.Count} 个分支全部到达汇聚节点 {plan.MergeNodeId}。", null);
         PublishSnapshot();
     }
+
+    /// <summary>并行作用域事件的身份：属于父令牌，执行次数为 0（不是一次节点执行）。</summary>
+    private WorkflowExecutionIdentity ScopeIdentity(ExecutionToken parentToken) =>
+        new(_runId, parentToken.TokenId, parentToken.AncestorTokenIds, parentToken.ScopeIds, 0);
 
     private sealed class ExecutionToken
     {
