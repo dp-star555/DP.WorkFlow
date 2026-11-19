@@ -23,7 +23,8 @@ public sealed partial class WorkflowEngine
     private readonly Dictionary<string, int> _nodeExecutionCounts = new(StringComparer.Ordinal);
     private readonly Dictionary<long, MutableParallelScopeInfo> _parallelScopes = new();
     private readonly Dictionary<string, WorkflowEngine> _activeChildEngines = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, WorkflowChildRuntimeInfo> _activeChildWorkflows = new(StringComparer.Ordinal);
+    // 正在运行的子运行：快照不再由子引擎推送，取父快照时按需向子引擎拉取（R1-04）。
+    private readonly Dictionary<string, ActiveChildWorkflow> _activeChildWorkflows = new(StringComparer.Ordinal);
     private readonly Dictionary<string, WorkflowChildRuntimeInfo> _latestChildWorkflowByParentNode = new(StringComparer.Ordinal);
     // 每个父节点最近一次完成的子引擎：子画布据此在运行结束后仍能查询其节点输出，父运行开始时清空。
     private readonly Dictionary<string, WorkflowEngine> _latestChildEngineByParentNode = new(StringComparer.Ordinal);
@@ -53,6 +54,10 @@ public sealed partial class WorkflowEngine
     private long _nodeExecutionSequence;
     private long _tokenSequence;
     private long _snapshotSequence;
+    private long _changeVersion;
+    private string? _changeMessage;
+    // 正在运行本引擎（作为子运行）的父引擎；本引擎的变化同时递增父引擎的变化计数。
+    private WorkflowEngine? _changeOwner;
     private E_WorkflowExecutionState _state = E_WorkflowExecutionState.Idle;
 
     /// <summary>获取当前或最近一次运行的独立状态模型。</summary>
@@ -136,11 +141,15 @@ public sealed partial class WorkflowEngine
     /// <summary>节点成功完成时发生。</summary>
     public event Action<IWorkflowNodeModel>? NodeCompleted;
 
-    /// <summary>运行快照变化时发生。</summary>
-    public event Action<WorkflowRuntimeSnapshot>? SnapshotChanged;
-
     /// <summary>记录链路健康状态变化时发生；记录失败不影响工作流运行结果。</summary>
     public event Action<WorkflowRecordingHealth>? RecordingHealthChanged;
+
+    /// <summary>
+    /// 运行状态的变化计数（R1-04）。每次可观察的状态迁移递增一次；执行线程只做这一次递增，不构造快照、不调用界面。
+    /// 界面按自己的刷新帧率比较这个值，变了才调用 <see cref="GetRuntimeSnapshot"/> 取一份整体状态；
+    /// 停止、暂停、失败等需要立即显示的状态另由 <see cref="StateChanged"/> 通知。
+    /// </summary>
+    public long ChangeVersion => Interlocked.Read(ref _changeVersion);
 
     /// <summary>等待此前发出的回调全部送达订阅方。</summary>
     /// <returns>队列中已有通知全部调用完成时结束的任务。</returns>

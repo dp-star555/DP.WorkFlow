@@ -134,6 +134,32 @@ public sealed class LoopBlockNodeTests
     }
 
     [Fact]
+    public async Task ChildChanges_AdvanceParentChangeVersion()
+    {
+        // R1-04：子画布内部的变化同样递增父引擎的变化计数，界面只看顶层计数就能发现子流程里的进展。
+        var versions = new List<long>();
+        WorkflowEngine? engine = null;
+        var actions = new WorkflowActionRegistry()
+            .Register("Init", (_, _) => ValueTask.FromResult<object?>(null))
+            .Register("Work", (_, _) =>
+            {
+                versions.Add(engine!.ChangeVersion);
+                return ValueTask.FromResult<object?>(versions.Count);
+            });
+        var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
+        var (created, _) = CreateEngine(ChildDocument(withEnd: true), context, configured => configured.Iterations = 3);
+        engine = created;
+
+        var result = await created.RunAsync();
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(3, versions.Count);
+        // 循环块节点在三圈之间一直处于运行中，父引擎自身没有状态迁移；计数的增长全部来自子运行。
+        Assert.True(versions[0] < versions[1] && versions[1] < versions[2], string.Join(",", versions));
+        Assert.Equal(1, created.GetRuntimeSnapshot().Sequence);
+    }
+
+    [Fact]
     public async Task RunningCycle_IsVisibleLive_InSnapshotTraceAndOutputs()
     {
         var cycles = 0;

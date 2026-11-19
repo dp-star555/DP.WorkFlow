@@ -5,8 +5,17 @@ namespace DP.WorkFlow;
 /// </summary>
 public interface IWorkflowRuntimeHost
 {
-    /// <summary>运行快照变化时发生。</summary>
-    event Action<WorkflowRuntimeSnapshot>? SnapshotChanged;
+    /// <summary>
+    /// 运行状态的变化计数（R1-04）。界面按自己的刷新帧率比较它，变了才调用 <see cref="GetSnapshot"/>；
+    /// 运行中引擎不主动构造或推送快照。只用于比较是否变化，不保证单调。
+    /// </summary>
+    long ChangeVersion { get; }
+
+    /// <summary>
+    /// 当前引擎的运行状态变化时发生（暂停、继续、完成、失败、取消等），在执行线程之外送达。
+    /// 界面据此立即刷新一帧，不必等下一次帧检查。
+    /// </summary>
+    event Action<E_WorkflowExecutionState>? StateChanged;
 
     /// <summary>获取当前引擎。</summary>
     WorkflowEngine? Engine { get; }
