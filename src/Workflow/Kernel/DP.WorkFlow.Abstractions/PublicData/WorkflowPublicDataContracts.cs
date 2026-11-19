@@ -72,6 +72,18 @@ public interface IWorkflowQueueService
 /// <summary>公共数据值按 5 种基本类型转换。</summary>
 public static class WorkflowPublicDataValues
 {
+    /// <summary>值类型对应的 CLR 类型。</summary>
+    /// <param name="type">值类型。</param>
+    public static Type GetClrType(E_SignalValueType type) => type switch
+    {
+        E_SignalValueType.String => typeof(string),
+        E_SignalValueType.Int32 => typeof(int),
+        E_SignalValueType.Int64 => typeof(long),
+        E_SignalValueType.Double => typeof(double),
+        E_SignalValueType.Boolean => typeof(bool),
+        _ => throw new ArgumentOutOfRangeException(nameof(type))
+    };
+
     /// <summary>把值转换为指定基本类型（使用不变区域性）。</summary>
     /// <param name="value">原始值，可以是文本。</param>
     /// <param name="type">目标类型。</param>

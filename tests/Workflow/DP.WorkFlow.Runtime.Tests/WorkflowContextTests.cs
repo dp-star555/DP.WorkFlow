@@ -26,16 +26,13 @@ public sealed class WorkflowContextTests
     [Fact]
     public void PublicData_IsSharedWithChildScopeButLocalVariablesAreIsolated()
     {
-        var store = new WorkflowPublicDataStore();
-        var parent = new WorkflowContext(publicData: store);
+        var parent = new WorkflowContext();
         parent.SetVariable("Local", 1);
         var child = parent.CreateChildScope();
-        store.Apply(new WorkflowPublicDataChangeSet(
-            new Dictionary<string, object> { ["Shared"] = 2 },
-            Array.Empty<string>()));
+        parent.PublicDataCenter.Values.WriteValue("Shared", 2);
 
         Assert.False(child.TryGetVariable<int>("Local", out _));
-        Assert.True(child.PublicData.TryGet<int>("Shared", out var shared));
+        Assert.True(child.TryReadPublicData("Shared", out var shared));
         Assert.Equal(2, shared);
     }
 
@@ -55,28 +52,6 @@ public sealed class WorkflowContextTests
 
         Assert.False(result.Success);
         Assert.Equal(E_WorkflowExecutionState.Canceled, result.State);
-    }
-
-    [Fact]
-    public async Task SuccessfulNode_CommitsStagedPublicData()
-    {
-        var node = new PublishNode { Id = "Publish" };
-        var canvasDocument = new WorkflowDocument();
-        var canvas = canvasDocument.CanvasProjection;
-        canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
-        var context = new WorkflowContext();
-        canvasDocument.EntryNodeId = node.Id;
-        var plan = new WorkflowCompiler().Compile(canvasDocument);
-
-        var result = await new WorkflowEngine(
-            plan,
-            new WorkflowNodeHandlerCatalog().Register(new PublishNodeHandler()),
-            context).RunAsync();
-
-        Assert.True(result.Success, result.Message);
-        Assert.True(context.PublicData.TryGet<int>("Published", out var value));
-        Assert.Equal(42, value);
-        Assert.False(context.ContainsVariable("Published"));
     }
 
     [Theory]
@@ -99,7 +74,6 @@ public sealed class WorkflowContextTests
         Assert.Equal(recoveryCalls, coordinator.CallCount);
         Assert.Empty(context.ExportNodeOutputs());
         Assert.False(context.ContainsVariable("Uncommitted"));
-        Assert.False(context.PublicData.TryGet<int>("UncommittedPublic", out _));
         var fault = Assert.Single(engine.RunState.Faults);
         Assert.Equal(node.Id, fault.NodeId);
         Assert.Equal("fatal", fault.Message);
@@ -175,19 +149,6 @@ public sealed class WorkflowContextTests
         Assert.Empty(engine.ExternalHoldReasons);
     }
 
-    private sealed class PublishNode : WorkflowNodeModel { public override string NodeType => "Publish"; }
-    private sealed class PublishNodeHandler : WorkflowNodeHandler<PublishNode>
-    {
-        protected override ValueTask<NodeExecutionResult> ExecuteAsync(
-            PublishNode node,
-            IWorkflowNodeExecutionContext context,
-            CancellationToken cancellationToken)
-        {
-            context.PublishData("Published", 42);
-            return ValueTask.FromResult(NodeExecutionResult.Complete());
-        }
-    }
-
     private sealed class FailNode : WorkflowNodeModel
     {
         public override string NodeType => "Fail";
@@ -198,7 +159,6 @@ public sealed class WorkflowContextTests
         protected override ValueTask<NodeExecutionResult> ExecuteAsync(FailNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
             context.SetVariable("Uncommitted", 42);
-            context.PublishData("UncommittedPublic", 43);
             return ValueTask.FromResult(NodeExecutionResult.Fail("fatal", node.StopImmediately
                 ? WorkflowFaultDisposition.StopRun : WorkflowFaultDisposition.HandleAtScope));
         }

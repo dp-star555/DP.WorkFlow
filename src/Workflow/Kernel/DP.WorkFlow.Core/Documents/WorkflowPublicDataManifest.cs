@@ -17,7 +17,7 @@ public static class WorkflowPublicDataManifest
     /// <summary>节点用到的公共数据没有登记。</summary>
     public const string UndeclaredCode = "WFPD02";
 
-    /// <summary>节点使用的形态或类型与登记不一致，或不同节点对同一个键的用法不一致。</summary>
+    /// <summary>节点使用的形态或类型与登记不一致，或不同节点对同一个键的用法不一致，或 <c>$global:</c> 绑定的成员或类型不匹配。</summary>
     public const string MismatchCode = "WFPD03";
 
     /// <summary>按画布顺序收集文档及其全部子画布中节点对公共数据的使用。</summary>
@@ -27,7 +27,7 @@ public static class WorkflowPublicDataManifest
     {
         Guard.NotNull(document);
         var uses = new List<WorkflowPublicDataUse>();
-        Collect(document, "$", uses, new HashSet<WorkflowDocument>(ReferenceEqualityComparer.Instance));
+        Collect(document, "$", uses, null, new HashSet<WorkflowDocument>(ReferenceEqualityComparer.Instance));
         return uses;
     }
 
@@ -120,27 +120,61 @@ public static class WorkflowPublicDataManifest
                     $"公共数据 {key}（{use.Declaration.Describe()}）没有登记到流程的公共数据清单；运行时首次使用时自动登记。", use,
                     WorkflowValidationSeverity.Warning));
         }
+        ValidateBindings(document, declared, diagnostics);
         return diagnostics;
+    }
+
+    /// <summary>核对 <c>$global:</c> 绑定：键应已登记，成员路径应存在且类型可转换为输入类型。</summary>
+    private static void ValidateBindings(WorkflowDocument document, IReadOnlyDictionary<string, WorkflowPublicDataDeclaration> declared,
+        List<WorkflowValidationError> diagnostics)
+    {
+        var bindings = new List<(WorkflowBindingUsage Usage, string PlanPath)>();
+        Collect(document, "$", null, bindings, new HashSet<WorkflowDocument>(ReferenceEqualityComparer.Instance));
+        foreach (var (usage, planPath) in bindings)
+        {
+            var key = usage.Binding.PublicDataKey!.Trim();
+            if (!declared.TryGetValue(key, out var declaration))
+            {
+                diagnostics.Add(new WorkflowValidationError(UndeclaredCode,
+                    $"节点 {usage.ConsumerNodeId} 的 {usage.ConfigurationPath} 绑定了未登记的公共数据 {key}。",
+                    usage.ConsumerNodeId, WorkflowValidationSeverity.Warning) { PlanPath = planPath });
+                continue;
+            }
+            var member = WorkflowBindingAnalyzer.EnumerateBindableMembers(declaration.GetClrType())
+                .FirstOrDefault(item => string.Equals(item.Path, usage.Binding.MemberPath, StringComparison.Ordinal));
+            if (member.Type is null)
+                diagnostics.Add(new WorkflowValidationError(MismatchCode,
+                    $"节点 {usage.ConsumerNodeId} 绑定的公共数据 {key}（{declaration.Describe()}）没有成员 {usage.Binding.MemberPath}。",
+                    usage.ConsumerNodeId) { PlanPath = planPath });
+            else if (!WorkflowBindingAnalyzer.IsTypeCompatible(member.Type, usage.ExpectedType))
+                diagnostics.Add(new WorkflowValidationError(MismatchCode,
+                    $"节点 {usage.ConsumerNodeId} 的 {usage.ConfigurationPath} 需要 {usage.ExpectedType.Name}，公共数据 {key} 的 {usage.Binding.MemberPath} 是 {member.Type.Name}。",
+                    usage.ConsumerNodeId) { PlanPath = planPath });
+        }
     }
 
     private static WorkflowValidationError Diagnostic(string code, string message, WorkflowPublicDataUse use,
         WorkflowValidationSeverity severity = WorkflowValidationSeverity.Error) =>
         new(code, message, use.NodeId, severity) { PlanPath = use.PlanPath };
 
-    private static void Collect(WorkflowDocument document, string path, List<WorkflowPublicDataUse> uses, HashSet<WorkflowDocument> visiting)
+    private static void Collect(WorkflowDocument document, string path, List<WorkflowPublicDataUse>? uses,
+        List<(WorkflowBindingUsage Usage, string PlanPath)>? bindings, HashSet<WorkflowDocument> visiting)
     {
         if (!visiting.Add(document))
             return;
         foreach (var node in document.Graph.Nodes)
         {
-            if (node is IWorkflowPublicDataUser user)
+            if (bindings is not null)
+                foreach (var usage in WorkflowBindingAnalyzer.ExtractCurrentCanvasUsages(node).Where(item => item.Binding.IsPublicData))
+                    bindings.Add((usage, path));
+            if (uses is not null && node is IWorkflowPublicDataUser user)
             {
                 foreach (var declaration in user.GetPublicDataUses() ?? Array.Empty<WorkflowPublicDataDeclaration>())
                     if (declaration is not null && !string.IsNullOrWhiteSpace(declaration.Key))
                         uses.Add(new WorkflowPublicDataUse(declaration with { Key = declaration.Key.Trim() }, node.Id, path));
             }
             if (node is IWorkflowSubDocumentNode composite && composite.SubDocument is not null)
-                Collect(composite.SubDocument, path + "/" + Uri.EscapeDataString(node.Id), uses, visiting);
+                Collect(composite.SubDocument, path + "/" + Uri.EscapeDataString(node.Id), uses, bindings, visiting);
         }
         visiting.Remove(document);
     }

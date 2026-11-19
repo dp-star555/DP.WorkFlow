@@ -49,23 +49,6 @@ public interface IWorkflowNodeExecutionContext
     /// <returns>删除了现有变量时返回 <see langword="true"/>。</returns>
     bool RemoveVariable(string key);
 
-    /// <summary>尝试读取独立公共数据仓中的指定值。</summary>
-    /// <typeparam name="T">要求的运行时类型。</typeparam>
-    /// <param name="key">公共数据稳定键。</param>
-    /// <param name="value">找到且类型兼容时返回公开值。</param>
-    /// <returns>键存在且值类型兼容时返回 <see langword="true"/>。</returns>
-    bool TryGetPublicData<T>(string key, out T? value);
-
-    /// <summary>暂存一个公共数据写入；仅在节点成功后提交。</summary>
-    /// <param name="key">公共数据稳定键。</param>
-    /// <param name="value">待公开的非空值。</param>
-    void PublishData(string key, object value);
-
-    /// <summary>暂存删除公共数据；仅在节点成功后提交。</summary>
-    /// <param name="key">公共数据稳定键。</param>
-    /// <returns>当前执行视图中该键存在时返回 <see langword="true"/>。</returns>
-    bool RemovePublicData(string key);
-
     /// <summary>解析固定值、公共数据或当前执行身份可见的节点输出绑定，并自动记录数据血缘。</summary>
     /// <typeparam name="T">节点属性要求的输入类型。</typeparam>
     /// <param name="input">包含固定值或绑定来源的输入配置；应为当前节点模型的公开输入属性实例。</param>

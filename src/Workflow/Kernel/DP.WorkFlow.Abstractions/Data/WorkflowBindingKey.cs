@@ -29,13 +29,13 @@ public readonly record struct WorkflowBindingKey
     /// <summary>获取输出对象成员路径；$ 表示整个输出对象。</summary>
     public string MemberPath { get; }
 
-    /// <summary>当前绑定是否来源于独立公共数据仓。</summary>
+    /// <summary>当前绑定是否来源于公共数据（bool 信号、数值或队列快照）。</summary>
     public bool IsPublicData => NodeId.StartsWith(GlobalVariablePrefix, StringComparison.Ordinal);
 
     /// <summary>公共数据键；非公共数据绑定时为空。</summary>
     public string? PublicDataKey => IsPublicData ? NodeId[GlobalVariablePrefix.Length..] : null;
 
-    /// <summary>创建指向独立公共数据仓的绑定；保留 <c>$global:</c> 前缀以兼容已有文档键。</summary>
+    /// <summary>创建指向公共数据的绑定（键须在流程公共数据清单中登记）；保留 <c>$global:</c> 前缀以兼容已有文档键。</summary>
     public static WorkflowBindingKey FromPublicData(string key, string memberPath = "$")
     {
         if (string.IsNullOrWhiteSpace(key)) throw new ArgumentException("公共数据键不能为空。", nameof(key));

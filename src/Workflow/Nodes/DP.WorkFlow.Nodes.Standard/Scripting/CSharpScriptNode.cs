@@ -153,9 +153,6 @@ public sealed class WorkflowScriptGlobals : IWorkflowScriptHostContext
     /// <summary>删除流程变量。</summary>
     public bool RemoveVariable(string key) => Context.RemoveVariable(key);
 
-    /// <summary>显式暂存公共数据发布。</summary>
-    public void PublishData(string key, object value) => Context.PublishData(key, value);
-
     /// <summary>写入脚本 Trace。</summary>
     public void Trace(string message) => Context.Trace("Script", message);
 }

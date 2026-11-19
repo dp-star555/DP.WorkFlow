@@ -121,7 +121,8 @@ public sealed class WorkflowPropertyInspectorTests
         var consumer = session.AddNode("Decision", 240, 0);
         session.Document.EntryNodeId = source.Node.Id;
         session.Connect(source.Node.Id, WorkflowPorts.True, consumer.Node.Id);
-        session.PublicDataCatalog.Register<bool>("MachineReady", "设备就绪", "设备公共数据");
+        session.DeclarePublicData(WorkflowPublicDataDeclaration.Signal("MachineReady") with { DisplayName = "设备就绪" });
+        session.DeclarePublicData(WorkflowPublicDataDeclaration.Queue("Jobs", E_SignalValueType.Int32));
         session.SelectedNodeId = consumer.Node.Id;
         using var inspector = new WorkflowPropertyInspectorModel(session, source.Node.Id);
         var title = inspector.Entries.Single(entry => entry.Name == nameof(IWorkflowNodeModel.Title));
@@ -137,6 +138,8 @@ public sealed class WorkflowPropertyInspectorTests
             item => item.SourceKind == WorkflowBindingCandidateSourceKind.PublicData
                 && item.SourceNodeId == "MachineReady" && item.MemberPath == "$");
         Assert.Equal(WorkflowBindingKey.FromPublicData("MachineReady"), publicData.ToBindingKey());
+        // 队列快照的 HasFirstValue 是 bool，也可作为条件来源。
+        Assert.Contains(candidates, item => item.SourceNodeId == "Jobs" && item.MemberPath == "HasFirstValue");
         inspector.SetWorkflowInput(
             condition,
             WorkflowValueSource.Binding,

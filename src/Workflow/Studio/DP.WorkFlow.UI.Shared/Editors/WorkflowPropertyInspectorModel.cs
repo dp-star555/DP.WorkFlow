@@ -447,7 +447,6 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
         _choiceProvider = choiceProvider;
         _additionalProperties = additionalProperties;
         _session.Changed += OnSessionChanged;
-        _session.PublicDataCatalog.Changed += OnPublicDataChanged;
         Refresh();
     }
 
@@ -522,17 +521,22 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
             return Array.Empty<WorkflowBindingCandidate>();
         var analysis = new WorkflowBindingAnalyzer(_session.Catalog).Analyze(_session.Document);
         var nodeCandidates = analysis.GetCandidates(SelectedNode.Id, entry.WorkflowInputType);
-        var globalCandidates = _session.PublicDataCatalog.Items
-            .SelectMany(item => WorkflowBindingAnalyzer.EnumerateBindableMembers(item.ValueType)
-                .Where(member => WorkflowBindingAnalyzer.IsTypeCompatible(member.Type, entry.WorkflowInputType))
-                .Select(member => new WorkflowBindingCandidate(
-                    item.Key,
-                    member.Path,
-                    member.Type,
-                    $"{item.Category}/{item.DisplayName}/{member.Path}",
-                    WorkflowBindingCandidateSourceKind.PublicData,
-                    item.DisplayName,
-                    item.Category)))
+        // 公共数据来源只取流程清单中的登记项（R2-d）：bool 信号、数值、队列快照。
+        var globalCandidates = _session.PublicData
+            .SelectMany(item =>
+            {
+                var displayName = string.IsNullOrWhiteSpace(item.DisplayName) ? item.Key : item.DisplayName!;
+                return WorkflowBindingAnalyzer.EnumerateBindableMembers(item.GetClrType())
+                    .Where(member => WorkflowBindingAnalyzer.IsTypeCompatible(member.Type, entry.WorkflowInputType))
+                    .Select(member => new WorkflowBindingCandidate(
+                        item.Key,
+                        member.Path,
+                        member.Type,
+                        $"公共数据/{displayName}/{member.Path}",
+                        WorkflowBindingCandidateSourceKind.PublicData,
+                        displayName,
+                        "公共数据"));
+            })
             .ToArray();
         return nodeCandidates.Concat(globalCandidates)
             .DistinctBy(candidate => candidate.ToBindingKey())
@@ -543,11 +547,7 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     public void Dispose()
     {
         _session.Changed -= OnSessionChanged;
-        _session.PublicDataCatalog.Changed -= OnPublicDataChanged;
     }
-
-    /// <summary>处理公共数据声明变化并通知属性面板刷新。</summary>
-    private void OnPublicDataChanged(object? sender, EventArgs e) => Changed?.Invoke(this, EventArgs.Empty);
 
     /// <summary>处理设计会话变更，并同步刷新派生模型。</summary>
     private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)

@@ -15,8 +15,6 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     private readonly WorkflowNodeInputMap _inputMap;
     private readonly Dictionary<string, object> _pendingVariableWrites = new(StringComparer.Ordinal);
     private readonly HashSet<string> _pendingVariableRemovals = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, object> _pendingPublicDataWrites = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _pendingPublicDataRemovals = new(StringComparer.Ordinal);
 
     /// <summary>创建单个节点执行实例看到的受限运行时适配器。</summary>
     /// <param name="context">底层共享运行上下文。</param>
@@ -119,45 +117,6 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
             throw new ArgumentException("键不能为空。", nameof(key));
         var existed = _pendingVariableWrites.Remove(key) || _context.ContainsVariable(key);
         _pendingVariableRemovals.Add(key);
-        return existed;
-    }
-
-    public bool TryGetPublicData<T>(string key, out T? value)
-    {
-        if (_pendingPublicDataRemovals.Contains(key))
-        {
-            value = default;
-            return false;
-        }
-        if (_pendingPublicDataWrites.TryGetValue(key, out var pending))
-        {
-            if (pending is T typed)
-            {
-                value = typed;
-                return true;
-            }
-            value = default;
-            return false;
-        }
-        return _context.PublicData.TryGet(key, out value);
-    }
-
-    public void PublishData(string key, object value)
-    {
-        if (string.IsNullOrWhiteSpace(key))
-            throw new ArgumentException("公共数据键不能为空。", nameof(key));
-        Guard.NotNull(value);
-        _pendingPublicDataRemovals.Remove(key);
-        _pendingPublicDataWrites[key] = value;
-    }
-
-    public bool RemovePublicData(string key)
-    {
-        if (string.IsNullOrWhiteSpace(key))
-            throw new ArgumentException("公共数据键不能为空。", nameof(key));
-        var existed = _pendingPublicDataWrites.Remove(key)
-            || _context.PublicData.Snapshot().ContainsKey(key);
-        _pendingPublicDataRemovals.Add(key);
         return existed;
     }
 
@@ -314,15 +273,9 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     internal IReadOnlyList<string> ChangedVariableKeys =>
         _pendingVariableWrites.Keys.Concat(_pendingVariableRemovals).Distinct(StringComparer.Ordinal).ToArray();
 
-    internal IReadOnlyList<string> ChangedPublicDataKeys =>
-        _pendingPublicDataWrites.Keys.Concat(_pendingPublicDataRemovals).Distinct(StringComparer.Ordinal).ToArray();
-
-    /// <summary>Publishes local-variable and public-data changes staged by a successfully completed node.</summary>
+    /// <summary>Publishes local-variable changes staged by a successfully completed node.</summary>
     internal void CommitDataChanges()
     {
-        // Public adapters may reject a commit; apply them before the in-memory local-variable update
-        // so a rejected publication cannot leak local writes from a node that will be marked failed.
-        _context.ApplyPublicDataChanges(_pendingPublicDataWrites, _pendingPublicDataRemovals);
         _context.ApplyVariableChanges(_pendingVariableWrites, _pendingVariableRemovals);
     }
 }

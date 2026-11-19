@@ -63,7 +63,6 @@ public sealed class WorkflowNodeTrialRunner
     {
         // 试运行的写入只在本次执行内可见，结束即丢弃。
         private readonly Dictionary<string, object?> _variables = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, object?> _publicData = new(StringComparer.Ordinal);
 
         public Guid BindingScopeId => scope;
         public string PlanPath => "$";
@@ -87,19 +86,6 @@ public sealed class WorkflowNodeTrialRunner
         {
             bool existed = _variables.TryGetValue(key, out var local) ? local is not null : context.ContainsVariable(key);
             _variables[key] = null;
-            return existed;
-        }
-
-        public bool TryGetPublicData<T>(string key, out T? value)
-        {
-            if (_publicData.TryGetValue(key, out var local)) { value = local is T typed ? typed : default; return local is T; }
-            return context.PublicData.TryGet(key, out value);
-        }
-        public void PublishData(string key, object value) => _publicData[key] = value ?? throw new ArgumentNullException(nameof(value));
-        public bool RemovePublicData(string key)
-        {
-            bool existed = _publicData.TryGetValue(key, out var local) ? local is not null : context.PublicData.Snapshot().ContainsKey(key);
-            _publicData[key] = null;
             return existed;
         }
 

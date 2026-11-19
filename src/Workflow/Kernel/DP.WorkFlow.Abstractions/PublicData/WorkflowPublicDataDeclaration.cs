@@ -51,6 +51,17 @@ public sealed record WorkflowPublicDataDeclaration(
         && Kind == other.Kind
         && ValueType == other.ValueType;
 
+    /// <summary>
+    /// 绑定读取时的值类型：bool 信号为 <see cref="bool"/>，数值为值类型对应的 CLR 类型，
+    /// 队列为 <see cref="WorkflowQueueSnapshot"/>（可绑定 Count、FirstValue 等成员）。
+    /// </summary>
+    public Type GetClrType() => Kind switch
+    {
+        WorkflowPublicDataKind.Signal => typeof(bool),
+        WorkflowPublicDataKind.Value => WorkflowPublicDataValues.GetClrType(ValueType),
+        _ => typeof(WorkflowQueueSnapshot)
+    };
+
     /// <summary>形态和类型的说明，例如"队列(Int32)"。</summary>
     public string Describe() => Kind switch
     {

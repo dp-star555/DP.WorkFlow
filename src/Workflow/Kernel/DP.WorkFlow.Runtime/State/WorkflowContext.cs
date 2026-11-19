@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 namespace DP.WorkFlow;
 
 /// <summary>
-/// 保存工作流作用域局部变量、按执行实例区分的节点输出、独立公共数据仓和宿主服务。
+/// 保存工作流作用域局部变量、按执行实例区分的节点输出、公共数据中心和宿主服务。
 /// 删除变量必须显式调用 <see cref="RemoveVariable"/>，不再以 null 表示删除。
 /// </summary>
 public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
@@ -11,22 +11,18 @@ public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
     private readonly ConcurrentDictionary<string, object> _variables = new(StringComparer.Ordinal);
     private readonly object _variableSync = new();
     private WorkflowRunState _runState = new();
-    private readonly IWorkflowPublicDataStore _publicData;
     private readonly IServiceProvider _hostServices;
 
     /// <summary>初始化具有独立局部变量和节点输出状态的运行上下文。</summary>
     /// <param name="services">节点处理器可获取的宿主服务容器；为空时使用始终返回空的容器。</param>
-    /// <param name="publicData">显式公共数据仓；为空时创建当前根上下文私有的数据仓。</param>
     /// <param name="publicDataCenter">
     /// 公共数据中心（bool 信号、数值、队列）；由流程管理传入时各流程共用一份，为空时创建只供本上下文及其子流程使用的中心。
     /// </param>
     public WorkflowContext(
         IServiceProvider? services = null,
-        IWorkflowPublicDataStore? publicData = null,
         WorkflowPublicDataCenter? publicDataCenter = null)
     {
         _hostServices = services ?? EmptyServiceProvider.Instance;
-        _publicData = publicData ?? new WorkflowPublicDataStore();
         PublicDataCenter = publicDataCenter ?? new WorkflowPublicDataCenter();
         // 宿主注册的同类型服务优先；没有时由公共数据中心提供信号、数值、队列。
         Services = PublicDataCenter.WrapServices(_hostServices);
@@ -38,8 +34,43 @@ public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
     /// <summary>获取公共数据中心；子流程与父流程共用。</summary>
     public WorkflowPublicDataCenter PublicDataCenter { get; }
 
-    /// <summary>获取与局部变量和节点输出分离的公共数据仓。</summary>
-    public IWorkflowPublicDataStore PublicData => _publicData;
+    /// <summary>
+    /// 读取公共数据当前值，供 <c>$global:</c> 绑定使用（R2-d）：bool 信号为 <see cref="bool"/>，
+    /// 数值为当前值，队列为 <see cref="WorkflowQueueSnapshot"/>。按登记的形态读取；没有登记时依次尝试数值和队列。
+    /// 宿主自己注册了信号、数值或队列服务时从宿主服务读取。
+    /// </summary>
+    /// <param name="key">公共数据键。</param>
+    /// <param name="value">当前值。</param>
+    /// <returns>有值时返回 <see langword="true"/>；数值尚未写入、队列不存在或未登记的信号返回 <see langword="false"/>。</returns>
+    public bool TryReadPublicData(string key, out object? value)
+    {
+        value = null;
+        if (string.IsNullOrWhiteSpace(key))
+            return false;
+        key = key.Trim();
+        WorkflowPublicDataKind? kind = PublicDataCenter.TryGetDeclaration(key, out var declaration) ? declaration!.Kind : null;
+        if (kind is null or WorkflowPublicDataKind.Value
+            && Services.GetService(typeof(IWorkflowValueSignalService)) is IWorkflowValueSignalService values
+            && values.ReadSnapshot(key) is { HasValue: true } snapshot)
+        {
+            value = snapshot.Value;
+            return true;
+        }
+        if (kind is null or WorkflowPublicDataKind.Queue
+            && Services.GetService(typeof(IWorkflowQueueService)) is IWorkflowQueueService queues
+            && queues.ReadSnapshot(key) is { } queue)
+        {
+            value = queue;
+            return true;
+        }
+        if (kind == WorkflowPublicDataKind.Signal
+            && Services.GetService(typeof(IWorkflowSignalService)) is IWorkflowSignalService signals)
+        {
+            value = signals.Read(key);
+            return true;
+        }
+        return false;
+    }
 
     /// <summary>所在复合节点传入本子流程的输入值，按输入名称索引；子画布的启动节点把它们作为输出。</summary>
     public IReadOnlyDictionary<string, object?> SubflowInputs { get; private set; } = WorkflowSubflowValues.EmptyInputs;
@@ -134,7 +165,7 @@ public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
 
     /// <summary>创建使用同一服务容器、默认不继承父变量且隔离节点输出的子流程上下文。</summary>
     /// <returns>共享服务和公共数据的新上下文；数据必须通过复合节点显式输入映射。</returns>
-    public WorkflowContext CreateChildScope() => new(_hostServices, _publicData, PublicDataCenter);
+    public WorkflowContext CreateChildScope() => new(_hostServices, PublicDataCenter);
 
     /// <summary>原子应用一个成功节点暂存的局部变量写入和删除集合。</summary>
     internal void ApplyVariableChanges(
@@ -151,12 +182,6 @@ public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
                 _variables[pair.Key] = pair.Value;
         }
     }
-
-    /// <summary>原子应用一个成功节点暂存的公共数据写入和删除集合。</summary>
-    internal void ApplyPublicDataChanges(
-        IReadOnlyDictionary<string, object> writes,
-        IReadOnlyCollection<string> removals) =>
-        _publicData.Apply(new WorkflowPublicDataChangeSet(writes, removals));
 
     /// <summary>将上下文绑定到本轮独立运行状态。</summary>
     /// <param name="runState">拥有本轮输出、作用域和故障事实的运行状态。</param>

@@ -80,17 +80,14 @@ public sealed partial class WorkflowDesignerSession
     /// <summary>初始化正式工作流文档的设计会话；构造过程只读取文档，不执行布局修复。</summary>
     /// <param name="document">目标工作流文档。</param>
     /// <param name="catalog">用于创建和查询节点的节点目录。</param>
-    /// <param name="publicDataCatalog">宿主可绑定公共数据目录。</param>
     /// <param name="publicData">根流程的公共数据清单；编辑子画布时传入根文档的清单，为空时使用本文档的清单。</param>
     public WorkflowDesignerSession(
         WorkflowDocument document,
         WorkflowNodeCatalog catalog,
-        WorkflowPublicDataCatalog? publicDataCatalog = null,
         List<WorkflowPublicDataDeclaration>? publicData = null)
     {
         Document = document ?? throw new ArgumentNullException(nameof(document));
         Catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
-        PublicDataCatalog = publicDataCatalog ?? new WorkflowPublicDataCatalog();
         PublicData = publicData ?? document.PublicData;
         FitNodeSizesToContent();
     }
@@ -120,9 +117,6 @@ public sealed partial class WorkflowDesignerSession
 
     /// <summary>获取节点目录。</summary>
     public WorkflowNodeCatalog Catalog { get; }
-
-    /// <summary>获取宿主声明的公共可绑定数据目录。</summary>
-    public WorkflowPublicDataCatalog PublicDataCatalog { get; }
 
     /// <summary>获取根流程的公共数据清单（R2-d）；子画布会话与根会话共用同一个清单。</summary>
     public List<WorkflowPublicDataDeclaration> PublicData { get; }

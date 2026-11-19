@@ -254,8 +254,6 @@ public sealed class LabelRecipeSelectionTests
         public T GetRequiredCapability<T>() where T : class => throw new NotSupportedException();
         public bool TryGetVariable<T>(string key, out T? value) { value = default; return false; }
         public void SetVariable(string key, object value) => throw new NotSupportedException(); public bool RemoveVariable(string key) => false;
-        public bool TryGetPublicData<T>(string key, out T? value) { value = default; return false; }
-        public void PublishData(string key, object value) => throw new NotSupportedException(); public bool RemovePublicData(string key) => false;
         public T? ResolveInput<T>(WorkflowInput<T> input) => throw new NotSupportedException();
         public T? ResolveDynamicInput<T>(string inputKey, WorkflowInput<T> input) => throw new NotSupportedException();
         public void Trace(string step, string? message = null, IReadOnlyDictionary<string, object?>? data = null) { }

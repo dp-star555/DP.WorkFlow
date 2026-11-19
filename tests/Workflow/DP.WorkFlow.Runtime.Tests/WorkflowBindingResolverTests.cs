@@ -42,16 +42,16 @@ public sealed class WorkflowBindingResolverTests
         {
             Id = "Consumer",
             Input = WorkflowInput<long>.FromBinding(
-                WorkflowBindingKey.FromPublicData("GlobalPayload", "Count"))
+                WorkflowBindingKey.FromPublicData("Jobs", "Count"))
         };
         var canvasDocument = new WorkflowDocument { Name = "全局数据绑定" };
         var canvas = canvasDocument.CanvasProjection;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = consumer });
-        var publicData = new WorkflowPublicDataStore();
-        publicData.Apply(new WorkflowPublicDataChangeSet(
-            new Dictionary<string, object> { ["GlobalPayload"] = new Payload(19) },
-            Array.Empty<string>()));
-        var context = new WorkflowContext(publicData: publicData);
+        // R2-d：$global: 绑定读公共数据中心；队列以快照提供，可绑定 Count 等成员。
+        var context = new WorkflowContext();
+        context.PublicDataCenter.Declare(WorkflowPublicDataDeclaration.Queue("Jobs", E_SignalValueType.Int32));
+        for (var item = 0; item < 19; item++)
+            context.PublicDataCenter.Queues.EnqueueValue("Jobs", item, E_SignalValueType.Int32, false, false);
         canvasDocument.EntryNodeId = consumer.Id;
         var definition = new WorkflowCompiler().Compile(canvasDocument);
 

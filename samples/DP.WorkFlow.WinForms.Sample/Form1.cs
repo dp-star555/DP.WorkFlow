@@ -108,7 +108,6 @@ public partial class Form1 : Form
         else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--geometry-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateGeometry(_workspace.Navigator!.RootSession);
         else if (recoveryDemo is null) WorkflowImageDemo.PopulateProcessing(_workspace.Navigator!.RootSession);
         else recoveryDemo.Populate(_workspace.Navigator!.RootSession);
-        SampleVisionHost.RegisterPublicData(_workspace.Navigator!.RootSession);
 
         // 4. 连接到设计器控件
         workflowStudioControl1.Workspace = _workspace;

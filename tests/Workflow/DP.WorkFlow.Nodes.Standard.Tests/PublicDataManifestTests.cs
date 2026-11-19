@@ -90,6 +90,50 @@ public sealed class PublicDataManifestTests
         Assert.Equal(WorkflowPublicDataKind.Value, center.Declarations.Single().Kind);
     }
 
+    [Fact]
+    public void Compile_ChecksGlobalBindingsAgainstManifest()
+    {
+        WorkflowDocument Document(string key, string member)
+        {
+            var document = Build(new DecisionNodeModel
+            {
+                Id = "Check", Title = "判断",
+                Condition = WorkflowInput<bool>.FromBinding(WorkflowBindingKey.FromPublicData(key, member))
+            });
+            document.PublicData.Add(WorkflowPublicDataDeclaration.Queue("Jobs", E_SignalValueType.Int32));
+            document.PublicData.Add(WorkflowPublicDataDeclaration.Value("Count", E_SignalValueType.Int32));
+            return document;
+        }
+        var compiler = new WorkflowCompiler(Catalog);
+
+        Assert.DoesNotContain(compiler.Compile(Document("Jobs", "HasFirstValue")).Diagnostics,
+            item => item.Code.StartsWith("WFPD", StringComparison.Ordinal));
+        Assert.Contains(compiler.Compile(Document("Missing", "$")).Diagnostics,
+            item => item.Code == WorkflowPublicDataManifest.UndeclaredCode && item.NodeId == "Check");
+        Assert.Contains(Assert.Throws<WorkflowCompilationException>(() => compiler.Compile(Document("Jobs", "Nope"))).Errors,
+            item => item.Code == WorkflowPublicDataManifest.MismatchCode);
+        Assert.Contains(Assert.Throws<WorkflowCompilationException>(() => compiler.Compile(Document("Count", "$"))).Errors,
+            item => item.Code == WorkflowPublicDataManifest.MismatchCode);
+    }
+
+    [Fact]
+    public async Task GlobalBinding_ReadsSignalFromCenter()
+    {
+        var document = Build(new DecisionNodeModel
+        {
+            Id = "Check", Title = "判断", ConditionSource = E_DecisionConditionSource.Binding,
+            Condition = WorkflowInput<bool>.FromBinding(WorkflowBindingKey.FromPublicData("Ready"))
+        });
+        document.PublicData.Add(WorkflowPublicDataDeclaration.Signal("Ready", defaultValue: true));
+        var engine = new WorkflowEngine(new WorkflowCompiler(Catalog).Compile(document),
+            new WorkflowNodeHandlerCatalog().Register(new DecisionNodeHandler()), new WorkflowContext());
+
+        var result = await engine.RunAsync();
+
+        Assert.True(result.Success, result.Message);
+        Assert.True(Assert.IsType<DecisionNodeResult>(engine.FindLatestNodeOutput(engine.RunState.RunId, "Check")!.Value).Value);
+    }
+
     private static WorkflowDocument Build(params IWorkflowNodeModel[] nodes)
     {
         var document = new WorkflowDocument { Name = "公共数据", EntryNodeId = nodes[0].Id };

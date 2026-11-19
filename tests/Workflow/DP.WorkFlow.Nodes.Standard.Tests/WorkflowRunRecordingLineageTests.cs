@@ -83,28 +83,26 @@ public sealed class WorkflowRunRecordingLineageTests
     public async Task InputResolved_PublicDataRecordsPublicDataKey()
     {
         var sink = new CollectingSink();
-        var publicData = new WorkflowPublicDataStore();
-        publicData.Apply(new WorkflowPublicDataChangeSet(
-            new Dictionary<string, object> { ["GlobalPayload"] = new PublicPayload(19) },
-            Array.Empty<string>()));
+        var context = new WorkflowContext();
+        context.PublicDataCenter.Values.WriteValue("GlobalCount", 19);
         var engine = CreateEngine(
             BuildDocument(
                 new LineageNodeModel
                 {
                     Id = "Consumer",
-                    Value = WorkflowInput<int>.FromBinding(WorkflowBindingKey.FromPublicData("GlobalPayload", "Count"))
+                    Value = WorkflowInput<int>.FromBinding(WorkflowBindingKey.FromPublicData("GlobalCount"))
                 },
                 startNodeId: "Consumer"),
             sink,
-            new WorkflowContext(publicData: publicData));
+            context);
 
         var result = await engine.RunAsync();
 
         Assert.True(result.Success, result.Message);
         var resolved = Assert.Single(sink.Events, item => item.EventType == "InputResolved");
         Assert.Equal("PublicData", resolved.Data!["SourceKind"].Text);
-        Assert.Equal("GlobalPayload", resolved.Data["PublicDataKey"].Text);
-        Assert.Equal("Count", resolved.Data["SourceOutputKey"].Text);
+        Assert.Equal("GlobalCount", resolved.Data["PublicDataKey"].Text);
+        Assert.Equal("$", resolved.Data["SourceOutputKey"].Text);
         Assert.Equal(19L, Convert.ToInt64(resolved.Data["ResolvedValueSummary"].Scalar));
     }
 

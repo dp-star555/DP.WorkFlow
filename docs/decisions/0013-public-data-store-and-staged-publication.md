@@ -1,6 +1,6 @@
 # ADR-0013：公共数据仓与流程局部变量分离
 
-- 状态：Accepted
+- 状态：Superseded（2026-11-19，R2-d：公共数据改由公共数据中心保存，只有 bool 信号 / 数值 / 队列，先登记后使用、写入立即生效；`IWorkflowPublicDataStore` 与 `PublishData` 已删除。见 `docs/runtime-optimization-record.md`）
 - 日期：2026-01-01
 
 ## 决策

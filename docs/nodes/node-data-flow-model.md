@@ -180,7 +180,7 @@ Value
 
 ## 8. 公共数据
 
-公共数据通过`IWorkflowPublicDataStore`保存，节点使用`PublishData/RemovePublicData`暂存更新，成功后批量应用。它可以通过`WorkflowBindingKey.FromPublicData`成为普通强类型绑定来源。
+公共数据由公共数据中心（`WorkflowPublicDataCenter`）保存，只有 bool 信号、数值、队列三种形态（R2-d）；流程文件的公共数据清单先登记后使用，写入立即生效（不再随节点成功暂存提交）。它可以通过`WorkflowBindingKey.FromPublicData`成为普通强类型绑定来源，读取当前值或队列快照。
 
 当前关系：
 

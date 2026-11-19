@@ -80,7 +80,6 @@ public partial class MainWindow : Window
         else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--geometry-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateGeometry(_workspace.Navigator!.RootSession);
         else if (recoveryDemo is null) WorkflowImageDemo.PopulateProcessing(_workspace.Navigator!.RootSession);
         else recoveryDemo.Populate(_workspace.Navigator!.RootSession);
-        SampleVisionHost.RegisterPublicData(_workspace.Navigator.RootSession);
         Studio.Workspace = _workspace;
         Studio.Diagnostics.Provider = _algorithmDiagnostics;
         Studio.AddToolWindow("插件与算法", new WorkflowVisionAlgorithmPanel(_algorithmDiagnostics,

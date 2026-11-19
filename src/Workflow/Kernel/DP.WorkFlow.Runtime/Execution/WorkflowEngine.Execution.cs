@@ -364,15 +364,6 @@ public sealed partial class WorkflowEngine
                 NodeType: node.NodeType,
                 ExecutionIdentity: identity,
                 Data: new Dictionary<string, object?> { ["Keys"] = variableKeys }));
-        var publicDataKeys = executionContext.ChangedPublicDataKeys;
-        if (publicDataKeys.Count > 0)
-            RecordRunEvent(new WorkflowRunEventDraft(
-                WorkflowRunEventCategory.DataFlow,
-                "PublicDataChangesCommitted",
-                NodeId: node.Id,
-                NodeType: node.NodeType,
-                ExecutionIdentity: identity,
-                Data: new Dictionary<string, object?> { ["Keys"] = publicDataKeys }));
     }
 
     private void RecordOutputCommitted(
