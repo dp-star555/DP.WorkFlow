@@ -24,14 +24,15 @@ public sealed record WorkflowNodeFault(
 /// <remarks>
 /// 输出历史只保留仍可能被读取的执行实例：同一节点的新输出对所有消费者都遮蔽旧输出时，旧输出立即退出历史。
 /// 环形流程因此按节点数而不是循环次数占用内存；被退出的输出交还调用方，以便释放其派生资源（例如图像帧租约）。
+/// 输出按节点分格保存（R2-b）：取值只打开目标节点那一格，不再复制全部节点的输出；
+/// 每格按执行序号递增排列，最后一个有效输出就是该节点的最新输出。
 /// </remarks>
 public sealed class WorkflowRunState
 {
     private readonly object _syncRoot = new();
     private readonly List<WorkflowNodeFault> _faults = new();
-    private readonly ConcurrentDictionary<string, WorkflowNodeOutput> _latestNodeOutputs = new(StringComparer.Ordinal);
-    // 按执行序号递增排列；读写都在 _historySync 内进行，退出历史需要从中间移除。
-    private readonly LinkedList<WorkflowNodeOutput> _nodeOutputHistory = new();
+    // 节点 → 该节点的输出（按执行序号递增）；读写都在 _historySync 内进行。
+    private readonly Dictionary<string, List<WorkflowNodeOutput>> _outputsByNode = new(StringComparer.Ordinal);
     private readonly object _historySync = new();
     private readonly ConcurrentDictionary<long, ParallelScopeVisibility> _parallelScopes = new();
     private readonly ConcurrentDictionary<long, byte> _invalidatedOutputs = new();
@@ -47,7 +48,7 @@ public sealed class WorkflowRunState
     /// </summary>
     public IReadOnlyList<WorkflowNodeOutput> NodeOutputs
     {
-        get { lock (_historySync) return _nodeOutputHistory.ToArray(); }
+        get { lock (_historySync) return AllOutputsLocked().ToArray(); }
     }
 
     /// <summary>Gets all node faults observed during this run in occurrence order.</summary>
@@ -78,11 +79,8 @@ public sealed class WorkflowRunState
     {
         lock (_historySync)
         {
-            foreach (var output in _nodeOutputHistory.Where(output => output.ExecutionSequence >= sequence))
+            foreach (var output in AllOutputsLocked().Where(output => output.ExecutionSequence >= sequence))
                 _invalidatedOutputs.TryAdd(output.ExecutionSequence, 0);
-            _latestNodeOutputs.Clear();
-            foreach (var output in _nodeOutputHistory.Where(output => !_invalidatedOutputs.ContainsKey(output.ExecutionSequence)))
-                _latestNodeOutputs[output.NodeId] = output;
         }
     }
 
@@ -91,7 +89,7 @@ public sealed class WorkflowRunState
         get
         {
             lock (_historySync)
-                return _nodeOutputHistory.Where(output => !_invalidatedOutputs.ContainsKey(output.ExecutionSequence)).ToArray();
+                return AllOutputsLocked().Where(output => !_invalidatedOutputs.ContainsKey(output.ExecutionSequence)).ToArray();
         }
     }
 
@@ -103,10 +101,9 @@ public sealed class WorkflowRunState
             _faults.Clear();
             _invalidatedOutputs.Clear();
             _recoveryEvents.Clear();
-            _latestNodeOutputs.Clear();
             _parallelScopes.Clear();
             lock (_historySync)
-                _nodeOutputHistory.Clear();
+                _outputsByNode.Clear();
             Interlocked.Exchange(ref _nodeExecutionSequence, 0);
         }
     }
@@ -120,10 +117,18 @@ public sealed class WorkflowRunState
 
     internal bool TryGetLatestNodeOutput(string nodeId, out WorkflowNodeOutput? output)
     {
-        if (_latestNodeOutputs.TryGetValue(nodeId, out var found))
+        lock (_historySync)
         {
-            output = found;
-            return true;
+            if (_outputsByNode.TryGetValue(nodeId, out var outputs))
+            {
+                for (var index = outputs.Count - 1; index >= 0; index--)
+                {
+                    if (_invalidatedOutputs.ContainsKey(outputs[index].ExecutionSequence))
+                        continue;
+                    output = outputs[index];
+                    return true;
+                }
+            }
         }
         output = null;
         return false;
@@ -160,12 +165,12 @@ public sealed class WorkflowRunState
                 Array.AsReadOnly(identity.ScopeIds.ToArray()),
                 DateTimeOffset.UtcNow,
                 value);
-            superseded = RemoveFromHistory(candidate =>
-                string.Equals(candidate.NodeId, nodeId, StringComparison.Ordinal)
-                && candidate.TokenId == output.TokenId
+            if (!_outputsByNode.TryGetValue(nodeId, out var outputs))
+                _outputsByNode[nodeId] = outputs = new List<WorkflowNodeOutput>(1);
+            superseded = RemoveFromNode(outputs, candidate =>
+                candidate.TokenId == output.TokenId
                 && candidate.ScopeIds.SequenceEqual(output.ScopeIds));
-            _nodeOutputHistory.AddLast(output);
-            _latestNodeOutputs[nodeId] = output;
+            outputs.Add(output);
             return output;
         }
     }
@@ -176,14 +181,21 @@ public sealed class WorkflowRunState
         out WorkflowNodeOutput? output)
     {
         var visibleTokenIds = new HashSet<long>(consumer.AncestorTokenIds) { consumer.TokenId };
-        WorkflowNodeOutput[] history;
+        WorkflowNodeOutput[] candidates;
         lock (_historySync)
-            history = _nodeOutputHistory.ToArray();
-        foreach (var candidate in history.AsEnumerable().Reverse())
         {
+            if (!_outputsByNode.TryGetValue(nodeId, out var outputs) || outputs.Count == 0)
+            {
+                output = null;
+                return false;
+            }
+            candidates = outputs.ToArray();
+        }
+        for (var index = candidates.Length - 1; index >= 0; index--)
+        {
+            var candidate = candidates[index];
             if (_invalidatedOutputs.ContainsKey(candidate.ExecutionSequence)
-                || candidate.RunId != consumer.RunId
-                || !string.Equals(candidate.NodeId, nodeId, StringComparison.Ordinal))
+                || candidate.RunId != consumer.RunId)
                 continue;
             if (candidate.TokenId == consumer.TokenId
                 || IsAncestorOutputVisible(candidate, consumer, visibleTokenIds)
@@ -221,25 +233,36 @@ public sealed class WorkflowRunState
         scope.IsCompleted = true;
         lock (_historySync)
         {
-            var depthByNode = new Dictionary<string, int>(StringComparer.Ordinal);
-            foreach (var output in _nodeOutputHistory)
+            List<WorkflowNodeOutput>? removed = null;
+            foreach (var outputs in _outputsByNode.Values)
             {
-                var depth = IndexOf(output.ScopeIds, scopeId);
-                if (depth >= 0 && !_invalidatedOutputs.ContainsKey(output.ExecutionSequence))
-                    depthByNode.TryAdd(output.NodeId, depth);
+                // 本节点在该作用域内的输出决定作用域所在层级；没有则本节点不受影响。
+                var depth = -1;
+                foreach (var output in outputs)
+                {
+                    if (_invalidatedOutputs.ContainsKey(output.ExecutionSequence))
+                        continue;
+                    depth = IndexOf(output.ScopeIds, scopeId);
+                    if (depth >= 0)
+                        break;
+                }
+                if (depth < 0)
+                    continue;
+                var nodeRemoved = RemoveFromNode(outputs, candidate =>
+                    candidate.ScopeIds.Count > depth
+                    && candidate.ScopeIds[depth] != scopeId
+                    && _parallelScopes.TryGetValue(candidate.ScopeIds[depth], out var older)
+                    && older.IsCompleted
+                    && older.OwnerTokenId == scope.OwnerTokenId);
+                if (nodeRemoved.Count > 0)
+                    (removed ??= new List<WorkflowNodeOutput>()).AddRange(nodeRemoved);
             }
-            if (depthByNode.Count == 0)
+            if (removed is null)
                 return;
-            superseded = RemoveFromHistory(candidate =>
-                depthByNode.TryGetValue(candidate.NodeId, out var depth)
-                && candidate.ScopeIds.Count > depth
-                && candidate.ScopeIds[depth] != scopeId
-                && _parallelScopes.TryGetValue(candidate.ScopeIds[depth], out var older)
-                && older.IsCompleted
-                && older.OwnerTokenId == scope.OwnerTokenId);
-            if (superseded.Count == 0)
-                return;
-            var referenced = new HashSet<long>(_nodeOutputHistory.SelectMany(output => output.ScopeIds));
+            // 与原先按全局历史顺序退出一致：按执行序号归还资源。
+            removed.Sort((left, right) => left.ExecutionSequence.CompareTo(right.ExecutionSequence));
+            superseded = removed;
+            var referenced = new HashSet<long>(AllOutputsLocked().SelectMany(output => output.ScopeIds));
             foreach (var pair in _parallelScopes)
                 if (pair.Value.IsCompleted && !referenced.Contains(pair.Key))
                     _parallelScopes.TryRemove(pair.Key, out _);
@@ -247,21 +270,29 @@ public sealed class WorkflowRunState
     }
 
     /// <summary>从历史中移除匹配的有效输出；调用方必须持有 <see cref="_historySync"/>。</summary>
-    private IReadOnlyList<WorkflowNodeOutput> RemoveFromHistory(Func<WorkflowNodeOutput, bool> predicate)
+    /// <summary>从一个节点的输出格中移除满足条件的有效输出（已作废的保留，供恢复诊断）。</summary>
+    private IReadOnlyList<WorkflowNodeOutput> RemoveFromNode(
+        List<WorkflowNodeOutput> outputs,
+        Func<WorkflowNodeOutput, bool> predicate)
     {
         List<WorkflowNodeOutput>? removed = null;
-        for (var node = _nodeOutputHistory.First; node is not null;)
+        for (var index = 0; index < outputs.Count;)
         {
-            var next = node.Next;
-            if (!_invalidatedOutputs.ContainsKey(node.Value.ExecutionSequence) && predicate(node.Value))
+            var candidate = outputs[index];
+            if (!_invalidatedOutputs.ContainsKey(candidate.ExecutionSequence) && predicate(candidate))
             {
-                _nodeOutputHistory.Remove(node);
-                (removed ??= new List<WorkflowNodeOutput>()).Add(node.Value);
+                outputs.RemoveAt(index);
+                (removed ??= new List<WorkflowNodeOutput>()).Add(candidate);
+                continue;
             }
-            node = next;
+            index++;
         }
         return removed is null ? Array.Empty<WorkflowNodeOutput>() : removed;
     }
+
+    /// <summary>全部节点的输出按执行序号排列；只用于导出、恢复等不在取值热路径上的场合。调用方须持有 _historySync。</summary>
+    private IEnumerable<WorkflowNodeOutput> AllOutputsLocked() =>
+        _outputsByNode.Values.SelectMany(outputs => outputs).OrderBy(output => output.ExecutionSequence);
 
     private static int IndexOf(IReadOnlyList<long> scopeIds, long scopeId)
     {
