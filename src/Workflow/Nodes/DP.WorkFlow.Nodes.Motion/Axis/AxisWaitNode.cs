@@ -40,7 +40,9 @@ public sealed class AxisWaitNodeHandler : WorkflowNodeHandler<AxisWaitNodeModel>
             : null;
         var request = new WorkflowAxisWaitRequest(
             node.ResolveAxis(context), node.Condition, target, node.PositionTolerance, node.TimeoutMs, node.PollIntervalMs);
+        using var wait = context.BeginWait($"轴 {request.Axis.DeviceId}[{request.Axis.AxisId}] {node.Condition}", node.TimeoutMs);
         var output = await AxisServoNodeHandler.GetService(context).WaitAsync(request, cancellationToken).ConfigureAwait(false);
+        wait.End(output.Success);
         if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         if (!output.Success && !node.TimeoutAsFalseBranch)
             return WorkflowRecoverableNodeFailure.Create(node, $"Axis wait timeout: {output.DeviceId}[{output.AxisId}] {output.Condition}.");

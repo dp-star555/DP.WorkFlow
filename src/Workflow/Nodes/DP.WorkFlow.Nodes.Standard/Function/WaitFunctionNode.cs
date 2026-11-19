@@ -42,6 +42,7 @@ public sealed class WaitFunctionNodeHandler : WorkflowNodeHandler<WaitFunctionNo
         var timeout = node.TimeoutMs > 0 ? TimeSpan.FromMilliseconds(node.TimeoutMs) : Timeout.InfiniteTimeSpan;
         var pollInterval = TimeSpan.FromMilliseconds(Math.Max(5, node.PollIntervalMs));
         var stopwatch = Stopwatch.StartNew();
+        using var wait = context.BeginWait($"条件 {node.FunctionKey}", timeout);
 
         while (true)
         {
@@ -49,6 +50,7 @@ public sealed class WaitFunctionNodeHandler : WorkflowNodeHandler<WaitFunctionNo
             if (await condition(context, cancellationToken).ConfigureAwait(false))
             {
                 var output = new WaitFunctionNodeResult(true, false, stopwatch.Elapsed);
+                wait.End(satisfied: true);
                 context.Trace("Matched", "等待条件已经满足。", new Dictionary<string, object?>
                 {
                     ["ElapsedMs"] = stopwatch.Elapsed.TotalMilliseconds
@@ -59,6 +61,7 @@ public sealed class WaitFunctionNodeHandler : WorkflowNodeHandler<WaitFunctionNo
             if (timeout != Timeout.InfiniteTimeSpan && stopwatch.Elapsed >= timeout)
             {
                 var output = new WaitFunctionNodeResult(false, true, stopwatch.Elapsed);
+                wait.End(satisfied: false);
                 context.Trace("Timeout", "等待条件超时。", new Dictionary<string, object?>
                 {
                     ["TimeoutMs"] = node.TimeoutMs,

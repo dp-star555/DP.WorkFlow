@@ -32,7 +32,9 @@ public sealed class SignalWaitNodeHandler : WorkflowNodeHandler<SignalWaitNodeMo
         var service = SignalSetNodeHandler.GetService(context, node.SignalKey);
         var signalKey = node.SignalKey.Trim();
         var expected = context.ResolveInput(node.ExpectedState);
+        using var wait = context.BeginWait($"信号 {signalKey} = {expected}", node.Timeout);
         var success = await service.WaitAsync(signalKey, expected, node.Timeout, cancellationToken).ConfigureAwait(false);
+        wait.End(success);
         if (success && node.AutoResetAfterMatched)
             service.Write(signalKey, false);
         var output = new SignalWaitNodeResult(signalKey, expected, success, node.AutoResetAfterMatched);

@@ -33,7 +33,11 @@ public sealed class DelayNodeHandler : WorkflowNodeHandler<DelayNodeModel>
 
         var startedAt = DateTimeOffset.UtcNow;
         if (node.DelayMs > 0)
+        {
+            using var wait = context.BeginWait($"延时 {node.DelayMs} ms");
             await Task.Delay(TimeSpan.FromMilliseconds(node.DelayMs), cancellationToken).ConfigureAwait(false);
+            wait.End(satisfied: true);
+        }
         var elapsed = DateTimeOffset.UtcNow - startedAt;
         return NodeExecutionResult.Continue(
             output: new DelayNodeResult(TimeSpan.FromMilliseconds(node.DelayMs), elapsed));

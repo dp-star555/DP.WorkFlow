@@ -201,6 +201,20 @@ public sealed class WorkflowEventStreamInvariantsTests
     }
 
     [Fact]
+    public void WaitNotEndedBeforeNodeEnds_IsReported()
+    {
+        var events = new Stream()
+            .Run("RunStarted")
+            .Node("NodeStarted", "A", 1)
+            .Trace("NodeWaitStarted", "A", 1)
+            .Node("NodeCompleted", "A", 1)
+            .Run("RunCompleted")
+            .Build();
+
+        Assert.Contains(WorkflowEventStreamInvariants.Check(events), item => item.Contains("没有 NodeWaitEnded"));
+    }
+
+    [Fact]
     public void ResumedWithoutPause_IsReported()
     {
         var events = new Stream()
@@ -258,6 +272,9 @@ public sealed class WorkflowEventStreamInvariantsTests
 
         public Stream Node(string type, string nodeId, int count) =>
             Add(type == "NodeFailed" ? WorkflowRunEventCategory.Fault : WorkflowRunEventCategory.NodeExecution, type, nodeId, count, null);
+
+        public Stream Trace(string type, string nodeId, int count) =>
+            Add(WorkflowRunEventCategory.Trace, type, nodeId, count, null);
 
         public Stream Structure(string type, string nodeId) =>
             Add(WorkflowRunEventCategory.Trace, type, nodeId, 0, null);

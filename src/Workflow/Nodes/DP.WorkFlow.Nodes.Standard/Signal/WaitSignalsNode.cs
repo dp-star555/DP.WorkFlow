@@ -21,7 +21,9 @@ public sealed class WaitSignalsNodeHandler : WorkflowNodeHandler<WaitSignalsNode
         var keys = node.WaitSignalKeys.Select(key => key?.Trim()).Where(key => !string.IsNullOrWhiteSpace(key)).Cast<string>().Distinct(StringComparer.Ordinal).ToArray();
         if (keys.Length == 0) throw new InvalidOperationException("至少需要配置一个等待信号。");
         TimeSpan? timeout = node.WaitTimeoutMs > 0 ? TimeSpan.FromMilliseconds(node.WaitTimeoutMs) : null;
+        using var wait = context.BeginWait("信号 " + string.Join("、", keys), timeout);
         var success = await context.WaitAllWorkflowSignalsAsync(keys, timeout, cancellationToken).ConfigureAwait(false);
+        wait.End(success);
         return NodeExecutionResult.Continue(success ? WorkflowPorts.Success : WorkflowPorts.Timeout, success);
     }
 }

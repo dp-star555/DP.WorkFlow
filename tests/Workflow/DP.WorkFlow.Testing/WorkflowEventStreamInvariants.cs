@@ -75,7 +75,8 @@ public static class WorkflowEventStreamInvariants
     /// 3. 每次节点开始（节点 + 第几次执行）恰好有一个完成 / 失败 / 取消，且在开始之后；
     /// 4. 节点名下的数据和步骤事件只出现在该次执行开始之后、结束之前（作用域级事件除外，只要求作用域节点已开始过）；
     /// 5. 每段运行结束时，没有仍未结束的节点执行；失败出口路由必须跟在该次执行的失败之后；
-    /// 8. 并行汇聚之前必须有同一作用域节点、同一令牌的并行开始；Paused 与 Resumed 交替出现。
+    /// 8. 并行汇聚之前必须有同一作用域节点、同一令牌的并行开始；Paused 与 Resumed 交替出现；
+    /// 9. 节点的每次等待开始（NodeWaitStarted）在该次执行结束前都有等待结束（NodeWaitEnded）。
     /// </summary>
     private static void CheckLifecycleAndNodes(WorkflowRunEvent[] ordered, List<string> violations)
     {
@@ -85,6 +86,7 @@ public static class WorkflowEventStreamInvariants
         var failed = new HashSet<(string NodeId, int Count)>();
         var openParallel = new Dictionary<(string NodeId, long TokenId), int>();
         var paused = false;
+        var openWaits = new Dictionary<(string NodeId, int Count), int>();
         foreach (var item in ordered)
         {
             var type = item.EventType;
@@ -139,6 +141,9 @@ public static class WorkflowEventStreamInvariants
             }
             if (NodeCloseEvents.Contains(type))
             {
+                if (openWaits.TryGetValue(key, out var waits) && waits > 0)
+                    violations.Add($"#{item.Sequence} {type}：节点 {key.NodeId} 第 {key.NodeExecutionCount} 次执行还有 {waits} 个等待没有 NodeWaitEnded。");
+                openWaits.Remove(key);
                 if (!open.Remove(key))
                     violations.Add(
                         $"#{item.Sequence} {type}：节点 {key.NodeId} 第 {key.NodeExecutionCount} 次执行"
@@ -165,6 +170,14 @@ public static class WorkflowEventStreamInvariants
                         openParallel[scope] = depth - 1;
                 }
                 continue;
+            }
+            if (type is "NodeWaitStarted" or "NodeWaitEnded")
+            {
+                openWaits.TryGetValue(key, out var waits);
+                if (type == "NodeWaitEnded" && waits == 0)
+                    violations.Add($"#{item.Sequence} NodeWaitEnded：节点 {key.NodeId} 第 {key.NodeExecutionCount} 次执行没有对应的 NodeWaitStarted。");
+                openWaits[key] = Math.Max(0, waits + (type == "NodeWaitStarted" ? 1 : -1));
+                // 仍按规则 4 检查是否在执行之内。
             }
             if (type == "NodeFaultRouted")
             {

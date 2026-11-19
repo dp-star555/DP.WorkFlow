@@ -40,7 +40,9 @@ public sealed class QueueWaitNodeHandler : WorkflowNodeHandler<QueueWaitNodeMode
         object? expected = node.Condition is E_WorkflowQueueWaitCondition.FirstEquals or E_WorkflowQueueWaitCondition.FirstNotEquals ? WorkflowQueueNodeRuntime.Resolve(node.ValueSource, node.LiteralValue, node.BindingValue, node.ValueType, context) : null;
         bool Match(WorkflowQueueSnapshot snapshot) => node.Condition switch { E_WorkflowQueueWaitCondition.HasData => snapshot.Count > 0, E_WorkflowQueueWaitCondition.FirstEquals => snapshot.HasFirstValue && Equals(snapshot.FirstValue, expected), E_WorkflowQueueWaitCondition.FirstNotEquals => snapshot.HasFirstValue && !Equals(snapshot.FirstValue, expected), E_WorkflowQueueWaitCondition.CountGreaterThan => snapshot.Count > node.CountThreshold, _ => false };
         TimeSpan? timeout = node.TimeoutMs > 0 ? TimeSpan.FromMilliseconds(node.TimeoutMs) : null;
+        using var wait = context.BeginWait($"队列 {node.QueueKey.Trim()} {node.Condition}", timeout);
         var snapshot = await service.WaitAsync(node.QueueKey.Trim(), node.ValueType, Match, timeout, node.AutoCreateIfMissing, cancellationToken).ConfigureAwait(false);
+        wait.End(snapshot is not null);
         var first = snapshot?.FirstValue;
         static T ConvertOr<T>(object? value, T fallback, Func<object, T> convert)
         {

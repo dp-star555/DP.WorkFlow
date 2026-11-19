@@ -24,7 +24,9 @@ public sealed class StationWaitCanSendNodeHandler : WorkflowNodeHandler<StationW
     {
         var address = ProductFlowNodeRuntime.ResolveAddress(node, context);
         var service = ProductFlowNodeRuntime.GetService(context);
+        using var wait = context.BeginWait($"工站 {address.StationId} 可出料", node.TimeoutMs);
         var matched = await ProductFlowNodeRuntime.WaitAsync(ct => service.CanSendAsync(address.StationId, address.SlotId, ct), node.TimeoutMs, node.PollIntervalMs, cancellationToken).ConfigureAwait(false);
+        wait.End(matched);
         var output = new StationWaitNodeResult(address.StationId, address.SlotId, matched);
         if (!matched && !node.TimeoutAsFalseBranch)
             return WorkflowRecoverableNodeFailure.Create(node, $"等待工站可出料超时: {address.StationId}");

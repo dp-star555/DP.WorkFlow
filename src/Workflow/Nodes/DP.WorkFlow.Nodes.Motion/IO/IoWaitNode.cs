@@ -37,8 +37,10 @@ public sealed class IoWaitNodeHandler : WorkflowNodeHandler<IoWaitNodeModel>
         if (node.PollIntervalMs <= 0) throw new InvalidOperationException("PollIntervalMs must be greater than 0.");
         var expectation = new WorkflowIoExpectation { DriveId = node.DriveId, Index = node.Index, IOType = node.IOType, ExpectedValue = node.ExpectedValue };
         _ = expectation.ToAddress();
+        using var wait = context.BeginWait($"IO {node.DriveId}[{node.Index}] = {node.ExpectedValue}", node.TimeoutMs);
         var output = await IoReadNodeHandler.GetService(context).WaitAsync(
             expectation, node.PassMode, node.HoldMs, node.TimeoutMs, node.PollIntervalMs, cancellationToken).ConfigureAwait(false);
+        wait.End(output.Success);
         if (!output.Success && !node.TimeoutAsFalseBranch)
             return WorkflowRecoverableNodeFailure.Create(node, output.Message ?? $"等待 IO 超时：{node.DriveId}[{node.Index}] -> {node.ExpectedValue}");
         var port = output.Success ? WorkflowPorts.Success : WorkflowPorts.Timeout;
