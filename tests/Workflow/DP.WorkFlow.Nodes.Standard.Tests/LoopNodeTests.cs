@@ -128,6 +128,76 @@ public sealed class LoopNodeTests
         Assert.Equal(E_WorkflowExecutionState.Canceled, result.State);
     }
 
+    [Fact]
+    public async Task RunAsync_UnlimitedLoop_ExitsAtExitLoopNodeAfterCurrentCycle()
+    {
+        var loop = new LoopNodeModel { Id = "Loop", Title = "循环", Iterations = 0 };
+        var body = new ActionNodeModel { Id = "Body", Title = "循环体", FunctionKey = "Body" };
+        var gate = new DecisionNodeModel
+        {
+            Id = "Gate", Title = "够了吗", ConditionSource = E_DecisionConditionSource.Binding,
+            Condition = WorkflowInput<bool>.FromBinding(new WorkflowBindingKey(body.Id, "$"))
+        };
+        var exit = new ExitLoopNodeModel { Id = "Exit", Title = "退出循环", LoopNodeId = loop.Id };
+        var end = new EndNodeModel { Id = "End", Title = "结束" };
+        var document = new WorkflowDocument { Name = "不限次数循环", EntryNodeId = loop.Id };
+        foreach (var node in new IWorkflowNodeModel[] { loop, body, gate, exit, end })
+            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.CanvasProjection.Connections.Add(Connect(loop.Id, WorkflowPorts.Loop, body.Id));
+        document.CanvasProjection.Connections.Add(Connect(body.Id, WorkflowPorts.Success, gate.Id));
+        document.CanvasProjection.Connections.Add(Connect(gate.Id, WorkflowPorts.False, loop.Id));
+        document.CanvasProjection.Connections.Add(Connect(gate.Id, WorkflowPorts.True, exit.Id));
+        document.CanvasProjection.Connections.Add(Connect(exit.Id, WorkflowPorts.Success, loop.Id));
+        document.CanvasProjection.Connections.Add(Connect(loop.Id, WorkflowPorts.Completed, end.Id));
+        var executions = 0;
+        var actions = new WorkflowActionRegistry().Register("Body", (_, _) => ValueTask.FromResult<object?>(++executions >= 4));
+        var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
+
+        var result = await new WorkflowEngine(
+            new WorkflowCompiler(new WorkflowNodeCatalog().RegisterStandardNodes()).Compile(document),
+            new WorkflowNodeHandlerCatalog().RegisterStandardNodeHandlers(), context).RunAsync();
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(4, executions);
+        Assert.True(context.TryGetNodeOutput(loop.Id, out var output));
+        var loopResult = Assert.IsType<LoopNodeResult>(output!.Value);
+        Assert.Equal(4, loopResult.CurrentIteration);
+        Assert.Equal("退出循环节点", loopResult.ExitReason);
+    }
+
+    [Fact]
+    public async Task RunAsync_ExitSignal_ExitsAtEndOfCycleAndResets()
+    {
+        var loop = new LoopNodeModel { Id = "Loop", Title = "循环", Iterations = 10, ExitSignalKey = "Stop" };
+        var body = new ActionNodeModel { Id = "Body", Title = "循环体", FunctionKey = "Body" };
+        var end = new EndNodeModel { Id = "End", Title = "结束" };
+        var document = new WorkflowDocument { Name = "外部退出", EntryNodeId = loop.Id };
+        foreach (var node in new IWorkflowNodeModel[] { loop, body, end })
+            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.CanvasProjection.Connections.Add(Connect(loop.Id, WorkflowPorts.Loop, body.Id));
+        document.CanvasProjection.Connections.Add(Connect(body.Id, WorkflowPorts.Success, loop.Id));
+        document.CanvasProjection.Connections.Add(Connect(loop.Id, WorkflowPorts.Completed, end.Id));
+        var executions = 0;
+        WorkflowContext? context = null;
+        var actions = new WorkflowActionRegistry().Register("Body", (_, _) =>
+        {
+            if (++executions == 2)
+                context!.PublicDataCenter.Signals.Write("Stop", true);
+            return ValueTask.FromResult<object?>(null);
+        });
+        context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
+
+        var result = await new WorkflowEngine(
+            new WorkflowCompiler(new WorkflowNodeCatalog().RegisterStandardNodes()).Compile(document),
+            new WorkflowNodeHandlerCatalog().RegisterStandardNodeHandlers(), context).RunAsync();
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(2, executions);
+        Assert.True(context.TryGetNodeOutput(loop.Id, out var output));
+        Assert.Equal("外部退出信号", Assert.IsType<LoopNodeResult>(output!.Value).ExitReason);
+        Assert.False(context.PublicDataCenter.Signals.Read("Stop"));
+    }
+
     private static WorkflowConnectionModel Connect(string from, string port, string to) => new()
     {
         FromNodeId = from,

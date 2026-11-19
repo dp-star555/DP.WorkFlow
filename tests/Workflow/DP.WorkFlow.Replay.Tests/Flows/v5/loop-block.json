@@ -40,7 +40,8 @@
         "Inputs": [],
         "Outputs": [],
         "Iterations": 3,
-        "ExitVariableName": "",
+        "ExitSignalKey": "",
+        "ResetExitSignal": true,
         "Id": "LoopBlock",
         "Title": "\u5FAA\u73AF\u5757"
       },

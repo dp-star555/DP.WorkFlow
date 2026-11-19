@@ -38,6 +38,8 @@
       "Config": {
         "NodeType": "Loop",
         "Iterations": 2,
+        "ExitSignalKey": "",
+        "ResetExitSignal": true,
         "Id": "Loop",
         "Title": "\u5FAA\u73AF"
       },

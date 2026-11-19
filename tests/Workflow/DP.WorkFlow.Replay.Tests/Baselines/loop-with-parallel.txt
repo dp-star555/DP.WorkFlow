@@ -6,8 +6,8 @@
     OutputCommitted Start#1 OutputExecutionSequence=Start#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=
     NodeCompleted Start#1 Message=节点执行完成。 SelectedPort=Success
     NodeStarted Loop#1 圈1 Message=节点开始执行。
-    Loop Loop#1 圈1 CurrentIteration=1 Message=进入第 1/2 次循环。 Port=Loop TotalIterations=2
-    OutputCommitted Loop#1 圈1 OutputExecutionSequence=Loop#1 OutputKeys=Completed, CurrentIteration, TotalIterations OutputType=DP.WorkFlow.LoopNodeResult OutputValue.Completed=False OutputValue.CurrentIteration=1 OutputValue.TotalIterations=2
+    Loop Loop#1 圈1 CurrentIteration=1 ExitReason=null Message=进入第 1/2 次循环。 Port=Loop TotalIterations=2
+    OutputCommitted Loop#1 圈1 OutputExecutionSequence=Loop#1 OutputKeys=Completed, CurrentIteration, ExitReason, TotalIterations OutputType=DP.WorkFlow.LoopNodeResult OutputValue.Completed=False OutputValue.CurrentIteration=1 OutputValue.ExitReason= OutputValue.TotalIterations=2
     NodeCompleted Loop#1 圈1 Message=节点执行完成。 SelectedPort=Loop
     NodeStarted Parallel#1 Message=节点开始执行。
     ParallelDispatch Parallel#1 Message=请求派发 Branch 端口上的全部并行分支。
@@ -20,8 +20,8 @@
     OutputCommitted Merge#1 OutputExecutionSequence=Merge#1 OutputKeys=$ OutputType=null OutputValue.$=null
     NodeCompleted Merge#1 Message=节点执行完成。 SelectedPort=Success
     NodeStarted Loop#2 圈2 Message=节点开始执行。
-    Loop Loop#2 圈2 CurrentIteration=2 Message=进入第 2/2 次循环。 Port=Loop TotalIterations=2
-    OutputCommitted Loop#2 圈2 OutputExecutionSequence=Loop#2 OutputKeys=Completed, CurrentIteration, TotalIterations OutputType=DP.WorkFlow.LoopNodeResult OutputValue.Completed=False OutputValue.CurrentIteration=2 OutputValue.TotalIterations=2
+    Loop Loop#2 圈2 CurrentIteration=2 ExitReason=null Message=进入第 2/2 次循环。 Port=Loop TotalIterations=2
+    OutputCommitted Loop#2 圈2 OutputExecutionSequence=Loop#2 OutputKeys=Completed, CurrentIteration, ExitReason, TotalIterations OutputType=DP.WorkFlow.LoopNodeResult OutputValue.Completed=False OutputValue.CurrentIteration=2 OutputValue.ExitReason= OutputValue.TotalIterations=2
     NodeCompleted Loop#2 圈2 Message=节点执行完成。 SelectedPort=Loop
     NodeStarted Parallel#2 Message=节点开始执行。
     ParallelDispatch Parallel#2 Message=请求派发 Branch 端口上的全部并行分支。
@@ -34,8 +34,8 @@
     OutputCommitted Merge#2 OutputExecutionSequence=Merge#2 OutputKeys=$ OutputType=null OutputValue.$=null
     NodeCompleted Merge#2 Message=节点执行完成。 SelectedPort=Success
     NodeStarted Loop#3 圈3 Message=节点开始执行。
-    Loop Loop#3 圈3 CurrentIteration=3 Message=循环已完成，共执行 2 次。 Port=Completed TotalIterations=2
-    OutputCommitted Loop#3 圈3 OutputExecutionSequence=Loop#3 OutputKeys=Completed, CurrentIteration, TotalIterations OutputType=DP.WorkFlow.LoopNodeResult OutputValue.Completed=True OutputValue.CurrentIteration=2 OutputValue.TotalIterations=2
+    Loop Loop#3 圈3 CurrentIteration=3 ExitReason=达到循环次数 Message=循环结束：达到循环次数，共执行 2 次。 Port=Completed TotalIterations=2
+    OutputCommitted Loop#3 圈3 OutputExecutionSequence=Loop#3 OutputKeys=Completed, CurrentIteration, ExitReason, TotalIterations OutputType=DP.WorkFlow.LoopNodeResult OutputValue.Completed=True OutputValue.CurrentIteration=2 OutputValue.ExitReason=达到循环次数 OutputValue.TotalIterations=2
     NodeCompleted Loop#3 圈3 Message=节点执行完成。 SelectedPort=Completed
     NodeStarted End#1 Message=节点开始执行。
     End End#1 Message=当前执行路径结束。

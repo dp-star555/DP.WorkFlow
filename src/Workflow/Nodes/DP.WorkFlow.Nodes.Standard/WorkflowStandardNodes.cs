@@ -68,6 +68,8 @@ public static class WorkflowStandardNodes
                     WorkflowPortDescriptor.Output(WorkflowPorts.Loop),
                     WorkflowPortDescriptor.Output(WorkflowPorts.Completed)
                 }))
+            .Register(WorkflowNodeDescriptor.Create<ExitLoopNodeModel>(
+                ports: new[] { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output() }))
             .Register(WorkflowNodeDescriptor.Create<JumpNodeModel>(
                 ports: new[] { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output() }))
             .Register(WorkflowNodeDescriptor.Create<ParallelAllNodeModel>(
@@ -134,7 +136,11 @@ public static class WorkflowStandardNodes
             .Register(new StringCompareNodeHandler())
             .Register(new WaitFunctionNodeHandler(), ConditionRegistryCapability)
             .Register(new DelayNodeHandler())
-            .Register(new LoopNodeHandler())
+            .Register(new LoopNodeHandler(), node =>
+                string.IsNullOrWhiteSpace(((LoopNodeModel)node).ExitSignalKey)
+                    ? Array.Empty<WorkflowRuntimeCapabilityRequirement>()
+                    : new[] { SignalCapability })
+            .Register(new ExitLoopNodeHandler())
             .Register(new JumpNodeHandler())
             .Register(new ParallelAllNodeHandler())
             .Register(new WaitAllInputsCompletedNodeHandler())

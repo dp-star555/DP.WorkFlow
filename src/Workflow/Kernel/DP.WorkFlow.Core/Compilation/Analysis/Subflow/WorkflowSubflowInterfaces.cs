@@ -3,6 +3,9 @@ namespace DP.WorkFlow;
 /// <summary>复合节点子流程接口（输入/输出）的类型解析、成员注入、绑定声明和校验。</summary>
 public static class WorkflowSubflowInterfaces
 {
+    /// <summary>循环块子画布启动节点上"当前圈数"成员的名称。</summary>
+    public const string CurrentIterationName = "CurrentIteration";
+
     /// <summary>
     /// 解析文档及其全部嵌套子画布中复合节点接口的类型并注入：输入成员注入子画布的启动节点，
     /// 输出成员注入复合节点。来源无法解析时按 <see cref="object"/> 处理，具体错误由编译期绑定校验报告。
@@ -35,6 +38,10 @@ public static class WorkflowSubflowInterfaces
                     : WorkflowSubflowInput.ClrType(input.ValueType);
                 return new WorkflowBindableMember(name, type ?? typeof(object), name);
             })
+            .Concat(composite is IWorkflowLoopSubflowNode
+                    && !composite.Inputs.Any(input => string.Equals(input.Name?.Trim(), CurrentIterationName, StringComparison.Ordinal))
+                ? new[] { new WorkflowBindableMember(CurrentIterationName, typeof(int), "当前圈数") }
+                : Array.Empty<WorkflowBindableMember>())
             .ToArray();
     }
 

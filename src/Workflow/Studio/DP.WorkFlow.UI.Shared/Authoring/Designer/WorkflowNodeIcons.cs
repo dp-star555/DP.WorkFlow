@@ -170,7 +170,7 @@ public static class WorkflowNodeIcons
     {
         ("Start", "play"), ("End", "stop"),
         ("ParallelAll", "split"), ("WaitAllInputsCompleted", "merge"),
-        ("Delay", "clock"), ("Jump", "jump"), ("Loop", "loop"), ("LoopBlock", "loop"), ("Block", "layers"),
+        ("Delay", "clock"), ("Jump", "jump"), ("Loop", "loop"), ("ExitLoop", "loop"), ("LoopBlock", "loop"), ("Block", "layers"),
         ("Decision", "decision"), ("ValueCompare", "compare"), ("StringCompare", "compare"),
         ("Action", "bolt"), ("WaitFunction", "hourglass"), ("CSharpScript", "code"), ("ConvertValue", "convert"),
         ("VacuumControl", "vacuum"), ("VacuumWait", "vacuum"),

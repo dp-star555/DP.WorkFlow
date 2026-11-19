@@ -17,3 +17,11 @@ public interface IWorkflowSubflowNode : IWorkflowSubDocumentNode
     /// </summary>
     IReadOnlyList<WorkflowBindableMember> SubflowOutputs { get; set; }
 }
+
+/// <summary>
+/// 每圈运行一次子画布的复合节点（循环块）：子画布启动节点除子流程输入外还带"当前圈数"
+/// （<see cref="WorkflowSubflowInterfaces.CurrentIterationName"/>，Int32，从 1 开始），可被绑定。
+/// </summary>
+public interface IWorkflowLoopSubflowNode : IWorkflowSubflowNode
+{
+}

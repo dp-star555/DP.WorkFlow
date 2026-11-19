@@ -12,7 +12,7 @@ public sealed class WorkflowStandardRuntimePluginModuleTests
             .Freeze();
 
         Assert.True(composition.IsFrozen);
-        Assert.Equal(25, nodes.Snapshot().Count); // WaitSignals 已随运行内信号去掉（R2-d）。
+        Assert.Equal(26, nodes.Snapshot().Count); // WaitSignals 已随运行内信号去掉（R2-d）；新增 ExitLoop（R3-c）。
         Assert.All(nodes.Snapshot().Values, descriptor =>
             Assert.NotNull(handlers.Resolve(descriptor.Factory())));
         var functionDecision = handlers.ResolveWithRequirements(new DecisionNodeModel());
