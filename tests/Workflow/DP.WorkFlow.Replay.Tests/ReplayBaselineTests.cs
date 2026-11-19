@@ -24,23 +24,52 @@ public sealed class ReplayBaselineTests
         return data;
     }
 
-    [Theory]
-    [MemberData(nameof(FlowNames))]
-    public async Task Replay_MatchesBaseline(string flowName)
+    /// <summary>Flows/ 下所有格式版本目录中的全部流程文件：（格式目录，流程名）。</summary>
+    public static TheoryData<string, string> FlowFiles()
     {
+        var data = new TheoryData<string, string>();
+        foreach (var folder in Directory.GetDirectories(ReplayPaths.FlowsRoot()).OrderBy(path => path, StringComparer.Ordinal))
+            foreach (var file in Directory.GetFiles(folder, "*.json").OrderBy(path => path, StringComparer.Ordinal))
+                data.Add(Path.GetFileName(folder), Path.GetFileNameWithoutExtension(file));
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(FlowFiles))]
+    public async Task Replay_MatchesBaseline(string formatFolder, string flowName)
+    {
+        // 每个格式版本的流程文件都要能打开，并且运行结果与同一份基准一致：
+        // 旧格式文件（以后格式升级后保留下来的目录）由此证明"旧文件打开并自动升级"后行为不变。
         var store = new WorkflowDocumentJsonStore(ReplayFlows.CreateCatalog());
-        var flowPath = ReplayPaths.Flow(FlowFormatFolder, flowName);
-        if (ReplayPaths.UpdateRequested && !File.Exists(flowPath))
-            ReplayPaths.Write(flowPath, store.Serialize(ReplayFlows.All[flowName]()));
-        var loaded = store.Deserialize(File.ReadAllText(flowPath));
+        var loaded = store.Deserialize(File.ReadAllText(ReplayPaths.Flow(formatFolder, flowName)));
 
         var actual = await RunAsync(loaded.Document);
 
         var baselinePath = ReplayPaths.Baseline(flowName);
-        if (ReplayPaths.UpdateRequested)
+        if (ReplayPaths.UpdateRequested && formatFolder == FlowFormatFolder)
             ReplayPaths.Write(baselinePath, actual);
         Assert.True(File.Exists(baselinePath), $"缺少基准 {baselinePath}；设置 DP_WORKFLOW_UPDATE_BASELINES=1 生成。");
         Assert.Equal(ReplayPaths.ReadNormalized(baselinePath), actual);
+    }
+
+    [Theory]
+    [MemberData(nameof(FlowNames))]
+    public void CurrentFormat_FlowFileMatchesSavedDocument(string flowName)
+    {
+        // R5-b：用当前代码保存同一流程，必须与版本库中的当前格式文件逐字相同；打开再保存也不变。
+        // 格式刻意变化时：新建 Flows/v{新版本}，并把 FlowFormatFolder 指过去；旧目录保留不动。
+        var store = new WorkflowDocumentJsonStore(ReplayFlows.CreateCatalog());
+        var path = ReplayPaths.Flow(FlowFormatFolder, flowName);
+        var saved = store.Serialize(ReplayFlows.All[flowName]()).Replace("\r\n", "\n");
+        if (ReplayPaths.UpdateRequested && !File.Exists(path))
+            ReplayPaths.Write(path, saved);
+
+        var committed = ReplayPaths.ReadNormalized(path);
+        var reloaded = store.Deserialize(committed);
+
+        Assert.Equal(committed, saved);
+        Assert.Empty(reloaded.Migration.Warnings);
+        Assert.Equal(committed, store.Serialize(reloaded.Document).Replace("\r\n", "\n"));
     }
 
     [Theory]
@@ -101,6 +130,8 @@ internal static class ReplayPaths
 {
     public static bool UpdateRequested =>
         Environment.GetEnvironmentVariable("DP_WORKFLOW_UPDATE_BASELINES") == "1";
+
+    public static string FlowsRoot() => Path.Combine(ProjectDirectory(), "Flows");
 
     public static string Flow(string formatFolder, string name) =>
         Path.Combine(ProjectDirectory(), "Flows", formatFolder, name + ".json");
