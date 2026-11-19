@@ -17,8 +17,6 @@ public sealed record SignalSetNodeResult([property: DisplayName("信号键")] st
 /// <summary>表示信号等待结果。</summary>
 public sealed record SignalWaitNodeResult([property: DisplayName("信号键")] string SignalKey, [property: DisplayName("期望状态")] bool ExpectedState, [property: DisplayName("是否成功")] bool Success, [property: DisplayName("自动复位")] bool AutoReset);
 
-/// <summary>数据信号值类型。</summary>
-public enum E_SignalValueType { String = 0, Int32 = 1, Int64 = 2, Double = 3, Boolean = 4 }
 /// <summary>数据信号值来源。</summary>
 public enum E_SignalValueSource { Literal = 0, Binding = 1 }
 /// <summary>数据信号等待模式。</summary>
@@ -28,8 +26,6 @@ public enum E_SignalValueWriteMode { Set = 0, Increment = 1, Decrement = 2 }
 /// <summary>数据信号比较操作。</summary>
 public enum E_SignalWaitOperator { Equal = 0, NotEqual = 1, GreaterThan = 2, GreaterOrEqual = 3, LessThan = 4, LessOrEqual = 5 }
 
-/// <summary>数据信号快照。</summary>
-public sealed record WorkflowValueSignalSnapshot(string SignalKey, object? Value, long Version, bool HasValue);
 /// <summary>数据信号节点结果，保留旧版全部类型字段。</summary>
 public sealed record SignalValueNodeResult([property: DisplayName("信号键")] string SignalKey, [property: DisplayName("值类型")] E_SignalValueType ValueType, [property: DisplayName("是否成功")] bool Success, [property: DisplayName("版本")] long Version, [property: DisplayName("是否有值")] bool HasValue, [property: DisplayName("字符串值")] string StringValue, [property: DisplayName("整数值")] int Int32Value, [property: DisplayName("长整数值")] long Int64Value, [property: DisplayName("浮点值")] double DoubleValue, [property: DisplayName("布尔值")] bool BoolValue, [property: DisplayName("写入方式")] E_SignalValueWriteMode WriteMode);
 /// <summary>布尔信号初始化项。</summary>

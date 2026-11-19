@@ -12,20 +12,31 @@ public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
     private readonly object _variableSync = new();
     private WorkflowRunState _runState = new();
     private readonly IWorkflowPublicDataStore _publicData;
+    private readonly IServiceProvider _hostServices;
 
     /// <summary>初始化具有独立局部变量和节点输出状态的运行上下文。</summary>
     /// <param name="services">节点处理器可获取的宿主服务容器；为空时使用始终返回空的容器。</param>
     /// <param name="publicData">显式公共数据仓；为空时创建当前根上下文私有的数据仓。</param>
+    /// <param name="publicDataCenter">
+    /// 公共数据中心（bool 信号、数值、队列）；由流程管理传入时各流程共用一份，为空时创建只供本上下文及其子流程使用的中心。
+    /// </param>
     public WorkflowContext(
         IServiceProvider? services = null,
-        IWorkflowPublicDataStore? publicData = null)
+        IWorkflowPublicDataStore? publicData = null,
+        WorkflowPublicDataCenter? publicDataCenter = null)
     {
-        Services = services ?? EmptyServiceProvider.Instance;
+        _hostServices = services ?? EmptyServiceProvider.Instance;
         _publicData = publicData ?? new WorkflowPublicDataStore();
+        PublicDataCenter = publicDataCenter ?? new WorkflowPublicDataCenter();
+        // 宿主注册的同类型服务优先；没有时由公共数据中心提供信号、数值、队列。
+        Services = PublicDataCenter.WrapServices(_hostServices);
     }
 
-    /// <summary>获取宿主服务容器。</summary>
+    /// <summary>获取宿主服务容器（含公共数据中心提供的信号、数值、队列）。</summary>
     public IServiceProvider Services { get; }
+
+    /// <summary>获取公共数据中心；子流程与父流程共用。</summary>
+    public WorkflowPublicDataCenter PublicDataCenter { get; }
 
     /// <summary>获取与局部变量和节点输出分离的公共数据仓。</summary>
     public IWorkflowPublicDataStore PublicData => _publicData;
@@ -123,7 +134,7 @@ public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
 
     /// <summary>创建使用同一服务容器、默认不继承父变量且隔离节点输出的子流程上下文。</summary>
     /// <returns>共享服务和公共数据的新上下文；数据必须通过复合节点显式输入映射。</returns>
-    public WorkflowContext CreateChildScope() => new(Services, _publicData);
+    public WorkflowContext CreateChildScope() => new(_hostServices, _publicData, PublicDataCenter);
 
     /// <summary>原子应用一个成功节点暂存的局部变量写入和删除集合。</summary>
     internal void ApplyVariableChanges(

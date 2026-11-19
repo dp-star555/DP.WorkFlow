@@ -2,23 +2,6 @@ using System.Collections.Concurrent;
 
 namespace DP.WorkFlow;
 
-/// <summary>提供线程安全、UI 无关的命名布尔信号服务。</summary>
-public interface IWorkflowSignalService
-{
-    /// <summary>读取信号；不存在时返回 <see langword="false"/>。</summary>
-    bool Read(string signalKey);
-
-    /// <summary>写入信号并唤醒等待者。</summary>
-    void Write(string signalKey, bool value);
-
-    /// <summary>等待信号达到期望状态，匹配返回 true，超时返回 false。</summary>
-    ValueTask<bool> WaitAsync(
-        string signalKey,
-        bool expectedValue,
-        TimeSpan timeout,
-        CancellationToken cancellationToken);
-}
-
 /// <summary>默认的进程内线程安全信号服务。</summary>
 public sealed class WorkflowSignalService : IWorkflowSignalService
 {

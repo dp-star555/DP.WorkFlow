@@ -41,15 +41,7 @@ public sealed class SignalValueSetNodeHandler : WorkflowNodeHandler<SignalValueS
         if (string.IsNullOrWhiteSpace(key)) throw new InvalidOperationException("SignalKey 为空。");
         return context.GetRequiredCapability<IWorkflowValueSignalService>();
     }
-    internal static object ConvertValue(object? value, E_SignalValueType type) => type switch
-    {
-        E_SignalValueType.String => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,
-        E_SignalValueType.Int32 => Convert.ToInt32(value, CultureInfo.InvariantCulture),
-        E_SignalValueType.Int64 => Convert.ToInt64(value, CultureInfo.InvariantCulture),
-        E_SignalValueType.Double => Convert.ToDouble(value, CultureInfo.InvariantCulture),
-        E_SignalValueType.Boolean => Convert.ToBoolean(value, CultureInfo.InvariantCulture),
-        _ => throw new ArgumentOutOfRangeException(nameof(type))
-    };
+    internal static object ConvertValue(object? value, E_SignalValueType type) => WorkflowPublicDataValues.Convert(value, type);
     internal static bool Compare(object? left, object right, E_SignalValueType type, E_SignalWaitOperator op)
     {
         var l = ConvertValue(left, type);

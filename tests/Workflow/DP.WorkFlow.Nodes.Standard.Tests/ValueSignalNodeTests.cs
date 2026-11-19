@@ -6,10 +6,10 @@ public sealed class ValueSignalNodeTests
     public async Task ValueSignalService_WakesWithoutPolling()
     {
         var service = new WorkflowValueSignalService();
-        var waiting = service.WaitAsync("Recipe", "R2", TimeSpan.FromSeconds(1), CancellationToken.None).AsTask();
-        service.Write("Recipe", "R2");
-        Assert.True(await waiting);
-        Assert.Equal("R2", service.Read("Recipe"));
+        var waiting = service.WaitValueAsync("Recipe", 0, value => Equals(value, "R2"), TimeSpan.FromSeconds(1), CancellationToken.None).AsTask();
+        service.WriteValue("Recipe", "R2");
+        Assert.Equal("R2", (await waiting)?.Value);
+        Assert.Equal("R2", service.ReadSnapshot("Recipe")!.Value);
     }
 
     [Fact]
