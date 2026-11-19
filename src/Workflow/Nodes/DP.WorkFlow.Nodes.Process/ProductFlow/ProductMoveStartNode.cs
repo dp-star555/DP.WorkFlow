@@ -52,8 +52,6 @@ public sealed class ProductMoveStartNodeModel : WorkflowNodeModel
     public string Recipe { get; set; } = string.Empty;
     /// <summary>绑定配方。</summary>
     public WorkflowInput<string> RecipeBinding { get; set; } = WorkflowInput<string>.FromLiteral(string.Empty);
-    /// <summary>结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "ProductMoveStartResult";
 }
 
 /// <summary>执行开始产品流转节点。</summary>
@@ -68,7 +66,6 @@ public sealed class ProductMoveStartNodeHandler : WorkflowNodeHandler<ProductMov
         if (node.MoveMode == E_ProductMoveStartMode.VirtualCreate && productId is null && !node.AutoGenerateProductId) throw new InvalidOperationException("ProductId 为空，且未启用自动生成。");
         var request = new ProductMoveStartRequest(node.MoveMode, fromStation, ProductFlowNodeRuntime.ResolveOptional(node.FromSlotIdSource, node.FromSlotId, node.FromSlotIdBinding, context), toStation, ProductFlowNodeRuntime.ResolveOptional(node.ToSlotIdSource, node.ToSlotId, node.ToSlotIdBinding, context), ProductFlowNodeRuntime.ResolveOptional(node.ReasonSource, node.Reason, node.ReasonBinding, context), productId, node.AutoGenerateProductId, ProductFlowNodeRuntime.ResolveOptional(node.RecipeSource, node.Recipe, node.RecipeBinding, context) ?? string.Empty);
         var output = await ProductFlowNodeRuntime.GetService(context).StartMoveAsync(request, cancellationToken).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         return NodeExecutionResult.Continue(output: output);
     }
 }

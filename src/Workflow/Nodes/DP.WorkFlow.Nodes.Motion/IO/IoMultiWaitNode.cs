@@ -18,8 +18,6 @@ public sealed class IoMultiWaitNodeModel : WorkflowNodeModel, IRecoverableWorkfl
     public WorkflowIoPassMode PassMode { get; set; }
     /// <summary>获取或设置保持时长毫秒数。</summary>
     public int HoldMs { get; set; } = 200;
-    /// <summary>获取或设置结果变量键；空值时使用节点输出。</summary>
-    public string ResultVarKey { get; set; } = string.Empty;
     /// <summary>获取条件列表。</summary>
     public List<WorkflowIoExpectation> Conditions { get; } = new();
     /// <summary>获取或设置超时是否走 Timeout 分支。</summary>
@@ -37,7 +35,6 @@ public sealed class IoMultiWaitNodeHandler : WorkflowNodeHandler<IoMultiWaitNode
         foreach (var item in node.Conditions) _ = item.ToAddress();
         var output = await IoReadNodeHandler.GetService(context).WaitManyAsync(
             node.Conditions, node.Mode, node.PassMode, node.HoldMs, node.TimeoutMs, node.PollIntervalMs, cancellationToken).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         if (!output.Matched && !node.TimeoutAsFalseBranch)
             return WorkflowRecoverableNodeFailure.Create(node, output.Message ?? "Multi IO wait timeout.");
         return NodeExecutionResult.Continue(output.Matched ? WorkflowPorts.Success : WorkflowPorts.Timeout, output);

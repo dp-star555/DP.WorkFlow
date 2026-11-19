@@ -54,9 +54,6 @@ public abstract class WaferRobotCommandNodeModel : WorkflowNodeModel, IRecoverab
     /// <summary>机器人注册键。</summary>
     [WorkflowProperty("机器人键", "宿主机器人服务中用于定位目标机器人的稳定键。", Category = "机器人")]
     public string RobotKey { get; set; } = string.Empty;
-    /// <summary>结果变量键。</summary>
-    [WorkflowProperty("结果变量键", "机器人命令结果写入流程变量时使用的键。", Category = "输出结果")]
-    public string ResultVarKey { get; set; } = "WaferRobotCommandResult";
     /// <summary>是否等待命令实际完成。</summary>
     [WorkflowProperty("等待完成", "是否等待机器人动作实际完成后再继续流程。", Category = "等待与超时")]
     public bool WaitForCompleted { get; set; }
@@ -137,7 +134,6 @@ internal static class WaferRobotNodeRuntime
         }
         var success = command.Success && (!supportsWait || !node.WaitForCompleted || waitCompleted);
         var output = new WaferRobotCommandNodeResult(key, operation, target?.StationId, target?.Slot, target?.Arm ?? E_EndEffectorType.Unknown, success, command.Code, success ? command.Message : command.Message ?? operation + " wait completed timeout.", command.RawRequest, command.RawResponse, supportsWait && node.WaitForCompleted, waitCompleted, state?.IsConnected ?? false, state?.IsInitialized ?? false, state?.IsBusy ?? false, state?.IsPaused ?? false, state?.HasAlarm ?? false, state?.CanStartMotion ?? false, state?.StatusCode, state?.StatusText);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         if (!success) return WorkflowRecoverableNodeFailure.Create(node, output.Message ?? operation + " failed.");
         return NodeExecutionResult.Continue(output: output);
     }

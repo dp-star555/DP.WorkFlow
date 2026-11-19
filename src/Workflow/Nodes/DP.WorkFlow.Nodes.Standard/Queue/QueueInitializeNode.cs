@@ -8,8 +8,6 @@ public sealed class QueueInitializeNodeModel : WorkflowNodeModel
     public override string NodeType => "QueueInitialize";
     /// <summary>初始化项。</summary>
     public List<QueueInitializeItem> Items { get; set; } = new();
-    /// <summary>结果变量键；空值时使用节点结果键。</summary>
-    public string ResultVarKey { get; set; } = string.Empty;
 }
 
 /// <summary>执行批量队列初始化。</summary>
@@ -28,7 +26,6 @@ public sealed class QueueInitializeNodeHandler : WorkflowNodeHandler<QueueInitia
             if (service.Clear(item.QueueKey.Trim(), item.ValueType, false)) cleared++;
         }
         var output = new QueueInitializeResult(node.Items.Count, created, cleared, string.Join(",", node.Items.Select(item => item.QueueKey).Distinct(StringComparer.Ordinal)));
-        context.SetVariable(string.IsNullOrWhiteSpace(node.ResultVarKey) ? node.Id + ".Result" : node.ResultVarKey.Trim(), output);
         return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
 }

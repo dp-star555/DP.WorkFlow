@@ -12,8 +12,6 @@ public sealed class QueueReadNodeModel : WorkflowNodeModel
     public E_SignalValueType ValueType { get; set; }
     /// <summary>缺失时是否自动创建。</summary>
     public bool AutoCreateIfMissing { get; set; } = true;
-    /// <summary>结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "QueueReadResult";
 }
 
 /// <summary>执行队列读取。</summary>
@@ -26,7 +24,6 @@ public sealed class QueueReadNodeHandler : WorkflowNodeHandler<QueueReadNodeMode
         var service = WorkflowQueueNodeRuntime.GetService(context, node.QueueKey);
         if (node.AutoCreateIfMissing) service.EnsureExists(node.QueueKey.Trim(), node.ValueType);
         var output = WorkflowQueueNodeRuntime.BuildResult(node.QueueKey.Trim(), node.ValueType, service.ReadSnapshot(node.QueueKey.Trim()), false, null);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
 }

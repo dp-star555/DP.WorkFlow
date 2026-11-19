@@ -8,8 +8,6 @@ public sealed class SignalStateBatchInitializeNodeModel : WorkflowNodeModel
     public override string NodeType => "SignalStateBatchInitialize";
     /// <summary>初始化项。</summary>
     public List<SignalStateInitItem> Items { get; set; } = new();
-    /// <summary>结果变量键；为空时使用节点结果键。</summary>
-    public string ResultVarKey { get; set; } = string.Empty;
 }
 
 /// <summary>执行布尔信号批量初始化。</summary>
@@ -27,7 +25,6 @@ public sealed class SignalStateBatchInitializeNodeHandler : WorkflowNodeHandler<
             service.Write(item.SignalKey.Trim(), item.DefaultState);
         }
         var output = new SignalStateBatchInitializeResult(node.Items.Count, string.Join(",", node.Items.Select(item => item.SignalKey).Distinct(StringComparer.Ordinal)));
-        context.SetVariable(string.IsNullOrWhiteSpace(node.ResultVarKey) ? node.Id + ".Result" : node.ResultVarKey.Trim(), output);
         return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
 }

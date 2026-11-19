@@ -22,8 +22,6 @@ public sealed class AxisWaitNodeModel : WorkflowAxisNodeModel
     public int PollIntervalMs { get; set; } = 20;
     /// <summary>获取或设置超时是否走 Timeout 分支。</summary>
     public bool TimeoutAsFalseBranch { get; set; } = true;
-    /// <summary>获取或设置结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "AxisWaitResult";
 }
 
 /// <summary>执行轴等待节点。</summary>
@@ -43,7 +41,6 @@ public sealed class AxisWaitNodeHandler : WorkflowNodeHandler<AxisWaitNodeModel>
         using var wait = context.BeginWait($"轴 {request.Axis.DeviceId}[{request.Axis.AxisId}] {node.Condition}", node.TimeoutMs);
         var output = await AxisServoNodeHandler.GetService(context).WaitAsync(request, cancellationToken).ConfigureAwait(false);
         wait.End(output.Success);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         if (!output.Success && !node.TimeoutAsFalseBranch)
             return WorkflowRecoverableNodeFailure.Create(node, $"Axis wait timeout: {output.DeviceId}[{output.AxisId}] {output.Condition}.");
         return NodeExecutionResult.Continue(output.Success ? WorkflowPorts.Success : WorkflowPorts.Timeout, output);

@@ -6,8 +6,6 @@ public sealed class StationFinishedNodeModel : ProductFlowStationSlotNodeModel
 {
     /// <inheritdoc />
     public override string NodeType => "StationFinished";
-    /// <summary>结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "StationFinishedResult";
 }
 
 /// <summary>执行工站完成标记。</summary>
@@ -19,7 +17,6 @@ public sealed class StationFinishedNodeHandler : WorkflowNodeHandler<StationFini
         var address = ProductFlowNodeRuntime.ResolveAddress(node, context);
         await ProductFlowNodeRuntime.GetService(context).MarkStationFinishedAsync(address.StationId, address.SlotId, cancellationToken).ConfigureAwait(false);
         var output = new StationFinishedNodeResult(address.StationId, address.SlotId, true);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         return NodeExecutionResult.Continue(output: output);
     }
 }

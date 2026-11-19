@@ -26,8 +26,6 @@ public sealed class QueueWaitNodeModel : WorkflowNodeModel
     public int CountThreshold { get; set; }
     /// <summary>超时毫秒数；0 表示不超时。</summary>
     public int TimeoutMs { get; set; } = 5000;
-    /// <summary>结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "QueueWaitResult";
 }
 
 /// <summary>执行队列条件等待。</summary>
@@ -50,7 +48,6 @@ public sealed class QueueWaitNodeHandler : WorkflowNodeHandler<QueueWaitNodeMode
             catch (Exception exception) when (exception is FormatException or InvalidCastException or OverflowException) { return fallback; }
         }
         var output = new QueueWaitNodeResult(node.QueueKey.Trim(), snapshot?.ValueType ?? node.ValueType, node.Condition, snapshot is not null, snapshot?.Count ?? 0, snapshot?.Version ?? 0, snapshot?.HasFirstValue == true, Convert.ToString(first, CultureInfo.InvariantCulture) ?? string.Empty, ConvertOr(first, 0, Convert.ToInt32), ConvertOr(first, 0L, Convert.ToInt64), ConvertOr(first, 0d, Convert.ToDouble), ConvertOr(first, false, Convert.ToBoolean));
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         return NodeExecutionResult.Continue(snapshot is not null ? WorkflowPorts.Success : WorkflowPorts.Timeout, output);
     }
 }

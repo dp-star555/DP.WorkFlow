@@ -14,8 +14,6 @@ public sealed class ProductMoveFailedNodeModel : WorkflowNodeModel
     public WorkflowInput<string> SessionIdBinding { get; set; } = WorkflowInput<string>.FromLiteral(string.Empty);
     /// <summary>失败原因。</summary>
     public string FailReason { get; set; } = "WorkflowMovingFailed";
-    /// <summary>结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "ProductMoveFailedResult";
 }
 
 /// <summary>执行流转失败节点。</summary>
@@ -27,7 +25,6 @@ public sealed class ProductMoveFailedNodeHandler : WorkflowNodeHandler<ProductMo
         var sessionId = ProductFlowNodeRuntime.ResolveRequired(node.SessionIdSource, node.SessionId, node.SessionIdBinding, context, "SessionId");
         var reason = string.IsNullOrWhiteSpace(node.FailReason) ? null : node.FailReason.Trim();
         var output = await ProductFlowNodeRuntime.GetService(context).FailMoveAsync(sessionId, reason, cancellationToken).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         return NodeExecutionResult.Continue(output: output);
     }
 }

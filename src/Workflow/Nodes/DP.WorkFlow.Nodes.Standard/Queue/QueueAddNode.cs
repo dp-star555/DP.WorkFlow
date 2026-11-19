@@ -20,8 +20,6 @@ public sealed class QueueAddNodeModel : WorkflowNodeModel
     public bool PreventDuplicate { get; set; } = true;
     /// <summary>缺失时是否自动创建。</summary>
     public bool AutoCreateIfMissing { get; set; } = true;
-    /// <summary>结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "QueueAddResult";
 }
 
 /// <summary>执行队列添加。</summary>
@@ -35,7 +33,6 @@ public sealed class QueueAddNodeHandler : WorkflowNodeHandler<QueueAddNodeModel>
         var value = WorkflowQueueNodeRuntime.Resolve(node.ValueSource, node.LiteralValue, node.BindingValue, node.ValueType, context);
         var changed = service.EnqueueValue(node.QueueKey.Trim(), value, node.ValueType, node.PreventDuplicate, node.AutoCreateIfMissing);
         var output = WorkflowQueueNodeRuntime.BuildResult(node.QueueKey.Trim(), node.ValueType, service.ReadSnapshot(node.QueueKey.Trim()), changed, value);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
 }

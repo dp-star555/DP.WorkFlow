@@ -24,11 +24,14 @@ public sealed class ValueSignalNodeTests
         canvasDocument.EntryNodeId = node.Id;
         var definition = new WorkflowCompiler(new WorkflowNodeCatalog().RegisterStandardNodes()).Compile(canvasDocument);
         var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowValueSignalService>(service));
-        var result = await new WorkflowEngine(definition, new WorkflowNodeHandlerCatalog().Register(new SignalValueSetNodeHandler()), context).RunAsync();
+        var engine = new WorkflowEngine(definition, new WorkflowNodeHandlerCatalog().Register(new SignalValueSetNodeHandler()), context);
+        var result = await engine.RunAsync();
 
         Assert.True(result.Success, result.Message);
         Assert.Equal(7, service.ReadSnapshot("Count")?.Value);
-        Assert.True(context.TryGetVariable<SignalValueNodeResult>("SignalValueSetResult", out var output));
+        // R2-d：结果只通过节点输出提供，不再写入流程变量。
+        var output = Assert.IsType<SignalValueNodeResult>(engine.FindLatestNodeOutput(engine.RunState.RunId, node.Id)!.Value);
+        Assert.False(context.TryGetVariable<SignalValueNodeResult>("SignalValueSetResult", out _));
         Assert.Equal(E_SignalValueWriteMode.Increment, output!.WriteMode);
         Assert.Equal(7, output.Int32Value);
     }

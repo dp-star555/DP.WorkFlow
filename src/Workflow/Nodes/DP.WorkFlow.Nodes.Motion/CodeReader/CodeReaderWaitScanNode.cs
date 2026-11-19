@@ -20,8 +20,6 @@ public sealed class CodeReaderWaitScanNodeModel : WorkflowNodeModel, IRecoverabl
     public CodeReaderScanMatchMode MatchMode { get; set; }
     /// <summary>获取或设置期望码值。</summary>
     public string ExpectedCode { get; set; } = string.Empty;
-    /// <summary>获取或设置结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "CodeReaderWaitScan.Result";
     /// <summary>获取或设置超时是否走 Timeout 分支。</summary>
     public bool TimeoutAsFalseBranch { get; set; } = true;
 }
@@ -41,7 +39,6 @@ public sealed class CodeReaderWaitScanNodeHandler : WorkflowNodeHandler<CodeRead
                 return WorkflowRecoverableNodeFailure.Create(node, "等待扫码结果超时: " + node.ReaderKey.Trim());
             return NodeExecutionResult.Continue(WorkflowPorts.Timeout);
         }
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         return NodeExecutionResult.Continue(WorkflowPorts.Success, output);
     }
 }

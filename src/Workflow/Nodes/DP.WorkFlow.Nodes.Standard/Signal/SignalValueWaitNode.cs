@@ -22,8 +22,6 @@ public sealed class SignalValueWaitNodeModel : WorkflowNodeModel
     public WorkflowInput<object> CompareBinding { get; set; } = WorkflowInput<object>.FromLiteral(null);
     /// <summary>超时毫秒数；0 表示不超时。</summary>
     public int TimeoutMs { get; set; } = 5000;
-    /// <summary>结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "SignalValueWaitResult";
 }
 
 /// <summary>执行数据信号等待。</summary>
@@ -44,7 +42,6 @@ public sealed class SignalValueWaitNodeHandler : WorkflowNodeHandler<SignalValue
         }
         var snapshot = matched ?? current ?? new WorkflowValueSignalSnapshot(node.SignalKey.Trim(), node.ValueType switch { E_SignalValueType.String => string.Empty, E_SignalValueType.Int32 => 0, E_SignalValueType.Int64 => 0L, E_SignalValueType.Double => 0d, E_SignalValueType.Boolean => false, _ => string.Empty }, 0, false);
         var output = SignalValueSetNodeHandler.BuildResult(snapshot, node.ValueType, E_SignalValueWriteMode.Set, matched is not null);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         return NodeExecutionResult.Continue(matched is not null ? WorkflowPorts.Success : WorkflowPorts.Timeout, output);
     }
 }

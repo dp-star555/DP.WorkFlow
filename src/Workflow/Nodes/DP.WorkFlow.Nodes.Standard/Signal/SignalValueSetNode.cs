@@ -20,8 +20,6 @@ public sealed class SignalValueSetNodeModel : WorkflowNodeModel
     public string LiteralValue { get; set; } = string.Empty;
     /// <summary>绑定值。</summary>
     public WorkflowInput<object> BindingValue { get; set; } = WorkflowInput<object>.FromLiteral(null);
-    /// <summary>结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "SignalValueSetResult";
 }
 
 /// <summary>执行数据信号写入。</summary>
@@ -36,7 +34,6 @@ public sealed class SignalValueSetNodeHandler : WorkflowNodeHandler<SignalValueS
         var value = node.WriteMode == E_SignalValueWriteMode.Set ? operand : Calculate(service.ReadSnapshot(node.SignalKey.Trim())?.Value, operand, node.ValueType, node.WriteMode);
         var snapshot = service.WriteValue(node.SignalKey.Trim(), value);
         var output = BuildResult(snapshot, node.ValueType, node.WriteMode, true);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
     internal static IWorkflowValueSignalService GetService(IWorkflowNodeExecutionContext context, string key)

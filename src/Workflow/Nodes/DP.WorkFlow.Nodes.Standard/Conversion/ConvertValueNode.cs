@@ -22,8 +22,6 @@ public sealed class ConvertValueNodeModel : WorkflowNodeModel
     public WorkflowInput<object> BindingValue { get; set; } = WorkflowInput<object>.FromLiteral(null);
     /// <summary>目标类型。</summary>
     public E_SignalValueType TargetType { get; set; }
-    /// <summary>额外写入转换目标值的变量键。</summary>
-    public string ResultVarKey { get; set; } = "ConvertValueResult";
 }
 
 /// <summary>执行类型转换。</summary>
@@ -41,7 +39,6 @@ public sealed class ConvertValueNodeHandler : WorkflowNodeHandler<ConvertValueNo
             catch (Exception exception) when (exception is FormatException or InvalidCastException or OverflowException) { return default!; }
         }
         var output = new ConvertValueNodeResult(node.TargetType, true, Convert.ToString(raw, CultureInfo.InvariantCulture) ?? string.Empty, Convert.ToString(converted, CultureInfo.InvariantCulture) ?? string.Empty, Convert.ToString(converted, CultureInfo.InvariantCulture) ?? string.Empty, Try(converted, Convert.ToInt32), Try(converted, Convert.ToInt64), Try(converted, Convert.ToDouble), Try(converted, Convert.ToBoolean));
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), converted);
         context.Trace("ConvertValue", $"已转换为 {node.TargetType}。", new Dictionary<string, object?> { ["OriginalText"] = output.OriginalText, ["ConvertedValueText"] = output.ConvertedValueText });
         return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }

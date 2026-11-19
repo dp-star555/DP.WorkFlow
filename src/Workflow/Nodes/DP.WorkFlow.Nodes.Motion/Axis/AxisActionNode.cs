@@ -39,10 +39,6 @@ public sealed class AxisActionNodeModel : WorkflowNodeModel, IRecoverableWorkflo
     /// <summary>获取或设置覆盖步骤默认超时的毫秒数；0 表示使用步骤默认值。</summary>
     [WorkflowProperty("覆盖超时时间", "覆盖轴步骤自身配置的超时时间；零值表示使用步骤默认值。", Category = "等待与超时", Unit = "ms")]
     public int OverrideTimeoutMs { get; set; }
-
-    /// <summary>获取或设置兼容旧流程变量输出的结果键。</summary>
-    [WorkflowProperty("结果变量键", "轴动作执行结果写入流程变量时使用的键。", Category = "输出结果")]
-    public string ResultVarKey { get; set; } = "AxisActionResult";
 }
 
 /// <summary>执行轴步骤节点。</summary>
@@ -64,8 +60,6 @@ public sealed class AxisActionNodeHandler : WorkflowNodeHandler<AxisActionNodeMo
         var service = AxisServoNodeHandler.GetService(context);
         var output = await service.ExecuteStepAsync(
             stepKey.Trim(), node.WaitForCompleted, node.OverrideTimeoutMs, cancellationToken).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey))
-            context.SetVariable(node.ResultVarKey.Trim(), output);
         context.Trace("AxisAction", "轴步骤执行完成。", new Dictionary<string, object?>
         {
             ["StepKey"] = stepKey.Trim(),

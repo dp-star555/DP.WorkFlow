@@ -20,8 +20,6 @@ public sealed class QueueRemoveNodeModel : WorkflowNodeModel
     public WorkflowInput<object> BindingValue { get; set; } = WorkflowInput<object>.FromLiteral(null);
     /// <summary>缺失时是否自动创建。</summary>
     public bool AutoCreateIfMissing { get; set; } = true;
-    /// <summary>结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "QueueRemoveResult";
 }
 
 /// <summary>执行队列移除。</summary>
@@ -37,7 +35,6 @@ public sealed class QueueRemoveNodeHandler : WorkflowNodeHandler<QueueRemoveNode
         if (node.RemoveMode == E_WorkflowQueueRemoveMode.DequeueFirst) changed = service.TryDequeueValue(node.QueueKey.Trim(), node.ValueType, node.AutoCreateIfMissing, out affected);
         else { affected = WorkflowQueueNodeRuntime.Resolve(node.ValueSource, node.LiteralValue, node.BindingValue, node.ValueType, context); changed = service.RemoveValue(node.QueueKey.Trim(), affected, node.ValueType, node.AutoCreateIfMissing); }
         var output = WorkflowQueueNodeRuntime.BuildResult(node.QueueKey.Trim(), node.ValueType, service.ReadSnapshot(node.QueueKey.Trim()), changed, affected);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
 }

@@ -26,8 +26,6 @@ public sealed class CSharpScriptNodeModel : WorkflowNodeModel, IWorkflowDynamicP
     /// <inheritdoc />
     public IList<string> ScriptReferencePaths { get; set; } = new List<string>();
 
-    /// <summary>非空时将脚本返回值写入该流程变量。</summary>
-    public string ResultVarKey { get; set; } = "ScriptResult";
 
     /// <summary>协作式执行超时；小于等于零表示只使用工作流取消令牌。</summary>
     public int TimeoutMilliseconds { get; set; } = 30000;
@@ -253,8 +251,6 @@ public sealed class CSharpScriptNodeHandler : WorkflowNodeHandler<CSharpScriptNo
             }
 
             var output = new CSharpScriptNodeResult(true, result.ReturnValue, null, diagnostics);
-            if (!string.IsNullOrWhiteSpace(node.ResultVarKey) && result.ReturnValue is not null)
-                context.SetVariable(node.ResultVarKey.Trim(), result.ReturnValue);
             context.Trace("ScriptCompleted", "C# 脚本执行完成。", new Dictionary<string, object?> { ["ResultType"] = result.ReturnValue?.GetType().FullName });
             return NodeExecutionResult.Continue(output: output);
         }
