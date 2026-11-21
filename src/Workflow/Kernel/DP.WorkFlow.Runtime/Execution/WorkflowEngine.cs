@@ -49,7 +49,6 @@ public sealed partial class WorkflowEngine
     private WorkflowRecoveryEvent? _currentRecovery;
     private bool _manualPauseRequested;
     private int _isRunning;
-    private int _totalNodeExecutions;
     private long _parallelScopeSequence;
     private long _nodeExecutionSequence;
     private long _tokenSequence;

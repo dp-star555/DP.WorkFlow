@@ -87,10 +87,11 @@ public sealed class LoopNodeTests
     }
 
     [Fact]
-    public async Task RunAsync_InfiniteJumpCycle_IsStoppedByExecutionSafetyLimit()
+    [DP.WorkFlow.Testing.SkipWorkflowEventStreamCheck("测试核对器会把每条运行事件全部留在内存里，长时间无限循环会撑爆测试进程；引擎自身只保留固定窗口。")]
+    public async Task RunAsync_InfiniteJumpCycle_RunsUntilCanceledWithBoundedState()
     {
         var jump = new JumpNodeModel { Id = "Jump", Title = "循环跳转" };
-        var canvasDocument = new WorkflowDocument { Name = "无限循环保护" };
+        var canvasDocument = new WorkflowDocument { Name = "无限循环" };
         var canvas = canvasDocument.CanvasProjection;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = jump });
         canvas.Connections.Add(Connect("Jump", WorkflowPorts.Success, "Jump"));
@@ -98,17 +99,23 @@ public sealed class LoopNodeTests
         var definition = new WorkflowCompiler(new WorkflowNodeCatalog().RegisterStandardNodes())
             .Compile(canvasDocument);
         var handlers = new WorkflowNodeHandlerCatalog().Register(new JumpNodeHandler());
-        var options = new WorkflowExecutionOptions
-        {
-            MaxNodeExecutions = 3,
-            MaxTotalNodeExecutions = 10
-        };
+        var engine = new WorkflowEngine(definition, handlers);
+        using var cancellation = new CancellationTokenSource();
+        // 节点全部同步完成时 RunAsync 不会让出线程，放到线程池上跑，测试线程才能观察并取消。
+        var run = Task.Run(() => engine.RunAsync(cancellation.Token));
+        var spin = System.Diagnostics.Stopwatch.StartNew();
+        // 超过原先的单节点 1 万次上限仍继续运行。
+        while (ExecutionCount(engine) <= 20_000 && spin.Elapsed < TimeSpan.FromSeconds(30) && !run.IsCompleted)
+            await Task.Delay(10);
+        cancellation.Cancel();
+        var result = await run;
 
-        var result = await new WorkflowEngine(definition, handlers, options: options).RunAsync();
+        Assert.Equal(E_WorkflowExecutionState.Canceled, result.State);
+        Assert.True(ExecutionCount(engine) > 20_000, "无限循环应一直跑到被停止，不受执行次数限制。");
+        Assert.True(engine.RunState.NodeOutputs.Count <= 1, "环形执行只保留最新一次输出。");
 
-        Assert.False(result.Success);
-        Assert.Equal(E_WorkflowExecutionState.Faulted, result.State);
-        Assert.Contains("无限循环", result.Message);
+        static int ExecutionCount(WorkflowEngine engine) =>
+            engine.GetRuntimeSnapshot().Nodes.TryGetValue("Jump", out var info) ? info.ExecutionCount : 0;
     }
 
     [Fact]

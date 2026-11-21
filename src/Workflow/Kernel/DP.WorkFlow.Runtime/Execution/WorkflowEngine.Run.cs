@@ -183,7 +183,6 @@ public sealed partial class WorkflowEngine
             // 上一轮剩余输出的资源由所有者在根运行开始时退役；子运行结束后由父引擎接管（见 DetachOutputProjections）。
             _outputProjections.Clear();
             _childOutputProjections.Clear();
-            _totalNodeExecutions = 0;
             _tokenSequence = 0;
             _runStopwatch = Stopwatch.StartNew();
             // 子引擎的人工暂停由父引擎在运行前传入（包括循环块两圈之间），不能被新一轮运行清除。

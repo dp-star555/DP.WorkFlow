@@ -22,8 +22,6 @@ public sealed class WorkflowWarningHandlerCoordinator : IWorkflowFaultRecoveryCo
         var sourceOptions = options ?? new WorkflowExecutionOptions();
         _options = new WorkflowExecutionOptions
         {
-            MaxTotalNodeExecutions = sourceOptions.MaxTotalNodeExecutions,
-            MaxNodeExecutions = sourceOptions.MaxNodeExecutions,
             MaxTraceEntries = sourceOptions.MaxTraceEntries,
             MaxRecoveryAttempts = sourceOptions.MaxRecoveryAttempts,
             Notices = sourceOptions.Notices
@@ -39,8 +37,6 @@ public sealed class WorkflowWarningHandlerCoordinator : IWorkflowFaultRecoveryCo
         childContext.SetVariable(WorkflowRecoveryRuntimeKeys.FaultRequest, request);
         var executionOptions = new WorkflowExecutionOptions
         {
-            MaxTotalNodeExecutions = _options.MaxTotalNodeExecutions,
-            MaxNodeExecutions = _options.MaxNodeExecutions,
             MaxTraceEntries = _options.MaxTraceEntries,
             MaxRecoveryAttempts = _options.MaxRecoveryAttempts,
             Notices = _options.Notices,

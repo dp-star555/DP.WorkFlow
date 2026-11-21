@@ -5,12 +5,6 @@ namespace DP.WorkFlow;
 /// </summary>
 public sealed class WorkflowExecutionOptions
 {
-    /// <summary>获取或设置单次运行允许执行的节点总次数。</summary>
-    public int MaxTotalNodeExecutions { get; set; } = 100_000;
-
-    /// <summary>获取或设置同一节点在单次运行中允许执行的最大次数。</summary>
-    public int MaxNodeExecutions { get; set; } = 10_000;
-
     /// <summary>获取或设置单次运行允许自动恢复的最大次数。</summary>
     public int MaxRecoveryAttempts { get; set; } = 100;
 
@@ -40,10 +34,6 @@ public sealed class WorkflowExecutionOptions
     {
         Guard.NotNull(Recording);
         Recording.Validate();
-        if (MaxTotalNodeExecutions <= 0)
-            throw new ArgumentOutOfRangeException(nameof(MaxTotalNodeExecutions));
-        if (MaxNodeExecutions <= 0)
-            throw new ArgumentOutOfRangeException(nameof(MaxNodeExecutions));
         if (MaxRecoveryAttempts < 0)
             throw new ArgumentOutOfRangeException(nameof(MaxRecoveryAttempts));
         if (MaxTraceEntries <= 0)

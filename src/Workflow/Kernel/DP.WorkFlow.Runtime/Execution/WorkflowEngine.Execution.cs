@@ -417,17 +417,16 @@ public sealed partial class WorkflowEngine
             Data: data));
     }
 
+    /// <summary>
+    /// 节点本次运行的执行序号。不限制执行次数（循环可以不限次数长期运行）；
+    /// 运行数据不随执行次数增长：每个节点只保留最近输出、记录只保留最近窗口，计数只是每个节点一个整数。
+    /// </summary>
     private int GetNextNodeExecutionCount(string nodeId)
     {
         lock (_stateSync)
         {
-            _totalNodeExecutions++;
-            if (_totalNodeExecutions > _options.MaxTotalNodeExecutions)
-                throw new WorkflowPathException(nodeId, $"节点总执行次数超过安全上限 {_options.MaxTotalNodeExecutions}，流程可能存在无限循环。");
             var count = _nodeExecutionCounts.TryGetValue(nodeId, out var previous) ? previous + 1 : 1;
             _nodeExecutionCounts[nodeId] = count;
-            if (count > _options.MaxNodeExecutions)
-                throw new WorkflowPathException(nodeId, $"节点 {nodeId} 的执行次数超过安全上限 {_options.MaxNodeExecutions}，流程可能存在无限循环。");
             return count;
         }
     }
