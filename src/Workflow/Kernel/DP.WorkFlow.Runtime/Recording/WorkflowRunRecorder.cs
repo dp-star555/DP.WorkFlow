@@ -139,7 +139,8 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
                 SchemaVersion,
                 payload,
                 _parentRunId,
-                _parentExecution);
+                _parentExecution,
+                @event.Parents);
             AppendToWindow(recorded);
             WorkflowRunEventProbe.Publish(recorded);
             _recordedCount++;

@@ -13,7 +13,7 @@ public sealed partial class WorkflowEngine
         ExecutionToken parentToken,
         CancellationToken cancellationToken)
     {
-        var runtimeScopeId = Interlocked.Increment(ref _parallelScopeSequence);
+        var runtimeScopeId = NextParallelScopeId();
         lock (_stateSync)
         {
             _parallelScopes[runtimeScopeId] = new MutableParallelScopeInfo
@@ -45,7 +45,7 @@ public sealed partial class WorkflowEngine
                 .Concat(parentToken.AncestorTokenIds)
                 .ToArray();
             var childToken = new ExecutionToken(
-                Interlocked.Increment(ref _tokenSequence),
+                NextTokenId(),
                 Array.AsReadOnly(ancestorTokenIds),
                 Array.AsReadOnly(parentToken.ScopeIds.Concat(new[] { runtimeScopeId }).ToArray()),
                 parentToken.CopyLoopFrames());

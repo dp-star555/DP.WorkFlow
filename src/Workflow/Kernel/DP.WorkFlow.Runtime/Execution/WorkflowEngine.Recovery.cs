@@ -19,6 +19,12 @@ public sealed partial class WorkflowEngine
 
     private async Task WaitForAdmissionAsync(CancellationToken cancellationToken)
     {
+        // 子画布作用域使用根运行的暂停门：暂停、挂起只设在根上，不再逐层转发（R3-a）。
+        if (_scopeRoot is { } root)
+        {
+            await root.WaitForAdmissionAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
         if (_options.RecoveryBarrier is null)
         {
             await _resumeGate.WaitAsync(cancellationToken).ConfigureAwait(false);

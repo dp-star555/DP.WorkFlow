@@ -101,8 +101,6 @@ public sealed partial class WorkflowEngine
             _currentRecovery = null;
             _activeNodeIds.Clear();
             _activeTokens.Clear();
-            // 该节点上一次子运行的各圈轨迹被这次运行取代，圈序号重新从 1 开始。
-            _childTraceHistory.Remove(node.Id);
             _runStopwatch = Stopwatch.StartNew();
             if (_parentRunId is null)
                 _manualPauseRequested = false;

@@ -238,6 +238,14 @@ public sealed class WorkflowOutlet : IDisposable
         text.Append('[').Append(flowName);
         if (!string.IsNullOrEmpty(runEvent.WorkflowName) && !string.Equals(runEvent.WorkflowName, flowName, StringComparison.Ordinal))
             text.Append('/').Append(runEvent.WorkflowName);
+        // 子画布（R3-a）：标出经过的复合节点和圈序号，例如 [上料流程/循环块@3]。
+        if (runEvent.Parents is { Count: > 0 } parents)
+            foreach (var parent in parents)
+            {
+                text.Append('/').Append(parent.NodeId);
+                if (parent.Cycle > 0)
+                    text.Append('@').Append(parent.Cycle.ToString(CultureInfo.InvariantCulture));
+            }
         text.Append("] ");
         var message = ReadText(runEvent, "Message");
         if (runEvent.NodeId is { Length: > 0 } nodeId)
@@ -274,6 +282,8 @@ public sealed class WorkflowOutlet : IDisposable
                 "RunCompleted" => "运行完成",
                 "RunCanceled" => "运行取消",
                 "RunFaulted" => "运行故障",
+                "CanvasEntered" => "进入子画布",
+                "CanvasExited" => "离开子画布",
                 _ => runEvent.EventType
             });
         }

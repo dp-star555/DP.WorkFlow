@@ -22,16 +22,18 @@ public sealed partial class WorkflowEngine
     private readonly Dictionary<string, MutableNodeRuntimeInfo> _nodeRuntime = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _nodeExecutionCounts = new(StringComparer.Ordinal);
     private readonly Dictionary<long, MutableParallelScopeInfo> _parallelScopes = new();
+    // 故障处理流程等独立运行的引擎（不是子画布）：暂停、Hold 逐个转发。子画布作用域不在这里，它们直接使用根运行的暂停门。
     private readonly Dictionary<string, WorkflowEngine> _activeChildEngines = new(StringComparer.Ordinal);
-    // 正在运行的子运行：快照不再由子引擎推送，取父快照时按需向子引擎拉取（R1-04）。
+    // 正在运行的子画布作用域：快照不再由作用域推送，取父快照时按需拉取（R1-04）。
     private readonly Dictionary<string, ActiveChildWorkflow> _activeChildWorkflows = new(StringComparer.Ordinal);
     private readonly Dictionary<string, WorkflowChildRuntimeInfo> _latestChildWorkflowByParentNode = new(StringComparer.Ordinal);
-    // 每个父节点最近一次完成的子引擎：子画布据此在运行结束后仍能查询其节点输出，父运行开始时清空。
+    // 每个父节点最近一次完成的子画布作用域：子画布据此在运行结束后仍能查询其节点输出，父运行开始时清空。
     private readonly Dictionary<string, WorkflowEngine> _latestChildEngineByParentNode = new(StringComparer.Ordinal);
-    // 正在运行的子引擎轨迹来源，按子运行键索引；读取轨迹时实时合并。
-    private readonly Dictionary<string, ChildTraceSource> _childTraceSources = new(StringComparer.Ordinal);
-    // 每个父节点已结束的子运行（循环块按圈）轨迹，有界保留，父运行开始时清空。
-    private readonly Dictionary<string, Queue<WorkflowTraceEntry>> _childTraceHistory = new(StringComparer.Ordinal);
+    // R3-a：子画布（子流程块、循环块）在同一运行内作为画布作用域执行。作用域对象只保存本画布的计划、数据和节点状态，
+    // 运行身份、记录、暂停 / 挂起、令牌编号都使用根运行的；根运行自身为空。
+    private WorkflowEngine? _scopeRoot;
+    // 作用域从外到内经过的复合节点及圈序号；根运行为空。事件据此标明所在画布。
+    private IReadOnlyList<WorkflowTraceParent> _scopeParents = Array.Empty<WorkflowTraceParent>();
     private readonly HashSet<Guid> _startedRecoveryCases = new();
     private volatile IWorkflowRunRecorder? _recorder;
     private Stopwatch? _runStopwatch;
@@ -39,9 +41,6 @@ public sealed partial class WorkflowEngine
     internal string PlanPath { get; set; } = "$";
     internal Guid BindingScopeId { get; set; }
     private Guid? _parentRunId;
-    // 循环块子引擎每圈结束时不等待运行记录写出；会话结束时再等待最后一份收尾。
-    private bool _deferRecordingCompletion;
-    private Task _pendingRecordingCompletion = Task.CompletedTask;
     private WorkflowExecutionIdentity? _parentExecution;
     private string? _currentNodeId;
     private string? _terminalMessage;
@@ -60,6 +59,18 @@ public sealed partial class WorkflowEngine
     // 已作为提示报告过的记录丢失 / 写入失败条数；记录健康变化时只报告新增部分。
     private long _reportedRecordingLosses;
     private E_WorkflowExecutionState _state = E_WorkflowExecutionState.Idle;
+
+    /// <summary>本运行的根：画布作用域返回其所属的根运行，根运行返回自身。</summary>
+    private WorkflowEngine Root => _scopeRoot ?? this;
+
+    /// <summary>是否为子画布作用域。</summary>
+    private bool IsScope => _scopeRoot is not null;
+
+    /// <summary>分配运行内唯一的令牌编号；子画布作用域与根运行共用一套编号。</summary>
+    private long NextTokenId() => Interlocked.Increment(ref Root._tokenSequence);
+
+    /// <summary>分配运行内唯一的并行作用域编号；子画布作用域与根运行共用一套编号。</summary>
+    private long NextParallelScopeId() => Interlocked.Increment(ref Root._parallelScopeSequence);
 
     /// <summary>获取当前或最近一次运行的独立状态模型。</summary>
     public WorkflowRunState RunState { get; private set; } = new();

@@ -3,7 +3,7 @@ namespace DP.WorkFlow.Tests;
 public sealed class LoopBlockNodeTests
 {
     [Fact]
-    public async Task RunAsync_NodesBeforeLoopRunOnce_AndEachCycleIsAnIndependentChildRun()
+    public async Task RunAsync_NodesBeforeLoopRunOnce_AndEachCycleOpensAFreshCanvasScope()
     {
         var initCount = 0;
         var childRuns = new List<Guid>();
@@ -25,14 +25,20 @@ public sealed class LoopBlockNodeTests
 
         Assert.True(result.Success, result.Message);
         Assert.Equal(1, initCount);
+        // R3-a：每圈在同一运行里开一次画布作用域，节点的运行身份都是本次运行；记录里有 5 次进入子画布。
         Assert.Equal(5, childRuns.Count);
-        Assert.Equal(5, childRuns.Distinct().Count());
-        Assert.DoesNotContain(engine.RunState.RunId, childRuns);
+        Assert.All(childRuns, runId => Assert.Equal(engine.RunState.RunId, runId));
+        Assert.Equal(new[] { 1, 2, 3, 4, 5 }, engine.GetTraceBatch(includeChildRuns: true).Entries
+            .Where(entry => entry.Step == "CanvasEntered")
+            .Select(entry => Assert.Single(entry.Parents!).Cycle));
         Assert.True(context.TryGetNodeOutput(loop.Id, out var output));
         var loopOutput = Assert.IsType<LoopBlockNodeOutput>(output!.Value);
         Assert.Equal(5, loopOutput.CompletedCycles);
         Assert.Equal("达到循环次数", loopOutput.ExitReason);
-        Assert.Equal(childRuns[^1], loopOutput.LastChildRunId);
+        // 最后一圈的子画布数据标识：界面按它查询子画布节点的输出。
+        Assert.NotEqual(Guid.Empty, loopOutput.LastChildRunId);
+        Assert.NotEqual(engine.RunState.RunId, loopOutput.LastChildRunId);
+        Assert.NotNull(engine.FindLatestNodeOutput(loopOutput.LastChildRunId, "Work"));
     }
 
     [Fact]
@@ -307,8 +313,9 @@ public sealed class LoopBlockNodeTests
         Assert.Equal(3, Assert.IsType<LoopBlockNodeOutput>(output!.Value).CompletedCycles);
         var trace = engine.GetTraceBatch(includeChildRuns: true).Entries;
         Assert.Contains(trace, entry => entry.Step == "RunContinued" && entry.Sequence > lastSequence);
+        // 同一份记录接着写：单独运行产生的 3 圈都在上次运行的记录之后，圈序号重新从 1 开始。
         Assert.Equal(new[] { 1, 2, 3 }, trace
-            .Where(entry => entry.NodeId == "Work" && entry.Step == "NodeCompleted")
+            .Where(entry => entry.NodeId == "Work" && entry.Step == "NodeCompleted" && entry.Sequence > lastSequence)
             .Select(entry => Assert.Single(entry.Parents!).Cycle));
     }
 
@@ -337,7 +344,7 @@ public sealed class LoopBlockNodeTests
     }
 
     [Fact]
-    public async Task GetTraceBatch_WithCursor_ReturnsOnlyNewEntriesAcrossLiveAndArchivedCycles()
+    public async Task GetTraceBatch_WithCursor_ReturnsOnlyNewEntriesAcrossCycles()
     {
         var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var cycles = 0;
@@ -345,7 +352,7 @@ public sealed class LoopBlockNodeTests
             .Register("Init", (_, _) => ValueTask.FromResult<object?>(null))
             .Register("Work", async (_, _) =>
             {
-                // 第 2 圈停住：此时第 1 圈已归档，第 2 圈是正在运行的子运行。
+                // 第 2 圈停住：此时第 1 圈已结束，第 2 圈正在运行。
                 if (Interlocked.Increment(ref cycles) == 2) await gate.Task;
                 return null;
             });
@@ -367,9 +374,9 @@ public sealed class LoopBlockNodeTests
         Assert.Equal(full.Entries.Select(Key).OrderBy(key => key), incremental.OrderBy(key => key));
         Assert.DoesNotContain(full.Entries, entry => entry.RunId == Guid.Empty);
         Assert.Contains(rest.Entries, entry => entry.NodeId == "Work" && entry.Parents![0].Cycle == 4);
-        // 读到末尾后再读为空；位置只保留仍可见的运行（本层 + 4 圈子运行）。
+        // 读到末尾后再读为空；子画布与主画布在同一份记录里（R3-a），位置只有本次运行一项。
         Assert.Empty(engine.GetTraceBatch(includeChildRuns: true, rest.Cursor).Entries);
-        Assert.Equal(5, rest.Cursor.RunCount);
+        Assert.Equal(1, rest.Cursor.RunCount);
         Assert.Equal(full.LastSequence, rest.LastSequence);
     }
 

@@ -15,9 +15,9 @@
     OutputCommitted End#1 OutputExecutionSequence=End#1 OutputKeys=$ OutputType=null OutputValue.$=null
     NodeCompleted End#1 Message=节点执行完成。 SelectedPort=Success
     RunCompleted Message=流程执行完成。 State=Completed
-    运行 [循环体] 父节点第 1 次执行
+    画布 [循环体] $/LoopBlock@第1圈
       [主线]
-        RunStarted EntryNodeId=ChildStart Message=流程开始执行。 NodeCount=3 PlanPath=$/LoopBlock WorkflowName=循环体
+        CanvasEntered Cycle=1 EntryNodeId=ChildStart Message=进入子画布。 NodeCount=3 PlanPath=$/LoopBlock WorkflowName=循环体
         NodeStarted ChildStart#1 Message=节点开始执行。
         Start ChildStart#1 Message=流程由启动节点进入。
         OutputCommitted ChildStart#1 OutputExecutionSequence=ChildStart#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=[CurrentIteration, 1]
@@ -31,10 +31,10 @@
         End ChildEnd#1 Message=当前执行路径结束。
         OutputCommitted ChildEnd#1 OutputExecutionSequence=ChildEnd#1 OutputKeys=$ OutputType=null OutputValue.$=null
         NodeCompleted ChildEnd#1 Message=节点执行完成。 SelectedPort=Success
-        RunCompleted Message=流程执行完成。 State=Completed
-    运行 [循环体] 父节点第 1 次执行
+        CanvasExited Message=流程执行完成。 State=Completed
+    画布 [循环体] $/LoopBlock@第2圈
       [主线]
-        RunStarted EntryNodeId=ChildStart Message=流程开始执行。 NodeCount=3 PlanPath=$/LoopBlock WorkflowName=循环体
+        CanvasEntered Cycle=2 EntryNodeId=ChildStart Message=进入子画布。 NodeCount=3 PlanPath=$/LoopBlock WorkflowName=循环体
         NodeStarted ChildStart#1 Message=节点开始执行。
         Start ChildStart#1 Message=流程由启动节点进入。
         OutputCommitted ChildStart#1 OutputExecutionSequence=ChildStart#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=[CurrentIteration, 2]
@@ -48,10 +48,10 @@
         End ChildEnd#1 Message=当前执行路径结束。
         OutputCommitted ChildEnd#1 OutputExecutionSequence=ChildEnd#1 OutputKeys=$ OutputType=null OutputValue.$=null
         NodeCompleted ChildEnd#1 Message=节点执行完成。 SelectedPort=Success
-        RunCompleted Message=流程执行完成。 State=Completed
-    运行 [循环体] 父节点第 1 次执行
+        CanvasExited Message=流程执行完成。 State=Completed
+    画布 [循环体] $/LoopBlock@第3圈
       [主线]
-        RunStarted EntryNodeId=ChildStart Message=流程开始执行。 NodeCount=3 PlanPath=$/LoopBlock WorkflowName=循环体
+        CanvasEntered Cycle=3 EntryNodeId=ChildStart Message=进入子画布。 NodeCount=3 PlanPath=$/LoopBlock WorkflowName=循环体
         NodeStarted ChildStart#1 Message=节点开始执行。
         Start ChildStart#1 Message=流程由启动节点进入。
         OutputCommitted ChildStart#1 OutputExecutionSequence=ChildStart#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=[CurrentIteration, 3]
@@ -65,4 +65,4 @@
         End ChildEnd#1 Message=当前执行路径结束。
         OutputCommitted ChildEnd#1 OutputExecutionSequence=ChildEnd#1 OutputKeys=$ OutputType=null OutputValue.$=null
         NodeCompleted ChildEnd#1 Message=节点执行完成。 SelectedPort=Success
-        RunCompleted Message=流程执行完成。 State=Completed
+        CanvasExited Message=流程执行完成。 State=Completed

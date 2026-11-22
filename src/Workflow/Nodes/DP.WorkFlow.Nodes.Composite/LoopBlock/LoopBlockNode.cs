@@ -5,7 +5,7 @@ namespace DP.WorkFlow;
 
 /// <summary>
 /// 反复运行一个子流程画布，适合设备的长期循环扫描：循环块之前的节点只执行一次，子画布每圈运行一次。
-/// 每圈是一次独立的子运行，执行次数上限、恢复次数和运行记录按圈计算，上一圈的输出和资源在下一圈开始前释放。
+/// 每圈在同一运行内开一次子画布作用域，子画布的数据和节点状态按圈重新开始，上一圈的输出和资源在下一圈开始前释放。
 /// </summary>
 [WorkflowNode("LoopBlock", DisplayName = "循环块", Category = "Control", Description = "反复运行一个隔离的子流程画布，按次数、退出循环节点或外部退出信号结束。", OutputType = typeof(LoopBlockNodeOutput), Icon = "loop")]
 public sealed class LoopBlockNodeModel : WorkflowNodeModel, IWorkflowLoopSubflowNode, IWorkflowDynamicOutputNode, IWorkflowBindingDeclarationProvider, IWorkflowPublicDataUser

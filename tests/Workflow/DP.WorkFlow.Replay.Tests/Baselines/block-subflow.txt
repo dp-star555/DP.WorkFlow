@@ -21,9 +21,9 @@
     OutputCommitted End#1 OutputExecutionSequence=End#1 OutputKeys=$ OutputType=null OutputValue.$=null
     NodeCompleted End#1 Message=节点执行完成。 SelectedPort=Success
     RunCompleted Message=流程执行完成。 State=Completed
-    运行 [加倍子流程] 父节点第 1 次执行
+    画布 [加倍子流程] $/Block
       [主线]
-        RunStarted EntryNodeId=ChildStart Message=流程开始执行。 NodeCount=3 PlanPath=$/Block WorkflowName=加倍子流程
+        CanvasEntered Cycle=0 EntryNodeId=ChildStart Message=进入子画布。 NodeCount=3 PlanPath=$/Block WorkflowName=加倍子流程
         NodeStarted ChildStart#1 Message=节点开始执行。
         Start ChildStart#1 Message=流程由启动节点进入。
         OutputCommitted ChildStart#1 OutputExecutionSequence=ChildStart#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=[Value, 1]
@@ -37,4 +37,4 @@
         End ChildEnd#1 Message=当前执行路径结束。
         OutputCommitted ChildEnd#1 OutputExecutionSequence=ChildEnd#1 OutputKeys=$ OutputType=null OutputValue.$=null
         NodeCompleted ChildEnd#1 Message=节点执行完成。 SelectedPort=Success
-        RunCompleted Message=流程执行完成。 State=Completed
+        CanvasExited Message=流程执行完成。 State=Completed

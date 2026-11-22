@@ -5,6 +5,11 @@ public sealed partial class WorkflowEngine
     /// <summary>请求人工暂停；当前节点结束后不会继续调度下一节点。</summary>
     public void Pause()
     {
+        if (_scopeRoot is { } root)
+        {
+            root.Pause();
+            return;
+        }
         E_WorkflowExecutionState? changedState;
         WorkflowEngine[] children;
         lock (_stateSync)
@@ -23,6 +28,11 @@ public sealed partial class WorkflowEngine
     /// <summary>清除人工暂停；若不存在外部 Hold，允许继续调度。</summary>
     public void Resume()
     {
+        if (_scopeRoot is { } root)
+        {
+            root.Resume();
+            return;
+        }
         E_WorkflowExecutionState? changedState;
         WorkflowEngine[] children;
         lock (_stateSync)
@@ -45,6 +55,11 @@ public sealed partial class WorkflowEngine
     {
         if (string.IsNullOrWhiteSpace(reason))
             throw new ArgumentException("外部 Hold 原因不能为空。", nameof(reason));
+        if (_scopeRoot is { } root)
+        {
+            root.AddExternalHold(reason);
+            return;
+        }
 
         var normalizedReason = reason.Trim();
         E_WorkflowExecutionState? changedState;
@@ -68,6 +83,11 @@ public sealed partial class WorkflowEngine
     {
         if (string.IsNullOrWhiteSpace(reason))
             return;
+        if (_scopeRoot is { } root)
+        {
+            root.RemoveExternalHold(reason);
+            return;
+        }
 
         var normalizedReason = reason.Trim();
         E_WorkflowExecutionState? changedState;

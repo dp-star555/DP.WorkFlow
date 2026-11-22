@@ -41,6 +41,10 @@ public enum WorkflowRunEventCategory
 /// <param name="Data">经过容量、标识化和脱敏处理的 Payload；不包含任意对象图。</param>
 /// <param name="ParentRunId">子 Run 的父 Run 身份；根 Run 为空。</param>
 /// <param name="ParentExecution">触发子 Run 的父节点执行身份；根 Run 为空。</param>
+/// <param name="Parents">
+/// 事件来自子画布（子流程、循环块）时，从外到内经过的复合节点及圈序号（R3-a：子画布与主画布在同一运行、同一份记录里）；
+/// 主画布的事件为空。
+/// </param>
 public sealed record WorkflowRunEvent(
     Guid RunId,
     long Sequence,
@@ -57,7 +61,14 @@ public sealed record WorkflowRunEvent(
     int SchemaVersion,
     IReadOnlyDictionary<string, WorkflowTraceValue>? Data,
     Guid? ParentRunId = null,
-    WorkflowExecutionIdentity? ParentExecution = null);
+    WorkflowExecutionIdentity? ParentExecution = null,
+    IReadOnlyList<WorkflowTraceParent>? Parents = null)
+{
+    /// <summary>事件所在画布的路径：主画布为 <c>$</c>，子画布如 <c>$/Block</c>（路径不含圈序号）。</summary>
+    public string CanvasPath => Parents is not { Count: > 0 } parents
+        ? "$"
+        : "$/" + string.Join("/", parents.Select(parent => parent.NodeId));
+}
 
 /// <summary>
 /// 引擎提交给 Recorder 的事件草稿；序号、时间戳和 Payload 编码由 Recorder 补全。
@@ -82,6 +93,9 @@ public sealed record WorkflowRunEventDraft(
     Guid? RecoveryCaseId = null,
     IReadOnlyDictionary<string, object?>? Data = null)
 {
+    /// <summary>事件来自子画布时经过的复合节点（由引擎补上）；主画布为空。</summary>
+    public IReadOnlyList<WorkflowTraceParent>? Parents { get; init; }
+
     /// <summary>创建 Run 生命周期事件草稿。</summary>
     /// <param name="eventType">稳定事件键，例如 RunStarted。</param>
     /// <param name="message">面向使用者的可选说明。</param>

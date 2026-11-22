@@ -76,7 +76,8 @@ public static class WorkflowEventStreamInvariants
     /// 4. 节点名下的数据和步骤事件只出现在该次执行开始之后、结束之前（作用域级事件除外，只要求作用域节点已开始过）；
     /// 5. 每段运行结束时，没有仍未结束的节点执行；失败出口路由必须跟在该次执行的失败之后；
     /// 8. 并行汇聚之前必须有同一作用域节点、同一令牌的并行开始；Paused 与 Resumed 交替出现；
-    /// 9. 节点的每次等待开始（NodeWaitStarted）在该次执行结束前都有等待结束（NodeWaitEnded）。
+    /// 9. 节点的每次等待开始（NodeWaitStarted）在该次执行结束前都有等待结束（NodeWaitEnded）；
+    /// 10. 子画布（R3-a）进入 / 退出成对，退出时本画布没有未结束的节点执行；节点按"画布 + 第几次进入"区分。
     /// </summary>
     private static void CheckLifecycleAndNodes(WorkflowRunEvent[] ordered, List<string> violations)
     {
@@ -87,9 +88,30 @@ public static class WorkflowEventStreamInvariants
         var openParallel = new Dictionary<(string NodeId, long TokenId), int>();
         var paused = false;
         var openWaits = new Dictionary<(string NodeId, int Count), int>();
+        var canvases = new CanvasTracker();
+        var openCanvases = new Dictionary<string, WorkflowRunEvent>(StringComparer.Ordinal);
         foreach (var item in ordered)
         {
             var type = item.EventType;
+            canvases.Observe(item);
+            var canvas = canvases.Key(item);
+            if (type == "CanvasEntered")
+            {
+                if (!running)
+                    violations.Add($"#{item.Sequence} CanvasEntered 出现在运行结束之后。");
+                openCanvases[canvas] = item;
+                continue;
+            }
+            if (type == "CanvasExited")
+            {
+                if (!openCanvases.Remove(canvas))
+                    violations.Add($"#{item.Sequence} CanvasExited：子画布 {canvas} 没有对应的 CanvasEntered。");
+                foreach (var pending in open.Where(pair => pair.Key.NodeId.StartsWith(canvas + ":", StringComparison.Ordinal)).Select(pair => pair.Value).OrderBy(value => value.Sequence).ToArray())
+                    violations.Add(
+                        $"#{item.Sequence} CanvasExited 时子画布 {canvas} 的节点 {pending.NodeId} 第 {pending.ExecutionIdentity!.NodeExecutionCount} 次执行"
+                        + $"（#{pending.Sequence} 开始）没有完成 / 失败 / 取消事件。");
+                continue;
+            }
             if (type is "Paused" or "Resumed")
             {
                 if (type == "Paused" == paused)
@@ -118,6 +140,9 @@ public static class WorkflowEventStreamInvariants
                     violations.Add(
                         $"#{item.Sequence} {type} 时节点 {pending.NodeId} 第 {pending.ExecutionIdentity!.NodeExecutionCount} 次执行"
                         + $"（#{pending.Sequence} 开始）没有完成 / 失败 / 取消事件。");
+                foreach (var pendingCanvas in openCanvases.Values.OrderBy(value => value.Sequence))
+                    violations.Add($"#{item.Sequence} {type} 时子画布 {CanvasTracker.Label(pendingCanvas)}（#{pendingCanvas.Sequence} 进入）没有 CanvasExited。");
+                openCanvases.Clear();
                 open.Clear();
                 paused = false;
                 running = false;
@@ -131,7 +156,7 @@ public static class WorkflowEventStreamInvariants
             if (item.NodeId is null || item.ExecutionIdentity is null)
                 continue;
 
-            var key = (item.NodeId, item.ExecutionIdentity.NodeExecutionCount);
+            var key = (NodeId: canvas.Length == 0 ? item.NodeId : canvas + ":" + item.NodeId, item.ExecutionIdentity.NodeExecutionCount);
             if (type == "NodeStarted")
             {
                 if (!started.Add(key))
@@ -207,14 +232,17 @@ public static class WorkflowEventStreamInvariants
         foreach (var ancestor in EnumerateAncestors(ordered[0], findRun))
             foreach (var output in ancestor.Where(item => item.EventType == "OutputCommitted"))
                 if (TryCommittedKey(output, out var ancestorKey))
-                    committed.Add(ancestorKey);
+                    committed.Add((":" + ancestorKey.NodeId, ancestorKey.Sequence));
 
+        var canvases = new CanvasTracker();
         foreach (var item in ordered)
         {
+            canvases.Observe(item);
+            var canvas = canvases.Key(item);
             if (item.EventType == "OutputCommitted")
             {
                 if (TryCommittedKey(item, out var key))
-                    committed.Add(key);
+                    committed.Add((canvas + ":" + key.NodeId, key.Sequence));
                 continue;
             }
             if (item.EventType != "InputResolved" || item.Data is null)
@@ -225,7 +253,7 @@ public static class WorkflowEventStreamInvariants
             var sourceSequence = Long(item.Data, "SourceOutputSequence");
             if (sourceNodeId is null || sourceSequence is null)
                 continue; // 解析失败的尝试：没有取到值，也就没有来源可核对。
-            if (!committed.Contains((sourceNodeId, sourceSequence.Value)))
+            if (!committed.Contains((canvas + ":" + sourceNodeId, sourceSequence.Value)))
                 violations.Add(
                     $"#{item.Sequence} InputResolved：节点 {item.NodeId} 读取了 {sourceNodeId} 的输出 #{sourceSequence}，"
                     + "但此前没有对应的 OutputCommitted。");
@@ -272,6 +300,35 @@ public static class WorkflowEventStreamInvariants
                 yield break;
             yield return parent;
             parentId = parent.OrderBy(item => item.Sequence).First().ParentRunId;
+        }
+    }
+
+    /// <summary>
+    /// 子画布作用域（R3-a）：子画布的事件与主画布在同一运行里，节点执行次数和输出序号按每次进入子画布重新计。
+    /// 用"画布 + 第几次进入"区分，主画布为空串。
+    /// </summary>
+    private sealed class CanvasTracker
+    {
+        private readonly Dictionary<string, int> _activations = new(StringComparer.Ordinal);
+
+        public static string Label(WorkflowRunEvent item) =>
+            item.Parents is not { Count: > 0 } parents
+                ? string.Empty
+                : string.Join("/", parents.Select(parent => $"{parent.NodeId}@{parent.Cycle}"));
+
+        public void Observe(WorkflowRunEvent item)
+        {
+            if (item.EventType == "CanvasEntered")
+            {
+                var label = Label(item);
+                _activations[label] = _activations.TryGetValue(label, out var count) ? count + 1 : 1;
+            }
+        }
+
+        public string Key(WorkflowRunEvent item)
+        {
+            var label = Label(item);
+            return label.Length == 0 ? string.Empty : $"{label}#{(_activations.TryGetValue(label, out var count) ? count : 0)}";
         }
     }
 

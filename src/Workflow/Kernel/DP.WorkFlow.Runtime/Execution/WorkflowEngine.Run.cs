@@ -24,10 +24,11 @@ public sealed partial class WorkflowEngine
         try
         {
             // 流程的公共数据清单登记到公共数据中心；与已有登记不一致时整批拒绝，运行以故障结束。
-            if (_plan.PublicData.Count > 0)
+            // 子画布用到的公共数据已登记在根流程上（Schema 5），作用域不再重复登记。
+            if (!IsScope && _plan.PublicData.Count > 0)
                 Context.PublicDataCenter.DeclareAll(_plan.PublicData);
             var rootToken = new ExecutionToken(
-                Interlocked.Increment(ref _tokenSequence),
+                NextTokenId(),
                 Array.Empty<long>(),
                 Array.Empty<long>());
             _rootTokenId = rootToken.TokenId;
@@ -84,14 +85,8 @@ public sealed partial class WorkflowEngine
                 terminalMessage = _terminalMessage;
             }
             // 终态事件和 Flush 失败只影响 RecordingHealth，不改写已经确定的 Workflow 终态。
-            if (_deferRecordingCompletion)
-            {
-                // 循环块的每一圈不等待记录写出，下一圈立即开始；只保留一份在途收尾，
-                // 写出跟不上循环速度时才等待上一圈写完，避免积压的记录无限增长。
-                if (_pendingRecordingCompletion is { IsCompleted: false } previous)
-                    await previous.ConfigureAwait(false);
-                _pendingRecordingCompletion = CompleteRecordingAsync(terminalState, terminalMessage);
-            }
+            if (IsScope)
+                RecordCanvasExited(terminalState, terminalMessage);
             else
                 await CompleteRecordingAsync(terminalState, terminalMessage).ConfigureAwait(false);
             PublishSnapshot(terminalMessage);
@@ -155,6 +150,11 @@ public sealed partial class WorkflowEngine
 
     private void BeginRun(string? startNodeId)
     {
+        if (IsScope)
+        {
+            BeginScope(startNodeId);
+            return;
+        }
         E_WorkflowExecutionState? changedState;
         Guid runId;
         lock (_stateSync)
@@ -177,8 +177,6 @@ public sealed partial class WorkflowEngine
             _activeChildWorkflows.Clear();
             _latestChildWorkflowByParentNode.Clear();
             _latestChildEngineByParentNode.Clear();
-            _childTraceSources.Clear();
-            _childTraceHistory.Clear();
             _startedRecoveryCases.Clear();
             // 上一轮剩余输出的资源由所有者在根运行开始时退役；子运行结束后由父引擎接管（见 DetachOutputProjections）。
             _outputProjections.Clear();
@@ -200,6 +198,58 @@ public sealed partial class WorkflowEngine
         }
         PublishStateChange(changedState);
     }
+
+    /// <summary>
+    /// 开始一次子画布作用域（R3-a）：本画布的数据和节点状态重新开始，运行身份、记录和暂停门沿用根运行。
+    /// 作用域有自己的数据标识（<see cref="WorkflowRunState.RunId"/>），子画布节点的输出按它查询。
+    /// </summary>
+    private void BeginScope(string? startNodeId)
+    {
+        lock (_stateSync)
+        {
+            _runId = Root._runId;
+            RunState = new WorkflowRunState();
+            RunState.Begin(Guid.NewGuid());
+            _currentNodeId = startNodeId;
+            _terminalMessage = null;
+            _currentFault = null;
+            _currentRecovery = null;
+            _activeNodeIds.Clear();
+            _activeTokens.Clear();
+            _nodeRuntime.Clear();
+            _nodeExecutionCounts.Clear();
+            _nodeExecutionSequence = 0;
+            _parallelScopes.Clear();
+            _activeChildWorkflows.Clear();
+            _latestChildWorkflowByParentNode.Clear();
+            _latestChildEngineByParentNode.Clear();
+            _startedRecoveryCases.Clear();
+            _outputProjections.Clear();
+            _childOutputProjections.Clear();
+            _runStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            _state = E_WorkflowExecutionState.Running;
+            Context.BeginRun(RunState);
+        }
+        var cycle = _scopeParents.Count == 0 ? 0 : _scopeParents[^1].Cycle;
+        TryRecordRunEvent(
+            WorkflowRunEventDraft.Lifecycle("CanvasEntered", "进入子画布。", new Dictionary<string, object?>
+            {
+                ["WorkflowName"] = _plan.Name,
+                ["PlanPath"] = PlanPath,
+                ["EntryNodeId"] = _plan.EntryNodeId,
+                ["NodeCount"] = _plan.NodeIds.Count,
+                ["Cycle"] = cycle
+            }));
+        PublishSnapshot();
+    }
+
+    /// <summary>子画布作用域结束：记一条 CanvasExited（完成 / 取消 / 失败），记录本身由根运行收尾。</summary>
+    private void RecordCanvasExited(E_WorkflowExecutionState state, string? message) =>
+        TryRecordRunEvent(
+            WorkflowRunEventDraft.Lifecycle("CanvasExited", message, new Dictionary<string, object?>
+            {
+                ["State"] = state.ToString()
+            }));
 
     private void StartRecorder(Guid runId)
     {
@@ -249,7 +299,7 @@ public sealed partial class WorkflowEngine
     {
         try
         {
-            _recorder?.ReportDegraded(message);
+            Root._recorder?.ReportDegraded(message);
         }
         catch
         {

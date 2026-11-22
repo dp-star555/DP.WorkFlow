@@ -146,6 +146,18 @@ public sealed class WorkflowRunCenterTests
         Assert.Equal(WorkflowLogLevel.Info, WorkflowOutlet.GetLevel(runEvent));
     }
 
+    [Fact]
+    public void FormatLine_ShowsCanvasPathOfSubCanvasEvents()
+    {
+        var identity = new WorkflowExecutionIdentity(Guid.NewGuid(), 1, Array.Empty<long>(), Array.Empty<long>(), 1);
+        var runEvent = new WorkflowRunEvent(Guid.NewGuid(), 1, DateTimeOffset.UtcNow, WorkflowRunEventCategory.NodeExecution, "NodeStarted",
+            WorkflowEventWriteMode.Buffered, "上料流程", "Shot", "Action", identity, null, null, 1, null,
+            Parents: new[] { new WorkflowTraceParent("Loop", 3), new WorkflowTraceParent("Block") });
+
+        Assert.Equal("[上料流程/Loop@3/Block] 节点 拍照#1 开始", WorkflowOutlet.FormatLine("上料流程", runEvent, "拍照"));
+        Assert.Equal("$/Loop/Block", runEvent.CanvasPath);
+    }
+
     private static WorkflowOutletEvent Item(long sequence) =>
         new("流程", new WorkflowRunEvent(Guid.Empty, sequence, DateTimeOffset.UtcNow, WorkflowRunEventCategory.Trace, "Step",
             WorkflowEventWriteMode.Buffered, null, null, null, null, null, null, 1, null), WorkflowLogLevel.Debug, "line");

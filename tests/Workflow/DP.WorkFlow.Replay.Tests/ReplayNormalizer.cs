@@ -46,15 +46,15 @@ public static class ReplayNormalizer
             builder.Append(" 父节点第 ").Append(parent.NodeExecutionCount).Append(" 次执行");
         builder.AppendLine();
 
-        var labels = LabelTokens(run);
-        var outputs = LabelOutputs(run);
-        foreach (var lane in run
-                     .GroupBy(item => labels.TryGetValue(item.ExecutionIdentity?.TokenId ?? 0, out var label) ? label : "主线")
-                     .OrderBy(group => group.Key == "主线" ? string.Empty : group.Key, StringComparer.Ordinal))
+        // R3-a：子画布与主画布在同一运行、同一份记录里。按"画布 + 第几次进入"分段：
+        // 主画布在前，每次进入子画布单独一段，按进入先后排列，按画布层级缩进。
+        var segments = SplitCanvases(run);
+        WriteLanes(builder, indent, segments[0].Events);
+        foreach (var segment in segments.Skip(1))
         {
-            builder.Append(indent).Append("  [").Append(lane.Key).AppendLine("]");
-            foreach (var item in lane)
-                builder.Append(indent).Append("    ").AppendLine(Describe(item, outputs));
+            var segmentIndent = new string(' ', (depth + segment.Depth) * 4);
+            builder.Append(segmentIndent).Append("画布 [").Append(segment.Name).Append("] ").AppendLine(segment.Label);
+            WriteLanes(builder, segmentIndent, segment.Events);
         }
 
         var children = runs.Values
@@ -63,6 +63,51 @@ public static class ReplayNormalizer
             .ToArray();
         foreach (var child in children)
             WriteRun(builder, child, runs, depth + 1);
+    }
+
+    private static void WriteLanes(StringBuilder builder, string indent, WorkflowRunEvent[] events)
+    {
+        var labels = LabelTokens(events);
+        var outputs = LabelOutputs(events);
+        foreach (var lane in events
+                     .GroupBy(item => labels.TryGetValue(item.ExecutionIdentity?.TokenId ?? 0, out var label) ? label : "主线")
+                     .OrderBy(group => group.Key == "主线" ? string.Empty : group.Key, StringComparer.Ordinal))
+        {
+            builder.Append(indent).Append("  [").Append(lane.Key).AppendLine("]");
+            foreach (var item in lane)
+                builder.Append(indent).Append("    ").AppendLine(Describe(item, outputs));
+        }
+    }
+
+    private sealed record CanvasSegment(string Label, string Name, int Depth, List<WorkflowRunEvent> List)
+    {
+        public WorkflowRunEvent[] Events => List.ToArray();
+    }
+
+    /// <summary>把一次运行的事件按画布分段；第一段是主画布。</summary>
+    private static List<CanvasSegment> SplitCanvases(WorkflowRunEvent[] run)
+    {
+        var main = new CanvasSegment("$", string.Empty, 0, new List<WorkflowRunEvent>());
+        var segments = new List<CanvasSegment> { main };
+        var current = new Dictionary<string, CanvasSegment>(StringComparer.Ordinal);
+        foreach (var item in run)
+        {
+            if (item.Parents is not { Count: > 0 } parents)
+            {
+                main.List.Add(item);
+                continue;
+            }
+            var label = "$/" + string.Join("/", parents.Select(parent => parent.Cycle == 0 ? parent.NodeId : $"{parent.NodeId}@第{parent.Cycle}圈"));
+            if (item.EventType == "CanvasEntered" || !current.TryGetValue(label, out var segment))
+            {
+                var name = item.Data is not null && item.Data.TryGetValue("WorkflowName", out var value) ? value.Text ?? "?" : "?";
+                segment = new CanvasSegment(label, name, parents.Count, new List<WorkflowRunEvent>());
+                current[label] = segment;
+                segments.Add(segment);
+            }
+            segment.List.Add(item);
+        }
+        return segments;
     }
 
     /// <summary>令牌命名：根令牌为"主线"，分支令牌为"父令牌名/分支第一个节点"。</summary>

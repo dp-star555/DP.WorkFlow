@@ -143,6 +143,7 @@ internal sealed class WorkflowEventStreamCollector
             report.AppendLine("  事件：");
             foreach (var item in ordered.Take(MaxListedEvents))
                 report.Append("    #").Append(item.Sequence).Append(' ').Append(item.EventType)
+                    .Append(item.Parents is { Count: > 0 } ? " " + item.CanvasPath : string.Empty)
                     .Append(item.NodeId is null ? string.Empty : " " + item.NodeId)
                     .Append(item.ExecutionIdentity is null ? string.Empty : "#" + item.ExecutionIdentity.NodeExecutionCount)
                     .AppendLine();
