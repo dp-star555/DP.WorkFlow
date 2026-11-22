@@ -79,6 +79,28 @@ public sealed class ProcessFaultHandlingTests
     }
 
     [Fact]
+    public async Task OperatorFallback_OffersAllowedDirectivesWhenHandlerFails()
+    {
+        var (document, block) = MainFlow();
+        AddChain(block, new EndLapNodeModel { Id = "EndLap" });
+        var operators = new ScriptedOperator("Continue");
+        using var center = Center(operators, new WorkflowRunCenterOptions
+        {
+            FaultSettleMilliseconds = 0,
+            FaultFallback = new WorkflowOperatorFaultFallback(operators)
+        });
+
+        var result = await center.AddFlow(document, "工位").RunAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        // 处理流程给"结束本圈"不被允许，兜底问操作员；选"全部继续原操作"后移动节点核实并补完。
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(1, Count("Move:verify"));
+        var prompt = Assert.Single(operators.Prompts);
+        Assert.Contains("没有可以结束本圈的循环", prompt.Message);
+        Assert.Contains("模拟移动", prompt.Message);
+    }
+
+    [Fact]
     public async Task JointUndo_ConfirmsNodesWithoutUndoThenRestartsFromEntry()
     {
         var (document, block) = MainFlow(withGrab: true);

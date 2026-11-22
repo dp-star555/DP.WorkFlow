@@ -95,7 +95,11 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule
     public WorkflowRunCenter AttachFaultHandling(WorkflowRuntimeHost host, IServiceProvider services,
         WorkflowNodeCatalog nodes, WorkflowNodeHandlerCatalog handlers)
     {
-        var center = new WorkflowRunCenter(nodes, handlers, services: services);
+        // 处理流程出错时的兜底：用宿主的人工交互服务问操作员（重新运行处理流程 / 直接给去向 / 停止）。
+        var options = new WorkflowRunCenterOptions();
+        if (services.GetService(typeof(IWorkflowOperatorService)) is IWorkflowOperatorService operators)
+            options.FaultFallback = new WorkflowOperatorFaultFallback(operators);
+        var center = new WorkflowRunCenter(nodes, handlers, options, services);
         center.AttachHost("恢复演示", host);
         return center;
     }
