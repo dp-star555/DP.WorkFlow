@@ -145,7 +145,7 @@ var action = new ActionNodeModel
 var end = new EndNodeModel { Id = "End", Title = "结束" };
 
 var document = new WorkflowDocument { Name = "夹紧流程", EntryNodeId = start.Id };
-var canvas = document.CanvasProjection; // 当前桌面设计器过渡投影
+var canvas = document; // 节点和连线直接挂在文档上（R6-b）
 canvas.Nodes.Add(new WorkflowCanvasNode { Node = start, X = 80, Y = 100 });
 canvas.Nodes.Add(new WorkflowCanvasNode { Node = action, X = 320, Y = 100 });
 canvas.Nodes.Add(new WorkflowCanvasNode { Node = end, X = 560, Y = 100 });
@@ -826,7 +826,7 @@ public static WorkflowServices CreateWorkflowServices()
 9. Block 输入输出映射；
 10. RuntimeHost Pause/Hold/Reset。
 
-测试可直接构造 `WorkflowCanvasModel`，无需启动 WinForms/WPF。
+测试可直接构造 `WorkflowDocument`，无需启动 WinForms/WPF。
 
 ---
 

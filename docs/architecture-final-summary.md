@@ -389,7 +389,7 @@ type.IsValueType || value is string or Type or Uri or Version
 
 ### AR-07 / P1：Document 唯一所有者尚未成为唯一写入口【已确认结构】
 
-`Core/Documents/WorkflowDocument.cs` 的 `CanvasProjection` 仍是过渡投影；`Graph.Nodes` 返回可变模型引用；`UI.Shared/Authoring/Designer/WorkflowDesignerSession.cs` 持有编辑与 Undo 闭包；`WorkflowLayout` 仍用连接顺序索引关联布局。
+~~`Core/Documents/WorkflowDocument.cs` 的 `CanvasProjection` 仍是过渡投影~~（2026-11-22 R6-b 已去掉）；`Graph.Nodes` 返回可变模型引用；`UI.Shared/Authoring/Designer/WorkflowDesignerSession.cs` 持有编辑与 Undo 闭包；`WorkflowLayout` 仍用连接顺序索引关联布局。
 
 外部能绕过 Session 修改模型或集合，撤销、脏标记、诊断缓存与导航不一定同时感知。后台批处理、未来脚本编辑和多人协作会进一步放大问题。
 
