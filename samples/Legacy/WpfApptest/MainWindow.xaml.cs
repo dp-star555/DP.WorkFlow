@@ -17,6 +17,7 @@ public partial class MainWindow : Window
 {
     private readonly WorkflowDocumentWorkspace _workspace;
     private readonly WorkflowRuntimeHost _runtimeHost;
+    private WorkflowRunCenter? _faultCenter;
     private readonly WorkflowStudioRuntimeBinding _runtimeBinding;
     private readonly WorkflowVisionFrameScope _frameScope;
     private readonly WorkflowLabelInspectionRuntime _labelRuntime;
@@ -120,6 +121,8 @@ public partial class MainWindow : Window
         { AutoConfigureBeforeRun = true, RunContext = new WorkflowContext(services) };
         if (recoveryDemo is not null)
         {
+            // 模拟轴故障时由统管层的故障会话运行文档里的处理块（每次故障按当前文档查找）。
+            _faultCenter = recoveryDemo.AttachFaultHandling(_runtimeHost, services, catalog, handlers);
             _runtimeBinding.AutoConfigureBeforeRun = false;
             _runtimeBinding.ConfigureBeforeRun = () =>
             {
@@ -127,7 +130,6 @@ public partial class MainWindow : Window
                     throw new InvalidOperationException("恢复演示请从根流程运行。");
                 var document = _workspace.Navigator!.RootSession.Document;
                 _runtimeHost.Configure(document, _runtimeBinding.RunContext);
-                recoveryDemo.RebindTreatment(document, services, catalog, handlers);
             };
         }
         Studio.RuntimeBinding = _runtimeBinding;
@@ -160,7 +162,7 @@ public partial class MainWindow : Window
         Studio.InteractionError -= OnInteractionError;
         Studio.RuntimeBinding = null;
         _operatorService.Dispose();
-        _runtimeBinding.Dispose(); _runtimeHost.Dispose(); _algorithmDiagnostics.Dispose(); _algorithmBindings.Dispose(); _algorithmRuntime.Dispose(); _frameScope.Dispose(); _workspace.Dispose();
+        _runtimeBinding.Dispose(); _faultCenter?.Dispose(); _runtimeHost.Dispose(); _algorithmDiagnostics.Dispose(); _algorithmBindings.Dispose(); _algorithmRuntime.Dispose(); _frameScope.Dispose(); _workspace.Dispose();
         _ = Dispatcher.BeginInvoke(new Action(Close));
     }
 }

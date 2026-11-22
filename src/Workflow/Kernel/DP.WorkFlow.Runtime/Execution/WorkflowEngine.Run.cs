@@ -30,25 +30,21 @@ public sealed partial class WorkflowEngine
             var rootToken = new ExecutionToken(
                 NextTokenId(),
                 Array.Empty<long>(),
-                Array.Empty<long>());
+                Array.Empty<long>(),
+                this,
+                _enclosingToken,
+                isCanvasRoot: true,
+                CurrentStopEpoch);
             _rootTokenId = rootToken.TokenId;
-            var nextEntryNodeId = _plan.EntryNodeId;
-            _recoveryAttempt = 0;
-            while (true)
+            try
             {
-                try
-                {
-                    await ExecutePathAsync(nextEntryNodeId, null, rootToken, cancellationToken).ConfigureAwait(false);
-                    break;
-                }
-                catch (WorkflowPathException exception) when (
-                    (exception.FaultDisposition == WorkflowFaultDisposition.RequestRecovery
-                     || (exception.IsNodeFault && exception.FaultDisposition == WorkflowFaultDisposition.HandleAtScope))
-                    && _options.MaxRecoveryAttempts > 0
-                    && (_options.RecoveryCoordinator ?? Context.Services.GetService(typeof(IWorkflowFaultRecoveryCoordinator))) is IWorkflowFaultRecoveryCoordinator)
-                {
-                    nextEntryNodeId = await RecoverPathAsync(exception, rootToken, cancellationToken).ConfigureAwait(false);
-                }
+                await ExecutePathAsync(_plan.EntryNodeId, null, rootToken, cancellationToken).ConfigureAwait(false);
+            }
+            catch (ResumeRedirectException redirect) when (redirect.Target.LapScope == this)
+            {
+                // 循环块这一圈被"结束本圈"放弃：本圈到此为止，循环块接着进入下一圈。
+                SetTerminalState(E_WorkflowExecutionState.Completed, "本圈已按恢复去向结束。");
+                return new WorkflowRunResult(true, State, Elapsed, "本圈已按恢复去向结束。");
             }
             SetTerminalState(E_WorkflowExecutionState.Completed, "流程执行完成。");
             return new WorkflowRunResult(true, State, Elapsed, "流程执行完成。");
@@ -57,6 +53,12 @@ public sealed partial class WorkflowEngine
         {
             SetTerminalState(E_WorkflowExecutionState.Canceled, "流程已取消。");
             return new WorkflowRunResult(false, State, Elapsed, "流程已取消。", GetCurrentNodeId());
+        }
+        catch (ResumeRedirectException) when (IsScope)
+        {
+            // 去向在外层：关闭本子画布，交给外层接住。
+            SetTerminalState(E_WorkflowExecutionState.Canceled, "恢复去向转到外层，子画布关闭。");
+            throw;
         }
         catch (WorkflowPathException exception)
         {
@@ -70,9 +72,6 @@ public sealed partial class WorkflowEngine
         }
         finally
         {
-            await DisposePendingOperationsAsync().ConfigureAwait(false);
-            _recoveryEntries.Clear();
-            _committedVariableKeys.Clear();
             E_WorkflowExecutionState terminalState;
             string? terminalMessage;
             lock (_stateSync)
@@ -173,11 +172,9 @@ public sealed partial class WorkflowEngine
             _nodeExecutionCounts.Clear();
             _nodeExecutionSequence = 0;
             _parallelScopes.Clear();
-            _activeChildEngines.Clear();
             _activeChildWorkflows.Clear();
             _latestChildWorkflowByParentNode.Clear();
             _latestChildEngineByParentNode.Clear();
-            _startedRecoveryCases.Clear();
             // 上一轮剩余输出的资源由所有者在根运行开始时退役；子运行结束后由父引擎接管（见 DetachOutputProjections）。
             _outputProjections.Clear();
             _childOutputProjections.Clear();
@@ -223,7 +220,6 @@ public sealed partial class WorkflowEngine
             _activeChildWorkflows.Clear();
             _latestChildWorkflowByParentNode.Clear();
             _latestChildEngineByParentNode.Clear();
-            _startedRecoveryCases.Clear();
             _outputProjections.Clear();
             _childOutputProjections.Clear();
             _runStopwatch = System.Diagnostics.Stopwatch.StartNew();

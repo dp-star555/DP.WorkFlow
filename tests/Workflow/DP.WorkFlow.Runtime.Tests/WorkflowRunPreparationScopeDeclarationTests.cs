@@ -4,7 +4,7 @@ namespace DP.WorkFlow.Tests;
 /// AR-01：锁定各处准备调用点**声明的作用域**，而不是帧仓在给定作用域下的行为。
 ///
 /// 分工：
-/// - 本文件覆盖"调用点传对了没有"——走真实引擎的恢复路径（prepare: true 的嵌套运行）。
+/// - 本文件覆盖"调用点传对了没有"——走统管层故障会话运行处理流程的路径（嵌套运行）。
 /// - <c>WorkflowVisionFrameScopeRunScopeTests</c> 覆盖"拿到作用域之后做对了没有"。
 /// 两者缺一不可：只测后者时，把 <c>WorkflowEngine</c> 改回 <c>Root</c> 仍然全绿。
 /// </summary>
@@ -33,50 +33,27 @@ public sealed class WorkflowRunPreparationScopeDeclarationTests
         document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = faulty });
 
         var services = new WorkflowServiceProvider()
-            .Add<IWorkflowFaultRecoveryCoordinator>(new SubflowRecoveryCoordinator(subflow, catalog, handlers))
             .Add<IWorkflowRunPreparationService>(preparation)
-            // 故意把资源所有者一并注册：即使它在容器里可达，嵌套调用点也不得解析并调用它。
+            // 故意把资源所有者一并注册：根运行宿主会用它一次，处理流程（嵌套）不得再解析并调用它。
             .Add<IWorkflowRunResourceOwner>(preparation)
-            // 运行作用域所有者同理：嵌套运行不得重新取得所有权（否则会重置采集代次，
+            // 运行作用域所有者同理：处理流程不得重新取得所有权（否则会重置采集代次，
             // 让父运行的未领取帧变成"上一代"而被清退）。
             .Add<IWorkflowRunScopeOwner>(scope);
 
-        var result = await new WorkflowEngine(
-                new WorkflowCompiler(catalog).Compile(document), handlers, new WorkflowContext(services),
-                new WorkflowExecutionOptions { MaxRecoveryAttempts = 2 })
-            .RunAsync();
+        using var center = new WorkflowRunCenter(catalog, handlers,
+            new WorkflowRunCenterOptions { DefaultFaultHandler = subflow, FaultSettleMilliseconds = 0 }, services);
+        var flow = center.AddFlow(document);
+        var result = await flow.RunAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.True(result.Success, result.Message);
-        var recorded = Assert.Single(preparation.Contexts);
-        Assert.Equal(WorkflowRunScopeKind.Nested, recorded.ScopeKind);
-        Assert.Equal(faulty.Id, recorded.ParentNodeId);
-        // AR-01 阶段2：退役上一轮资源是根运行宿主的专属动作。引擎的嵌套路径不解析
-        // IWorkflowRunResourceOwner，因此这里必须一次都没有发生——这是"父资源只由父释放"的类型级保证。
-        Assert.Equal(0, preparation.ReleaseCount);
-        // V1-C：引擎侧只有根宿主解析 IWorkflowRunScopeOwner；引擎自身（含嵌套路径）一次都不解析。
-        Assert.Equal(0, scope.BeginCount);
-    }
-
-    /// <summary>
-    /// 走与生产一致的受监管入口：<c>IWorkflowRecoverySubflowContext</c> → <c>RunTrackedChildAsync(prepare: true)</c>。
-    /// 这正是 AR-01 的破坏点所在的那条路径。
-    /// </summary>
-    private sealed class SubflowRecoveryCoordinator : IWorkflowFaultRecoveryCoordinator
-    {
-        private readonly WorkflowBoundExecutionPlan _plan;
-
-        public SubflowRecoveryCoordinator(WorkflowDocument subflow, WorkflowNodeCatalog catalog, WorkflowNodeHandlerCatalog handlers) =>
-            _plan = new WorkflowRuntimeBinder(handlers).Bind(new WorkflowCompiler(catalog).Compile(subflow));
-
-        public async ValueTask<WorkflowFaultRecoveryDecision> RecoverAsync(
-            WorkflowFaultRecoveryRequest request, IWorkflowFaultRecoveryContext context, CancellationToken cancellationToken)
-        {
-            var childContext = new WorkflowContext(context.Services);
-            if (context is IWorkflowRecoverySubflowContext supervised)
-                await supervised.RunRecoverySubflowAsync(_plan, childContext,
-                    new WorkflowExecutionOptions { MaxRecoveryAttempts = 1 }, cancellationToken).ConfigureAwait(false);
-            return WorkflowFaultRecoveryDecision.Retry("已处置");
-        }
+        var nested = Assert.Single(preparation.Contexts, context => context.ScopeKind == WorkflowRunScopeKind.Nested);
+        Assert.Equal(faulty.Id, nested.ParentNodeId);
+        Assert.Single(preparation.Contexts, context => context.ScopeKind == WorkflowRunScopeKind.Root);
+        // AR-01 阶段2：退役上一轮资源是根运行宿主的专属动作；处理流程嵌套运行，不解析 IWorkflowRunResourceOwner。
+        Assert.Equal(1, preparation.ReleaseCount);
+        // V1-C：只有根宿主解析 IWorkflowRunScopeOwner；处理流程一次都不解析。
+        Assert.Equal(1, scope.BeginCount);
+        Assert.Equal(1, handlers.Resolve(treat) is TreatNodeHandler treatHandler ? treatHandler.ExecutionCount : -1);
     }
 
     private sealed class RecordingPreparation : IWorkflowRunPreparationService, IWorkflowRunResourceOwner
@@ -123,10 +100,10 @@ public sealed class WorkflowRunPreparationScopeDeclarationTests
     }
 
     [WorkflowNode("TestScopeFlaky")]
-    private sealed class FlakyNode : WorkflowNodeModel, IWorkflowRetrySafetyNode
+    [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+    private sealed class FlakyNode : WorkflowNodeModel
     {
         public override string NodeType => "TestScopeFlaky";
-        public WorkflowRetrySafety RetrySafety => WorkflowRetrySafety.Idempotent;
     }
 
     private sealed class FlakyNodeHandler : WorkflowNodeHandler<FlakyNode>
@@ -157,6 +134,9 @@ public sealed class WorkflowRunPreparationScopeDeclarationTests
             TreatNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
             ExecutionCount++;
+            // 处理流程给出去向：重做出故障的节点。
+            ((WorkflowFaultSession)context.Services.GetService(typeof(WorkflowFaultSession))!)
+                .SetDirective(null, WorkflowResumeDirective.Redo("已处置"));
             return ValueTask.FromResult(NodeExecutionResult.Continue());
         }
     }

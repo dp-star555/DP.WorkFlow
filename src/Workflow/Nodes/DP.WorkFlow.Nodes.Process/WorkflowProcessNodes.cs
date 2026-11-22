@@ -24,8 +24,6 @@ internal static class ProcessCapabilities
 {
     internal static readonly WorkflowRuntimeCapabilityRequirement OperatorCapability =
         WorkflowRuntimeCapabilityRequirement.Require<IWorkflowOperatorService>("显示操作员提示并接收人工选择。");
-    internal static readonly WorkflowRuntimeCapabilityRequirement EntryGuardCapability =
-        WorkflowRuntimeCapabilityRequirement.Require<IWorkflowRecoveryEntryGuard>("核实工位恢复入口、物料与副作用重执行条件。");
     internal static readonly WorkflowRuntimeCapabilityRequirement ProcessCapability =
         WorkflowRuntimeCapabilityRequirement.Require<IWorkflowProcessService>("创建工艺产品记录。");
     internal static readonly WorkflowRuntimeCapabilityRequirement ProductFlowCapability =

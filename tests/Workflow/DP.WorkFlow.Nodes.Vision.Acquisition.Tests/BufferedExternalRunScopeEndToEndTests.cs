@@ -222,7 +222,7 @@ public sealed class BufferedExternalRunScopeEndToEndTests
             sink,
             catalog: catalog,
             handlers: handlers,
-            recoveryCoordinator: new SubflowRecoveryCoordinator(subflow, catalog, handlers));
+            faultHandler: subflow);
 
         var result = await rig.Host.RunAsync();
 
@@ -329,7 +329,7 @@ public sealed class BufferedExternalRunScopeEndToEndTests
             double? exposureMicroseconds = null,
             WorkflowNodeCatalog? catalog = null,
             WorkflowNodeHandlerCatalog? handlers = null,
-            IWorkflowFaultRecoveryCoordinator? recoveryCoordinator = null)
+            WorkflowDocument? faultHandler = null)
         {
             if (exposureMicroseconds is not null)
             {
@@ -364,17 +364,24 @@ public sealed class BufferedExternalRunScopeEndToEndTests
                 }))
                 // 生产装配同款：桥接是 Kernel 与采集侧之间唯一的连接点。
                 .Add<IWorkflowRunScopeOwner>(new VisionAcquisitionRunScope(runtime.Runtime));
-            if (recoveryCoordinator is not null)
-                services.Add<IWorkflowFaultRecoveryCoordinator>(recoveryCoordinator);
-
             Host = new WorkflowRuntimeHost(catalog, handlers);
+            if (faultHandler is not null)
+            {
+                // 故障交给统管层的故障会话，处理流程嵌套运行。
+                _center = new WorkflowRunCenter(catalog, handlers,
+                    new WorkflowRunCenterOptions { DefaultFaultHandler = faultHandler, FaultSettleMilliseconds = 0 }, services);
+                _center.AttachHost("采集", Host);
+            }
             Host.Configure(document, new WorkflowContext(services));
         }
+
+        private readonly WorkflowRunCenter? _center;
 
         public WorkflowRuntimeHost Host { get; }
 
         public void Dispose()
         {
+            _center?.Dispose();
             Host.Dispose();
             _frameScope.Dispose();
         }
@@ -456,29 +463,11 @@ public sealed class BufferedExternalRunScopeEndToEndTests
     private sealed class TreatNodeHandler : WorkflowNodeHandler<TreatNode>
     {
         protected override ValueTask<NodeExecutionResult> ExecuteAsync(
-            TreatNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken) =>
-            ValueTask.FromResult(NodeExecutionResult.Continue());
-    }
-
-    /// <summary>走与生产一致的受监管入口：处置子流程经 <c>RunRecoverySubflowAsync</c> 嵌套运行。</summary>
-    private sealed class SubflowRecoveryCoordinator : IWorkflowFaultRecoveryCoordinator
-    {
-        private readonly WorkflowBoundExecutionPlan _plan;
-
-        public SubflowRecoveryCoordinator(
-            WorkflowDocument subflow, WorkflowNodeCatalog catalog, WorkflowNodeHandlerCatalog handlers) =>
-            _plan = new WorkflowRuntimeBinder(handlers).Bind(new WorkflowCompiler(catalog).Compile(subflow));
-
-        public async ValueTask<WorkflowFaultRecoveryDecision> RecoverAsync(
-            WorkflowFaultRecoveryRequest request, IWorkflowFaultRecoveryContext context, CancellationToken cancellationToken)
+            TreatNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
-            if (context is IWorkflowRecoverySubflowContext supervised)
-                await supervised.RunRecoverySubflowAsync(
-                    _plan,
-                    new WorkflowContext(context.Services),
-                    new WorkflowExecutionOptions { MaxRecoveryAttempts = 1 },
-                    cancellationToken).ConfigureAwait(false);
-            return WorkflowFaultRecoveryDecision.Retry("已处置");
+            ((WorkflowFaultSession)context.Services.GetService(typeof(WorkflowFaultSession))!)
+                .SetDirective(null, WorkflowResumeDirective.Redo("已处置"));
+            return ValueTask.FromResult(NodeExecutionResult.Continue());
         }
     }
 
@@ -501,10 +490,9 @@ public sealed class BufferedExternalRunScopeEndToEndTests
     }
 
     [WorkflowNode("TestBufferedFault")]
-    private sealed class FaultNode : WorkflowNodeModel, IWorkflowRetrySafetyNode
+    [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+    private sealed class FaultNode : WorkflowNodeModel
     {
         public override string NodeType => "TestBufferedFault";
-
-        public WorkflowRetrySafety RetrySafety => WorkflowRetrySafety.Idempotent;
     }
 }

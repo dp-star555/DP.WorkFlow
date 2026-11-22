@@ -14,6 +14,18 @@ public sealed class WorkflowRunCenterOptions
 
     /// <summary>每个流程出口的默认设置。</summary>
     public WorkflowOutletOptions FlowOutlet { get; set; } = new();
+
+    /// <summary>故障路由表：流程没有自带处理流程时，按顺序取第一个匹配项。</summary>
+    public IList<WorkflowFaultRoute> FaultRoutes { get; } = new List<WorkflowFaultRoute>();
+
+    /// <summary>默认处理流程：自带和路由表都没有时使用；为空时直接进入兜底。</summary>
+    public WorkflowDocument? DefaultFaultHandler { get; set; }
+
+    /// <summary>兜底界面；为空时从宿主服务里找，再没有时停止全部受影响的流程。</summary>
+    public IWorkflowFaultFallback? FaultFallback { get; set; }
+
+    /// <summary>第一个停点到达后，再等其他路径一起停下的时间（毫秒），避免同一故障拆成多次处理。</summary>
+    public int FaultSettleMilliseconds { get; set; } = 50;
 }
 
 /// <summary>
@@ -24,7 +36,7 @@ public sealed class WorkflowRunCenterOptions
 /// 加载流程时按流程文件的公共数据清单逐项登记，先登记者为准；形态或类型冲突时拒绝加载。
 /// 不使用流程管理时，单个运行宿主自建仅供自己使用的公共数据中心，行为不变。
 /// </remarks>
-public sealed class WorkflowRunCenter : IDisposable
+public sealed partial class WorkflowRunCenter : IDisposable
 {
     private const string LostCategory = "记录丢失";
     private readonly object _sync = new();
@@ -33,6 +45,7 @@ public sealed class WorkflowRunCenter : IDisposable
     private readonly IServiceProvider? _services;
     private readonly WorkflowRunCenterOptions _options;
     private readonly List<WorkflowRunCenterFlow> _flows = new();
+    private readonly CancellationTokenSource _lifetime = new();
     private bool _disposed;
 
     /// <summary>初始化流程管理。</summary>
@@ -102,12 +115,45 @@ public sealed class WorkflowRunCenter : IDisposable
                 throw new InvalidOperationException($"流程 {flowName} 已加载。");
             PublicData.DeclareAll(plan.PublicData);
             var options = executionOptions ?? new WorkflowExecutionOptions();
+            // 流程停下（节点故障、被中断、被要求停下）时交给故障会话；调用方自带处理方时以调用方为准。
+            options.StopPointHandler ??= new FlowStopPointHandler(this, flowName);
             var outlet = new WorkflowOutlet(_options.FlowOutlet);
             var sink = new WorkflowOutletSink(flowName, outlet, Outlet, options.Notices, CollectNodeTitles(plan), options.Recording.Sink);
             options.Recording.Sink = sink;
             var host = CreateHost(options);
             host.ConfigurePlan(plan, new WorkflowContext(_services, PublicData));
-            var flow = new WorkflowRunCenterFlow(flowName, plan, host, outlet);
+            host.StateChanged += _ => TryStartFaultSession();
+            var flow = new WorkflowRunCenterFlow(flowName, plan, host, outlet, ownsHost: true);
+            _flows.Add(flow);
+            return flow;
+        }
+    }
+
+    /// <summary>
+    /// 接管一个由调用方创建和配置的运行宿主（例如设计器里的运行）：它出故障或被要求停下时同样交给故障会话，
+    /// 处理流程按宿主当前配置的流程查找。宿主仍由调用方释放；它的公共数据不经过本流程管理。
+    /// </summary>
+    /// <param name="name">流程名。</param>
+    /// <param name="host">运行宿主。</param>
+    /// <returns>登记的流程。</returns>
+    /// <exception cref="InvalidOperationException">同名流程已加载。</exception>
+    public WorkflowRunCenterFlow AttachHost(string name, WorkflowRuntimeHost host)
+    {
+        ThrowIfDisposed();
+        Guard.NotNullOrWhiteSpace(name);
+        Guard.NotNull(host);
+        var flowName = name.Trim();
+        lock (_sync)
+        {
+            if (_flows.Any(flow => string.Equals(flow.Name, flowName, StringComparison.Ordinal)))
+                throw new InvalidOperationException($"流程 {flowName} 已加载。");
+            var options = host.ExecutionOptions;
+            options.StopPointHandler ??= new FlowStopPointHandler(this, flowName);
+            var outlet = new WorkflowOutlet(_options.FlowOutlet);
+            options.Recording.Sink = new WorkflowOutletSink(flowName, outlet, Outlet, options.Notices,
+                new Dictionary<string, string>(StringComparer.Ordinal), options.Recording.Sink);
+            host.StateChanged += _ => TryStartFaultSession();
+            var flow = new WorkflowRunCenterFlow(flowName, null, host, outlet, ownsHost: false);
             _flows.Add(flow);
             return flow;
         }
@@ -170,6 +216,7 @@ public sealed class WorkflowRunCenter : IDisposable
             if (_disposed)
                 return;
             _disposed = true;
+            _lifetime.Cancel();
             flows = _flows.ToArray();
             _flows.Clear();
         }
@@ -177,18 +224,26 @@ public sealed class WorkflowRunCenter : IDisposable
             flow.Dispose();
         PublicData.PersistenceFailed -= OnPersistenceFailed;
         Outlet.Dispose();
+        _lifetime.Dispose();
     }
 
-    private void OnPersistenceFailed(string message)
+    private void OnPersistenceFailed(string message) =>
+        PostCenterEvent("公共数据", WorkflowRunEventCategory.Fault, "PublicDataPersistenceFailed", message, "保持数据保存失败：" + message);
+
+    /// <summary>向全局出口（有流程时也向该流程出口）发一条统管层自己的事件。</summary>
+    private void PostCenterEvent(string source, WorkflowRunEventCategory category, string eventType, string message, string line,
+        WorkflowOutlet? flowOutlet = null)
     {
         var runEvent = new WorkflowRunEvent(
-            Guid.Empty, 0, WorkflowClock.UtcNow, WorkflowRunEventCategory.Fault, "PublicDataPersistenceFailed",
+            Guid.Empty, 0, WorkflowClock.UtcNow, category, eventType,
             WorkflowEventWriteMode.Buffered, null, null, null, null, null, null, 1,
             new Dictionary<string, WorkflowTraceValue>(StringComparer.Ordinal)
             {
                 ["Message"] = new(WorkflowTraceValueKind.Scalar, typeof(string).FullName!, message, message)
             });
-        Outlet.Post(new WorkflowOutletEvent("公共数据", runEvent, WorkflowLogLevel.Warning, "[公共数据] 保持数据保存失败：" + message));
+        var item = new WorkflowOutletEvent(source, runEvent, WorkflowLogLevel.Warning, $"[{source}] {line}");
+        flowOutlet?.Post(item);
+        Outlet.Post(item);
     }
 
     private static IReadOnlyDictionary<string, string> CollectNodeTitles(WorkflowExecutionPlan plan)
@@ -218,7 +273,7 @@ public sealed class WorkflowRunCenter : IDisposable
     /// <summary>把一个流程（含子运行）的记录事件转给流程出口和全局出口；在记录器后台线程上调用。</summary>
     private sealed class WorkflowOutletSink(
         string flowName,
-        WorkflowOutlet flowOutlet,
+        WorkflowOutlet? flowOutlet,
         WorkflowOutlet globalOutlet,
         WorkflowNoticeBoard notices,
         IReadOnlyDictionary<string, string> nodeTitles,
@@ -232,13 +287,13 @@ public sealed class WorkflowRunCenter : IDisposable
             foreach (var runEvent in events)
             {
                 var level = WorkflowOutlet.GetLevel(runEvent);
-                if (!flowOutlet.Accepts(runEvent.Category, level) && !globalOutlet.Accepts(runEvent.Category, level))
+                if (!(flowOutlet?.Accepts(runEvent.Category, level) ?? false) && !globalOutlet.Accepts(runEvent.Category, level))
                     continue;
                 string? title = null;
                 if (runEvent.NodeId is { } nodeId)
                     nodeTitles.TryGetValue(nodeId, out title);
                 var item = new WorkflowOutletEvent(flowName, runEvent, level, WorkflowOutlet.FormatLine(flowName, runEvent, title));
-                var dropped = flowOutlet.Post(item) + globalOutlet.Post(item);
+                var dropped = (flowOutlet?.Post(item) ?? 0) + globalOutlet.Post(item);
                 if (dropped > 0)
                     notices.Raise(runEvent.RunId, "$", null, LostCategory, "出口处理不过来，已丢弃最早的记录。");
             }
@@ -255,19 +310,23 @@ public sealed class WorkflowRunCenter : IDisposable
 /// <summary>流程管理中的一个流程。</summary>
 public sealed class WorkflowRunCenterFlow : IDisposable
 {
-    internal WorkflowRunCenterFlow(string name, WorkflowExecutionPlan plan, WorkflowRuntimeHost host, WorkflowOutlet outlet)
+    private readonly WorkflowExecutionPlan? _plan;
+    private readonly bool _ownsHost;
+
+    internal WorkflowRunCenterFlow(string name, WorkflowExecutionPlan? plan, WorkflowRuntimeHost host, WorkflowOutlet outlet, bool ownsHost)
     {
         Name = name;
-        Plan = plan;
+        _plan = plan;
         Host = host;
         Outlet = outlet;
+        _ownsHost = ownsHost;
     }
 
     /// <summary>流程名（顶层），也是出口事件里的流程名。</summary>
     public string Name { get; }
 
-    /// <summary>编译后的执行计划。</summary>
-    public WorkflowExecutionPlan Plan { get; }
+    /// <summary>编译后的执行计划；接管的宿主为它当前配置的计划。</summary>
+    public WorkflowExecutionPlan Plan => _plan ?? Host.Plan ?? throw new InvalidOperationException($"流程 {Name} 还没有配置。");
 
     /// <summary>运行宿主：启动、暂停、停止、快照、提示都经由它。</summary>
     public WorkflowRuntimeHost Host { get; }
@@ -291,7 +350,8 @@ public sealed class WorkflowRunCenterFlow : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        Host.Dispose();
+        if (_ownsHost)
+            Host.Dispose();
         Outlet.Dispose();
     }
 }

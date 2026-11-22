@@ -167,9 +167,9 @@ public sealed class WorkflowDocumentJsonStoreTests
           "Name": "Recovery Alias",
           "Nodes": [
             {
-              "Id": "Jump1", "Title": "返回", "NodeType": "ReturnToSafePoint", "NodeVersion": 1,
+              "Id": "Retry1", "Title": "重做", "NodeType": "RetryCurrentNode", "NodeVersion": 1,
               "X": 0, "Y": 0, "Width": 180, "Height": 60,
-              "Config": { "SafePointKey": "SafeNode", "NodeType": "ReturnToSafePoint" }
+              "Config": { "Note": "再来一次", "NodeType": "RetryCurrentNode" }
             }
           ],
           "Connections": []
@@ -178,10 +178,10 @@ public sealed class WorkflowDocumentJsonStoreTests
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes().RegisterProcessNodes();
         var loaded = new WorkflowDocumentJsonStore(catalog).Deserialize(json);
 
-        var node = Assert.IsType<JumpToNodeNodeModel>(loaded.Canvas.Nodes[0].Node);
-        Assert.Equal("WarnJumpToNode", node.NodeType);
-        Assert.Equal("SafeNode", node.TargetNodeId);
-        Assert.Contains(loaded.Migration.Warnings, warning => warning.Contains("ReturnToSafePoint", StringComparison.Ordinal));
+        var node = Assert.IsType<RetryCurrentNodeModel>(loaded.Canvas.Nodes[0].Node);
+        Assert.Equal("WarnRetryCurrentNode", node.NodeType);
+        Assert.Equal("再来一次", node.Note);
+        Assert.Contains(loaded.Migration.Warnings, warning => warning.Contains("RetryCurrentNode", StringComparison.Ordinal));
     }
 
     [Theory]

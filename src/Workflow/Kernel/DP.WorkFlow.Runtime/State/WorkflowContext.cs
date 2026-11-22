@@ -6,7 +6,7 @@ namespace DP.WorkFlow;
 /// 保存工作流作用域局部变量、按执行实例区分的节点输出、公共数据中心和宿主服务。
 /// 删除变量必须显式调用 <see cref="RemoveVariable"/>，不再以 null 表示删除。
 /// </summary>
-public sealed class WorkflowContext : IWorkflowFaultRecoveryContext
+public sealed class WorkflowContext
 {
     private readonly ConcurrentDictionary<string, object> _variables = new(StringComparer.Ordinal);
     private readonly object _variableSync = new();

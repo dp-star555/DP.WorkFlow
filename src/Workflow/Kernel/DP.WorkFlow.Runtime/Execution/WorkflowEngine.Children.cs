@@ -8,19 +8,20 @@ public sealed partial class WorkflowEngine
     private Task<WorkflowRunResult> RunChildWorkflowAsync(
         IWorkflowNodeModel parentNode,
         WorkflowExecutionIdentity parentExecution,
-        WorkflowExecutionPlan childDefinition,
+        ExecutionToken parentToken,
         WorkflowContext childContext,
         CancellationToken cancellationToken) =>
-        RunCanvasScopeAsync(parentNode, parentExecution, childContext, cancellationToken);
+        RunCanvasScopeAsync(parentNode, parentExecution, parentToken, childContext, cancellationToken);
 
     private async Task<WorkflowRunResult> RunCanvasScopeAsync(
         IWorkflowNodeModel parentNode,
         WorkflowExecutionIdentity parentExecution,
+        ExecutionToken parentToken,
         WorkflowContext childContext,
         CancellationToken cancellationToken)
     {
         var key = ChildKey(parentNode, parentExecution);
-        var scope = CreateCanvasScope(parentNode, childContext, cycle: 0);
+        var scope = CreateCanvasScope(parentNode, parentToken, childContext, cycle: 0);
         RegisterActiveScope(key, parentNode, parentExecution, scope, static () => 0);
         try
         {
@@ -44,15 +45,17 @@ public sealed partial class WorkflowEngine
     /// <summary>为循环块打开可反复运行同一子画布的会话：作用域对象只创建一次，每圈开一次画布作用域。</summary>
     /// <param name="parentNode">拥有子画布的父节点。</param>
     /// <param name="parentExecution">父节点本次执行身份。</param>
+    /// <param name="parentToken">父画布上执行循环块的令牌。</param>
     /// <param name="childContext">整个会话期间复用的子上下文。</param>
     /// <returns>调用方负责释放的会话。</returns>
     private IWorkflowChildWorkflowSession OpenChildWorkflowSession(
         IWorkflowNodeModel parentNode,
         WorkflowExecutionIdentity parentExecution,
+        ExecutionToken parentToken,
         WorkflowContext childContext)
     {
         var key = ChildKey(parentNode, parentExecution);
-        var scope = CreateCanvasScope(parentNode, childContext, cycle: 0);
+        var scope = CreateCanvasScope(parentNode, parentToken, childContext, cycle: 0);
         var session = new ChildWorkflowSession(this, parentNode, parentExecution, key, scope);
         RegisterActiveScope(key, parentNode, parentExecution, scope, session.CurrentCycle);
         return session;
@@ -62,7 +65,7 @@ public sealed partial class WorkflowEngine
         $"{parentNode.Id}:{parentExecution.TokenId}:{parentExecution.NodeExecutionCount}";
 
     /// <summary>创建子画布作用域：本画布的计划、上下文和节点状态独立，运行身份、记录、暂停与令牌编号用根运行的。</summary>
-    private WorkflowEngine CreateCanvasScope(IWorkflowNodeModel parentNode, WorkflowContext childContext, int cycle)
+    private WorkflowEngine CreateCanvasScope(IWorkflowNodeModel parentNode, ExecutionToken parentToken, WorkflowContext childContext, int cycle)
     {
         var scope = new WorkflowEngine(_boundPlan.GetChildPlan(parentNode.Id), childContext, _options)
         {
@@ -70,6 +73,7 @@ public sealed partial class WorkflowEngine
             BindingScopeId = BindingScopeId
         };
         scope._scopeRoot = Root;
+        scope._enclosingToken = parentToken;
         scope._scopeParents = _scopeParents.Append(new WorkflowTraceParent(parentNode.Id, cycle)).ToArray();
         return scope;
     }
@@ -188,74 +192,6 @@ public sealed partial class WorkflowEngine
                 owner.RetireActiveChild(key, parentNode.Id, scope);
             }
             return default;
-        }
-    }
-
-    /// <summary>
-    /// 运行一个独立的处理流程（不是子画布）：单独建引擎、单独记录，暂停和 Hold 由本引擎转发。
-    /// </summary>
-    private async Task<WorkflowRunResult> RunTrackedChildAsync(
-        IWorkflowNodeModel parentNode, WorkflowExecutionIdentity parentExecution,
-        WorkflowBoundExecutionPlan boundPlan, WorkflowContext childContext,
-        WorkflowExecutionOptions options, string? excludedHold, bool prepare,
-        CancellationToken cancellationToken)
-    {
-        var key = ChildKey(parentNode, parentExecution) + ":Recovery";
-        var childEngine = new WorkflowEngine(boundPlan, childContext, options);
-        childEngine.PlanPath = WorkflowRunPreparationPlanner.ChildPath(PlanPath, parentNode.Id);
-        childEngine.BindingScopeId = prepare ? Guid.NewGuid() : BindingScopeId;
-        childEngine.SetParentContext(Root._runId, parentExecution);
-        bool isPaused;
-        string[] holdReasons;
-        var root = Root;
-        lock (root._stateSync)
-        {
-            isPaused = root._manualPauseRequested;
-            holdReasons = root._externalHoldReasons.Where(reason => !string.Equals(reason, excludedHold, StringComparison.Ordinal)).ToArray();
-            root._activeChildEngines.Add(key, childEngine);
-        }
-        lock (_stateSync)
-            _activeChildWorkflows[key] = new ActiveChildWorkflow(key, parentNode.Id, parentExecution, childEngine, static () => 0);
-        Volatile.Write(ref childEngine._changeOwner, this);
-        PublishSnapshot();
-        if (isPaused)
-            childEngine.Pause();
-        foreach (var holdReason in holdReasons)
-            childEngine.AddExternalHold(holdReason);
-
-        IWorkflowPreparedRun? prepared = null;
-        try
-        {
-            if (prepare)
-            {
-                WorkflowRuntimeCapabilityValidator.Validate(boundPlan, childContext.Services);
-                var preparationContext = new WorkflowRunPreparationContext(
-                    EnumerateRecoveryNodes(boundPlan.Plan).ToArray(), WorkflowRunScopeKind.Nested, parentNode.Id, childContext.Services,
-                    WorkflowRunPreparationPlanner.Enumerate(boundPlan.Plan, childEngine.PlanPath), childEngine.BindingScopeId);
-                if (childContext.Services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowTransactionalRunPreparationService transactional)
-                    prepared = await transactional.PrepareRunAsync(preparationContext, cancellationToken).ConfigureAwait(false);
-                else if (childContext.Services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowRunPreparationService preparation)
-                    await preparation.PrepareAsync(preparationContext, cancellationToken).ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
-                prepared?.Commit();
-            }
-            var result = await childEngine.RunAsync(cancellationToken).ConfigureAwait(false);
-            lock (_stateSync)
-            {
-                if (_activeChildWorkflows.TryGetValue(key, out var active))
-                    active.LastMessage = result.Message;
-            }
-            return result;
-        }
-        finally
-        {
-            try { if (prepared is not null) await prepared.DisposeAsync().ConfigureAwait(false); }
-            finally
-            {
-                lock (root._stateSync)
-                    root._activeChildEngines.Remove(key);
-                RetireActiveChild(key, parentNode.Id, childEngine);
-            }
         }
     }
 

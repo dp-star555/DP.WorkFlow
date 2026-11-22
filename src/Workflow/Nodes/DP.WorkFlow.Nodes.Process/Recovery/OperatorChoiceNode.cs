@@ -7,7 +7,7 @@ public sealed class OperatorChoiceNodeModel : WorkflowNodeModel, IWorkflowDynami
 {
     /// <inheritdoc />
     public override string NodeType => "OperatorChoice";
-    /// <summary>提示内容；为空时从中断上下文生成。</summary>
+    /// <summary>提示内容；为空时根据当前故障生成。</summary>
     public string Message { get; set; } = string.Empty;
     /// <summary>选项配置，格式“显示文本=Key”，多项以逗号或分号分隔。</summary>
     public string OptionsText { get; set; } = "继续=Continue,停止=Stop";

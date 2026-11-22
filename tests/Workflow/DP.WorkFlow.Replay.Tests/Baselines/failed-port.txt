@@ -6,7 +6,7 @@
     OutputCommitted Start#1 OutputExecutionSequence=Start#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=
     NodeCompleted Start#1 Message=节点执行完成。 SelectedPort=Success
     NodeStarted Inspect#1 Message=节点开始执行。
-    NodeFailed Inspect#1 CommitStarted=False ExceptionType=System.InvalidOperationException InterruptAlarmCode=0 Message=检测NG：未找到边缘。
+    NodeFailed Inspect#1 ExceptionType=System.InvalidOperationException InterruptAlarmCode=0 Message=检测NG：未找到边缘。
     NodeFaultRouted Inspect#1 Message=检测NG：未找到边缘。 SelectedPort=Failed
     NodeStarted Ng#1 Message=节点开始执行。
     Invoke Ng#1 FunctionKey=Pass Message=开始调用工作流动作。

@@ -13,8 +13,8 @@ public sealed class WorkflowProcessRuntimePluginModuleTests
 
         Assert.True(composition.IsFrozen);
         Assert.Equal(30, nodes.Snapshot().Count);
-        Assert.Contains(handlers.ResolveWithRequirements(new RestartFromEntryNodeModel()).RequiredCapabilities,
-            requirement => requirement.CapabilityType == typeof(IWorkflowRecoveryEntryGuard));
+        // 去向节点只在故障处理流程里使用，故障会话由统管层提供，不声明宿主能力。
+        Assert.Empty(handlers.ResolveWithRequirements(new RestartFromEntryNodeModel()).RequiredCapabilities);
         Assert.Empty(handlers.ResolveWithRequirements(new ContinueOperationNodeModel()).RequiredCapabilities);
         Assert.All(nodes.Snapshot().Values, descriptor =>
             Assert.NotNull(handlers.Resolve(descriptor.Factory())));

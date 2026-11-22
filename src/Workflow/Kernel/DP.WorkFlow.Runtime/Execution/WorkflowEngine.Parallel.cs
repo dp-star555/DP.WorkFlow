@@ -48,6 +48,10 @@ public sealed partial class WorkflowEngine
                 NextTokenId(),
                 Array.AsReadOnly(ancestorTokenIds),
                 Array.AsReadOnly(parentToken.ScopeIds.Concat(new[] { runtimeScopeId }).ToArray()),
+                this,
+                parentToken,
+                isCanvasRoot: false,
+                parentToken.SeenStopEpoch,
                 parentToken.CopyLoopFrames());
             try
             {
@@ -94,44 +98,6 @@ public sealed partial class WorkflowEngine
     /// <summary>并行作用域事件的身份：属于父令牌，执行次数为 0（不是一次节点执行）。</summary>
     private WorkflowExecutionIdentity ScopeIdentity(ExecutionToken parentToken) =>
         new(_runId, parentToken.TokenId, parentToken.AncestorTokenIds, parentToken.ScopeIds, 0);
-
-    private sealed class ExecutionToken
-    {
-        private readonly Dictionary<string, int> _loopFrames;
-
-        public ExecutionToken(
-            long tokenId,
-            IReadOnlyList<long> ancestorTokenIds,
-            IReadOnlyList<long> scopeIds,
-            IReadOnlyDictionary<string, int>? loopFrames = null)
-        {
-            TokenId = tokenId;
-            AncestorTokenIds = ancestorTokenIds;
-            ScopeIds = scopeIds;
-            _loopFrames = loopFrames is null
-                ? new Dictionary<string, int>(StringComparer.Ordinal)
-                : loopFrames.ToDictionary(StringComparer.Ordinal);
-        }
-
-        public long TokenId { get; }
-
-        public IReadOnlyList<long> AncestorTokenIds { get; }
-
-        public IReadOnlyList<long> ScopeIds { get; }
-
-        public int PrepareLoopIteration(string nodeId) =>
-            _loopFrames.TryGetValue(nodeId, out var completedIterations)
-                ? completedIterations + 1
-                : 1;
-
-        public void CommitLoopIteration(string nodeId, int iteration) =>
-            _loopFrames[nodeId] = iteration;
-
-        public void CompleteLoop(string nodeId) => _loopFrames.Remove(nodeId);
-
-        public IReadOnlyDictionary<string, int> CopyLoopFrames() =>
-            new Dictionary<string, int>(_loopFrames, StringComparer.Ordinal);
-    }
 
     private sealed class MutableParallelScopeInfo
     {

@@ -11,17 +11,13 @@ public sealed partial class WorkflowEngine
             return;
         }
         E_WorkflowExecutionState? changedState;
-        WorkflowEngine[] children;
         lock (_stateSync)
         {
             _manualPauseRequested = true;
             changedState = ApplyPauseStateLocked();
             // 在状态锁内写记录：与运行开始、其他控制调用的先后顺序和状态变化一致。
             RecordControl(CaptureControlRecordLocked(changedState, null, null));
-            children = _activeChildEngines.Values.ToArray();
         }
-        foreach (var child in children)
-            child.Pause();
         PublishStateChange(changedState);
     }
 
@@ -34,21 +30,17 @@ public sealed partial class WorkflowEngine
             return;
         }
         E_WorkflowExecutionState? changedState;
-        WorkflowEngine[] children;
         lock (_stateSync)
         {
             _manualPauseRequested = false;
             changedState = ApplyPauseStateLocked();
             // 在状态锁内写记录：与运行开始、其他控制调用的先后顺序和状态变化一致。
             RecordControl(CaptureControlRecordLocked(changedState, null, null));
-            children = _activeChildEngines.Values.ToArray();
         }
-        foreach (var child in children)
-            child.Resume();
         PublishStateChange(changedState);
     }
 
-    /// <summary>添加外部 Hold 原因，相同原因会自动去重并传播到活动子引擎。</summary>
+    /// <summary>添加外部 Hold 原因（停住：节点之间停下，之后原样继续），相同原因会自动去重。子画布作用域直接使用本运行的暂停门。</summary>
     /// <param name="reason">设备、恢复协调器或宿主提供的非空原因；存储前裁剪首尾空白。</param>
     /// <exception cref="ArgumentException"><paramref name="reason"/> 为空或仅包含空白。</exception>
     public void AddExternalHold(string reason)
@@ -63,22 +55,18 @@ public sealed partial class WorkflowEngine
 
         var normalizedReason = reason.Trim();
         E_WorkflowExecutionState? changedState;
-        WorkflowEngine[] children;
         lock (_stateSync)
         {
             var added = _externalHoldReasons.Add(normalizedReason);
             changedState = ApplyPauseStateLocked();
             // 在状态锁内写记录：与运行开始、其他控制调用的先后顺序和状态变化一致。
             RecordControl(CaptureControlRecordLocked(changedState, added ? "HoldAdded" : null, normalizedReason));
-            children = _activeChildEngines.Values.ToArray();
         }
-        foreach (var child in children)
-            child.AddExternalHold(normalizedReason);
         PublishStateChange(changedState);
     }
 
     /// <summary>移除外部 Hold；所有 Hold 和人工暂停均清除后才会继续运行。</summary>
-    /// <param name="reason">要清除并传播到子引擎的原因；空白值被忽略。</param>
+    /// <param name="reason">要清除的原因；空白值被忽略。</param>
     public void RemoveExternalHold(string reason)
     {
         if (string.IsNullOrWhiteSpace(reason))
@@ -91,17 +79,13 @@ public sealed partial class WorkflowEngine
 
         var normalizedReason = reason.Trim();
         E_WorkflowExecutionState? changedState;
-        WorkflowEngine[] children;
         lock (_stateSync)
         {
             var removed = _externalHoldReasons.Remove(normalizedReason);
             changedState = ApplyPauseStateLocked();
             // 在状态锁内写记录：与运行开始、其他控制调用的先后顺序和状态变化一致。
             RecordControl(CaptureControlRecordLocked(changedState, removed ? "HoldRemoved" : null, normalizedReason));
-            children = _activeChildEngines.Values.ToArray();
         }
-        foreach (var child in children)
-            child.RemoveExternalHold(normalizedReason);
         PublishStateChange(changedState);
     }
 

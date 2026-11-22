@@ -66,6 +66,19 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
     /// <inheritdoc />
     public WorkflowNoticeBoard Notices => _executionOptions.Notices;
 
+    /// <summary>每次创建引擎时使用的执行选项（流程管理接管宿主时在这里装上停点处理方）。</summary>
+    internal WorkflowExecutionOptions ExecutionOptions => _executionOptions;
+
+    /// <summary>当前配置的执行计划；没有配置时为空。</summary>
+    public WorkflowExecutionPlan? Plan
+    {
+        get
+        {
+            lock (_syncRoot)
+                return _boundPlan?.Plan;
+        }
+    }
+
     /// <inheritdoc />
     public event Action<E_WorkflowExecutionState>? StateChanged;
 

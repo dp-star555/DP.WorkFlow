@@ -7,5 +7,5 @@
     NodeCompleted Start#1 Message=节点执行完成。 SelectedPort=Success
     NodeStarted Servo#1 Message=节点开始执行。
     Invoke Servo#1 FunctionKey=Boom Message=开始调用工作流动作。
-    NodeFailed Servo#1 CommitStarted=False ExceptionType=System.InvalidOperationException InterruptAlarmCode=0 Message=模拟设备故障：伺服报警。
+    NodeFailed Servo#1 ExceptionType=System.InvalidOperationException InterruptAlarmCode=0 Message=模拟设备故障：伺服报警。
     RunFaulted Message=模拟设备故障：伺服报警。 State=Faulted

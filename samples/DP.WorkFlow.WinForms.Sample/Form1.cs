@@ -18,6 +18,7 @@ public partial class Form1 : Form
     private readonly WorkflowNodeCatalog _nodeCatalog;
     private readonly WorkflowDocumentWorkspace _workspace;
     private readonly WorkflowRuntimeHost _runtimeHost;
+    private WorkflowRunCenter? _faultCenter;
     private readonly WorkflowStudioRuntimeBinding _runtimeBinding;
     private readonly WorkflowContext _runtimeContext;
     private readonly WorkflowVisionFrameScope _frameScope;
@@ -168,7 +169,6 @@ public partial class Form1 : Form
             .Add<IWorkflowProcessService>(new DemoProcessService())
             .Add<IWorkflowProductFlowService>(new DemoProductFlowService())
             .Add<IWorkflowWaferRobotService>(new DemoWaferRobotService())
-            .Add<IWorkflowRecoveryService>(new DemoRecoveryService())
             // 准备服务只做校验；退役上一轮资源是运行所有者的职责，只有根运行宿主持有它（AR-01 阶段2）。
             .Add<IWorkflowVisionAlgorithmBindings>(_algorithmBindings)
             .Add<IWorkflowNodeCapabilityProvider>(_algorithmBindings)
@@ -187,6 +187,8 @@ public partial class Form1 : Form
         };
         if (recoveryDemo is not null)
         {
+            // 模拟轴故障时由统管层的故障会话运行文档里的处理块（每次故障按当前文档查找）。
+            _faultCenter = recoveryDemo.AttachFaultHandling(_runtimeHost, services, _nodeCatalog, handlers);
             _runtimeBinding.AutoConfigureBeforeRun = false;
             _runtimeBinding.ConfigureBeforeRun = () =>
             {
@@ -194,7 +196,6 @@ public partial class Form1 : Form
                     throw new InvalidOperationException("恢复演示请从根流程运行。");
                 var document = _workspace.Navigator!.RootSession.Document;
                 _runtimeHost.Configure(document, _runtimeContext);
-                recoveryDemo.RebindTreatment(document, services, _nodeCatalog, handlers);
             };
         }
         workflowStudioControl1.RuntimeBinding = _runtimeBinding;
@@ -256,7 +257,7 @@ public partial class Form1 : Form
         _runtimeHost.Cancel();
         _operatorService.Dispose();
         _runtimeBinding.Dispose();
-        _runtimeHost.Dispose();
+        _faultCenter?.Dispose(); _runtimeHost.Dispose();
         _algorithmDiagnostics.Dispose(); _algorithmBindings.Dispose(); _algorithmRuntime.Dispose(); _frameScope.Dispose();
         _workspace.Dispose();
     }

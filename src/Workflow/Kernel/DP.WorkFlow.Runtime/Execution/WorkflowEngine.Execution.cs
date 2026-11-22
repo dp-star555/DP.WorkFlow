@@ -14,6 +14,10 @@ public sealed partial class WorkflowEngine
     /// <param name="stopBeforeNodeId">并行分支边界；到达该汇聚节点前返回且不执行它。</param>
     /// <param name="token">携带祖先 Token 和并行 Scope 路径的执行身份。</param>
     /// <param name="cancellationToken">路径执行和暂停门等待的取消令牌。</param>
+    /// <remarks>
+    /// 节点故障、被中断或被要求停下时，路径停在停点上等待去向（第 8 类）：继续原操作 / 重做在原地进行；
+    /// 回到入口、结束本圈的目标在本层时在本层执行，在外层时沿调用路径向外传递。
+    /// </remarks>
     private async Task ExecutePathAsync(
         string startNodeId,
         string? stopBeforeNodeId,
@@ -21,30 +25,61 @@ public sealed partial class WorkflowEngine
         CancellationToken cancellationToken)
     {
         string? currentNodeId = startNodeId;
+        // 继续原操作：下一次执行该节点时调用核实并补完，而不是重新执行。
+        WorkflowNodeInterruption? verify = null;
         while (!string.IsNullOrWhiteSpace(currentNodeId))
         {
             if (string.Equals(currentNodeId, stopBeforeNodeId, StringComparison.Ordinal))
                 return;
 
-            await WaitForAdmissionAsync(cancellationToken).ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
             var node = _plan.GetNodeOrThrow(currentNodeId);
-            var interruption = Interlocked.Exchange(ref _jointInterruption, null);
-            if (interruption is not null)
-                throw new WorkflowPathException(node.Id, interruption, executionIdentity:
-                    new WorkflowExecutionIdentity(_runId, token.TokenId, Array.Empty<long>(), Array.Empty<long>(), 0),
-                    faultDisposition: WorkflowFaultDisposition.RequestRecovery) { IsBoundaryInterruption = true };
+            if (verify is null)
+            {
+                await WaitForAdmissionAsync(token, cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (StopPending(token))
+                {
+                    // 被要求停下：在这个节点开始之前停下，等待去向。
+                    var requested = await StopAtAsync(node, token, WorkflowStopReason.Requested,
+                        Volatile.Read(ref Root._stopMessage), 0, null, cancellationToken).ConfigureAwait(false);
+                    currentNodeId = FollowDirective(requested, node, token, interruption: null, out verify);
+                    continue;
+                }
+            }
             NodeExecutionResult result;
             try
             {
-                result = await ExecuteNodeAsync(node, token, cancellationToken).ConfigureAwait(false);
+                var interruption = verify;
+                verify = null;
+                result = await ExecuteNodeAsync(node, token, cancellationToken, interruption).ConfigureAwait(false);
             }
-            catch (WorkflowPathException fault) when (fault.IsNodeFault && !fault.IsBoundaryInterruption
+            catch (ResumeRedirectException redirect) when (redirect.Target.Token == token && redirect.Target.LapScope is null)
+            {
+                // 内层（子画布、并行分支）停点的去向落在本层：在本层回到入口或结束本圈。
+                currentNodeId = ApplyAtThisLevel(redirect.Target, token);
+                continue;
+            }
+            catch (WorkflowPathException fault) when (fault.IsNodeFault && !fault.IsInterrupted
                 && _plan.GetNextNodeIds(node.Id, WorkflowPorts.Failed).Count > 0)
             {
                 // 失败出口已连线：故障已记录（节点标记失败、写入运行事件），本次运行不中止，沿失败支路继续（例如视觉检测NG）。
                 RouteFaultToFailedPort(node, token, fault);
                 result = NodeExecutionResult.Continue(WorkflowPorts.Failed);
+            }
+            catch (WorkflowPathException fault) when (fault.IsNodeFault
+                && fault.FaultDisposition == WorkflowFaultDisposition.ReportFault
+                && StopPointHandler is not null)
+            {
+                // 节点故障或被中断：停在故障节点上，等待故障会话给出去向。
+                var reason = fault.IsInterrupted ? WorkflowStopReason.Interrupted : WorkflowStopReason.Fault;
+                var resolved = await StopAtAsync(node, token, reason, fault.Message, fault.InterruptAlarmCode, fault.Progress, cancellationToken)
+                    .ConfigureAwait(false);
+                var next = FollowDirective(resolved, node, token,
+                    new WorkflowNodeInterruption(reason, fault.Message, fault.Progress), out verify);
+                lock (_stateSync)
+                    _currentFault = null;
+                currentNodeId = next;
+                continue;
             }
             if (result.CompleteCurrentPath)
             {
@@ -71,7 +106,16 @@ public sealed partial class WorkflowEngine
                 }
 
                 var scope = _plan.GetParallelScopeOrThrow(node.Id);
-                await ExecuteParallelScopeAsync(node, scope, token, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await ExecuteParallelScopeAsync(node, scope, token, cancellationToken).ConfigureAwait(false);
+                }
+                catch (ResumeRedirectException redirect) when (redirect.Target.Token == token && redirect.Target.LapScope is null)
+                {
+                    // 分支里停点的去向在并行之前：整个并行组作废，在本层回到入口或结束本圈。
+                    currentNodeId = ApplyAtThisLevel(redirect.Target, token);
+                    continue;
+                }
                 currentNodeId = scope.MergeNodeId;
                 continue;
             }
@@ -83,15 +127,50 @@ public sealed partial class WorkflowEngine
             throw new WorkflowPathException(startNodeId, $"并行分支未到达汇聚节点 {stopBeforeNodeId}。");
     }
 
+    /// <summary>
+    /// 按去向决定接着执行哪个节点：继续原操作 / 重做返回本节点（继续原操作时给出核实信息）；
+    /// 回到入口、结束本圈在本层时返回目标节点，在外层时向外传递；停止流程终止本次运行。
+    /// </summary>
+    /// <returns>接着执行的节点 ID。</returns>
+    private string FollowDirective(
+        ResolvedDirective resolved,
+        IWorkflowNodeModel node,
+        ExecutionToken token,
+        WorkflowNodeInterruption? interruption,
+        out WorkflowNodeInterruption? verify)
+    {
+        verify = null;
+        switch (resolved.Directive.Kind)
+        {
+            case WorkflowResumeKind.Continue:
+                // 被要求停下的节点还没开始：照常执行。故障 / 中断的节点：调用核实并补完。
+                verify = interruption;
+                return node.Id;
+            case WorkflowResumeKind.Redo:
+                return node.Id;
+            case WorkflowResumeKind.EnterAt:
+            case WorkflowResumeKind.EndLap:
+                var target = resolved.Target!;
+                if (target.Token == token && target.LapScope is null)
+                    return ApplyAtThisLevel(target, token);
+                throw new ResumeRedirectException(target);
+            default:
+                throw new WorkflowPathException(node.Id, resolved.Directive.Message ?? "处理流程要求停止流程。",
+                    executionIdentity: IdentityOf(token), faultDisposition: WorkflowFaultDisposition.StopRun);
+        }
+    }
+
     /// <summary>解析处理器并执行一次节点，同时维护状态、Trace、输出和错误包装。</summary>
     /// <param name="node">本次执行的节点配置。</param>
     /// <param name="token">节点所属的执行路径 Token。</param>
     /// <param name="cancellationToken">传递给节点处理器的取消令牌。</param>
+    /// <param name="verify">继续原操作时节点停下的情况：调用核实并补完而不是重新执行。</param>
     /// <returns>处理器选择的后继端口、输出及路径控制信息。</returns>
     private async Task<NodeExecutionResult> ExecuteNodeAsync(
         IWorkflowNodeModel node,
         ExecutionToken token,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        WorkflowNodeInterruption? verify = null)
     {
         var nodeExecutionCount = GetNextNodeExecutionCount(node.Id);
         int? loopIteration = node is IWorkflowLoopNode { Iterations: >= 0 }
@@ -106,14 +185,18 @@ public sealed partial class WorkflowEngine
             loopIteration);
         MarkNodeStarted(node, identity);
         Notify(NodeStarted, node);
-        RecordRunEvent(WorkflowRunEventDraft.Node("NodeStarted", node, identity, "节点开始执行。"));
+        RecordRunEvent(WorkflowRunEventDraft.Node("NodeStarted", node, identity,
+            verify is null ? "节点开始执行。" : "节点核实并补完原操作。",
+            verify is null ? null : new Dictionary<string, object?> { ["Mode"] = "VerifyAndComplete", ["Progress"] = verify.Progress }));
         BeginNodeTiming(node.Id);
-        var commitStarted = false;
+        var interruptible = BeginInterruptible(node, token, cancellationToken);
+        var nodeCancellation = interruptible.Token;
+        WorkflowNodeExecutionContext? executionContext = null;
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            nodeCancellation.ThrowIfCancellationRequested();
             var handler = _boundPlan.GetHandler(node.Id);
-            var executionContext = new WorkflowNodeExecutionContext(
+            executionContext = new WorkflowNodeExecutionContext(
                 Context,
                 node,
                 identity,
@@ -123,8 +206,8 @@ public sealed partial class WorkflowEngine
                 (draft, writeMode) => RecordRunEvent(draft, writeMode),
                 message => ReportRecordingDegraded(message, node.Id),
                 (plan, childContext, childCancellation) =>
-                    RunChildWorkflowAsync(node, identity, plan, childContext, childCancellation), PlanPath, BindingScopeId,
-                childContext => OpenChildWorkflowSession(node, identity, childContext),
+                    RunChildWorkflowAsync(node, identity, token, childContext, childCancellation), PlanPath, BindingScopeId,
+                childContext => OpenChildWorkflowSession(node, identity, token, childContext),
                 (category, message) => RaiseNotice(node.Id, category, message, nodeType: node.NodeType));
             // R2-c：进入执行代码前取齐全部普通输入；任何一个取不到，节点直接失败，不会执行到一半才发现。
             executionContext.ResolveAllInputs();
@@ -132,22 +215,15 @@ public sealed partial class WorkflowEngine
             // 上一次执行失败时留下的子运行投影不属于本次输出。
             _childOutputProjections.TryRemove(operationKey, out _);
             NodeExecutionResult result;
-            if (handler is IWorkflowNodeOperationFactory factory)
+            if (verify is not null)
             {
-                if (!_operations.TryGetValue(operationKey, out var operation))
-                {
-                    var operationId = Guid.NewGuid();
-                    var instance = await factory.CreateOperationAsync(operationId, node, executionContext, cancellationToken).ConfigureAwait(false)
-                        ?? throw new InvalidOperationException("操作工厂返回空实例。");
-                    operation = new PendingOperation(operationId, instance);
-                    _operations[operationKey] = operation;
-                }
-                cancellationToken.ThrowIfCancellationRequested();
-                result = await operation.Instance.ExecuteAsync(executionContext, cancellationToken).ConfigureAwait(false);
+                var continuable = handler as IWorkflowContinuableNodeHandler
+                    ?? throw new InvalidOperationException($"节点 {node.Id} 没有实现核实并补完。");
+                result = await continuable.VerifyAndCompleteAsync(node, executionContext, verify, nodeCancellation).ConfigureAwait(false);
             }
             else
-                result = await handler.ExecuteAsync(node, executionContext, cancellationToken).ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
+                result = await handler.ExecuteAsync(node, executionContext, nodeCancellation).ConfigureAwait(false);
+            nodeCancellation.ThrowIfCancellationRequested();
             if (result is null)
                 throw new InvalidOperationException($"节点 {node.Id} 返回了空执行结果。");
 
@@ -159,11 +235,6 @@ public sealed partial class WorkflowEngine
                     faultDisposition: result.FaultDisposition,
                     interruptAlarmCode: result.InterruptAlarmCode);
 
-            commitStarted = true;
-            // 成功输出须拥有独立生命周期；先清理操作，避免清理失败后仍公开本次输出。
-            if (_operations.TryRemove(operationKey, out var completedOperation))
-                await completedOperation.Instance.DisposeAsync().ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
             executionContext.CommitDataChanges();
             RecordDataChangesCommitted(node, identity, executionContext);
             var committedOutput = Context.SetNodeOutput(node.Id, identity, result.Output, out var superseded);
@@ -175,11 +246,8 @@ public sealed partial class WorkflowEngine
                 _outputProjections[committedOutput.ExecutionSequence] = (node.Id, outputProjection);
             // 新输出已发布，被它取代的上一次输出不会再被读到，释放其资源（环形流程的内存因此不随循环次数增长）。
             RetireOutputs(superseded);
-            // 变量键只供命名入口重执行回退；该能力限于无环串行计划，其他计划不记录，避免循环中无限累计。
-            if (executionContext.ChangedVariableKeys.Count > 0 && _plan.IsAcyclic && _plan.ParallelScopes.Count == 0)
-                _committedVariableKeys[committedOutput.ExecutionSequence] = executionContext.ChangedVariableKeys;
-            if (node is IWorkflowRecoveryEntryNode entry && token.ScopeIds.Count == 0)
-                _recoveryEntries[entry.RecoveryEntryKey] = committedOutput;
+            if (node is IWorkflowRecoveryEntryNode entry && !string.IsNullOrWhiteSpace(entry.RecoveryEntryKey))
+                token.RecordAnchor(entry.RecoveryEntryKey.Trim(), node.Id, committedOutput.ExecutionSequence);
             if (loopIteration.HasValue)
             {
                 if (string.Equals(result.SelectedPortKey, WorkflowPorts.Loop, StringComparison.Ordinal))
@@ -208,13 +276,24 @@ public sealed partial class WorkflowEngine
             RecordRunEvent(WorkflowRunEventDraft.Node("NodeCanceled", node, identity, "节点执行已取消。"));
             throw;
         }
+        catch (ResumeRedirectException)
+        {
+            // 子画布里的停点要回到外层：本节点（复合节点）这次执行被去向中止。
+            MarkNodeFinished(node.Id, token.TokenId, E_NodeState.Canceled, "恢复去向转到外层，本次执行中止。");
+            RecordRunEvent(WorkflowRunEventDraft.Node("NodeCanceled", node, identity, "恢复去向转到外层，本次执行中止。"));
+            throw;
+        }
         catch (Exception exception)
         {
+            var interrupted = exception is OperationCanceledException && nodeCancellation.IsCancellationRequested;
+            var message = interrupted
+                ? $"节点被中断：{Volatile.Read(ref Root._stopMessage) ?? "外部中断"}"
+                : exception.Message;
             var pathException = exception as WorkflowPathException
-                ?? new WorkflowPathException(node.Id, exception.Message, exception, identity,
-                    WorkflowFaultDisposition.HandleAtScope);
+                ?? new WorkflowPathException(node.Id, message, exception, identity, WorkflowFaultDisposition.ReportFault);
             pathException.IsNodeFault = true;
-            pathException.CommitStarted = commitStarted;
+            pathException.IsInterrupted = interrupted;
+            pathException.Progress = executionContext?.LastProgress;
             var faultIdentity = pathException.ExecutionIdentity ?? identity;
             var fault = new WorkflowNodeFault(
                 node.Id,
@@ -227,18 +306,25 @@ public sealed partial class WorkflowEngine
             lock (_stateSync)
                 _currentFault = fault;
             MarkNodeFinished(node.Id, token.TokenId, E_NodeState.Failed, pathException.Message);
+            var faultData = new Dictionary<string, object?>
+            {
+                ["ExceptionType"] = fault.ExceptionType,
+                ["InterruptAlarmCode"] = fault.InterruptAlarmCode
+            };
+            // 节点报告过"做到哪一步"时随故障记下，交给处理流程和核实并补完。
+            if (pathException.Progress is not null)
+                faultData["Progress"] = pathException.Progress;
             TryRecordRunEvent(WorkflowRunEventDraft.Fault(
-                "NodeFailed",
+                interrupted ? "NodeInterrupted" : "NodeFailed",
                 node,
                 faultIdentity,
                 pathException.Message,
-                data: new Dictionary<string, object?>
-                {
-                    ["ExceptionType"] = fault.ExceptionType,
-                    ["InterruptAlarmCode"] = fault.InterruptAlarmCode,
-                    ["CommitStarted"] = commitStarted
-                }));
+                data: faultData));
             throw pathException;
+        }
+        finally
+        {
+            EndInterruptible(interruptible);
         }
     }
 
@@ -448,9 +534,9 @@ public sealed partial class WorkflowEngine
             InterruptAlarmCode = interruptAlarmCode > 0 ? interruptAlarmCode : 0;
         }
 
-        public bool IsBoundaryInterruption { get; set; }
         public bool IsNodeFault { get; set; }
-        public bool CommitStarted { get; set; }
+        public bool IsInterrupted { get; set; }
+        public string? Progress { get; set; }
         public string NodeId { get; }
         public WorkflowExecutionIdentity? ExecutionIdentity { get; }
         public WorkflowFaultDisposition FaultDisposition { get; }

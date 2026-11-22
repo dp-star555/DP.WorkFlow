@@ -1,8 +1,9 @@
 namespace DP.WorkFlow;
 
 /// <summary>设置轴伺服使能状态。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("AxisServo", DisplayName = "伺服使能", Category = "4.Motion/Axis", OutputType = typeof(AxisServoNodeResult))]
-public sealed class AxisServoNodeModel : WorkflowAxisNodeModel, IWorkflowRetrySafetyNode
+public sealed class AxisServoNodeModel : WorkflowAxisNodeModel
 {
     /// <inheritdoc />
     public override string NodeType => "AxisServo";
@@ -14,12 +15,10 @@ public sealed class AxisServoNodeModel : WorkflowAxisNodeModel, IWorkflowRetrySa
     public int TimeoutMs { get; set; } = 5000;
     /// <summary>获取或设置轮询间隔毫秒数。</summary>
     public int PollIntervalMs { get; set; } = 20;
-    /// <inheritdoc />
-    public WorkflowRetrySafety RetrySafety => WorkflowRetrySafety.Idempotent;
 }
 
-/// <summary>执行轴伺服节点。</summary>
-public sealed class AxisServoNodeHandler : WorkflowNodeHandler<AxisServoNodeModel>, IWorkflowNodeOperationFactory
+/// <summary>执行轴伺服节点。设置目标使能状态，重复执行没有额外影响，因此可直接重做。</summary>
+public sealed class AxisServoNodeHandler : WorkflowNodeHandler<AxisServoNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(AxisServoNodeModel node) =>
@@ -28,36 +27,14 @@ public sealed class AxisServoNodeHandler : WorkflowNodeHandler<AxisServoNodeMode
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(AxisServoNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
-        await using var operation = await CreateOperationAsync(Guid.NewGuid(), node, context, cancellationToken).ConfigureAwait(false);
-        return await operation.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public ValueTask<IWorkflowNodeOperation> CreateOperationAsync(Guid operationId, IWorkflowNodeModel node,
-        IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (node is not AxisServoNodeModel servo) throw new ArgumentException("需要伺服节点配置。", nameof(node));
-        ValidateWait(servo.TimeoutMs, servo.PollIntervalMs);
-        return Polyfill.FromResult<IWorkflowNodeOperation>(new ServoOperation(GetService(context), servo.ResolveAxis(context),
-            servo.Enabled, servo.WaitForCompleted, servo.TimeoutMs, servo.PollIntervalMs,
-            servo.Interrupt?.AlarmCode ?? 0));
-    }
-
-    private sealed class ServoOperation(IWorkflowAxisService service, WorkflowAxisAddress axis, bool enabled,
-        bool wait, int timeoutMs, int pollIntervalMs, int alarmCode) : IWorkflowNodeOperation
-    {
-        public bool CanContinue => true;
-        public async ValueTask<NodeExecutionResult> ExecuteAsync(IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
-        {
-            // SetServo是既有目标状态契约，不把Toggle/Pulse或任意AxisStep视为可重复动作。
-            var output = await service.SetServoAsync(axis, enabled, wait, timeoutMs, pollIntervalMs, cancellationToken).ConfigureAwait(false);
-            if (!output.Success) return NodeExecutionResult.Fail(
-                $"Axis servo wait timeout: target={enabled}, axis={axis.DeviceId}[{axis.AxisId}]",
-                alarmCode > 0 ? WorkflowFaultDisposition.RequestRecovery : WorkflowFaultDisposition.HandleAtScope, alarmCode);
-            return NodeExecutionResult.Continue(output: output);
-        }
-        public ValueTask DisposeAsync() => default(ValueTask);
+        ValidateWait(node.TimeoutMs, node.PollIntervalMs);
+        var axis = node.ResolveAxis(context);
+        var output = await GetService(context).SetServoAsync(axis, node.Enabled, node.WaitForCompleted, node.TimeoutMs,
+            node.PollIntervalMs, cancellationToken).ConfigureAwait(false);
+        if (!output.Success)
+            return WorkflowRecoverableNodeFailure.Create(node,
+                $"Axis servo wait timeout: target={node.Enabled}, axis={axis.DeviceId}[{axis.AxisId}]");
+        return NodeExecutionResult.Continue(output: output);
     }
 
     internal static IWorkflowAxisService GetService(IWorkflowNodeExecutionContext context) =>

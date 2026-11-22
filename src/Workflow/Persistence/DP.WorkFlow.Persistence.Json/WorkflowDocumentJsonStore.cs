@@ -443,16 +443,6 @@ public sealed class WorkflowDocumentJsonStore
         var root = JsonNode.Parse(config.GetRawText())?.AsObject();
         if (root is null) return config;
         var changed = false;
-        if (string.Equals(nodeType, "WarnJumpToNode", StringComparison.Ordinal)
-            && root.TryGetPropertyValue("SafePointKey", out var legacyTarget)
-            && legacyTarget is not null
-            && !root.ContainsKey("TargetNodeId"))
-        {
-            root["TargetNodeId"] = legacyTarget.DeepClone();
-            root.Remove("SafePointKey");
-            changed = true;
-            report.AddWarning($"节点 {nodeId}/{nodeType} 的旧属性 SafePointKey 已迁移为 TargetNodeId。");
-        }
         changed |= MergeLegacyValueInputs(root, modelType, nodeId, nodeType, report);
         foreach (var pair in root.ToArray())
         {
@@ -523,7 +513,6 @@ public sealed class WorkflowDocumentJsonStore
     private static string NormalizeLegacyNodeType(string nodeType) => nodeType switch
     {
         "RetryCurrentNode" => "WarnRetryCurrentNode",
-        "ReturnToSafePoint" => "WarnJumpToNode",
         _ => nodeType
     };
 

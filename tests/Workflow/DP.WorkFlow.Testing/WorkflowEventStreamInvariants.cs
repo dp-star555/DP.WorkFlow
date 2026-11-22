@@ -13,7 +13,7 @@ public static class WorkflowEventStreamInvariants
 
     private static readonly HashSet<string> NodeCloseEvents = new(StringComparer.Ordinal)
     {
-        "NodeCompleted", "NodeFailed", "NodeCanceled"
+        "NodeCompleted", "NodeFailed", "NodeCanceled", "NodeInterrupted"
     };
 
     /// <summary>作用域级事件：记在作用域节点名下，发生在该节点执行结束之后。</summary>

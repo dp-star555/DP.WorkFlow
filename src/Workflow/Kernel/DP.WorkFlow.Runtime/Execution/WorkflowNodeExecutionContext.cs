@@ -1,6 +1,6 @@
 namespace DP.WorkFlow;
 
-internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionContext, IWorkflowChildExecutionContext, IWorkflowNodeNoticeSink
+internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionContext, IWorkflowChildExecutionContext, IWorkflowNodeNoticeSink, IWorkflowNodeProgressSink
 {
     private readonly Action<string, string>? _noticeRaiser;
     // R2-c：执行前已取好的普通输入值，按输入实例引用索引。
@@ -64,6 +64,16 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
 
     /// <inheritdoc />
     public void RaiseNotice(string category, string message) => _noticeRaiser?.Invoke(category, message);
+
+    /// <summary>节点最后报告的一步；故障或中断时随停点交给处理流程。</summary>
+    internal string? LastProgress { get; private set; }
+
+    /// <inheritdoc />
+    public void ReportProgress(string step)
+    {
+        LastProgress = step;
+        Trace("Progress", step);
+    }
 
     public IReadOnlyDictionary<string, object?> SubflowInputs => _context.SubflowInputs;
 

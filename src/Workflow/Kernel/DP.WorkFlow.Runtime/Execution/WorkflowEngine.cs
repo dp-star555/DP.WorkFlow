@@ -22,8 +22,6 @@ public sealed partial class WorkflowEngine
     private readonly Dictionary<string, MutableNodeRuntimeInfo> _nodeRuntime = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _nodeExecutionCounts = new(StringComparer.Ordinal);
     private readonly Dictionary<long, MutableParallelScopeInfo> _parallelScopes = new();
-    // 故障处理流程等独立运行的引擎（不是子画布）：暂停、Hold 逐个转发。子画布作用域不在这里，它们直接使用根运行的暂停门。
-    private readonly Dictionary<string, WorkflowEngine> _activeChildEngines = new(StringComparer.Ordinal);
     // 正在运行的子画布作用域：快照不再由作用域推送，取父快照时按需拉取（R1-04）。
     private readonly Dictionary<string, ActiveChildWorkflow> _activeChildWorkflows = new(StringComparer.Ordinal);
     private readonly Dictionary<string, WorkflowChildRuntimeInfo> _latestChildWorkflowByParentNode = new(StringComparer.Ordinal);
@@ -34,7 +32,6 @@ public sealed partial class WorkflowEngine
     private WorkflowEngine? _scopeRoot;
     // 作用域从外到内经过的复合节点及圈序号；根运行为空。事件据此标明所在画布。
     private IReadOnlyList<WorkflowTraceParent> _scopeParents = Array.Empty<WorkflowTraceParent>();
-    private readonly HashSet<Guid> _startedRecoveryCases = new();
     private volatile IWorkflowRunRecorder? _recorder;
     private Stopwatch? _runStopwatch;
     private Guid _runId;

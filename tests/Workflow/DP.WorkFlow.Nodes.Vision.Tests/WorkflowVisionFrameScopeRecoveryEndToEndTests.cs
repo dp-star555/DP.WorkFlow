@@ -8,8 +8,7 @@ namespace DP.WorkFlow.Tests;
 /// 「采图 → 主操作故障 → 执行处置 → 继续消费原图」。
 ///
 /// 与 <c>WorkflowVisionFrameScopeRunScopeTests</c> 的区别：那里直接调用准备服务，
-/// 这里走真实引擎的恢复路径（<c>IWorkflowRecoverySubflowContext</c> →
-/// <c>RunTrackedChildAsync(prepare: true)</c>），并由一个下游节点真正去用那张图。
+/// 这里走统管层故障会话运行处理流程的路径（嵌套准备），并由一个下游节点真正去用那张图。
 /// 修复前该下游节点会拿到已释放的帧。
 /// </summary>
 public sealed class WorkflowVisionFrameScopeRecoveryEndToEndTests
@@ -55,13 +54,11 @@ public sealed class WorkflowVisionFrameScopeRecoveryEndToEndTests
                 .Add<IImageFileReader>(new NumberedReader())
                 .Add<IWorkflowVisionFrameScope>(scope)
                 .Add<IWorkflowRunPreparationService>(scope)
-                .Add<IWorkflowRunResourceOwner>(scope)
-                .Add<IWorkflowFaultRecoveryCoordinator>(new SubflowRecoveryCoordinator(subflow, catalog, handlers));
+                .Add<IWorkflowRunResourceOwner>(scope);
 
-            var result = await new WorkflowEngine(
-                    new WorkflowCompiler(catalog).Compile(document), handlers, new WorkflowContext(services),
-                    new WorkflowExecutionOptions { MaxRecoveryAttempts = 2 })
-                .RunAsync();
+            using var center = new WorkflowRunCenter(catalog, handlers,
+                new WorkflowRunCenterOptions { DefaultFaultHandler = subflow, FaultSettleMilliseconds = 0 }, services);
+            var result = await center.AddFlow(document).RunAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
             // 修复前：处置子流程清空了帧仓，父运行的节点输出被释放 → 这里记录到 ObjectDisposedException。
             Assert.Null(consumeHandler.DisposedOutput);
@@ -90,24 +87,6 @@ public sealed class WorkflowVisionFrameScopeRecoveryEndToEndTests
         }
     }
 
-    /// <summary>走与生产一致的受监管入口。</summary>
-    private sealed class SubflowRecoveryCoordinator : IWorkflowFaultRecoveryCoordinator
-    {
-        private readonly WorkflowBoundExecutionPlan _plan;
-
-        public SubflowRecoveryCoordinator(WorkflowDocument subflow, WorkflowNodeCatalog catalog, WorkflowNodeHandlerCatalog handlers) =>
-            _plan = new WorkflowRuntimeBinder(handlers).Bind(new WorkflowCompiler(catalog).Compile(subflow));
-
-        public async ValueTask<WorkflowFaultRecoveryDecision> RecoverAsync(
-            WorkflowFaultRecoveryRequest request, IWorkflowFaultRecoveryContext context, CancellationToken cancellationToken)
-        {
-            if (context is IWorkflowRecoverySubflowContext supervised)
-                await supervised.RunRecoverySubflowAsync(_plan, new WorkflowContext(context.Services),
-                    new WorkflowExecutionOptions { MaxRecoveryAttempts = 1 }, cancellationToken).ConfigureAwait(false);
-            return WorkflowFaultRecoveryDecision.Retry("已处置");
-        }
-    }
-
     [WorkflowNode("TestE2eTreat")]
     private sealed class TreatNode : WorkflowNodeModel
     {
@@ -117,15 +96,20 @@ public sealed class WorkflowVisionFrameScopeRecoveryEndToEndTests
     private sealed class TreatNodeHandler : WorkflowNodeHandler<TreatNode>
     {
         protected override ValueTask<NodeExecutionResult> ExecuteAsync(
-            TreatNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken) =>
-            ValueTask.FromResult(NodeExecutionResult.Continue());
+            TreatNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+        {
+            // 处置完成：重做出故障的节点。
+            ((WorkflowFaultSession)context.Services.GetService(typeof(WorkflowFaultSession))!)
+                .SetDirective(null, WorkflowResumeDirective.Redo("已处置"));
+            return ValueTask.FromResult(NodeExecutionResult.Continue());
+        }
     }
 
     [WorkflowNode("TestE2eFault")]
-    private sealed class FaultNode : WorkflowNodeModel, IWorkflowRetrySafetyNode
+    [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+    private sealed class FaultNode : WorkflowNodeModel
     {
         public override string NodeType => "TestE2eFault";
-        public WorkflowRetrySafety RetrySafety => WorkflowRetrySafety.Idempotent;
     }
 
     private sealed class FaultNodeHandler : WorkflowNodeHandler<FaultNode>
@@ -143,10 +127,10 @@ public sealed class WorkflowVisionFrameScopeRecoveryEndToEndTests
     }
 
     [WorkflowNode("TestE2eConsume")]
-    private sealed class ConsumeFrameNode : WorkflowNodeModel, IWorkflowRetrySafetyNode
+    [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+    private sealed class ConsumeFrameNode : WorkflowNodeModel
     {
         public override string NodeType => "TestE2eConsume";
-        public WorkflowRetrySafety RetrySafety => WorkflowRetrySafety.Idempotent;
         /// <summary>上游帧绑定；与真实视觉节点一致，禁止把运行图像序列化到配置。</summary>
         [WorkflowProperty("输入图像", "绑定采图节点的ImageFrame标准输出。", Category = "输入")]
         public WorkflowInput<ImageFrame> Frame { get; set; } = WorkflowInput<ImageFrame>.FromLiteral(null);
