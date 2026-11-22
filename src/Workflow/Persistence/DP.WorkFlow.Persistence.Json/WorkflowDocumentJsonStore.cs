@@ -46,7 +46,8 @@ public sealed class WorkflowDocumentJsonStore
                 ValueType = item.ValueType,
                 DefaultValue = item.DefaultValueText,
                 Persistent = item.Persistent,
-                DisplayName = item.DisplayName
+                DisplayName = item.DisplayName,
+                ResetOnRecovery = item.ResetOnRecovery
             })
             .ToList();
         return JsonSerializer.Serialize(root, _options);
@@ -122,7 +123,8 @@ public sealed class WorkflowDocumentJsonStore
                 item.Kind == WorkflowPublicDataKind.Signal ? E_SignalValueType.Boolean : item.ValueType,
                 item.DefaultValue,
                 item.Persistent,
-                item.DisplayName));
+                item.DisplayName,
+                item.ResetOnRecovery));
         }
         if (schemaVersion >= 5)
             return;

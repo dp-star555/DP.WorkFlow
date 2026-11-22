@@ -209,6 +209,7 @@ public sealed partial class WorkflowEngine
                     RunChildWorkflowAsync(node, identity, token, childContext, childCancellation), PlanPath, BindingScopeId,
                 childContext => OpenChildWorkflowSession(node, identity, token, childContext),
                 (category, message) => RaiseNotice(node.Id, category, message, nodeType: node.NodeType));
+            executionContext.RecoveryRound = Root._options.ExecutionJournal?.RecoveryRound ?? 0;
             // R2-c：进入执行代码前取齐全部普通输入；任何一个取不到，节点直接失败，不会执行到一半才发现。
             executionContext.ResolveAllInputs();
             var operationKey = (token.TokenId, node.Id);
@@ -256,6 +257,7 @@ public sealed partial class WorkflowEngine
                          || result.CompleteCurrentPath)
                     token.CompleteLoop(node.Id);
             }
+            JournalNodeCompleted(node, token, handler, executionContext, identity);
             MarkNodeFinished(node.Id, token.TokenId, E_NodeState.Completed, null);
             Notify(NodeCompleted, node);
             RecordRunEvent(WorkflowRunEventDraft.Node(
@@ -325,6 +327,47 @@ public sealed partial class WorkflowEngine
         finally
         {
             EndInterruptible(interruptible);
+        }
+    }
+
+    /// <summary>
+    /// 节点成功执行后记入合并执行记录（第 8 类）。节点声明了撤回动作时，记下用本次执行上下文撤回的方法。
+    /// 复合节点（运行子画布）本身不记：子画布里的节点各自记录。
+    /// </summary>
+    private void JournalNodeCompleted(
+        IWorkflowNodeModel node,
+        ExecutionToken token,
+        IWorkflowNodeHandler handler,
+        WorkflowNodeExecutionContext executionContext,
+        WorkflowExecutionIdentity identity)
+    {
+        if (Root._options.ExecutionJournal is not { } journal || node is IWorkflowSubDocumentNode)
+            return;
+        Func<CancellationToken, Task>? undo = null;
+        if (handler is IWorkflowUndoableNodeHandler undoable)
+        {
+            undo = async cancellationToken =>
+            {
+                TryRecordRunEvent(WorkflowRunEventDraft.Node("NodeUndoStarted", node, identity, "撤回节点动作。"));
+                await undoable.UndoAsync(node, executionContext, cancellationToken).ConfigureAwait(false);
+                TryRecordRunEvent(WorkflowRunEventDraft.Node("NodeUndone", node, identity, "节点动作已撤回。"));
+            };
+        }
+        try
+        {
+            journal.NodeCompleted(new WorkflowJournalEntry(
+                node.Id,
+                string.IsNullOrWhiteSpace(node.Title) ? node.Id : node.Title,
+                node.NodeType,
+                PositionOf(node.Id, token).ToString(),
+                WorkflowRecoveryCategories.Of(node),
+                node is IWorkflowCheckpointNode,
+                undo));
+        }
+        catch (Exception exception)
+        {
+            // 记录失败不影响运行，只降级提示：之后的撤回可能缺这一步。
+            ReportRecordingDegraded($"写入执行记录失败：{exception.Message}", node.Id);
         }
     }
 

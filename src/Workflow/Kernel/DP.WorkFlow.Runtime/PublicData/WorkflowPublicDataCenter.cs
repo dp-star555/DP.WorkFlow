@@ -114,6 +114,36 @@ public sealed class WorkflowPublicDataCenter
     /// <returns>组合后的服务容器。</returns>
     public IServiceProvider WrapServices(IServiceProvider hostServices) => new FallbackServiceProvider(hostServices, this);
 
+    /// <summary>
+    /// 恢复时复位：把标了"恢复时复位"的项复位为默认值（信号为默认值或假，数值为默认值，队列清空）。
+    /// 由统管层在故障会话放行前调用。
+    /// </summary>
+    /// <returns>复位了的键。</returns>
+    public IReadOnlyList<string> ResetForRecovery()
+    {
+        WorkflowPublicDataDeclaration[] items;
+        lock (_sync)
+            items = _declarations.Values.Where(item => item.ResetOnRecovery).ToArray();
+        foreach (var item in items)
+        {
+            switch (item.Kind)
+            {
+                case WorkflowPublicDataKind.Signal:
+                    Signals.Write(item.Key, item.DefaultValueText is { } signalDefault
+                        && (bool)WorkflowPublicDataValues.Convert(signalDefault, E_SignalValueType.Boolean));
+                    break;
+                case WorkflowPublicDataKind.Value:
+                    if (item.DefaultValueText is { } valueDefault)
+                        Values.WriteValue(item.Key, WorkflowPublicDataValues.Convert(valueDefault, item.ValueType));
+                    break;
+                case WorkflowPublicDataKind.Queue:
+                    Queues.Clear(item.Key, item.ValueType, true);
+                    break;
+            }
+        }
+        return items.Select(item => item.Key).ToArray();
+    }
+
     private void AddLocked(WorkflowPublicDataDeclaration item)
     {
         _declarations[item.Key] = item;

@@ -23,13 +23,15 @@ public enum WorkflowPublicDataKind
 /// <param name="DefaultValueText">默认值文本（按值类型解析）；为空表示没有默认值（信号为 false，数值没有值，队列为空）。</param>
 /// <param name="Persistent">是否保持（断电保存）；默认不保持。</param>
 /// <param name="DisplayName">显示名。</param>
+/// <param name="ResetOnRecovery">恢复时复位：故障会话放行时复位为默认值（清掉交接握手信号，避免恢复后读到旧信号）。</param>
 public sealed record WorkflowPublicDataDeclaration(
     string Key,
     WorkflowPublicDataKind Kind,
     E_SignalValueType ValueType,
     string? DefaultValueText = null,
     bool Persistent = false,
-    string? DisplayName = null)
+    string? DisplayName = null,
+    bool ResetOnRecovery = false)
 {
     /// <summary>创建 bool 信号登记。</summary>
     public static WorkflowPublicDataDeclaration Signal(string key, bool defaultValue = false, bool persistent = false) =>

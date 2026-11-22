@@ -257,7 +257,7 @@ public sealed partial class WorkflowRunCenter
     }
 
     /// <summary>核对各停点的去向，全部合格时一起放行；返回不合格的原因。</summary>
-    private static string? TryRelease(WorkflowFaultSession session)
+    private string? TryRelease(WorkflowFaultSession session)
     {
         var missing = session.Assign(out var assignment);
         if (missing.Count > 0)
@@ -267,6 +267,13 @@ public sealed partial class WorkflowRunCenter
             if (!stop.Point.Allows(directive, out var reason))
                 return $"流程 {stop.FlowName}：{reason}";
         }
+        // 放行前：受影响的流程恢复轮次号加一，标了"恢复时清除"的公共数据清掉（旧握手不能被恢复后的流程误用）。
+        foreach (var flowName in assignment.Select(pair => pair.Stop.FlowName).Distinct(StringComparer.Ordinal))
+            GetFlow(flowName)?.AdvanceRecoveryRound();
+        var reset = PublicData.ResetForRecovery();
+        if (reset.Count > 0)
+            PostCenterEvent("故障", WorkflowRunEventCategory.Recovery, "PublicDataReset", string.Join(",", reset),
+                "恢复时清除公共数据：" + string.Join("、", reset));
         foreach (var (stop, directive) in assignment)
             stop.Directive.TrySetResult(directive);
         return null;

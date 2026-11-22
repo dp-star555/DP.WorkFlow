@@ -12,12 +12,14 @@ public sealed class WorkflowPublicDataPersistenceTests
         var document = BuildDocument();
         document.PublicData.Add(WorkflowPublicDataDeclaration.Signal("Ready", defaultValue: true, persistent: true));
         document.PublicData.Add(new WorkflowPublicDataDeclaration("Jobs", WorkflowPublicDataKind.Queue, E_SignalValueType.Int32, DisplayName: "任务"));
+        document.PublicData.Add(new WorkflowPublicDataDeclaration("Handshake", WorkflowPublicDataKind.Signal, E_SignalValueType.Boolean, ResetOnRecovery: true));
 
         var json = store.Serialize(document);
         var loaded = store.Deserialize(json);
 
         Assert.Contains("\"Kind\": \"Queue\"", json, StringComparison.Ordinal);
         Assert.Contains("\"ValueType\": \"Int32\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"ResetOnRecovery\": true", json, StringComparison.Ordinal);
         Assert.Empty(loaded.Migration.Warnings);
         Assert.Equal(document.PublicData, loaded.Document.PublicData);
         Assert.Equal(json, store.Serialize(loaded.Document));

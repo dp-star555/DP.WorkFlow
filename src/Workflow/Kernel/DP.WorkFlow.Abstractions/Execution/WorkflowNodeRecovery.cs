@@ -137,6 +137,28 @@ public static class WorkflowNodeProgressExtensions
     }
 }
 
+/// <summary>提供恢复轮次号的执行上下文。</summary>
+public interface IWorkflowRecoveryRoundSource
+{
+    /// <summary>本流程的恢复轮次号：每次故障会话放行时加一；不在流程管理里运行时为 0。</summary>
+    int RecoveryRound { get; }
+}
+
+/// <summary>恢复轮次号的入口。</summary>
+public static class WorkflowRecoveryRoundExtensions
+{
+    /// <summary>
+    /// 本流程当前的恢复轮次号。跨流程交接（握手）时带上它，对方就能认出恢复前留下的旧握手并丢掉。
+    /// 上下文不支持时为 0。
+    /// </summary>
+    /// <param name="context">节点执行上下文。</param>
+    public static int GetRecoveryRound(this IWorkflowNodeExecutionContext context)
+    {
+        Guard.NotNull(context);
+        return (context as IWorkflowRecoveryRoundSource)?.RecoveryRound ?? 0;
+    }
+}
+
 /// <summary>由工艺设计者标出的恢复入口（锚点）：处理流程的"回到入口 X"只能指向这些节点。</summary>
 public interface IWorkflowRecoveryEntryNode
 {

@@ -26,6 +26,9 @@ public sealed class WorkflowRunCenterOptions
 
     /// <summary>第一个停点到达后，再等其他路径一起停下的时间（毫秒），避免同一故障拆成多次处理。</summary>
     public int FaultSettleMilliseconds { get; set; } = 50;
+
+    /// <summary>合并执行记录最多保留的记录数（联合逆序撤回用）。</summary>
+    public int ExecutionRecordCapacity { get; set; } = 500;
 }
 
 /// <summary>
@@ -66,7 +69,11 @@ public sealed partial class WorkflowRunCenter : IDisposable
         PublicData = new WorkflowPublicDataCenter(_options.RequireDeclaration, _options.Persistence);
         Outlet = new WorkflowOutlet(_options.GlobalOutlet);
         PublicData.PersistenceFailed += OnPersistenceFailed;
+        ExecutionRecord = new WorkflowExecutionRecord(_options.ExecutionRecordCapacity);
     }
+
+    /// <summary>合并执行记录：全部流程成功执行过的节点，按真实先后；联合逆序撤回按它的倒序撤回。</summary>
+    public WorkflowExecutionRecord ExecutionRecord { get; }
 
     /// <summary>各流程共用的公共数据中心；外部读写公共数据也经过它。</summary>
     public WorkflowPublicDataCenter PublicData { get; }
@@ -117,13 +124,15 @@ public sealed partial class WorkflowRunCenter : IDisposable
             var options = executionOptions ?? new WorkflowExecutionOptions();
             // 流程停下（节点故障、被中断、被要求停下）时交给故障会话；调用方自带处理方时以调用方为准。
             options.StopPointHandler ??= new FlowStopPointHandler(this, flowName);
+            var journal = new FlowJournal(ExecutionRecord, flowName);
+            options.ExecutionJournal ??= journal;
             var outlet = new WorkflowOutlet(_options.FlowOutlet);
             var sink = new WorkflowOutletSink(flowName, outlet, Outlet, options.Notices, CollectNodeTitles(plan), options.Recording.Sink);
             options.Recording.Sink = sink;
             var host = CreateHost(options);
             host.ConfigurePlan(plan, new WorkflowContext(_services, PublicData));
             host.StateChanged += _ => TryStartFaultSession();
-            var flow = new WorkflowRunCenterFlow(flowName, plan, host, outlet, ownsHost: true);
+            var flow = new WorkflowRunCenterFlow(flowName, plan, host, outlet, ownsHost: true, journal);
             _flows.Add(flow);
             return flow;
         }
@@ -149,11 +158,13 @@ public sealed partial class WorkflowRunCenter : IDisposable
                 throw new InvalidOperationException($"流程 {flowName} 已加载。");
             var options = host.ExecutionOptions;
             options.StopPointHandler ??= new FlowStopPointHandler(this, flowName);
+            var journal = new FlowJournal(ExecutionRecord, flowName);
+            options.ExecutionJournal ??= journal;
             var outlet = new WorkflowOutlet(_options.FlowOutlet);
             options.Recording.Sink = new WorkflowOutletSink(flowName, outlet, Outlet, options.Notices,
                 new Dictionary<string, string>(StringComparer.Ordinal), options.Recording.Sink);
             host.StateChanged += _ => TryStartFaultSession();
-            var flow = new WorkflowRunCenterFlow(flowName, null, host, outlet, ownsHost: false);
+            var flow = new WorkflowRunCenterFlow(flowName, null, host, outlet, ownsHost: false, journal);
             _flows.Add(flow);
             return flow;
         }
@@ -270,6 +281,18 @@ public sealed partial class WorkflowRunCenter : IDisposable
             throw new ObjectDisposedException(nameof(WorkflowRunCenter));
     }
 
+    /// <summary>一个流程的执行记录入口：记入合并执行记录，并保管本流程的恢复轮次号。</summary>
+    internal sealed class FlowJournal(WorkflowExecutionRecord record, string flowName) : IWorkflowExecutionJournal
+    {
+        private int _round;
+
+        public int RecoveryRound => Volatile.Read(ref _round);
+
+        public void NodeCompleted(WorkflowJournalEntry entry) => record.Add(flowName, RecoveryRound, entry);
+
+        internal void Advance() => Interlocked.Increment(ref _round);
+    }
+
     /// <summary>把一个流程（含子运行）的记录事件转给流程出口和全局出口；在记录器后台线程上调用。</summary>
     private sealed class WorkflowOutletSink(
         string flowName,
@@ -312,9 +335,12 @@ public sealed class WorkflowRunCenterFlow : IDisposable
 {
     private readonly WorkflowExecutionPlan? _plan;
     private readonly bool _ownsHost;
+    private readonly WorkflowRunCenter.FlowJournal _journal;
 
-    internal WorkflowRunCenterFlow(string name, WorkflowExecutionPlan? plan, WorkflowRuntimeHost host, WorkflowOutlet outlet, bool ownsHost)
+    internal WorkflowRunCenterFlow(string name, WorkflowExecutionPlan? plan, WorkflowRuntimeHost host, WorkflowOutlet outlet, bool ownsHost,
+        WorkflowRunCenter.FlowJournal journal)
     {
+        _journal = journal;
         Name = name;
         _plan = plan;
         Host = host;
@@ -336,6 +362,11 @@ public sealed class WorkflowRunCenterFlow : IDisposable
 
     /// <summary>当前状态。</summary>
     public E_WorkflowExecutionState State => Host.State;
+
+    /// <summary>恢复轮次号：故障会话每放行本流程一次加一。跨流程交接时带上它，对方能认出恢复前的旧握手。</summary>
+    public int RecoveryRound => _journal.RecoveryRound;
+
+    internal void AdvanceRecoveryRound() => _journal.Advance();
 
     /// <summary>是否正在运行（含暂停中）。</summary>
     public bool IsRunning => State is E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused;

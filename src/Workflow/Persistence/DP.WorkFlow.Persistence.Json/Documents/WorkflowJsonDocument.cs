@@ -38,6 +38,9 @@ internal sealed class WorkflowJsonPublicData
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? DisplayName { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ResetOnRecovery { get; set; }
 }
 
 internal sealed class WorkflowJsonNode

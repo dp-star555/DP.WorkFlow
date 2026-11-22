@@ -79,6 +79,38 @@ public sealed class ProcessFaultHandlingTests
     }
 
     [Fact]
+    public async Task JointUndo_ConfirmsNodesWithoutUndoThenRestartsFromEntry()
+    {
+        var (document, block) = MainFlow(withGrab: true);
+        AddChain(block,
+            new JointUndoNodeModel { Id = "Undo", TargetsText = "Entry" },
+            new RestartFromEntryNodeModel { Id = "Restart", EntryKey = "Op" });
+        var operators = new ScriptedOperator("Continue");
+        using var center = Center(operators, new WorkflowRunCenterOptions { FaultSettleMilliseconds = 0 });
+
+        var result = await center.AddFlow(document, "工位").RunAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(2, Count("Move"));
+        Assert.Equal(2, Count("Grab"));
+        // 抓取没有撤回动作：撤回到它时交人确认。
+        var confirm = Assert.Single(operators.Confirms);
+        Assert.Contains("抓取", confirm.Message);
+        Assert.Equal(1, center.GetFlow("工位")!.RecoveryRound);
+    }
+
+    [Fact]
+    public void JointUndo_ParsesTargets()
+    {
+        var node = new JointUndoNodeModel { TargetsText = "Entry\nB=Pick；C=" };
+
+        var targets = node.ParseTargets("A");
+
+        Assert.Equal(new[] { new WorkflowUndoTarget("A", "Entry"), new WorkflowUndoTarget("B", "Pick"), new WorkflowUndoTarget("C", null) }, targets);
+        Assert.Equal(new[] { new WorkflowUndoTarget("A", null) }, new JointUndoNodeModel().ParseTargets("A"));
+    }
+
+    [Fact]
     public async Task DirectiveNodeOutsideFaultHandler_Fails()
     {
         var document = new WorkflowDocument { Name = "普通流程", EntryNodeId = "Continue" };
@@ -97,13 +129,20 @@ public sealed class ProcessFaultHandlingTests
     private int Count(string key) => _counts.TryGetValue(key, out var value) ? value : 0;
 
     /// <summary>主流程：恢复入口 Op → 模拟移动（第一次失败，可核实并补完）；另有不连线的处理块。</summary>
-    private static (WorkflowDocument Document, WarningHandlerBlockNodeModel Block) MainFlow()
+    private static (WorkflowDocument Document, WarningHandlerBlockNodeModel Block) MainFlow(bool withGrab = false)
     {
         var document = new WorkflowDocument { Name = "主流程", EntryNodeId = "Entry" };
         var canvas = document.CanvasProjection;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new RecoveryEntryNodeModel { Id = "Entry", EntryKey = "Op" } });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new MoveNode { Id = "Move", Title = "模拟移动" } });
-        canvas.Connections.Add(new WorkflowConnectionModel { FromNodeId = "Entry", FromPort = WorkflowPorts.Success, ToNodeId = "Move" });
+        if (withGrab)
+        {
+            canvas.Nodes.Add(new WorkflowCanvasNode { Node = new GrabNode { Id = "Grab", Title = "抓取" } });
+            canvas.Connections.Add(new WorkflowConnectionModel { FromNodeId = "Entry", FromPort = WorkflowPorts.Success, ToNodeId = "Grab" });
+            canvas.Connections.Add(new WorkflowConnectionModel { FromNodeId = "Grab", FromPort = WorkflowPorts.Success, ToNodeId = "Move" });
+        }
+        else
+            canvas.Connections.Add(new WorkflowConnectionModel { FromNodeId = "Entry", FromPort = WorkflowPorts.Success, ToNodeId = "Move" });
         var block = new WarningHandlerBlockNodeModel { Id = "Handler", Title = "处理块" };
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = block });
         return (document, block);
@@ -145,8 +184,9 @@ public sealed class ProcessFaultHandlingTests
     private WorkflowRunCenter Center(IWorkflowOperatorService operators, WorkflowRunCenterOptions options)
     {
         var catalog = new WorkflowNodeCatalog().RegisterProcessNodes()
-            .Register(WorkflowNodeDescriptor.Create<MoveNode>(ports: new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output() }));
-        var handlers = new WorkflowNodeHandlerCatalog().RegisterProcessNodeHandlers().Register(new MoveHandler(_counts));
+            .Register(WorkflowNodeDescriptor.Create<MoveNode>(ports: new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output() }))
+            .Register(WorkflowNodeDescriptor.Create<GrabNode>(ports: new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output() }));
+        var handlers = new WorkflowNodeHandlerCatalog().RegisterProcessNodeHandlers().Register(new MoveHandler(_counts)).Register(new GrabHandler(_counts));
         var services = new WorkflowServiceProvider().Add(operators);
         return new WorkflowRunCenter(catalog, handlers, options, services);
     }
@@ -174,14 +214,35 @@ public sealed class ProcessFaultHandlingTests
         }
     }
 
+    /// <summary>不可重做、没有撤回动作的动作。</summary>
+    [WorkflowNode("Test.Grab")]
+    private sealed class GrabNode : WorkflowNodeModel
+    {
+        public override string NodeType => "Test.Grab";
+    }
+
+    private sealed class GrabHandler(ConcurrentDictionary<string, int> counts) : WorkflowNodeHandler<GrabNode>
+    {
+        protected override ValueTask<NodeExecutionResult> ExecuteAsync(GrabNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+        {
+            counts.AddOrUpdate("Grab", 1, (_, value) => value + 1);
+            return ValueTask.FromResult(NodeExecutionResult.Continue());
+        }
+    }
+
     private sealed class ScriptedOperator(string choice) : IWorkflowOperatorService
     {
         public List<(string Title, string Message)> Prompts { get; } = new();
+        public List<(string Title, string Message)> Confirms { get; } = new();
         public ValueTask<string> AskChoiceAsync(string title, string message, IReadOnlyList<OperatorChoiceOption> options, CancellationToken cancellationToken)
         {
             Prompts.Add((title, message));
             return ValueTask.FromResult(choice);
         }
-        public ValueTask ConfirmStepAsync(string title, string message, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public ValueTask ConfirmStepAsync(string title, string message, CancellationToken cancellationToken)
+        {
+            Confirms.Add((title, message));
+            return ValueTask.CompletedTask;
+        }
     }
 }

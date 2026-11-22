@@ -11,6 +11,12 @@ public sealed class WorkflowExecutionOptions
     /// </summary>
     public IWorkflowStopPointHandler? StopPointHandler { get; set; }
 
+    /// <summary>
+    /// 执行记录入口（第 8 类：流程管理的合并执行记录）。节点成功执行后记一笔，供联合逆序撤回使用；
+    /// 同时提供恢复轮次号。为空时不记录，轮次号为 0。
+    /// </summary>
+    public IWorkflowExecutionJournal? ExecutionJournal { get; set; }
+
     /// <summary>获取或设置内存中保留的最近运行事件条数；它同时是 UI 最近 Trace 窗口的上限。</summary>
     public int MaxTraceEntries { get; set; } = 2_000;
 
