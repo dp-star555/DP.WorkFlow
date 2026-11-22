@@ -19,6 +19,7 @@ public enum EVisionLineAngleMode
 }
 
 /// <summary>线线交点：两条无限直线（延长线）的交点及锐角夹角。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.IntersectLines", DisplayName = "线线交点", Category = WorkflowVisionCategories.Geometry, OutputType = typeof(VisionLineIntersectionResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class IntersectVisionLinesNodeModel : WorkflowVisionGeometryNodeModel
@@ -45,6 +46,7 @@ public sealed class IntersectVisionLinesNodeModel : WorkflowVisionGeometryNodeMo
 }
 
 /// <summary>两线夹角。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.MeasureLineAngle", DisplayName = "两线夹角", Category = WorkflowVisionCategories.Measurement, OutputType = typeof(VisionLineAngleResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class MeasureVisionLineAngleNodeModel : WorkflowVisionGeometryNodeModel
@@ -71,6 +73,7 @@ public sealed class MeasureVisionLineAngleNodeModel : WorkflowVisionGeometryNode
 }
 
 /// <summary>线与圆交点。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.IntersectLineCircle", DisplayName = "线圆交点", Category = WorkflowVisionCategories.Geometry, OutputType = typeof(VisionCurveIntersectionResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class IntersectVisionLineCircleNodeModel : WorkflowVisionGeometryNodeModel
@@ -93,6 +96,7 @@ public sealed class IntersectVisionLineCircleNodeModel : WorkflowVisionGeometryN
 }
 
 /// <summary>圆与圆交点。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.IntersectCircles", DisplayName = "圆圆交点", Category = WorkflowVisionCategories.Geometry, OutputType = typeof(VisionCurveIntersectionResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class IntersectVisionCirclesNodeModel : WorkflowVisionGeometryNodeModel
@@ -115,6 +119,7 @@ public sealed class IntersectVisionCirclesNodeModel : WorkflowVisionGeometryNode
 }
 
 /// <summary>点到线的垂足（投影点）。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.ProjectPointToLine", DisplayName = "点到线垂足", Category = WorkflowVisionCategories.Geometry, OutputType = typeof(VisionPerpendicularFootResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class ProjectVisionPointToLineNodeModel : WorkflowVisionGeometryNodeModel

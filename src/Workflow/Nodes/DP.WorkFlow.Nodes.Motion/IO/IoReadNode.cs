@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>按旧版 DriveId、Index 和 IOType 读取 IO 点位。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("IORead", DisplayName = "读 IO", Category = "4.Motion/IO", OutputType = typeof(WorkflowIoNodeResult))]
 public sealed class IoReadNodeModel : WorkflowNodeModel
 {

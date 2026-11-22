@@ -152,6 +152,7 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
 }
 
 /// <summary>新版Blob节点，输出中立BlobAnalysisResult。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.AnalyzeBlobs", DisplayName = "分析连通域", Category = WorkflowVisionCategories.Inspection, OutputType = typeof(DP.Vision.Algorithms.BlobAnalysisResult), Icon = "blobs")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class AnalyzeVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
@@ -212,6 +213,7 @@ public sealed class AnalyzeVisionBlobsNodeHandler : WorkflowNodeHandler<AnalyzeV
 }
 
 /// <summary>新版颜色统计节点，输出中立ColorAnalysisResult，不输出产品OK/NG。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.AnalyzeColor", DisplayName = "统计RGB颜色", Category = WorkflowVisionCategories.Inspection, OutputType = typeof(DP.Vision.Algorithms.ColorAnalysisResult), Icon = "color")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class AnalyzeVisionColorNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode

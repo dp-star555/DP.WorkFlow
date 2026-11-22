@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>循环刷新机器人状态并等待进入空闲状态。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("WaferRobotWaitIdle", DisplayName = "等待机器人空闲节点", Category = "8.Process/WaferRobot", OutputType = typeof(WaferRobotWaitIdleNodeResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout, WorkflowPorts.Failed)]
 public sealed class WaferRobotWaitIdleNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode

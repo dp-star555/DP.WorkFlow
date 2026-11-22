@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>设置或翻转命名布尔信号。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("SignalSet", DisplayName = "信号设置", Category = "3.Control/信号", OutputType = typeof(SignalSetNodeResult))]
 public sealed class SignalSetNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {

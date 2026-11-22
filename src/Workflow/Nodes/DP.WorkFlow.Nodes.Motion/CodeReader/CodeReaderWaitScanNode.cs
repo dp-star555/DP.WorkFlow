@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>按旧版触发与匹配规则等待扫码结果。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("CodeReaderWaitScan", DisplayName = "等待扫码结果", Category = "4.Motion/CodeReader", OutputType = typeof(CodeReaderScanResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class CodeReaderWaitScanNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode

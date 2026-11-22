@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>等待指定 DriveId/Index IO 达到期望值。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("IOWait", DisplayName = "等待 IO 等于", Category = "4.Motion/IO", OutputType = typeof(WorkflowIoNodeResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class IoWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode

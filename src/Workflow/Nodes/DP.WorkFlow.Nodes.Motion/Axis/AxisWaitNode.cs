@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>等待指定轴满足旧版六种状态条件之一。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("AxisWait", DisplayName = "轴等待", Category = "4.Motion/Axis", OutputType = typeof(AxisWaitNodeResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class AxisWaitNodeModel : WorkflowAxisNodeModel

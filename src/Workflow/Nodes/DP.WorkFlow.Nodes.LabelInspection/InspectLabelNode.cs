@@ -7,6 +7,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>一次明确图像输入的完整标签检测业务节点，不携带通用ROI/坐标系配置。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("LabelInspection.Inspect", DisplayName = "标签检测", Category = "业务检测", OutputType = typeof(WorkflowLabelInspectionResult), Icon = "tag")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator

@@ -3,6 +3,7 @@ using System.Globalization;
 namespace DP.WorkFlow;
 
 /// <summary>写入强类型数据信号，支持直接写入、自加和自减。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("SignalValueSet", DisplayName = "数据信号设置节点", Category = "3.Control/信号", OutputType = typeof(SignalValueNodeResult))]
 public sealed class SignalValueSetNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {

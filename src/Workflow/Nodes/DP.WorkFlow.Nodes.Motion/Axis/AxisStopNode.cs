@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>停止指定轴并可等待停止完成。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("AxisStop", DisplayName = "轴停止", Category = "4.Motion/Axis", OutputType = typeof(AxisStopNodeResult))]
 public sealed class AxisStopNodeModel : WorkflowAxisNodeModel
 {

@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>等待真空达到或离开吸附状态。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("VacuumWait", DisplayName = "真空等待节点", Category = "4.Motion/Pneumatic", OutputType = typeof(PneumaticNodeResult), Icon = "vacuum")]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class VacuumWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode

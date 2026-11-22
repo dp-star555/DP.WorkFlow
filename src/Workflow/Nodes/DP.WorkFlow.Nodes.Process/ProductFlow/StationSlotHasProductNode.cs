@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>判断指定工站槽位是否存在产品。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("StationSlotHasProduct", DisplayName = "判断槽位有产品", Category = "8.Process/ProductFlow", OutputType = typeof(StationBooleanNodeResult), Icon = "station")]
 [WorkflowOutputPorts(WorkflowPorts.True, WorkflowPorts.False, WorkflowPorts.Failed)]
 public sealed class StationSlotHasProductNodeModel : ProductFlowStationSlotNodeModel { /// <inheritdoc />

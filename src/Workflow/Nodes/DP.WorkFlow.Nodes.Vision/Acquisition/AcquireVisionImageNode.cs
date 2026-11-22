@@ -35,6 +35,7 @@ public enum EWorkflowVisionPixelFormat
 }
 
 /// <summary>统一文件、目录及相机取图入口，输出具有独立租约和帧身份的 ImageFrame。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.AcquireFrame", DisplayName = "图像获取", Category = WorkflowVisionCategories.Acquisition,
     Description = "选择文件、文件夹或相机来源，输出统一图像帧。", OutputType = typeof(DP.Vision.ImageFrame))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]

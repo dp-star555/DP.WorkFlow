@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>按旧版命令集写入数字输出。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("IOWrite", DisplayName = "写 IO", Category = "4.Motion/IO", OutputType = typeof(WorkflowIoWriteResult))]
 public sealed class IoWriteNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {

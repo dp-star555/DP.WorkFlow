@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>工艺设计者标出的恢复入口（锚点）：处理流程的"回到入口"只能指向这些节点。不是设备位置快照。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("RecoveryEntry", DisplayName = "恢复入口", Category = "8.Process/异常恢复", OutputType = typeof(string))]
 public sealed class RecoveryEntryNodeModel : WorkflowNodeModel, IWorkflowRecoveryEntryNode, IWorkflowNodeConfigurationValidator
 {

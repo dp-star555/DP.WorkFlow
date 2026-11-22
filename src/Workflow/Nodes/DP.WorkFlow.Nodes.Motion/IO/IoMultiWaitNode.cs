@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>按旧版组合和保持规则等待多条 IO 条件。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("IOMultiWait", DisplayName = "等待多 IO", Category = "4.Motion/IO", OutputType = typeof(IoMultiNodeResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class IoMultiWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode

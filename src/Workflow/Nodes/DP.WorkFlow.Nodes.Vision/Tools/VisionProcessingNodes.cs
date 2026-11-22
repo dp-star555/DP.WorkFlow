@@ -4,6 +4,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>保持尺寸/坐标系的整图显式预处理。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.PreprocessImage", DisplayName = "图像预处理", Category = WorkflowVisionCategories.Processing, OutputType = typeof(DP.Vision.ImageFrame))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class PreprocessVisionImageNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
@@ -68,6 +69,7 @@ public sealed class PreprocessVisionImageNodeHandler : WorkflowNodeHandler<Prepr
 }
 
 /// <summary>灰度闭区间产生可绑定精确Region。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.ThresholdRegion", DisplayName = "阈值分割区域", Category = WorkflowVisionCategories.Region, OutputType = typeof(DP.Vision.Algorithms.RegionAnalysisResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class ThresholdVisionRegionNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
@@ -121,6 +123,7 @@ public sealed class ThresholdVisionRegionNodeHandler : WorkflowNodeHandler<Thres
 }
 
 /// <summary>已分割Region的形态学；输入帧仅用于身份校验和预览。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.MorphRegion", DisplayName = "区域形态学", Category = WorkflowVisionCategories.Region, OutputType = typeof(DP.Vision.Algorithms.RegionAnalysisResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class MorphVisionRegionNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
@@ -180,6 +183,7 @@ public sealed class MorphVisionRegionNodeHandler : WorkflowNodeHandler<MorphVisi
 }
 
 /// <summary>按明确特征范围筛选连通域，空结果成功。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.SelectBlobs", DisplayName = "筛选连通域", Category = WorkflowVisionCategories.Inspection, OutputType = typeof(DP.Vision.Algorithms.BlobAnalysisResult), Icon = "blobs")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class SelectVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode

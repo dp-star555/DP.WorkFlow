@@ -4,6 +4,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>显式采样带卡尺（直线或圆弧），参数为原图像素边界坐标。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.MeasureCaliper", DisplayName = "亚像素采样卡尺", Category = WorkflowVisionCategories.Measurement, OutputType = typeof(VisionCaliperMeasurement), Icon = "caliper")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
@@ -174,6 +175,7 @@ public sealed class MeasureVisionCaliperNodeHandler : WorkflowNodeHandler<Measur
 }
 
 /// <summary>聚合同帧多个卡尺证据，以RANSAC和正交TLS拟合直线。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.FitRobustLine", DisplayName = "鲁棒拟合直线", Category = WorkflowVisionCategories.Measurement, OutputType = typeof(DP.Vision.Algorithms.RobustLineResult), Icon = "line")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class FitVisionRobustLineNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode

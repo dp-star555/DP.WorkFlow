@@ -3,6 +3,7 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>带身份的点间距；旧裸坐标距离节点保持兼容。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.MeasurePointDistance", DisplayName = "视觉点间距", Category = WorkflowVisionCategories.Measurement, OutputType = typeof(DP.Vision.Algorithms.GeometricDistanceResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class MeasureVisionPointDistanceNodeModel : WorkflowVisionGeometryAlgorithmNodeModel

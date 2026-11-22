@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>读取晶圆机器人当前快照。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("WaferRobotReadSnapshot", DisplayName = "读取机器人快照节点", Category = "8.Process/WaferRobot", OutputType = typeof(WaferRobotSnapshotResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Failed)]
 public sealed class WaferRobotReadSnapshotNodeModel : WorkflowNodeModel

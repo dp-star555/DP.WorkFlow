@@ -218,6 +218,7 @@ public abstract class FindVisionShapeNodeModel : AnalyzeVisionFrameNodeModel, IW
 }
 
 /// <summary>在矩形搜索框内找直线：卡尺沿框的宽度方向排布，沿高度方向扫描。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.FindLine", DisplayName = "找线", Category = WorkflowVisionCategories.Measurement,
     Description = "在矩形搜索框内排布多把卡尺找边缘点，鲁棒拟合直线。", OutputType = typeof(VisionFindLineResult), Icon = "line")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
@@ -274,6 +275,7 @@ public sealed class FindVisionLineNodeModel : FindVisionShapeNodeModel
 }
 
 /// <summary>沿期望圆找圆：卡尺沿圆周排布，沿半径方向扫描。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.FindCircle", DisplayName = "找圆", Category = WorkflowVisionCategories.Measurement,
     Description = "沿期望圆排布多把径向卡尺找边缘点，鲁棒拟合圆。", OutputType = typeof(VisionFindCircleResult), Icon = "circle")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
@@ -356,6 +358,7 @@ public sealed class FindVisionCircleNodeModel : FindVisionShapeNodeModel
 }
 
 /// <summary>沿期望矩形四边找矩形：每条边排布“卡尺数量”把卡尺、垂直于边扫描，每边鲁棒拟合直线，相邻两边求交得到角点。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.FindRectangle", DisplayName = "找矩形", Category = WorkflowVisionCategories.Measurement,
     Description = "沿期望矩形四边各排布多把卡尺找边缘点，每边鲁棒拟合直线，相邻边求交得到四个角点、中心、宽高和角度。", OutputType = typeof(VisionFindRectangleResult), Icon = "rectangle")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]

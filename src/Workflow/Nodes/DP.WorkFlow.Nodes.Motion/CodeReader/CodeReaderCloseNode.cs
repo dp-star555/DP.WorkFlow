@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>关闭扫码设备连接。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("CodeReaderClose", DisplayName = "关闭扫码枪", Category = "4.Motion/CodeReader", OutputType = typeof(string))]
 public sealed class CodeReaderCloseNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {

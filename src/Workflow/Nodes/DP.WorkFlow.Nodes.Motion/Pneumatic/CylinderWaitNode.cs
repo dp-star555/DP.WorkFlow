@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>等待气缸伸出或缩回到位。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("CylinderWait", DisplayName = "气缸等待节点", Category = "4.Motion/Pneumatic", OutputType = typeof(PneumaticNodeResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class CylinderWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode

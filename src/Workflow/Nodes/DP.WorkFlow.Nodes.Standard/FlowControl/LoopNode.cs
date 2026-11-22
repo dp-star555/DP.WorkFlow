@@ -93,6 +93,7 @@ public sealed class LoopNodeHandler : WorkflowNodeHandler<LoopNodeModel>
 /// 退出循环节点（R3-c）：在循环体中走到它，循环在本圈结束时退出。
 /// 在画布回边循环中指定要退出的循环节点，并把出口连回该循环节点；在循环块的子画布中留空，走到即结束本圈并退出循环块。
 /// </summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("ExitLoop", DisplayName = "退出循环", Category = "3.Control/流程控制", Icon = "loop")]
 public sealed class ExitLoopNodeModel : WorkflowNodeModel
 {

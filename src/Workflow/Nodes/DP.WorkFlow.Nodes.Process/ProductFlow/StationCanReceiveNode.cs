@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>判断指定工站是否允许进料。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("StationCanReceive", DisplayName = "判断可进料节点", Category = "8.Process/ProductFlow", OutputType = typeof(StationBooleanNodeResult), Icon = "station")]
 [WorkflowOutputPorts(WorkflowPorts.True, WorkflowPorts.False, WorkflowPorts.Failed)]
 public sealed class StationCanReceiveNodeModel : ProductFlowStationSlotNodeModel { /// <inheritdoc />

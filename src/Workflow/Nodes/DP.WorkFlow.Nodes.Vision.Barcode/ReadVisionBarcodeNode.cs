@@ -20,6 +20,7 @@ public enum EWorkflowBarcodeOrder
 }
 
 /// <summary>独立条码节点插件；只依赖中立读码契约。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.ReadBarcode", DisplayName = "读取条码", Category = WorkflowVisionCategories.Recognition, OutputType = typeof(WorkflowVisionBarcodeFact), Icon = "barcode")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class ReadVisionBarcodeNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode

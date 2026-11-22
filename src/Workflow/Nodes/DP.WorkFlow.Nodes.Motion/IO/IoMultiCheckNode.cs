@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>立即读取并判断多条 IO 条件。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("IOMultiCheck", DisplayName = "判断多 IO 条件", Category = "4.Motion/IO", OutputType = typeof(IoMultiNodeResult))]
 [WorkflowOutputPorts(WorkflowPorts.True, WorkflowPorts.False)]
 public sealed class IoMultiCheckNodeModel : WorkflowNodeModel

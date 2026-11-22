@@ -48,6 +48,7 @@ public sealed class WorkflowVisionCoordinateSample
 public sealed record WorkflowVisionCoordinateChoice(string Id, string Name, int Version, EVisionCoordinateUnit Unit);
 
 /// <summary>定义坐标系（名称、版本、单位）并用本帧来源构建它；不持久化运行矩阵。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.BuildCoordinateSystem", DisplayName = "构建本帧坐标系", Category = WorkflowVisionCategories.Location, OutputType = typeof(DP.Vision.Algorithms.VisionCoordinateSystemResult), Icon = "axes")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometryNodeModel, IWorkflowNodeDocumentConfigurationValidator,

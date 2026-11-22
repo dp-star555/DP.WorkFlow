@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>批量创建或清空强类型命名队列。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("QueueInitialize", DisplayName = "队列初始化节点", Category = "3.Control/队列", OutputType = typeof(QueueInitializeResult))]
 public sealed class QueueInitializeNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {

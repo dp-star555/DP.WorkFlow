@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>触发扫码设备采集。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("CodeReaderTrigger", DisplayName = "触发扫码枪", Category = "4.Motion/CodeReader", OutputType = typeof(string))]
 public sealed class CodeReaderTriggerNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {

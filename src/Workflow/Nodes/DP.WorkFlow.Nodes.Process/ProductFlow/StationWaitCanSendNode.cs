@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>循环等待工站允许出料。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("StationWaitCanSend", DisplayName = "等待可出料节点", Category = "8.Process/ProductFlow", OutputType = typeof(StationWaitNodeResult), Icon = "station")]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout, WorkflowPorts.Failed)]
 public sealed class StationWaitCanSendNodeModel : ProductFlowStationSlotNodeModel, IRecoverableWorkflowNode

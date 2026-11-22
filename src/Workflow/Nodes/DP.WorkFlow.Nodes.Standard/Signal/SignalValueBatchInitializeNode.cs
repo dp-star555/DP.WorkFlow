@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>批量初始化强类型数据信号到默认值。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("SignalValueBatchInitialize", DisplayName = "批量初始化数据信号节点", Category = "3.Control/信号", OutputType = typeof(SignalValueBatchInitializeResult))]
 public sealed class SignalValueBatchInitializeNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {

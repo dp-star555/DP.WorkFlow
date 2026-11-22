@@ -1,6 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>等待命名布尔信号达到期望状态。</summary>
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("SignalWait", DisplayName = "信号等待", Category = "3.Control/信号", OutputType = typeof(SignalWaitNodeResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class SignalWaitNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
