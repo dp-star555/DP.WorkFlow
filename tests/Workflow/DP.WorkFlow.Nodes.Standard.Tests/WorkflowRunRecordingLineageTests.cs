@@ -271,7 +271,7 @@ public sealed class WorkflowRunRecordingLineageTests
         string startNodeId)
     {
         var document = new WorkflowDocument { Name = "数据血缘", EntryNodeId = startNodeId };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = first });
         if (second is not null)
         {
@@ -301,8 +301,22 @@ public sealed class WorkflowRunRecordingLineageTests
     {
         public override string NodeType => "Test.LineageProducer";
 
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object?> Outputs = new();
+
+        /// <summary>输出登记键：配置只保存能保存的内容（R7-c），任意对象放在测试登记表里。</summary>
+        public string OutputKey { get; set; } = string.Empty;
+
         /// <summary>该节点提交的输出；用于验证 OutputCommitted 自动键值。</summary>
-        public object? Output { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore]
+        public object? Output
+        {
+            get => Outputs.TryGetValue(OutputKey, out var value) ? value : null;
+            set
+            {
+                OutputKey = Guid.NewGuid().ToString("N");
+                Outputs[OutputKey] = value;
+            }
+        }
     }
 
     [WorkflowNode("Test.LineageConsumer")]

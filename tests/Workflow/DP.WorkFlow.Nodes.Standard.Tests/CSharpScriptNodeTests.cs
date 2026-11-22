@@ -12,7 +12,7 @@ public sealed class CSharpScriptNodeTests
             Script = "SetVariable(\"FromScript\", 21); Trace(\"done\"); return GetVariable<int>(\"FromScript\") * 2;"
         };
         var canvasDocument = new WorkflowDocument { Name = "脚本" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var context = new WorkflowContext();
@@ -33,7 +33,7 @@ public sealed class CSharpScriptNodeTests
     {
         var node = new CSharpScriptNodeModel { Id = "Script", Title = "脚本", Script = "Console.WriteLine(\"运行成功\"); return null;" };
         var canvasDocument = new WorkflowDocument { Name = "脚本输出" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         canvasDocument.EntryNodeId = node.Id;
@@ -51,7 +51,7 @@ public sealed class CSharpScriptNodeTests
     {
         var node = new CSharpScriptNodeModel { Id = "Script", Title = "脚本", Script = "not valid C#", ContinueOnError = true };
         var canvasDocument = new WorkflowDocument { Name = "脚本错误" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         canvasDocument.EntryNodeId = node.Id;
@@ -85,7 +85,7 @@ public sealed class CSharpScriptNodeTests
             ContinueOnError = true
         };
         var canvasDocument = new WorkflowDocument { Name = "脚本超时" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         canvasDocument.EntryNodeId = node.Id;
@@ -123,7 +123,7 @@ public sealed class CSharpScriptNodeTests
             Script = "return 42;"
         };
         var canvasDocument = new WorkflowDocument { Name = "脚本热路径分配" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         canvasDocument.EntryNodeId = node.Id;
@@ -175,7 +175,7 @@ public sealed class CSharpScriptNodeTests
         WorkflowContext context)
     {
         var canvasDocument = new WorkflowDocument { Name = "脚本热替换" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvasDocument.EntryNodeId = node.Id;
         var definition = new WorkflowCompiler(new WorkflowNodeCatalog().RegisterStandardNodes()).Compile(canvasDocument);

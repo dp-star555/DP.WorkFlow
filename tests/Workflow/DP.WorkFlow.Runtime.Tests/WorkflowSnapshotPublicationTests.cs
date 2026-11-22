@@ -107,7 +107,7 @@ public sealed class WorkflowSnapshotPublicationTests
         var first = new SnapshotTestNode { Id = "First", Title = "一" };
         var second = new SnapshotTestNode { Id = "Second", Title = "二" };
         var document = new WorkflowDocument { Name = "快照发布", EntryNodeId = first.Id };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = first });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = second });
         canvas.Connections.Add(new WorkflowConnectionModel

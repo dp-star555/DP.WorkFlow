@@ -13,7 +13,7 @@ public sealed class WorkflowBindingResolverTests
             Input = WorkflowInput<long>.FromBinding(new WorkflowBindingKey("Producer", "Payload.Count"))
         };
         var canvasDocument = new WorkflowDocument { Name = "绑定解析" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = producer });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = consumer });
         canvas.Connections.Add(new WorkflowConnectionModel
@@ -45,7 +45,7 @@ public sealed class WorkflowBindingResolverTests
                 WorkflowBindingKey.FromPublicData("Jobs", "Count"))
         };
         var canvasDocument = new WorkflowDocument { Name = "全局数据绑定" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = consumer });
         // R2-d：$global: 绑定读公共数据中心；队列以快照提供，可绑定 Count 等成员。
         var context = new WorkflowContext();
@@ -73,7 +73,7 @@ public sealed class WorkflowBindingResolverTests
             Input = WorkflowInput<long>.FromBinding(new WorkflowBindingKey("Missing", "Value"))
         };
         var canvasDocument = new WorkflowDocument { Name = "无效绑定" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = consumer });
         canvasDocument.EntryNodeId = consumer.Id;
         // 关闭编译期检查以验证 Runtime 对外部/旧定义仍有最后一道防线。

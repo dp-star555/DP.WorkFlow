@@ -53,7 +53,7 @@ public sealed class CylinderRecoveryTests
             Interrupt = new RecoverableInterruptOption { AlarmCode = 4101 }
         };
         var document = new WorkflowDocument { Name = "气缸", EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var engine = new WorkflowEngine(new WorkflowCompiler(new WorkflowNodeCatalog().RegisterMotionNodes()).Compile(document),
             new WorkflowNodeHandlerCatalog().RegisterMotionNodeHandlers(),
             new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowPneumaticService>(pneumatic)),

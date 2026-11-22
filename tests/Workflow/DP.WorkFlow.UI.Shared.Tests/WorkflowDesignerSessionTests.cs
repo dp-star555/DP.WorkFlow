@@ -27,7 +27,7 @@ public sealed class WorkflowDesignerSessionTests
     public void SessionConstruction_FitsNodeSizeButDoesNotNormalizeLayoutUntilExplicitCommand()
     {
         var canvasDocument = new WorkflowDocument();
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         var node = new DelayNodeModel { Id = "Delay", Title = "等待" };
         // 旧版本保存的尺寸（宽 180、高 140）与当前标题行 + 正文行不一致，位置也不在栅格上。
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node, X = 10, Y = 10, Width = 180, Height = 140 });
@@ -54,11 +54,11 @@ public sealed class WorkflowDesignerSessionTests
     {
         var canvasDocument = new WorkflowDocument();
         var node = new DelayNodeModel { Id = "Delay", Title = "等待" };
-        canvasDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node, Width = 180, Height = 140 });
+        canvasDocument.Nodes.Add(new WorkflowCanvasNode { Node = node, Width = 180, Height = 140 });
 
         _ = new WorkflowDesignerSession(canvasDocument, new WorkflowNodeCatalog());
 
-        Assert.Equal(140, canvasDocument.CanvasProjection.Nodes[0].Height);
+        Assert.Equal(140, canvasDocument.Nodes[0].Height);
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public sealed class WorkflowDesignerSessionTests
     {
         var model = new ActionNodeModel { Id = "Action", Title = "这是一个很长很长的节点名称" };
         var canvasDocument = new WorkflowDocument();
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = model, Width = 180 });
 
         _ = new WorkflowDesignerSession(canvasDocument, new WorkflowNodeCatalog().RegisterStandardNodes());
@@ -118,7 +118,7 @@ public sealed class WorkflowDesignerSessionTests
         var model = new ActionNodeModel { Id = "Action", Title = "短名称" };
         var canvasNode = new WorkflowCanvasNode { Node = model, X = 48, Width = 180 };
         var canvasDocument = new WorkflowDocument();
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(canvasNode);
         var session = new WorkflowDesignerSession(canvasDocument, new WorkflowNodeCatalog().RegisterStandardNodes());
         session.NormalizeLayout();
@@ -169,12 +169,12 @@ public sealed class WorkflowDesignerSessionTests
         var pasted = session.PasteSelection();
 
         Assert.Equal(2, pasted.Count);
-        Assert.Equal(4, session.Canvas.Nodes.Count);
-        Assert.Equal(2, session.Canvas.Connections.Count);
+        Assert.Equal(4, session.Document.Nodes.Count);
+        Assert.Equal(2, session.Document.Connections.Count);
         Assert.DoesNotContain(pasted, item => item.Node.Id is "Start1" or "End1");
         Assert.True(session.Undo());
-        Assert.Equal(2, session.Canvas.Nodes.Count);
-        Assert.Single(session.Canvas.Connections);
+        Assert.Equal(2, session.Document.Nodes.Count);
+        Assert.Single(session.Document.Connections);
     }
 
     [Fact]
@@ -203,12 +203,12 @@ public sealed class WorkflowDesignerSessionTests
 
         Assert.True(session.SetOutputPortVisible(decision.Node.Id, "False", false));
         Assert.DoesNotContain(session.GetPorts(decision.Node.Id, WorkflowPortDirection.Output), port => port.Key == "False");
-        Assert.Single(session.Canvas.Connections);
-        Assert.Equal(WorkflowConnectionState.Active, session.Canvas.Connections[0].State);
+        Assert.Single(session.Document.Connections);
+        Assert.Equal(WorkflowConnectionState.Active, session.Document.Connections[0].State);
 
         Assert.True(session.Undo());
         Assert.Contains(session.GetPorts(decision.Node.Id, WorkflowPortDirection.Output), port => port.Key == "False");
-        Assert.Single(session.Canvas.Connections);
+        Assert.Single(session.Document.Connections);
     }
 
     [Fact]
@@ -301,7 +301,7 @@ public sealed class WorkflowDesignerSessionTests
 
         Assert.Equal(WorkflowPortSide.Top, top.ToSide);
         Assert.Equal(WorkflowPortSide.Left, left.ToSide);
-        Assert.Equal(2, session.Canvas.Connections.Count);
+        Assert.Equal(2, session.Document.Connections.Count);
     }
 
     [Fact]
@@ -309,7 +309,7 @@ public sealed class WorkflowDesignerSessionTests
     {
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var canvasDocument = new WorkflowDocument();
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new StartNodeModel { Id = "Start", Title = "开始" } });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new EndNodeModel { Id = "End", Title = "结束" }, X = 300 });
         var connection = new WorkflowConnectionModel
@@ -339,7 +339,7 @@ public sealed class WorkflowDesignerSessionTests
     {
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var canvasDocument = new WorkflowDocument();
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new StartNodeModel { Id = "Start", Title = "开始" } });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new EndNodeModel { Id = "End", Title = "结束" }, X = 200 });
         var connection = new WorkflowConnectionModel { FromNodeId = "Start", ToNodeId = "End" };
@@ -359,7 +359,7 @@ public sealed class WorkflowDesignerSessionTests
     {
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var canvasDocument = new WorkflowDocument();
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new StartNodeModel { Id = "Start", Title = "开始" } });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new EndNodeModel { Id = "End", Title = "结束" }, X = 200 });
         var connection = new WorkflowConnectionModel { FromNodeId = "Start", ToNodeId = "End" };
@@ -385,7 +385,7 @@ public sealed class WorkflowDesignerSessionTests
     {
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var canvasDocument = new WorkflowDocument();
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new StartNodeModel { Id = "Start", Title = "开始" } });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new EndNodeModel { Id = "End", Title = "结束" } });
         var connection = new WorkflowConnectionModel { FromNodeId = "Start", ToNodeId = "End" };
@@ -408,7 +408,7 @@ public sealed class WorkflowDesignerSessionTests
     {
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var canvasDocument = new WorkflowDocument();
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         var start = new WorkflowCanvasNode { Node = new StartNodeModel { Id = "Start", Title = "开始" } };
         var end = new WorkflowCanvasNode { Node = new EndNodeModel { Id = "End", Title = "结束" } };
         canvas.Nodes.Add(start);
@@ -433,7 +433,7 @@ public sealed class WorkflowDesignerSessionTests
     {
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var canvasDocument = new WorkflowDocument();
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         var item = new WorkflowCanvasNode { Node = new StartNodeModel { Id = "Start", Title = "开始" } };
         canvas.Nodes.Add(item);
         var session = new WorkflowDesignerSession(canvasDocument, catalog);
@@ -454,17 +454,17 @@ public sealed class WorkflowDesignerSessionTests
         var connection = session.Connect(start.Node.Id, WorkflowPorts.Success, end.Node.Id);
         var initialEndX = end.X;
 
-        Assert.Equal(2, session.Canvas.Nodes.Count);
-        Assert.Single(session.Canvas.Connections);
+        Assert.Equal(2, session.Document.Nodes.Count);
+        Assert.Single(session.Document.Connections);
         Assert.True(session.MoveNode(end.Node.Id, 350, 80));
         Assert.Equal(0, (end.X + end.Width / 2) % 24, 6);
 
         Assert.True(session.Undo());
         Assert.Equal(initialEndX, end.X);
         Assert.True(session.Undo());
-        Assert.Empty(session.Canvas.Connections);
+        Assert.Empty(session.Document.Connections);
         Assert.True(session.Redo());
-        Assert.Same(connection, Assert.Single(session.Canvas.Connections));
+        Assert.Same(connection, Assert.Single(session.Document.Connections));
     }
 
     [Fact]
@@ -478,11 +478,11 @@ public sealed class WorkflowDesignerSessionTests
         session.Connect(action.Node.Id, WorkflowPorts.Success, end.Node.Id);
 
         Assert.True(session.RemoveNode(action.Node.Id));
-        Assert.Equal(2, session.Canvas.Nodes.Count);
-        Assert.Empty(session.Canvas.Connections);
+        Assert.Equal(2, session.Document.Nodes.Count);
+        Assert.Empty(session.Document.Connections);
         Assert.True(session.Undo());
-        Assert.Equal(3, session.Canvas.Nodes.Count);
-        Assert.Equal(2, session.Canvas.Connections.Count);
+        Assert.Equal(3, session.Document.Nodes.Count);
+        Assert.Equal(2, session.Document.Connections.Count);
     }
 
     [Fact]
@@ -498,9 +498,9 @@ public sealed class WorkflowDesignerSessionTests
         Assert.Null(session.SelectedNodeId);
         Assert.True(session.RemoveConnection(connection));
         Assert.Null(session.SelectedConnection);
-        Assert.Empty(session.Canvas.Connections);
+        Assert.Empty(session.Document.Connections);
         Assert.True(session.Undo());
-        Assert.Same(connection, Assert.Single(session.Canvas.Connections));
+        Assert.Same(connection, Assert.Single(session.Document.Connections));
     }
 
     [Fact]
@@ -548,7 +548,7 @@ public sealed class WorkflowDesignerSessionTests
         session.FitToView(1000, 600);
 
         Assert.True(session.Zoom <= WorkflowDesignerSession.MaximumFitZoom);
-        foreach (var node in session.Canvas.Nodes)
+        foreach (var node in session.Document.Nodes)
         {
             var rect = WorkflowDesignerGeometry.GetNodeScreenRect(session, node);
             Assert.InRange(rect.X, 0, 1000);
@@ -584,7 +584,7 @@ public sealed class WorkflowDesignerSessionTests
         var source = new DynamicPortNode { Id = "Dynamic", Title = "动态", HasAlternate = true };
         var end = new EndNodeModel { Id = "End", Title = "结束" };
         var canvasDocument = new WorkflowDocument();
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = source });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = end });
         var connection = new WorkflowConnectionModel

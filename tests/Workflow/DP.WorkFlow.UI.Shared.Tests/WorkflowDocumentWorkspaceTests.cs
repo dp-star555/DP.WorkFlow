@@ -25,8 +25,8 @@ public sealed class WorkflowDocumentWorkspaceTests
             var loadedNavigator = workspace.Open(filePath);
 
             Assert.False(workspace.IsDirty);
-            Assert.Equal("Document", loadedNavigator.RootSession.Canvas.Name);
-            Assert.Equal(2, loadedNavigator.RootSession.Canvas.Nodes.Count);
+            Assert.Equal("Document", loadedNavigator.RootSession.Document.Name);
+            Assert.Equal(2, loadedNavigator.RootSession.Document.Nodes.Count);
             Assert.Equal(filePath, Assert.Single(workspace.RecentFiles));
         }
         finally

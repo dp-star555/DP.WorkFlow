@@ -8,7 +8,7 @@ public sealed class WorkflowCSharpScriptEditorSessionTests
     public async Task EditingAfterFailure_PreservesLastDiagnosticsAsStale()
     {
         var canvasDocument = new WorkflowDocument { Name = "脚本状态" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var designer = new WorkflowDesignerSession(canvasDocument, catalog);
         var node = new CSharpScriptNodeModel { Id = "Script", Script = "not valid C#" };

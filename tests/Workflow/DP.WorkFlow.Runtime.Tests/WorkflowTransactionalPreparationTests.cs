@@ -36,7 +36,7 @@ public sealed class WorkflowTransactionalPreparationTests
 
     private static WorkflowRuntimeHost Host(WorkflowServiceProvider services, List<string> events)
     {
-        var document = new WorkflowDocument { EntryNodeId = "node" }; document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new Node { Id = "node" } });
+        var document = new WorkflowDocument { EntryNodeId = "node" }; document.Nodes.Add(new WorkflowCanvasNode { Node = new Node { Id = "node" } });
         var host = new WorkflowRuntimeHost(new WorkflowNodeCatalog().Register<Node>(), new WorkflowNodeHandlerCatalog().Register(new Handler(events)));
         host.Configure(document, new WorkflowContext(services)); return host;
     }

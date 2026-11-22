@@ -51,7 +51,7 @@ public sealed class WorkflowDocumentWorkspace : IDisposable
         start.Id = "Start";
         start.Title = descriptor.DisplayName ?? "Start";
         var document = new WorkflowDocument { Name = name, EntryNodeId = start.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = start, X = 80, Y = 80 });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = start, X = 80, Y = 80 });
         SetDocument(new WorkflowDesignerNavigator(document, _catalog), null, null, true);
         return _navigator!;
     }

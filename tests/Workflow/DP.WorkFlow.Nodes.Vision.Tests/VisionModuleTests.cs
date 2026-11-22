@@ -82,11 +82,11 @@ public sealed class VisionModuleTests
         var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
         var store = new WorkflowDocumentJsonStore(nodes);
         var document = new WorkflowDocument { EntryNodeId = "file" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AcquireVisionImageNodeModel { Id = "file" } });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new AcquireVisionImageNodeModel { Id = "file" } });
         var json = store.Serialize(document).Replace("Vision.AcquireFrame", "Vision.AcquireImage", StringComparison.Ordinal);
         var loaded = store.Deserialize(json).Document;
-        Assert.Equal("Vision.AcquireImage", loaded.CanvasProjection.Nodes[0].Node.NodeType);
-        Assert.IsType<UnknownWorkflowNodeModel>(loaded.CanvasProjection.Nodes[0].Node);
+        Assert.Equal("Vision.AcquireImage", loaded.Nodes[0].Node.NodeType);
+        Assert.IsType<UnknownWorkflowNodeModel>(loaded.Nodes[0].Node);
         var plan = new WorkflowCompiler(nodes).Compile(loaded);
         var binder = new WorkflowRuntimeBinder(new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
         var error = Assert.Throws<InvalidOperationException>(() => binder.Bind(plan));

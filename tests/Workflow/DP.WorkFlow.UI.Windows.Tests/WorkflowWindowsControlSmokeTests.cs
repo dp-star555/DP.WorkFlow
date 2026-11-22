@@ -15,7 +15,7 @@ public sealed class WorkflowWindowsControlSmokeTests
             try
             {
                 var canvasDocument = new WorkflowDocument { Name = "Smoke" };
-                var canvas = canvasDocument.CanvasProjection;
+                var canvas = canvasDocument;
                 var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
                 var session = new WorkflowDesignerSession(canvasDocument, catalog);
                 var start = session.AddNode("Start", 20, 20);
@@ -33,7 +33,7 @@ public sealed class WorkflowWindowsControlSmokeTests
 
                 Assert.Same(session, winForms.Designer.Session);
                 Assert.Same(session, wpf.Designer.Session);
-                Assert.Same(canvas, wpf.Session!.Canvas);
+                Assert.Same(canvas, wpf.Session!.Document);
 
                 using var overviewCanvas = new DP.WorkFlow.UI.WinForms.WorkflowDesignerControl
                 {

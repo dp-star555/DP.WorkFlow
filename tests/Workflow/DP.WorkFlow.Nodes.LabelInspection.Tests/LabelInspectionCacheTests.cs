@@ -34,17 +34,17 @@ public sealed class LabelInspectionCacheTests
     {
         await using var rig = new LabelInspectionPipelineTests.Rig(false);
         var router = new LabelInspectionPipelineTests.SelectBranch { Id = "select" };
-        rig.Document.CanvasProjection.Nodes.Add(new() { Node = router });
-        var original = rig.Document.CanvasProjection.Connections.Single(c => c.FromNodeId == "image");
-        rig.Document.CanvasProjection.Connections.Remove(original);
-        rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = "image", FromPort = WorkflowPorts.Success, ToNodeId = "select", ToPort = WorkflowPorts.Input });
-        rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = "select", FromPort = WorkflowPorts.True, ToNodeId = "inspect", ToPort = WorkflowPorts.Input });
+        rig.Document.Nodes.Add(new() { Node = router });
+        var original = rig.Document.Connections.Single(c => c.FromNodeId == "image");
+        rig.Document.Connections.Remove(original);
+        rig.Document.Connections.Add(new() { FromNodeId = "image", FromPort = WorkflowPorts.Success, ToNodeId = "select", ToPort = WorkflowPorts.Input });
+        rig.Document.Connections.Add(new() { FromNodeId = "select", FromPort = WorkflowPorts.True, ToNodeId = "inspect", ToPort = WorkflowPorts.Input });
         for (int i = 0; i < 100; i++)
         {
             var node = (InspectLabelNodeModel)WorkflowNodeConfigurationSnapshotter.Capture(rig.Node);
             node.Id = "unused-" + i; node.RecognitionModelPath = "absent.onnx";
-            rig.Document.CanvasProjection.Nodes.Add(new() { Node = node });
-            rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = i == 0 ? "select" : "unused-" + (i - 1),
+            rig.Document.Nodes.Add(new() { Node = node });
+            rig.Document.Connections.Add(new() { FromNodeId = i == 0 ? "select" : "unused-" + (i - 1),
                 FromPort = i == 0 ? WorkflowPorts.False : WorkflowPorts.Success, ToNodeId = node.Id, ToPort = WorkflowPorts.Input });
         }
         Assert.True((await rig.RunAsync()).Success);
@@ -270,11 +270,11 @@ public sealed class LabelInspectionCacheTests
         second.Id = "inspect2";
         second.RecipeJson = rig.Json(new InspectionRecipe("second", 64, 48, EInspectionMode.Free, EAlignmentMode.AssumeAligned,
             new[] { new InspectionRegion("blank", ERegionKind.Blank, new PixelBounds(8, 8, 32, 24)) }, LabelInspectionPipelineTests.Rig.Options));
-        rig.Document.CanvasProjection.Nodes.Add(new() { Node = second });
-        var link = rig.Document.CanvasProjection.Connections.Single(c => c.FromNodeId == "inspect");
-        rig.Document.CanvasProjection.Connections.Remove(link);
-        rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = "inspect", FromPort = WorkflowPorts.Success, ToNodeId = "inspect2", ToPort = WorkflowPorts.Input });
-        rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = "inspect2", FromPort = WorkflowPorts.Success, ToNodeId = "consumer", ToPort = WorkflowPorts.Input });
+        rig.Document.Nodes.Add(new() { Node = second });
+        var link = rig.Document.Connections.Single(c => c.FromNodeId == "inspect");
+        rig.Document.Connections.Remove(link);
+        rig.Document.Connections.Add(new() { FromNodeId = "inspect", FromPort = WorkflowPorts.Success, ToNodeId = "inspect2", ToPort = WorkflowPorts.Input });
+        rig.Document.Connections.Add(new() { FromNodeId = "inspect2", FromPort = WorkflowPorts.Success, ToNodeId = "consumer", ToPort = WorkflowPorts.Input });
         return second;
     }
     private static string RepositoryRoot()

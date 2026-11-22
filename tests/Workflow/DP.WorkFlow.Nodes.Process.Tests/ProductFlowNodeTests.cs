@@ -7,7 +7,7 @@ public sealed class ProductFlowNodeTests
     {
         var node = new ProductCreateNodeModel { Id = "Create", Title = "创建", StationId = "S1", SlotId = "1" };
         var canvasDocument = new WorkflowDocument { Name = "产品" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterProcessNodes();
         canvasDocument.EntryNodeId = node.Id;
@@ -53,7 +53,7 @@ public sealed class ProductFlowNodeTests
     private static async Task<WorkflowRunResult> RunAsync(IWorkflowNodeModel node, WorkflowServiceProvider services)
     {
         var canvasDocument = new WorkflowDocument { Name = "产品流" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvasDocument.EntryNodeId = node.Id;
         var definition = new WorkflowCompiler(new WorkflowNodeCatalog().RegisterProcessNodes()).Compile(canvasDocument);

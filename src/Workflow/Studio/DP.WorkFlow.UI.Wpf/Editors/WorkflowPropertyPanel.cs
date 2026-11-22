@@ -300,7 +300,7 @@ public sealed class WorkflowPropertyPanel : UserControl
             Margin = new Thickness(4, 10, 4, 5),
             FontWeight = FontWeights.SemiBold
         });
-        var canvasNode = Session.Canvas.Nodes.First(item => item.Node.Id == _model.SelectedNode.Id);
+        var canvasNode = Session.Document.Nodes.First(item => item.Node.Id == _model.SelectedNode.Id);
         foreach (var port in outputs)
         {
             var check = new CheckBox

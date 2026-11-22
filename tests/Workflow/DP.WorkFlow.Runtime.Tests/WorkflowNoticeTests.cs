@@ -72,7 +72,7 @@ public sealed class WorkflowNoticeTests
     {
         var node = new NoticeTestNode { Id = "N", Title = "提示" };
         var document = new WorkflowDocument { Name = "提示", EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         return new WorkflowCompiler(new WorkflowNodeCatalog().Register<NoticeTestNode>(1, WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output()))
             .Compile(document);
     }

@@ -239,13 +239,13 @@ public static class ReplayFlows
         var x = 0;
         foreach (var node in nodes)
         {
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node, X = x, Y = 0 });
+            document.Nodes.Add(new WorkflowCanvasNode { Node = node, X = x, Y = 0 });
             x += 220;
         }
     }
 
     private static void Connect(WorkflowDocument document, string from, string port, string to) =>
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        document.Connections.Add(new WorkflowConnectionModel
         {
             FromNodeId = from,
             FromPort = port,

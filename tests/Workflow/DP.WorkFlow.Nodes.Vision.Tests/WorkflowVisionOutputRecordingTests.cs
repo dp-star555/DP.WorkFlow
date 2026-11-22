@@ -48,7 +48,7 @@ public sealed class WorkflowVisionOutputRecordingTests
     private static WorkflowEngine CreateEngine(FrameProducerNodeModel node, IWorkflowRunEventSink sink)
     {
         var document = new WorkflowDocument { Name = "图像输出记录", EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var definition = new WorkflowCompiler(validateBindings: false).Compile(document);
         var handlers = new WorkflowNodeHandlerCatalog().Register(new FrameProducerHandler());
         var options = new WorkflowExecutionOptions

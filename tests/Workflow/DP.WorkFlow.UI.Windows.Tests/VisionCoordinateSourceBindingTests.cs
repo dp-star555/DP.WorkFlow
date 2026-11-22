@@ -36,8 +36,8 @@ public sealed class VisionCoordinateSourceBindingTests
         var binding = consumer.Coordinates;
         var ranges = consumer.Regions.Select(r => (r.CenterX, r.CenterY, r.Width, r.Height)).ToArray();
         var document = new WorkflowDocument { EntryNodeId = "image" };
-        foreach (var node in scope) document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
-        for (var i = 1; i < scope.Length; i++) document.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        foreach (var node in scope) document.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        for (var i = 1; i < scope.Length; i++) document.Connections.Add(new WorkflowConnectionModel
         { FromNodeId = scope[i - 1].Id, FromPort = WorkflowPorts.Success, ToNodeId = scope[i].Id, ToPort = WorkflowPorts.Input });
         var compiler = new WorkflowCompiler(nodes); _ = compiler.Compile(document);
 
@@ -58,7 +58,7 @@ public sealed class VisionCoordinateSourceBindingTests
         var session = new WorkflowDesignerSession(document, nodes) { SelectedNodeId = "consumer" };
         using var frames = new WorkflowVisionFrameScope();
         using var inspector = new WorkflowPropertyInspectorModel(session, "image", null,
-            WorkflowVisionCoordinateProperties.CreateProvider(frames, () => session.Canvas.Nodes.Select(n => n.Node).ToArray()));
+            WorkflowVisionCoordinateProperties.CreateProvider(frames, () => session.Document.Nodes.Select(n => n.Node).ToArray()));
         Assert.DoesNotContain(inspector.Entries, e => e.Name == "Coordinates.ConfirmReference");
         Assert.Null(frames.Capture("image")); Assert.Null(frames.Capture("coordinate"));
         var store = new WorkflowDocumentJsonStore(nodes);
@@ -118,9 +118,9 @@ public sealed class VisionCoordinateSourceBindingTests
             Coordinates = new WorkflowVisionCoordinateBinding
             { System = WorkflowInput<VisionCoordinateSystem>.FromBinding(new(fault == "missing" ? "missing" : fault == "self" ? "consumer" : "image", fault == "wrong-type" ? "$" : "CoordinateSystem")) } };
         var document = new WorkflowDocument { EntryNodeId = image.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = image });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = consumer });
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = image.Id, FromPort = WorkflowPorts.Success, ToNodeId = consumer.Id, ToPort = WorkflowPorts.Input });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = image });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = consumer });
+        document.Connections.Add(new WorkflowConnectionModel { FromNodeId = image.Id, FromPort = WorkflowPorts.Success, ToNodeId = consumer.Id, ToPort = WorkflowPorts.Input });
 
         Assert.Throws<WorkflowCompilationException>(() => new WorkflowCompiler(nodes).Compile(document));
     }

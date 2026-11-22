@@ -31,7 +31,7 @@ public sealed class ProcessFaultHandlingTests
             ("Restart", new RestartFromEntryNodeModel { Id = "Restart", EntryKey = "Op" }),
             ("Stop", new StopCurrentStationNodeModel { Id = "Stop", Reason = "操作员停止" }));
         var defaultHandler = new WorkflowDocument { Name = "默认", EntryNodeId = "Never" };
-        defaultHandler.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new StopCurrentStationNodeModel { Id = "Never" } });
+        defaultHandler.Nodes.Add(new WorkflowCanvasNode { Node = new StopCurrentStationNodeModel { Id = "Never" } });
         var operators = new ScriptedOperator(choice);
         using var center = Center(operators, new WorkflowRunCenterOptions { DefaultFaultHandler = defaultHandler, FaultSettleMilliseconds = 0 });
 
@@ -114,7 +114,7 @@ public sealed class ProcessFaultHandlingTests
     public async Task DirectiveNodeOutsideFaultHandler_Fails()
     {
         var document = new WorkflowDocument { Name = "普通流程", EntryNodeId = "Continue" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new ContinueOperationNodeModel { Id = "Continue" } });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new ContinueOperationNodeModel { Id = "Continue" } });
         var catalog = new WorkflowNodeCatalog().RegisterProcessNodes();
 
         var result = await new WorkflowEngine(new WorkflowCompiler(catalog).Compile(document),
@@ -132,7 +132,7 @@ public sealed class ProcessFaultHandlingTests
     private static (WorkflowDocument Document, WarningHandlerBlockNodeModel Block) MainFlow(bool withGrab = false)
     {
         var document = new WorkflowDocument { Name = "主流程", EntryNodeId = "Entry" };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new RecoveryEntryNodeModel { Id = "Entry", EntryKey = "Op" } });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new MoveNode { Id = "Move", Title = "模拟移动" } });
         if (withGrab)
@@ -151,7 +151,7 @@ public sealed class ProcessFaultHandlingTests
     private static void AddHandler(WarningHandlerBlockNodeModel block, OperatorChoiceNodeModel choice,
         params (string Port, WorkflowNodeModel Node)[] branches)
     {
-        var sub = block.SubDocument.CanvasProjection;
+        var sub = block.SubDocument;
         sub.Nodes.Clear();
         sub.Connections.Clear();
         sub.Nodes.Add(new WorkflowCanvasNode { Node = new WarningHandlerStartNodeModel { Id = "Start" } });
@@ -167,7 +167,7 @@ public sealed class ProcessFaultHandlingTests
 
     private static void AddChain(WarningHandlerBlockNodeModel block, params WorkflowNodeModel[] nodes)
     {
-        var sub = block.SubDocument.CanvasProjection;
+        var sub = block.SubDocument;
         sub.Nodes.Clear();
         sub.Connections.Clear();
         sub.Nodes.Add(new WorkflowCanvasNode { Node = new WarningHandlerStartNodeModel { Id = "Start" } });

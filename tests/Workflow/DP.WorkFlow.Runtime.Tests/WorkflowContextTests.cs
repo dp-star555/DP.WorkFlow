@@ -40,7 +40,7 @@ public sealed class WorkflowContextTests
     public async Task RunAsync_WhenCancellationIsRequested_ReturnsCanceledResult()
     {
         var canvasDocument = new WorkflowDocument { Name = "取消测试" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new BlockingNode { Id = "N1", Title = "等待" } });
         canvasDocument.EntryNodeId = "N1";
         var definition = new WorkflowCompiler().Compile(canvasDocument);

@@ -48,7 +48,7 @@ public sealed class WorkflowPublicDataPersistenceTests
     private static WorkflowDocument BuildDocument()
     {
         var document = new WorkflowDocument { Name = "公共数据", EntryNodeId = "Init" };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode
         {
             Node = new SignalStateBatchInitializeNodeModel
@@ -84,8 +84,8 @@ public sealed class WorkflowLegacyValueInputMigrationTests
     {
         var store = new WorkflowDocumentJsonStore(new WorkflowNodeCatalog().RegisterStandardNodes());
         var document = new WorkflowDocument { Name = "迁移", EntryNodeId = "Add" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new QueueAddNodeModel { Id = "Add", Title = "入队", QueueKey = "Jobs" } });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new SignalValueWaitNodeModel { Id = "Wait", Title = "等待", SignalKey = "Count" } });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new QueueAddNodeModel { Id = "Add", Title = "入队", QueueKey = "Jobs" } });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new SignalValueWaitNodeModel { Id = "Wait", Title = "等待", SignalKey = "Count" } });
         var root = System.Text.Json.Nodes.JsonNode.Parse(store.Serialize(document))!.AsObject();
         var add = root["Nodes"]![0]!["Config"]!.AsObject();
         add.Remove("Value");

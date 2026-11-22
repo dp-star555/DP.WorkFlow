@@ -96,7 +96,7 @@ public sealed class WorkflowInputLiteralEditingTests
     {
         var node = new InputNode { Id = "input" };
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new() { Node = node });
+        document.Nodes.Add(new() { Node = node });
         var catalog = new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<InputNode>());
         return (node, new WorkflowDesignerSession(document, catalog) { SelectedNodeId = node.Id }, catalog);
     }

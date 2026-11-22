@@ -330,7 +330,7 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
         PropertyEditorKey = propertyEditorKey;
         Session = session ?? throw new ArgumentNullException(nameof(session));
         EntryNodeId = startNodeId ?? throw new ArgumentNullException(nameof(startNodeId));
-        Node = session.Canvas.Nodes.FirstOrDefault(item => item.Node.Id == nodeId)?.Node
+        Node = session.Document.Nodes.FirstOrDefault(item => item.Node.Id == nodeId)?.Node
             ?? throw new InvalidOperationException($"节点 {nodeId} 不存在。");
         session.SelectedNodeId = nodeId;
         (EditingSession, EditingNode) = CreateEditingSession(session, nodeId);
@@ -406,7 +406,7 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
             participant.PrepareCommit();
 
         var editedSnapshot = WorkflowNodeConfigurationSnapshotter.Capture(EditingNode);
-        var sourceCanvasNode = EditingSession.Canvas.Nodes.First(item => item.Node.Id == EditingNode.Id);
+        var sourceCanvasNode = EditingSession.Document.Nodes.First(item => item.Node.Id == EditingNode.Id);
         var newHiddenPorts = sourceCanvasNode.HiddenOutputPorts.ToArray();
         var newExposedMembers = sourceCanvasNode.ExposedOutputMembers.ToArray();
         Session.ExecuteNodeConfigurationChange(
@@ -425,15 +425,15 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
         WorkflowDesignerSession source,
         string nodeId)
     {
-        var sourceNode = source.Canvas.Nodes.First(item => item.Node.Id == nodeId);
+        var sourceNode = source.Document.Nodes.First(item => item.Node.Id == nodeId);
         var editingNode = WorkflowNodeConfigurationSnapshotter.Capture(sourceNode.Node);
         var document = new WorkflowDocument
         {
             Name = source.Document.Name,
             EntryNodeId = source.Document.EntryNodeId
         };
-        var canvas = document.CanvasProjection;
-        foreach (var item in source.Canvas.Nodes)
+        var canvas = document;
+        foreach (var item in source.Document.Nodes)
         {
             var copy = new WorkflowCanvasNode
             {
@@ -445,7 +445,7 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
             foreach (var member in item.ExposedOutputMembers) copy.ExposedOutputMembers.Add(member);
             canvas.Nodes.Add(copy);
         }
-        foreach (var connection in source.Canvas.Connections) canvas.Connections.Add(connection);
+        foreach (var connection in source.Document.Connections) canvas.Connections.Add(connection);
         var editingSession = new WorkflowDesignerSession(document, source.Catalog, source.PublicData) { SnapToGrid = source.SnapToGrid };
         editingSession.SelectedNodeId = nodeId;
         return (editingSession, editingNode);

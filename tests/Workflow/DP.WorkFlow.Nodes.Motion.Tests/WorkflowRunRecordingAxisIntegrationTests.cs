@@ -20,7 +20,7 @@ public sealed class WorkflowRunRecordingAxisIntegrationTests
                 WorkflowBindingKey.FromPublicData("StepKey"))
         };
         var document = new WorkflowDocument { Name = "轴动作血缘", EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
 
         var axis = new RecordingAxisService();
         var services = new WorkflowServiceProvider().Add<IWorkflowAxisService>(axis);

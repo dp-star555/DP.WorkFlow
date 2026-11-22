@@ -46,9 +46,9 @@ public sealed class WorkflowNotificationTests
     private static WorkflowEngine CreateEngine()
     {
         var document = new WorkflowDocument { Name = "回调", EntryNodeId = "A" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new TestNode { Id = "A", Title = "A" } });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new TestNode { Id = "B", Title = "B" } });
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new TestNode { Id = "A", Title = "A" } });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new TestNode { Id = "B", Title = "B" } });
+        document.Connections.Add(new WorkflowConnectionModel
         {
             FromNodeId = "A", FromPort = WorkflowPorts.Success, ToNodeId = "B", ToPort = WorkflowPorts.Input
         });

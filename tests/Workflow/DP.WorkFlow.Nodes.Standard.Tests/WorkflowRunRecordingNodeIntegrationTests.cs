@@ -11,7 +11,7 @@ public sealed class WorkflowRunRecordingNodeIntegrationTests
     {
         var sink = new CollectingSink();
         var document = new WorkflowDocument { Name = "字符串比较血缘", EntryNodeId = "Producer" };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode
         {
             Node = new ActionNodeModel { Id = "Producer", Title = "生产", FunctionKey = "Produce" }

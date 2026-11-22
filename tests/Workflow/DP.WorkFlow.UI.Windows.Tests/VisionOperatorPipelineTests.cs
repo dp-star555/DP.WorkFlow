@@ -71,7 +71,7 @@ public sealed class VisionOperatorPipelineTests
         try
         {
             var document = RegionPipeline(path);
-            ((AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node).Frame = Input<ImageFrame>("file");
+            ((AnalyzeVisionBlobsNodeModel)document.Nodes.Single(n => n.Node.Id == "blob").Node).Frame = Input<ImageFrame>("file");
             using var scope = new WorkflowVisionFrameScope();
             using var host = new WorkflowRuntimeHost(new WorkflowNodeCatalog().RegisterImageNodes(), new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
             host.Configure(document, new WorkflowContext(Services(scope)));
@@ -207,7 +207,7 @@ public sealed class VisionOperatorPipelineTests
             Assert.Null(result.LocalRadius);
 
             // 加大期望圆和搜索长度：上下左右四把卡尺的扫描端超出图像被跳过并计数，其余卡尺仍拟合出同一个圆。
-            var shifted = (FindVisionCircleNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "circle").Node;
+            var shifted = (FindVisionCircleNodeModel)document.Nodes.Single(n => n.Node.Id == "circle").Node;
             shifted.SearchLength = 30; shifted.Regions[0].Width = shifted.Regions[0].Height = 50; shifted.DistanceThreshold = .5;
             using var second = new WorkflowRuntimeHost(nodes, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
             second.Configure(document, new WorkflowContext(usePlugins ? PluginServices(scope, bindings) : Services(scope)));
@@ -276,7 +276,7 @@ public sealed class VisionOperatorPipelineTests
                 Assert.Equal(14.5, pose.CenterX, 8); Assert.Equal(0, pose.AngleDegrees, 8);
                 var origin = pose.ReferenceToImage!.Map(new Coordinate2D(0, 0)); Assert.Equal(14.5, origin.X, 8); Assert.Equal(11.5, origin.Y, 8);
                 // 匹配框和参考轴共用一条摘要标注，不在参考点处重复叠加；拾取参考轴仍得到同一说明。
-                using var page = new VisionFrameEditorPageModel(document.CanvasProjection.Nodes.Single(n => n.Node.Id == "pose").Node, scope);
+                using var page = new VisionFrameEditorPageModel(document.Nodes.Single(n => n.Node.Id == "pose").Node, scope);
                 using var canvas = page.Capture(1);
                 var facts = canvas!.Overlay!.Layers.Single(l => l.Id == "facts").Visuals;
                 Assert.Equal(4, facts.Count); Assert.Single(facts, v => v.Caption is not null);
@@ -334,8 +334,8 @@ public sealed class VisionOperatorPipelineTests
     private static WorkflowDocument Document(params IWorkflowNodeModel[] nodes)
     {
         var document = new WorkflowDocument { EntryNodeId = nodes[0].Id };
-        foreach (var node in nodes) document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
-        for (int i = 1; i < nodes.Length; i++) document.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        foreach (var node in nodes) document.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        for (int i = 1; i < nodes.Length; i++) document.Connections.Add(new WorkflowConnectionModel
         { FromNodeId = nodes[i - 1].Id, FromPort = WorkflowPorts.Success, ToNodeId = nodes[i].Id, ToPort = WorkflowPorts.Input });
         return document;
     }

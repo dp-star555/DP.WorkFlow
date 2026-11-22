@@ -95,7 +95,7 @@ public partial class MainWindow : Window
         // 算法实现与“坐标系”下拉；坐标系下拉按本轮运行结果换算ROI等范围。
         var algorithmProperties = WorkflowVisionAlgorithmProperties.CreateProvider(algorithmCatalog);
         var coordinateProperties = WorkflowVisionCoordinateProperties.CreateProvider(_frameScope,
-            () => _workspace.Navigator?.CurrentSession.Canvas.Nodes.Select(n => n.Node).ToArray() ?? []);
+            () => _workspace.Navigator?.CurrentSession.Document.Nodes.Select(n => n.Node).ToArray() ?? []);
         Studio.Properties.AdditionalProperties = node => [.. algorithmProperties(node), .. coordinateProperties(node)];
         var actions = new WorkflowActionRegistry();
         var services = new WorkflowServiceProvider()

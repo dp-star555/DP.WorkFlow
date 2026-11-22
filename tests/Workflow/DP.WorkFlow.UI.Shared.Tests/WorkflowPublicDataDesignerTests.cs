@@ -50,7 +50,7 @@ public sealed class WorkflowPublicDataDesignerTests
     {
         var node = new SignalSetNodeModel { Id = "Set", Title = "设置", SignalKey = key };
         var document = new WorkflowDocument { Name = "公共数据", EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterStandardNodes()) { SelectedNodeId = node.Id };
         return (session, node);
     }

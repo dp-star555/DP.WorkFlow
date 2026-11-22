@@ -14,7 +14,7 @@ public sealed class AxisActionNodeTests
             OverrideTimeoutMs = 12000
         };
         var canvasDocument = new WorkflowDocument { Name = "轴" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterMotionNodes();
         canvasDocument.EntryNodeId = node.Id;
@@ -38,7 +38,7 @@ public sealed class AxisActionNodeTests
     {
         var node = new AxisServoNodeModel { Id = "Servo", Title = "伺服", DeviceId = "D1", AxisId = "0", Interrupt = new RecoverableInterruptOption { AlarmCode = 1001 } };
         var canvasDocument = new WorkflowDocument { Name = "可恢复轴" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var axis = new RetryAxisService();
         var coordinator = new ScriptedStopHandler(_ => WorkflowResumeDirective.Redo());
@@ -61,7 +61,7 @@ public sealed class AxisActionNodeTests
     {
         var node = new AxisServoNodeModel { Id = "Servo", DeviceId = "D1", AxisId = "0", Enabled = true };
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var axis = new RetryAxisService();
         var coordinator = new ScriptedStopHandler(point => point.Rejection is null ? WorkflowResumeDirective.Continue() : WorkflowResumeDirective.Redo());
         var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowAxisService>(axis));
@@ -86,7 +86,7 @@ public sealed class AxisActionNodeTests
             Interrupt = new RecoverableInterruptOption { AlarmCode = 1002 }
         };
         var canvasDocument = new WorkflowDocument { Name = "配置错误" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var coordinator = new ScriptedStopHandler(point => point.Rejection is null ? WorkflowResumeDirective.Redo() : WorkflowResumeDirective.Stop("停止"));
         var services = new WorkflowServiceProvider().Add<IWorkflowAxisService>(new FakeAxisService());
@@ -106,7 +106,7 @@ public sealed class AxisActionNodeTests
     {
         var node = new AxisWaitNodeModel { Id = "Wait", Title = "等待", DeviceId = "D1", AxisId = "0", TimeoutAsFalseBranch = true };
         var canvasDocument = new WorkflowDocument { Name = "等待超时" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterMotionNodes();
         canvasDocument.EntryNodeId = node.Id;
@@ -133,7 +133,7 @@ public sealed class AxisActionNodeTests
     {
         var node = new AxisServoNodeModel { Id = "Servo", Title = "伺服", DeviceId = "D1", AxisId = "0" };
         var canvasDocument = new WorkflowDocument { Name = "取消设备调用" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var service = new BlockingAxisService();
         canvasDocument.EntryNodeId = node.Id;

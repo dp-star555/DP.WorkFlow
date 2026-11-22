@@ -104,7 +104,7 @@ public sealed partial class WorkflowDesignerControl : Control
             return;
         DrawConnections(e.Graphics);
         DrawDataLinks(e.Graphics);
-        foreach (var node in _session.Canvas.Nodes)
+        foreach (var node in _session.Document.Nodes)
             DrawNode(e.Graphics, node);
         DrawPendingConnection(e.Graphics);
         DrawPendingDataLink(e.Graphics);
@@ -494,7 +494,7 @@ public sealed partial class WorkflowDesignerControl : Control
         {
             if (keyData == (Keys.Control | Keys.A))
             {
-                _session.SelectNodes(_session.Canvas.Nodes.Select(node => node.Node.Id));
+                _session.SelectNodes(_session.Document.Nodes.Select(node => node.Node.Id));
                 return true;
             }
             if (keyData == (Keys.Control | Keys.C))
@@ -547,7 +547,7 @@ public sealed partial class WorkflowDesignerControl : Control
     {
         if (_session is null)
             return;
-        foreach (var connection in _session.Canvas.Connections)
+        foreach (var connection in _session.Document.Connections)
         {
             var source = WorkflowDesignerInteraction.FindPortPoint(
                 _session, connection.FromNodeId, connection.FromPort, WorkflowPortDirection.Output, connection.FromSide);
@@ -720,7 +720,7 @@ public sealed partial class WorkflowDesignerControl : Control
         if (_session is null) return;
         var links = _session.GetDataLinks();
         if (links.Count == 0) return;
-        var nodes = _session.Canvas.Nodes.ToDictionary(node => node.Node.Id, StringComparer.Ordinal);
+        var nodes = _session.Document.Nodes.ToDictionary(node => node.Node.Id, StringComparer.Ordinal);
         var color = ToColor(WorkflowDesignerPalette.DataPort);
         using var pen = new Pen(Color.FromArgb(170, color), 1.5f) { DashStyle = DashStyle.Dash };
         using var end = new SolidBrush(color);
@@ -1001,8 +1001,8 @@ public sealed partial class WorkflowDesignerControl : Control
         graphics.DrawRectangle(border, layout.MapBounds.X, layout.MapBounds.Y, layout.MapBounds.Width, layout.MapBounds.Height);
         graphics.DrawString("概览", titleFont, titleBrush, layout.MapBounds.X + 7, layout.MapBounds.Y + 4);
 
-        var nodes = _session.Canvas.Nodes.ToDictionary(item => item.Node.Id, StringComparer.Ordinal);
-        foreach (var connection in _session.Canvas.Connections)
+        var nodes = _session.Document.Nodes.ToDictionary(item => item.Node.Id, StringComparer.Ordinal);
+        foreach (var connection in _session.Document.Connections)
         {
             if (!nodes.TryGetValue(connection.FromNodeId, out var source)
                 || !nodes.TryGetValue(connection.ToNodeId, out var target))
@@ -1017,7 +1017,7 @@ public sealed partial class WorkflowDesignerControl : Control
                 graphics.DrawLines(connectionPen, points.Select(point => OverviewPoint(layout, point.X, point.Y)).ToArray());
         }
 
-        foreach (var node in _session.Canvas.Nodes)
+        foreach (var node in _session.Document.Nodes)
         {
             var topLeft = OverviewPoint(layout, node.X, node.Y);
             var width = Math.Max(3f, (float)(node.Width * layout.Scale));
@@ -1079,10 +1079,10 @@ public sealed partial class WorkflowDesignerControl : Control
     private bool TryCreateOverviewMapLayout(out OverviewMapLayout layout)
     {
         layout = default;
-        if (_session is null || _session.Canvas.Nodes.Count == 0 || ClientSize.Width < 240 || ClientSize.Height < 180)
+        if (_session is null || _session.Document.Nodes.Count == 0 || ClientSize.Width < 240 || ClientSize.Height < 180)
             return false;
 
-        var overflowing = _session.Canvas.Nodes.Any(node =>
+        var overflowing = _session.Document.Nodes.Any(node =>
         {
             var rect = WorkflowDesignerGeometry.GetNodeScreenRect(_session, node);
             return rect.X < 0 || rect.Y < 0 || rect.X + rect.Width > ClientSize.Width || rect.Y + rect.Height > ClientSize.Height;
@@ -1105,11 +1105,11 @@ public sealed partial class WorkflowDesignerControl : Control
             _overviewAnchorClientSize = ClientSize;
         }
         var anchorViewport = _overviewAnchorViewport.Value;
-        var minX = Math.Min(anchorViewport.X, _session.Canvas.Nodes.Min(node => node.X));
-        var minY = Math.Min(anchorViewport.Y, _session.Canvas.Nodes.Min(node => node.Y));
-        var maxX = Math.Max(anchorViewport.X + anchorViewport.Width, _session.Canvas.Nodes.Max(node => node.X + node.Width));
-        var maxY = Math.Max(anchorViewport.Y + anchorViewport.Height, _session.Canvas.Nodes.Max(node => node.Y + node.Height));
-        var waypoints = _session.Canvas.Connections.SelectMany(connection => connection.Waypoints).ToArray();
+        var minX = Math.Min(anchorViewport.X, _session.Document.Nodes.Min(node => node.X));
+        var minY = Math.Min(anchorViewport.Y, _session.Document.Nodes.Min(node => node.Y));
+        var maxX = Math.Max(anchorViewport.X + anchorViewport.Width, _session.Document.Nodes.Max(node => node.X + node.Width));
+        var maxY = Math.Max(anchorViewport.Y + anchorViewport.Height, _session.Document.Nodes.Max(node => node.Y + node.Height));
+        var waypoints = _session.Document.Connections.SelectMany(connection => connection.Waypoints).ToArray();
         if (waypoints.Length > 0)
         {
             minX = Math.Min(minX, waypoints.Min(point => point.X));
@@ -1194,7 +1194,7 @@ public sealed partial class WorkflowDesignerControl : Control
     private bool TryBeginSegmentDrag(double x, double y)
     {
         if (_session is null) return false;
-        foreach (var connection in _session.Canvas.Connections.Reverse())
+        foreach (var connection in _session.Document.Connections.Reverse())
         {
             var points = WorkflowDesignerInteraction.GetConnectionPath(_session, connection);
             for (var index = 1; index < points.Count - 2; index++)
@@ -1406,7 +1406,7 @@ public sealed partial class WorkflowDesignerControl : Control
         if (_session is null) return null;
         using var graphics = CreateGraphics();
         using var font = CanvasFont(WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
-        return _session.Canvas.Connections.Reverse().FirstOrDefault(connection =>
+        return _session.Document.Connections.Reverse().FirstOrDefault(connection =>
             WorkflowDesignerInteraction.ShouldDrawConnectionLabel(_session, connection)
             && GetConnectionLabelBounds(graphics, font, connection).Contains((float)x, (float)y));
     }

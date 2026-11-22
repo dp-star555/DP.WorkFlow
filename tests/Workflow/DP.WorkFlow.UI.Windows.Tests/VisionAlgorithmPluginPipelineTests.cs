@@ -21,7 +21,7 @@ public sealed class VisionAlgorithmPluginPipelineTests
             var source = new AcquireVisionImageNodeModel { Id = "source", FilePath = path };
             var template = new AcquireVisionImageNodeModel { Id = "template", FilePath = path };
             var locate = new LocateVisionTemplatePoseNodeModel { Id = "locate", Frame = Input<ImageFrame>(source.Id), Template = Input<ImageFrame>(template.Id) };
-            foreach (var node in new IWorkflowNodeModel[] { source, template, locate }) document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+            foreach (var node in new IWorkflowNodeModel[] { source, template, locate }) document.Nodes.Add(new WorkflowCanvasNode { Node = node });
             Connect(document, "source", "template"); Connect(document, "template", "locate");
             var store = new WorkflowDocumentJsonStore(nodes); document = store.Deserialize(store.Serialize(document)).Document;
             using var frames = new WorkflowVisionFrameScope();
@@ -49,7 +49,7 @@ public sealed class VisionAlgorithmPluginPipelineTests
         var algorithms = VisionAlgorithmCatalog.Compose(new[] { new OpenCvVisionAlgorithmModule() });
         var nodes = new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<ParameterNode>());
         var document = new WorkflowDocument { EntryNodeId = "parameter" };
-        var node = new ParameterNode { Id = "parameter" }; document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        var node = new ParameterNode { Id = "parameter" }; document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var session = new WorkflowDesignerSession(document, nodes) { SelectedNodeId = node.Id };
         using var inspector = new WorkflowPropertyInspectorModel(session, node.Id, choiceProvider: null, additionalProperties: WorkflowVisionAlgorithmProperties.CreateProvider(algorithms));
         var scale = inspector.Entries.Single(e => e.Name == "Algorithm.patch.scale");
@@ -73,7 +73,7 @@ public sealed class VisionAlgorithmPluginPipelineTests
         var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
         var node = new AnalyzeVisionColorNodeModel { Id = "color", Algorithm = new() { ImplementationId = "company.color" } };
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var session = new WorkflowDesignerSession(document, nodes) { SelectedNodeId = node.Id };
         using var inspector = new WorkflowPropertyInspectorModel(session, node.Id, null, WorkflowVisionAlgorithmProperties.CreateProvider(algorithms));
         var choice = inspector.Entries.Single(e => e.Name == "Algorithm.algorithm.ImplementationId");
@@ -90,11 +90,11 @@ public sealed class VisionAlgorithmPluginPipelineTests
         Assert.True(session.Redo()); Assert.Empty(node.Algorithm.Settings);
         Assert.Equal("company.color", node.Algorithm.ImplementationId);
         var restored = new WorkflowDocumentJsonStore(nodes).Deserialize(new WorkflowDocumentJsonStore(nodes).Serialize(document)).Document;
-        Assert.Equal("company.color", Assert.IsType<AnalyzeVisionColorNodeModel>(Assert.Single(restored.CanvasProjection.Nodes).Node).Algorithm.ImplementationId);
+        Assert.Equal("company.color", Assert.IsType<AnalyzeVisionColorNodeModel>(Assert.Single(restored.Nodes).Node).Algorithm.ImplementationId);
     }
 
     private static WorkflowInput<T> Input<T>(string id) => WorkflowInput<T>.FromBinding(new WorkflowBindingKey(id, "$"));
-    private static void Connect(WorkflowDocument document, string from, string to) => document.CanvasProjection.Connections.Add(
+    private static void Connect(WorkflowDocument document, string from, string to) => document.Connections.Add(
         new WorkflowConnectionModel { FromNodeId = from, FromPort = WorkflowPorts.Success, ToNodeId = to, ToPort = WorkflowPorts.Input });
     private sealed class ParameterNode : WorkflowNodeModel, IWorkflowVisionAlgorithmNode
     {

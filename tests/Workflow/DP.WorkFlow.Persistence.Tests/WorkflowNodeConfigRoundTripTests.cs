@@ -32,7 +32,7 @@ public sealed class WorkflowNodeConfigRoundTripTests
 
         var saved = store.Serialize(Wrap(node));
         var loaded = store.Deserialize(saved);
-        var reloadedConfig = ConfigOf(store, Assert.Single(loaded.Canvas.Nodes).Node);
+        var reloadedConfig = ConfigOf(store, Assert.Single(loaded.Document.Nodes).Node);
         var savedConfig = ConfigOf(store, node);
 
         Assert.Empty(loaded.Migration.Warnings);
@@ -56,9 +56,9 @@ public sealed class WorkflowNodeConfigRoundTripTests
             Populate(node);
             _ = Wrap(node); // 补上子画布入口。
             node.Id = descriptor.NodeType;
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+            document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         }
-        document.EntryNodeId = document.CanvasProjection.Nodes[0].Node.Id;
+        document.EntryNodeId = document.Nodes[0].Node.Id;
 
         var first = store.Serialize(document);
         var second = store.Serialize(store.Deserialize(first).Document);
@@ -79,7 +79,7 @@ public sealed class WorkflowNodeConfigRoundTripTests
 
         var loaded = store.Deserialize(json.ToJsonString());
 
-        var action = Assert.IsType<ActionNodeModel>(Assert.Single(loaded.Canvas.Nodes).Node);
+        var action = Assert.IsType<ActionNodeModel>(Assert.Single(loaded.Document.Nodes).Node);
         Assert.Equal("Run", action.FunctionKey);
         Assert.DoesNotContain("RemovedSetting", store.Serialize(loaded.Document));
     }
@@ -97,13 +97,13 @@ public sealed class WorkflowNodeConfigRoundTripTests
         {
             // 子画布必须有入口才能保存；放一个开始节点。
             var child = new WorkflowDocument { Name = "子画布", EntryNodeId = "ChildStart" };
-            child.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new StartNodeModel { Id = "ChildStart", Title = "开始" } });
+            child.Nodes.Add(new WorkflowCanvasNode { Node = new StartNodeModel { Id = "ChildStart", Title = "开始" } });
             composite.SubDocument = child;
         }
         if (string.IsNullOrEmpty(node.Id))
             node.Id = "N";
         var document = new WorkflowDocument { Name = "单节点", EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         return document;
     }
 

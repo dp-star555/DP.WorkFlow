@@ -1,8 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>
-/// Represents the editable and persistable intent of one workflow.
-/// The semantic graph and designer layout are exposed as separate projections.
+/// 一个流程的唯一模型（R6-b）：可编辑、可保存、可编译。节点（含布局）和连线直接挂在文档上；
+/// <see cref="Graph"/> 与 <see cref="Layout"/> 只是只读视图。
 /// </summary>
 public sealed class WorkflowDocument
 {
@@ -13,7 +13,6 @@ public sealed class WorkflowDocument
     {
         Graph = new WorkflowGraph(_state.Nodes, _state.Connections);
         Layout = new WorkflowLayout(_state.Nodes, _state.Connections);
-        CanvasProjection = new WorkflowCanvasModel(_state);
     }
 
     /// <summary>Gets or sets the workflow display name.</summary>
@@ -38,11 +37,11 @@ public sealed class WorkflowDocument
     /// <summary>Gets the designer-only node and connection layout projection.</summary>
     public WorkflowLayout Layout { get; }
 
-    /// <summary>
-    /// Gets the transitional canvas projection used by the current designer controls.
-    /// New compilation, persistence, and runtime-host interfaces consume the document itself.
-    /// </summary>
-    public WorkflowCanvasModel CanvasProjection { get; }
+    /// <summary>节点（配置与布局），按文档顺序。</summary>
+    public IList<WorkflowCanvasNode> Nodes => _state.Nodes;
+
+    /// <summary>连线（语义与走线），按文档顺序。</summary>
+    public IList<WorkflowConnectionModel> Connections => _state.Connections;
 }
 
 /// <summary>Provides the semantic nodes and control connections of a workflow document.</summary>
@@ -163,7 +162,7 @@ public sealed record WorkflowConnectionLayout(
     IReadOnlyList<WorkflowPoint> Waypoints,
     string? Note = null);
 
-/// <summary>Document-owned mutable state shared with transitional read/write projections.</summary>
+/// <summary>文档拥有的可变状态，由只读视图共用。</summary>
 internal sealed class WorkflowDocumentState
 {
     internal string Name { get; set; } = string.Empty;

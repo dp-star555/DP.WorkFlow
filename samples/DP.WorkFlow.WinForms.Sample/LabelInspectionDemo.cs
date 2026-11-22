@@ -14,7 +14,7 @@ internal static class LabelInspectionDemo
     internal static void PopulateCache(WorkflowDesignerSession session)
     {
         Populate(session);
-        var graph = session.Document.CanvasProjection;
+        var graph = session.Document;
         var a = (InspectLabelNodeModel)graph.Nodes.Single(n => n.Node.Id == "inspect").Node;
         a.Title = "配方A：空白检查";
         var b = (InspectLabelNodeModel)WorkflowNodeConfigurationSnapshotter.Capture(a);
@@ -57,9 +57,9 @@ internal static class LabelInspectionDemo
         };
         session.Document.Name = "标签检测节点演示（空白检查）";
         session.Document.EntryNodeId = image.Id;
-        session.Document.CanvasProjection.Nodes.Add(new() { Node = image, X = 100, Y = 100 });
-        session.Document.CanvasProjection.Nodes.Add(new() { Node = inspect, X = 380, Y = 100 });
-        session.Document.CanvasProjection.Connections.Add(new() { FromNodeId = image.Id, FromPort = WorkflowPorts.Success,
+        session.Document.Nodes.Add(new() { Node = image, X = 100, Y = 100 });
+        session.Document.Nodes.Add(new() { Node = inspect, X = 380, Y = 100 });
+        session.Document.Connections.Add(new() { FromNodeId = image.Id, FromPort = WorkflowPorts.Success,
             ToNodeId = inspect.Id, ToPort = WorkflowPorts.Input });
     }
 }

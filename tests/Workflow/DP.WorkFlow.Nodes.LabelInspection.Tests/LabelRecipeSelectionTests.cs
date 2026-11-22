@@ -143,10 +143,10 @@ public sealed class LabelRecipeSelectionTests
         var node = new InspectLabelNodeModel { Id = "inspect", RecipeCatalogPath = "recipes/index.json",
             RecipeKey = WorkflowInput<string>.FromBinding(new("task", "RecipeKey")) };
         var document = new WorkflowDocument { Name = "catalog", EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new() { Node = node });
+        document.Nodes.Add(new() { Node = node });
         var nodes = new WorkflowNodeCatalog(); nodes.Register(WorkflowNodeDescriptor.Create<InspectLabelNodeModel, WorkflowLabelInspectionResult>());
         var store = new DP.WorkFlow.Persistence.Json.WorkflowDocumentJsonStore(nodes);
-        var roundTrip = store.Deserialize(store.Serialize(document)).Document.CanvasProjection.Nodes.Single().Node;
+        var roundTrip = store.Deserialize(store.Serialize(document)).Document.Nodes.Single().Node;
         var restored = Assert.IsType<InspectLabelNodeModel>(roundTrip);
         Assert.Equal(node.RecipeCatalogPath, restored.RecipeCatalogPath);
         Assert.Equal(node.RecipeKey.Binding, restored.RecipeKey.Binding);

@@ -48,7 +48,7 @@ public sealed class VisionAlgorithmDependencyEditingTests
         Assert.Equal("preserve", fixture.Node.Algorithm.Dependencies["legacy.slot"].Settings["private.key"]);
         Assert.True(fixture.Session.Redo());
         var store = new WorkflowDocumentJsonStore(new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<DependencyNode>()));
-        var restored = Assert.IsType<DependencyNode>(store.Deserialize(store.Serialize(fixture.Session.Document)).Document.CanvasProjection.Nodes.Single().Node);
+        var restored = Assert.IsType<DependencyNode>(store.Deserialize(store.Serialize(fixture.Session.Document)).Document.Nodes.Single().Node);
         Assert.Equal("root-value", restored.Algorithm.Settings["root.key"]);
         Assert.Equal("updated", restored.Algorithm.Dependencies["legacy.slot"].Settings["private.key"]);
         Assert.Equal("missing.dep", restored.Algorithm.Dependencies["legacy.slot"].ImplementationId);
@@ -224,7 +224,7 @@ public sealed class VisionAlgorithmDependencyEditingTests
         inspector.SetValue(gain, "3");
         Assert.Equal("3", fixture.Node.Algorithm.Dependencies["prep"].Settings["gain"]);
         var store = new WorkflowDocumentJsonStore(fixture.Session.Catalog);
-        var loaded = Assert.IsType<DependencyNode>(Assert.Single(store.Deserialize(store.Serialize(fixture.Session.Document)).Document.CanvasProjection.Nodes).Node);
+        var loaded = Assert.IsType<DependencyNode>(Assert.Single(store.Deserialize(store.Serialize(fixture.Session.Document)).Document.Nodes).Node);
         Assert.Equal("3", loaded.Algorithm.Dependencies["prep"].Settings["gain"]);
         Assert.Equal("test.leaf", loaded.Algorithm.Dependencies["prep"].Dependencies["leaf"].ImplementationId);
         Assert.Equal(0, fixture.Module.Preparations);
@@ -402,7 +402,7 @@ public sealed class VisionAlgorithmDependencyEditingTests
         var catalog = VisionAlgorithmCatalog.Compose([module]);
         var node = new DependencyNode { Id = "algorithm" };
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<DependencyNode>())) { SelectedNodeId = node.Id };
         return new(node, session, catalog, module);
     }

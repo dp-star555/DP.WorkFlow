@@ -6,7 +6,7 @@ public sealed class WorkflowParallelCompilationTests
     public void Compile_ParallelBranches_ResolvesNearestCommonMerge()
     {
         var document = BuildParallelDocument(includeSecondMergeConnection: true);
-        var canvas = document.CanvasProjection;
+        var canvas = document;
 
         document.EntryNodeId = "Parallel";
         var definition = new WorkflowCompiler().Compile(document);
@@ -20,7 +20,7 @@ public sealed class WorkflowParallelCompilationTests
     public void Compile_ParallelWithoutCommonMerge_ReturnsStructuredError()
     {
         var document = BuildParallelDocument(includeSecondMergeConnection: false);
-        var canvas = document.CanvasProjection;
+        var canvas = document;
 
         document.EntryNodeId = "Parallel";
         var exception = Assert.Throws<WorkflowCompilationException>(
@@ -33,7 +33,7 @@ public sealed class WorkflowParallelCompilationTests
     public void Compile_CommonReachableJoinThatDoesNotPostDominateEveryBranch_IsRejected()
     {
         var document = BuildParallelDocument(includeSecondMergeConnection: true);
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new TestNode("EarlyTerminal", "End") });
         canvas.Connections.Add(Connect("BranchB", "Alternate", "EarlyTerminal"));
 
@@ -48,7 +48,7 @@ public sealed class WorkflowParallelCompilationTests
     public void Compile_ParallelBranchesOverlapBeforeMerge_ReturnsStructuredError()
     {
         var document = BuildParallelDocument(includeSecondMergeConnection: false);
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new TestNode("Shared", "Action") });
         canvas.Connections.Remove(canvas.Connections.Single(connection => connection.FromNodeId == "BranchA"));
         canvas.Connections.Add(Connect("BranchA", WorkflowPorts.Success, "Shared"));
@@ -65,7 +65,7 @@ public sealed class WorkflowParallelCompilationTests
     private static WorkflowDocument BuildParallelDocument(bool includeSecondMergeConnection)
     {
         var document = new WorkflowDocument { Name = "并行编译" };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new ParallelAllNodeModel { Id = "Parallel", Title = "Parallel" } });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new TestNode("BranchA", "Action") });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new TestNode("BranchB", "Action") });

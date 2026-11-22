@@ -80,7 +80,7 @@ public sealed class WaitFunctionNodeTests
         string fromPort)
     {
         var document = new WorkflowDocument { Name = "等待测试" };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = wait });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = action });
         canvas.Connections.Add(new WorkflowConnectionModel

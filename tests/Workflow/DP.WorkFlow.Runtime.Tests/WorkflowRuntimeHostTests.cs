@@ -7,7 +7,7 @@ public sealed class WorkflowRuntimeHostTests
     {
         var node = new HostTestNode { Id = "Node", Title = "节点" };
         var canvasDocument = new WorkflowDocument { Name = "Host" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var handler = new HostTestHandler(release.Task);
@@ -37,7 +37,7 @@ public sealed class WorkflowRuntimeHostTests
     {
         var node = new HostTestNode { Id = "CpuNode", Title = "CPU 节点" };
         var canvasDocument = new WorkflowDocument { Name = "BackgroundBoundary" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         using var release = new ManualResetEventSlim();
         using var fallback = new System.Threading.Timer(_ => release.Set(), null, 800, Timeout.Infinite);
@@ -66,7 +66,7 @@ public sealed class WorkflowRuntimeHostTests
         var services = new WorkflowServiceProvider().Add<IWorkflowRunPreparationService>(preparation);
         var node = new HostTestNode { Id = "Node" };
         var canvasDocument = new WorkflowDocument { Name = "Preparation" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         using var host = new WorkflowRuntimeHost(
             new WorkflowNodeCatalog().Register<HostTestNode>(),
@@ -90,7 +90,7 @@ public sealed class WorkflowRuntimeHostTests
             .Add<IWorkflowRunResourceOwner>(owner);
         var node = new HostTestNode { Id = "Node" };
         var canvasDocument = new WorkflowDocument { Name = "Release" };
-        canvasDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        canvasDocument.Nodes.Add(new WorkflowCanvasNode { Node = node });
         using var host = new WorkflowRuntimeHost(
             new WorkflowNodeCatalog().Register<HostTestNode>(),
             new WorkflowNodeHandlerCatalog().Register(new CountingHostTestHandler(() => events.Add("execute"))));
@@ -116,7 +116,7 @@ public sealed class WorkflowRuntimeHostTests
         var services = new WorkflowServiceProvider().Add<IWorkflowRunPreparationService>(preparation);
         var node = new HostTestNode { Id = "Node" };
         var canvasDocument = new WorkflowDocument { Name = "NoOwner" };
-        canvasDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        canvasDocument.Nodes.Add(new WorkflowCanvasNode { Node = node });
         using var host = new WorkflowRuntimeHost(
             new WorkflowNodeCatalog().Register<HostTestNode>(),
             new WorkflowNodeHandlerCatalog().Register(new CountingHostTestHandler(() => events.Add("execute"))));
@@ -140,7 +140,7 @@ public sealed class WorkflowRuntimeHostTests
             .Add<IWorkflowRunScopeOwner>(scope);
         var node = new HostTestNode { Id = "Node" };
         var canvasDocument = new WorkflowDocument { Name = "RunScope" };
-        canvasDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        canvasDocument.Nodes.Add(new WorkflowCanvasNode { Node = node });
         using var host = new WorkflowRuntimeHost(
             new WorkflowNodeCatalog().Register<HostTestNode>(),
             new WorkflowNodeHandlerCatalog().Register(new CountingHostTestHandler(() => events.Add("execute"))));
@@ -170,7 +170,7 @@ public sealed class WorkflowRuntimeHostTests
         var services = new WorkflowServiceProvider().Add<IWorkflowRunPreparationService>(preparation);
         var node = new HostTestNode { Id = "Node" };
         var canvasDocument = new WorkflowDocument { Name = "NoRunScope" };
-        canvasDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        canvasDocument.Nodes.Add(new WorkflowCanvasNode { Node = node });
         using var host = new WorkflowRuntimeHost(
             new WorkflowNodeCatalog().Register<HostTestNode>(),
             new WorkflowNodeHandlerCatalog().Register(new CountingHostTestHandler(() => events.Add("execute"))));
@@ -191,7 +191,7 @@ public sealed class WorkflowRuntimeHostTests
         var services = new WorkflowServiceProvider().Add<IWorkflowRunScopeOwner>(scope);
         var node = new HostTestNode { Id = "Node" };
         var canvasDocument = new WorkflowDocument { Name = "ScopeConflict" };
-        canvasDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        canvasDocument.Nodes.Add(new WorkflowCanvasNode { Node = node });
         using var host = new WorkflowRuntimeHost(
             new WorkflowNodeCatalog().Register<HostTestNode>(),
             new WorkflowNodeHandlerCatalog().Register(new CountingHostTestHandler(() => executed = true)));
@@ -211,10 +211,10 @@ public sealed class WorkflowRuntimeHostTests
         IReadOnlyList<string>? preparedNodeIds = null;
         var childNode = new HostTestNode { Id = "Child" };
         var childDocument = new WorkflowDocument { EntryNodeId = childNode.Id };
-        childDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = childNode });
+        childDocument.Nodes.Add(new WorkflowCanvasNode { Node = childNode });
         var rootNode = new HostCompositeNode { Id = "Root", SubDocument = childDocument };
         var rootDocument = new WorkflowDocument { EntryNodeId = rootNode.Id };
-        rootDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = rootNode });
+        rootDocument.Nodes.Add(new WorkflowCanvasNode { Node = rootNode });
         var preparation = new TestRunPreparation(context =>
             preparedNodeIds = context.Nodes.Select(node => node.Id).ToArray());
         var services = new WorkflowServiceProvider().Add<IWorkflowRunPreparationService>(preparation);
@@ -236,7 +236,7 @@ public sealed class WorkflowRuntimeHostTests
     {
         var node = new HostTestNode { Id = "Node", Title = "节点" };
         var canvasDocument = new WorkflowDocument { Name = "PreHold" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var executed = 0;
         var handler = new CountingHostTestHandler(() => Interlocked.Increment(ref executed));
@@ -263,7 +263,7 @@ public sealed class WorkflowRuntimeHostTests
     {
         var node = new HostTestNode { Id = "Node", Title = "节点" };
         var canvasDocument = new WorkflowDocument { Name = "Reset" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var nodeCatalog = new WorkflowNodeCatalog().Register<HostTestNode>();
         var handlerCatalog = new WorkflowNodeHandlerCatalog()

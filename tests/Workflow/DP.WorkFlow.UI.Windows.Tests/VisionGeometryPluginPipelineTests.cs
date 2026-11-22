@@ -372,7 +372,7 @@ public sealed class VisionGeometryPluginPipelineTests
             StartX = 4, StartY = 10, EndX = 24, EndY = 10, MinimumSeparation = 3, BandSampleStep = 1 };
         var session = new WorkflowDesignerSession(rig.Document(document.Graph.Nodes.ToArray().Append(caliper).ToArray()), rig.Nodes) { SelectedNodeId = "caliper" };
         using var inspector = new WorkflowPropertyInspectorModel(session, "source", null,
-            WorkflowVisionCoordinateProperties.CreateProvider(rig.Frames, () => session.Canvas.Nodes.Select(n => n.Node).ToArray()));
+            WorkflowVisionCoordinateProperties.CreateProvider(rig.Frames, () => session.Document.Nodes.Select(n => n.Node).ToArray()));
         WorkflowPropertyEntry Coordinate() => inspector.Entries.Single(e => e.Name == WorkflowVisionCoordinateProperties.EntryName);
         // 只列出构建坐标系的节点，模板匹配本身不是坐标来源。
         Assert.Equal(new object?[] { "", "business-source", "scaled-part" }, Coordinate().Choices.Select(c => c.Value));
@@ -526,8 +526,8 @@ public sealed class VisionGeometryPluginPipelineTests
         public WorkflowDocument Document(params IWorkflowNodeModel[] nodes)
         {
             var document = new WorkflowDocument { EntryNodeId = nodes[0].Id };
-            foreach (var node in nodes) document.CanvasProjection.Nodes.Add(new() { Node = node });
-            for (var index = 1; index < nodes.Length; index++) document.CanvasProjection.Connections.Add(new()
+            foreach (var node in nodes) document.Nodes.Add(new() { Node = node });
+            for (var index = 1; index < nodes.Length; index++) document.Connections.Add(new()
                 { FromNodeId = nodes[index - 1].Id, FromPort = WorkflowPorts.Success, ToNodeId = nodes[index].Id, ToPort = WorkflowPorts.Input });
             return document;
         }

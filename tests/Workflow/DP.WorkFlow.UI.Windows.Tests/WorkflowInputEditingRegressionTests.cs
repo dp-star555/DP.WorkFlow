@@ -15,7 +15,7 @@ public sealed class WorkflowInputEditingRegressionTests
         {
             var node = new InputNode { Id = "input" };
             var document = new WorkflowDocument { EntryNodeId = node.Id };
-            document.CanvasProjection.Nodes.Add(new() { Node = node });
+            document.Nodes.Add(new() { Node = node });
             var session = new WorkflowDesignerSession(document,
                 new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<InputNode>())) { SelectedNodeId = node.Id };
             if (wpf)
@@ -63,7 +63,7 @@ public sealed class WorkflowInputEditingRegressionTests
         {
             var node = new ScalarNode { Id = "input" };
             var document = new WorkflowDocument { EntryNodeId = node.Id };
-            document.CanvasProjection.Nodes.Add(new() { Node = node });
+            document.Nodes.Add(new() { Node = node });
             var session = new WorkflowDesignerSession(document,
                 new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<ScalarNode>())) { SelectedNodeId = node.Id };
             using var inspector = new WorkflowPropertyInspectorModel(session, node.Id);
@@ -110,7 +110,7 @@ public sealed class WorkflowInputEditingRegressionTests
             var binding = WorkflowBindingKey.FromPublicData("Frame");
             var node = new InputNode { Id = "input", Frame = WorkflowInput<ImageFrame>.FromBinding(binding) };
             var document = new WorkflowDocument { EntryNodeId = node.Id };
-            document.CanvasProjection.Nodes.Add(new() { Node = node });
+            document.Nodes.Add(new() { Node = node });
             var session = new WorkflowDesignerSession(document,
                 new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<InputNode>())) { SelectedNodeId = node.Id };
             using var inspector = new WorkflowPropertyInspectorModel(session, node.Id);

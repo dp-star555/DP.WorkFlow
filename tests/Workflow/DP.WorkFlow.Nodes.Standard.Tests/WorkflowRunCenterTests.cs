@@ -176,7 +176,7 @@ public sealed class WorkflowRunCenterTests
     private static WorkflowDocument Build(string name, IWorkflowNodeModel node)
     {
         var document = new WorkflowDocument { Name = name, EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         return document;
     }
 

@@ -51,7 +51,7 @@ public sealed class WorkflowDesignerNavigator
     public bool EnterSubCanvas(string nodeId)
     {
         var parentSession = CurrentSession;
-        var item = parentSession.Canvas.Nodes.FirstOrDefault(node => node.Node.Id == nodeId);
+        var item = parentSession.Document.Nodes.FirstOrDefault(node => node.Node.Id == nodeId);
         if (item?.Node is not IWorkflowSubDocumentNode composite)
             return false;
         var startNodeId = ResolveEntryNodeId(composite);

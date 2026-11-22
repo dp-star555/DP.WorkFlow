@@ -131,7 +131,7 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
     public IReadOnlyList<WorkflowNodeResultMember> GetMembers()
     {
         var session = _portSession ?? _session;
-        if (session?.Canvas.Nodes.FirstOrDefault(node => node.Node.Id == NodeId) is not { } canvasNode)
+        if (session?.Document.Nodes.FirstOrDefault(node => node.Node.Id == NodeId) is not { } canvasNode)
             return Array.Empty<WorkflowNodeResultMember>();
         var members = session.GetOutputMembers(NodeId);
         if (members.Count == 0) return Array.Empty<WorkflowNodeResultMember>();

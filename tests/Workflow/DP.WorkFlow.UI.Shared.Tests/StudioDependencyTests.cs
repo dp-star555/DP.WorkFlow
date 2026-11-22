@@ -11,7 +11,6 @@ public sealed class StudioDependencyTests
         var constructors = typeof(WorkflowDesignerSession).GetConstructors();
 
         Assert.Contains(constructors, constructor => constructor.GetParameters()[0].ParameterType == typeof(WorkflowDocument));
-        Assert.DoesNotContain(constructors, constructor => constructor.GetParameters()[0].ParameterType == typeof(WorkflowCanvasModel));
     }
 
     [Fact]

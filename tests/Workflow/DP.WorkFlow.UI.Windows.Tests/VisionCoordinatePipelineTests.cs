@@ -75,7 +75,7 @@ public sealed class VisionCoordinatePipelineTests
     public async Task AllAreaOperatorsAndChildPose_FollowParentWithoutDoubleCompensation()
     {
         using var data = new Images(); var document = data.Pipeline();
-        var original = (AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node;
+        var original = (AnalyzeVisionBlobsNodeModel)document.Nodes.Single(n => n.Node.Id == "blob").Node;
         var parent = original.Coordinates!;
         List<WorkflowVisionRoi> Search() => new() { new() { Id = "search", CenterX = 0, CenterY = 0, Width = 5, Height = 3 } };
         var child = new LocateVisionTemplatePoseNodeModel { Id = "child", Frame = Input<ImageFrame>("scene"), Template = Input<ImageFrame>("template"),
@@ -88,8 +88,8 @@ public sealed class VisionCoordinatePipelineTests
         string previous = "fit";
         foreach (var node in new IWorkflowNodeModel[] { translation, child, childPart, consumer })
         {
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
-            document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = previous, FromPort = WorkflowPorts.Success, ToNodeId = node.Id, ToPort = WorkflowPorts.Input });
+            document.Nodes.Add(new WorkflowCanvasNode { Node = node });
+            document.Connections.Add(new WorkflowConnectionModel { FromNodeId = previous, FromPort = WorkflowPorts.Success, ToNodeId = node.Id, ToPort = WorkflowPorts.Input });
             previous = node.Id;
             if (node is AnalyzeVisionFrameNodeModel { RangeCapability: EWorkflowVisionRange.Region } area) { using var page = new VisionFrameEditorPageModel(area); Assert.True(page.CanBindCoordinates); }
         }
@@ -119,7 +119,7 @@ public sealed class VisionCoordinatePipelineTests
     public async Task ConsumerRejectsMixedFrameBeforeOutput()
     {
         using var data = new Images(); var document = data.Pipeline();
-        var blob = (AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node;
+        var blob = (AnalyzeVisionBlobsNodeModel)document.Nodes.Single(n => n.Node.Id == "blob").Node;
         blob.Frame = Input<ImageFrame>("template");
         using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(data.Nodes, data.Handlers);
         host.Configure(document, new WorkflowContext(Services(scope)));
@@ -133,7 +133,7 @@ public sealed class VisionCoordinatePipelineTests
     public async Task ChangingDynamicTemplate_KeepsConsumersAndEditorUsable_WithoutRebinding()
     {
         using var data = new Images(); var document = data.Pipeline();
-        var node = (AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node;
+        var node = (AnalyzeVisionBlobsNodeModel)document.Nodes.Single(n => n.Node.Id == "blob").Node;
         using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(data.Nodes, data.Handlers);
         host.Configure(document, new WorkflowContext(Services(scope)));
         Assert.True((await host.RunAsync()).Success);
@@ -162,7 +162,7 @@ public sealed class VisionCoordinatePipelineTests
     public async Task EditorConvertsToLocal_IsolatedCommitUndoAndNewFramePreviewDoNotRewriteConfiguration()
     {
         using var data = new Images(); var document = data.Pipeline();
-        var source = (AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node;
+        var source = (AnalyzeVisionBlobsNodeModel)document.Nodes.Single(n => n.Node.Id == "blob").Node;
         source.Coordinates = null; source.Regions = new() { new() { Id = "drawn", CenterX = 19.5, CenterY = 11.5, Width = 3, Height = 3 } };
         var nodes = data.Nodes; var store = new WorkflowDocumentJsonStore(nodes);
         using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(nodes, data.Handlers);
@@ -175,7 +175,7 @@ public sealed class VisionCoordinatePipelineTests
             // 坐标系在属性面板以下拉选择：选中坐标来源即按本帧换算并绑定。
             editor.EditingSession.SelectedNodeId = "blob";
             using var inspector = new WorkflowPropertyInspectorModel(editor.EditingSession, "scene", null,
-                WorkflowVisionCoordinateProperties.CreateProvider(scope, () => editor.EditingSession.Canvas.Nodes.Select(n => n.Node).ToArray()));
+                WorkflowVisionCoordinateProperties.CreateProvider(scope, () => editor.EditingSession.Document.Nodes.Select(n => n.Node).ToArray()));
             WorkflowPropertyEntry Coordinate() => inspector.Entries.Single(e => e.Name == WorkflowVisionCoordinateProperties.EntryName);
             Assert.Equal(WorkflowPropertyEditorKind.Choice, Coordinate().EditorKind);
             Assert.Equal("", Coordinate().Value);
@@ -195,9 +195,9 @@ public sealed class VisionCoordinatePipelineTests
             Assert.Equal(2, editing.Regions.Count); Assert.Single(source.Regions);
             Assert.Equal(7, editing.Regions[1].CenterX, 8);
             editor.ApplyChanges();
-            Assert.NotNull(((AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node).Coordinates);
+            Assert.NotNull(((AnalyzeVisionBlobsNodeModel)document.Nodes.Single(n => n.Node.Id == "blob").Node).Coordinates);
             Assert.True(session.Undo());
-            Assert.Null(((AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node).Coordinates);
+            Assert.Null(((AnalyzeVisionBlobsNodeModel)document.Nodes.Single(n => n.Node.Id == "blob").Node).Coordinates);
             Assert.True(session.Redo());
             var saved = store.Serialize(document); var editingBefore = editing.Regions.Select(r => (r.CenterX, r.CenterY, r.Angle)).ToArray();
             // 重新配置运行计划后，参考ROI随新的定位显示，配置仍是局部值。
@@ -221,7 +221,7 @@ public sealed class VisionCoordinatePipelineTests
     public async Task MissingMatchDisablesLocalEditing_AndRecoveryDoesNotKeepUncommittedGestures()
     {
         using var data = new Images(); var document = data.Pipeline();
-        var node = (AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "blob").Node;
+        var node = (AnalyzeVisionBlobsNodeModel)document.Nodes.Single(n => n.Node.Id == "blob").Node;
         using var scope = new WorkflowVisionFrameScope(); using var host = new WorkflowRuntimeHost(data.Nodes, data.Handlers);
         host.Configure(document, new WorkflowContext(Services(scope))); Assert.True((await host.RunAsync()).Success);
         using var page = new VisionFrameEditorPageModel(node, scope);
@@ -287,7 +287,7 @@ public sealed class VisionCoordinatePipelineTests
         Assert.Equal("NodeOutput", frameInput.Data["SourceKind"].Text);
         Assert.Equal("scene", frameInput.Data["SourceNodeId"].Text);
         // 管线里每个带坐标系绑定的节点都必须恰好产出一条嵌套动态槽：一条不少，也一条不多。
-        var boundNodeIds = document.CanvasProjection.Nodes
+        var boundNodeIds = document.Nodes
             .Select(item => item.Node).OfType<AnalyzeVisionFrameNodeModel>()
             .Where(node => node.Coordinates is not null)
             .Select(node => node.Id).OrderBy(id => id, StringComparer.Ordinal).ToArray();
@@ -414,8 +414,8 @@ public sealed class VisionCoordinatePipelineTests
             nodes.Add(new FitVisionRobustLineNodeModel { Id = "fit", Frame = Input<ImageFrame>("scene"), Coordinates = Binding(),
                 Samples = Enumerable.Range(0, 3).Select(i => Input<VisionCaliperMeasurement>("c" + i)).ToList() });
             var document = new WorkflowDocument { EntryNodeId = nodes[0].Id };
-            foreach (var node in nodes) document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
-            for (int i = 1; i < nodes.Count; i++) document.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+            foreach (var node in nodes) document.Nodes.Add(new WorkflowCanvasNode { Node = node });
+            for (int i = 1; i < nodes.Count; i++) document.Connections.Add(new WorkflowConnectionModel
             { FromNodeId = nodes[i - 1].Id, FromPort = WorkflowPorts.Success, ToNodeId = nodes[i].Id, ToPort = WorkflowPorts.Input });
             return document;
         }

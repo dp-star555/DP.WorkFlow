@@ -49,13 +49,13 @@ public sealed class WorkflowDiagnosticsModelTests
             Condition = WorkflowInput<bool>.FromBinding(new WorkflowBindingKey("Nope", "Value"))
         };
         var child = Document(new StartNodeModel { Id = "ChildStart" }, consumer);
-        child.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        child.Connections.Add(new WorkflowConnectionModel
         {
             FromNodeId = "ChildStart", FromPort = WorkflowPorts.Success, ToNodeId = consumer.Id, ToPort = WorkflowPorts.Input
         });
         var block = new LoopBlockNodeModel { Id = "LoopBlock1", Title = "扫描循环", SubDocument = child };
         var root = Document(new StartNodeModel { Id = "start" }, block);
-        root.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        root.Connections.Add(new WorkflowConnectionModel
         {
             FromNodeId = "start", FromPort = WorkflowPorts.Success, ToNodeId = block.Id, ToPort = WorkflowPorts.Input
         });
@@ -99,7 +99,7 @@ public sealed class WorkflowDiagnosticsModelTests
     private static WorkflowDocument Document(params IWorkflowNodeModel[] nodes)
     {
         var document = new WorkflowDocument { EntryNodeId = nodes[0].Id };
-        foreach (var node in nodes) document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        foreach (var node in nodes) document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         return document;
     }
     private sealed class Provider : IWorkflowDiagnosticProvider
@@ -116,7 +116,7 @@ public sealed class WorkflowDiagnosticsModelTests
     {
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var canvasDocument = new WorkflowDocument { Name = "Diagnostics" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         var source = new StartNodeModel { Id = "Start", Title = "开始" };
         var unreachable = new EndNodeModel { Id = "Unused", Title = "未使用" };
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = source });

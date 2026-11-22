@@ -39,9 +39,9 @@ public sealed class ChildResourceReleaseTests
         var start = new StartNodeModel { Id = "ChildStart", Title = "开始" };
         var child = new WorkflowDocument { Name = "Child", EntryNodeId = start.Id };
         foreach (var node in new IWorkflowNodeModel[] { start, new ProjectingNode { Id = "Internal", Title = "内部取图" }, new ProjectingNode { Id = "Kept", Title = "交出取图" } })
-            child.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
-        child.CanvasProjection.Connections.Add(Connect("ChildStart", "Internal"));
-        child.CanvasProjection.Connections.Add(Connect("Internal", "Kept"));
+            child.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        child.Connections.Add(Connect("ChildStart", "Internal"));
+        child.Connections.Add(Connect("Internal", "Kept"));
         return child;
     }
 
@@ -49,9 +49,9 @@ public sealed class ChildResourceReleaseTests
     {
         var start = new StartNodeModel { Id = "Start", Title = "开始" };
         var parent = new WorkflowDocument { Name = "Parent", EntryNodeId = start.Id };
-        parent.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = start });
-        parent.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = block });
-        parent.CanvasProjection.Connections.Add(Connect("Start", block.Id));
+        parent.Nodes.Add(new WorkflowCanvasNode { Node = start });
+        parent.Nodes.Add(new WorkflowCanvasNode { Node = block });
+        parent.Connections.Add(Connect("Start", block.Id));
         var definition = new WorkflowCompiler(new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes()).Compile(parent);
         var handlers = new WorkflowNodeHandlerCatalog().RegisterCompositeNodeHandlers().Register(new StartNodeHandler()).Register(handler);
         return new WorkflowEngine(definition, handlers, new WorkflowContext());

@@ -1,32 +1,6 @@
 namespace DP.WorkFlow;
 
-/// <summary>
-/// 表示当前桌面设计器使用的过渡画布投影；正式持久化和编译入口为 <see cref="WorkflowDocument"/>。
-/// </summary>
-public sealed class WorkflowCanvasModel
-{
-    private readonly WorkflowDocumentState _state;
-
-    internal WorkflowCanvasModel(WorkflowDocumentState state) =>
-        _state = state ?? throw new ArgumentNullException(nameof(state));
-
-    /// <summary>获取或设置正式文档拥有的流程名称。</summary>
-    public string Name
-    {
-        get => _state.Name;
-        set => _state.Name = value ?? string.Empty;
-    }
-
-    /// <summary>获取正式文档拥有的节点与布局组合投影。</summary>
-    public IList<WorkflowCanvasNode> Nodes => _state.Nodes;
-
-    /// <summary>获取正式文档拥有的语义连接与路由布局组合投影。</summary>
-    public IList<WorkflowConnectionModel> Connections => _state.Connections;
-}
-
-/// <summary>
-/// 将文档节点配置投影到当前设计器布局；后续画布控件迁移后该组合类型将被移除。
-/// </summary>
+/// <summary>文档里的一个节点：节点配置加上它在画布上的布局。</summary>
 public sealed class WorkflowCanvasNode
 {
     /// <summary>获取或设置节点配置。</summary>

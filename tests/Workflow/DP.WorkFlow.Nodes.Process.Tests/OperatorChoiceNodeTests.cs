@@ -7,7 +7,7 @@ public sealed class OperatorChoiceNodeTests
     {
         var node = new OperatorChoiceNodeModel { Id = "Choice", Title = "选择", OptionsText = "重试=Retry,停止=Stop" };
         var canvasDocument = new WorkflowDocument { Name = "恢复选择" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterProcessNodes();
         canvasDocument.EntryNodeId = node.Id;

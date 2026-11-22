@@ -13,7 +13,7 @@ public sealed class WarningHandlerBlockNodeModel : WorkflowNodeModel, IWorkflowF
     {
         var start = new WarningHandlerStartNodeModel { Id = "WarningHandlerStart", Title = "告警处理起点" };
         var choice = new OperatorChoiceNodeModel { Id = "WarningOperatorChoice", Title = "人工处理选择" };
-        var canvas = _subDocument.CanvasProjection;
+        var canvas = _subDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = start });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = choice, X = 240 });
         canvas.Connections.Add(new WorkflowConnectionModel { FromNodeId = start.Id, FromPort = WorkflowPorts.Success, ToNodeId = choice.Id });

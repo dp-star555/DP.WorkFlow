@@ -10,7 +10,7 @@ public sealed class VisionFrameEditorPageProviderTests
     {
         var node = new MeasureVisionCaliperNodeModel { Id = "caliper" };
         var document = new WorkflowDocument();
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterImageNodes());
         var notifications = 0;
         session.Changed += (_, _) => notifications++;

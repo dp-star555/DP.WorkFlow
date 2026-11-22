@@ -470,7 +470,7 @@ class Demo
             var before = Descendants(grid).OfType<ModernUI.WinForms.ModernInput>().Cast<Control>().ToArray();
             Assert.NotEmpty(before);
 
-            session.Canvas.Nodes.Single(node => node.Node.Id == session.SelectedNodeId).Node.Title = "更新后的标题";
+            session.Document.Nodes.Single(node => node.Node.Id == session.SelectedNodeId).Node.Title = "更新后的标题";
             session.NotifyNodeConfigurationChanged();
             System.Windows.Forms.Application.DoEvents();
             var after = Descendants(grid).OfType<ModernUI.WinForms.ModernInput>().Cast<Control>().ToArray();
@@ -496,7 +496,7 @@ class Demo
     private static (WorkflowDesignerSession Session, string StartId, string ScriptId) CreateScriptSession()
     {
         var canvasDocument = new WorkflowDocument { Name = "Script UI" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var session = new WorkflowDesignerSession(canvasDocument, catalog);
         var start = session.AddNode("Start", 20, 20);

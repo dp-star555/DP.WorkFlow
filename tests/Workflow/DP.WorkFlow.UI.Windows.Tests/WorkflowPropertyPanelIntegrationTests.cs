@@ -12,7 +12,7 @@ public sealed class WorkflowPropertyPanelIntegrationTests
         RunSta(() =>
         {
             var document = new WorkflowDocument { EntryNodeId = "node" };
-            document.CanvasProjection.Nodes.Add(new() { Node = new InputLayoutNode { Id = "node" } });
+            document.Nodes.Add(new() { Node = new InputLayoutNode { Id = "node" } });
             var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<InputLayoutNode, string>())) { SelectedNodeId = "node" };
             var value = 0;
             using var panel = new DP.WorkFlow.UI.WinForms.WorkflowPropertyPanel
@@ -39,8 +39,8 @@ public sealed class WorkflowPropertyPanelIntegrationTests
         RunSta(() =>
         {
             var document = new WorkflowDocument();
-            document.CanvasProjection.Nodes.Add(new() { Node = new InputLayoutNode { Id = "first" } });
-            document.CanvasProjection.Nodes.Add(new() { Node = new InputLayoutNode { Id = "second" } });
+            document.Nodes.Add(new() { Node = new InputLayoutNode { Id = "first" } });
+            document.Nodes.Add(new() { Node = new InputLayoutNode { Id = "second" } });
             document.EntryNodeId = "first";
             var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<InputLayoutNode, string>())) { SelectedNodeId = "first" };
             var calls = new List<string>();
@@ -89,7 +89,7 @@ public sealed class WorkflowPropertyPanelIntegrationTests
             foreach (var node in models)
             {
                 var document = new WorkflowDocument { EntryNodeId = node.Id };
-                document.CanvasProjection.Nodes.Add(new() { Node = node });
+                document.Nodes.Add(new() { Node = node });
                 var catalog = new WorkflowNodeCatalog().RegisterImageNodes().Register(WorkflowNodeDescriptor.Create<InputLayoutNode, string>());
                 var session = new WorkflowDesignerSession(document, catalog) { SelectedNodeId = node.Id };
                 var panel = new DP.WorkFlow.UI.WinForms.WorkflowPropertyPanel { Session = session, EntryNodeId = node.Id,
@@ -120,7 +120,7 @@ public sealed class WorkflowPropertyPanelIntegrationTests
         {
             var document = new WorkflowDocument();
             var node = new InputLayoutNode { Id = "input" };
-            document.CanvasProjection.Nodes.Add(new() { Node = node }); document.EntryNodeId = node.Id;
+            document.Nodes.Add(new() { Node = node }); document.EntryNodeId = node.Id;
             var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<InputLayoutNode, string>()))
                 { SelectedNodeId = node.Id };
             using var host = new Form { ClientSize = new Size(width, 640), ShowInTaskbar = false,
@@ -167,7 +167,7 @@ public sealed class WorkflowPropertyPanelIntegrationTests
                 WorkflowNodeModel node = index == 0
                     ? new AcquireVisionImageNodeModel { Id = "file", FilePath = @"C:\Data\PiProgects\WorkFlow\VisionData\demo.pgm" }
                     : new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.Folder, RestartFolderEachRun = true, Id = "folder", FolderPath = @"C:\Data\PiProgects\WorkFlow\VisionData" };
-                document.CanvasProjection.Nodes.Add(new() { Node = node }); document.EntryNodeId = node.Id;
+                document.Nodes.Add(new() { Node = node }); document.EntryNodeId = node.Id;
                 var session = new WorkflowDesignerSession(document, nodes) { SelectedNodeId = node.Id };
                 var panel = new DP.WorkFlow.UI.WinForms.WorkflowPropertyPanel { Session = session, EntryNodeId = node.Id,
                     Bounds = new Rectangle(index * width, 0, width, 640) };

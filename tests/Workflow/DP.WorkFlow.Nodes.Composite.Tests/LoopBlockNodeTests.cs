@@ -68,10 +68,10 @@ public sealed class LoopBlockNodeTests
         var exit = new ExitLoopNodeModel { Id = "Exit", Title = "退出循环" };
         var child = new WorkflowDocument { Name = "Child", EntryNodeId = start.Id };
         foreach (var node in new IWorkflowNodeModel[] { start, work, gate, exit })
-            child.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
-        child.CanvasProjection.Connections.Add(Connect(start.Id, work.Id));
-        child.CanvasProjection.Connections.Add(Connect(work.Id, gate.Id));
-        child.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = gate.Id, FromPort = WorkflowPorts.True, ToNodeId = exit.Id, ToPort = WorkflowPorts.Input });
+            child.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        child.Connections.Add(Connect(start.Id, work.Id));
+        child.Connections.Add(Connect(work.Id, gate.Id));
+        child.Connections.Add(new WorkflowConnectionModel { FromNodeId = gate.Id, FromPort = WorkflowPorts.True, ToNodeId = exit.Id, ToPort = WorkflowPorts.Input });
         var (engine, loop) = CreateEngine(child, context, configured =>
         {
             configured.Iterations = 0;
@@ -410,7 +410,7 @@ public sealed class LoopBlockNodeTests
         configure(loop);
         var end = new EndNodeModel { Id = "ParentEnd", Title = "结束" };
         var parentDocument = new WorkflowDocument { Name = "Parent" };
-        var parent = parentDocument.CanvasProjection;
+        var parent = parentDocument;
         parent.Nodes.Add(new WorkflowCanvasNode { Node = init });
         parent.Nodes.Add(new WorkflowCanvasNode { Node = loop });
         parent.Nodes.Add(new WorkflowCanvasNode { Node = end });
@@ -426,7 +426,7 @@ public sealed class LoopBlockNodeTests
         var start = new StartNodeModel { Id = "ChildStart", Title = "开始" };
         var work = new ActionNodeModel { Id = "Work", Title = "扫描", FunctionKey = "Work" };
         var document = new WorkflowDocument { Name = "Child", EntryNodeId = start.Id };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = start });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = work });
         canvas.Connections.Add(Connect(start.Id, work.Id));

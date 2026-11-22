@@ -12,7 +12,7 @@ public sealed class WorkflowCompilerTests
             Condition = new WorkflowInput<bool> { Source = WorkflowValueSource.Binding }
         };
         var canvasDocument = new WorkflowDocument();
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
 
         canvasDocument.EntryNodeId = node.Id;
@@ -26,7 +26,7 @@ public sealed class WorkflowCompilerTests
     public void Compile_WhenNodeIdIsDuplicated_ReturnsStructuredValidationError()
     {
         var canvasDocument = new WorkflowDocument { Name = "重复节点测试" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new TestNode("N1") });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new TestNode("N1") });
 
@@ -41,7 +41,7 @@ public sealed class WorkflowCompilerTests
     public void Compile_MapsExplicitOutputPortToTargetNode()
     {
         var canvasDocument = new WorkflowDocument { Name = "端口测试" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new TestNode("N1") });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new TestNode("N2") });
         canvas.Connections.Add(new WorkflowConnectionModel
@@ -64,7 +64,7 @@ public sealed class WorkflowCompilerTests
         var source = new TestNode("N1") { Value = 10 };
         source.Labels.Add("compiled");
         var canvasDocument = new WorkflowDocument { Name = "配置快照" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = source });
 
         canvasDocument.EntryNodeId = source.Id;
@@ -93,6 +93,6 @@ public sealed class WorkflowCompilerTests
 
         public int Value { get; set; }
 
-        public List<string> Labels { get; } = new();
+        public List<string> Labels { get; set; } = new();
     }
 }

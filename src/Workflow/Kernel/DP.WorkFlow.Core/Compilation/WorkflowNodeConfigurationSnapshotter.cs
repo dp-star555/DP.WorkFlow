@@ -62,8 +62,6 @@ public static class WorkflowNodeConfigurationSnapshotter
             return existing;
         if (source is WorkflowDocument document)
             return CloneDocument(document, visited);
-        if (source is WorkflowCanvasModel)
-            throw new InvalidOperationException("节点配置不得持有 WorkflowCanvasModel；复合节点必须持有 WorkflowDocument。");
         if (type.IsArray)
             return CloneArray((Array)source, visited);
         if (source is IDictionary dictionary)
@@ -105,14 +103,13 @@ public static class WorkflowNodeConfigurationSnapshotter
         };
         clone.PublicData.AddRange(source.PublicData);
         visited[source] = clone;
-        visited[source.CanvasProjection] = clone.CanvasProjection;
-        PopulateCanvas(source.CanvasProjection, clone.CanvasProjection, visited);
+        PopulateCanvas(source, clone, visited);
         return clone;
     }
 
     private static void PopulateCanvas(
-        WorkflowCanvasModel source,
-        WorkflowCanvasModel clone,
+        WorkflowDocument source,
+        WorkflowDocument clone,
         IDictionary<object, object> visited)
     {
         foreach (var item in source.Nodes)

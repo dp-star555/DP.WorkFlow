@@ -9,7 +9,7 @@ public sealed class SequentialWorkflowTests
         var action = new ActionNodeModel { Id = "Action1", Title = "动作", FunctionKey = "Increment" };
         var end = new EndNodeModel { Id = "End1", Title = "结束" };
         var canvasDocument = new WorkflowDocument { Name = "最小闭环" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = start, X = 0, Y = 0 });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = action, X = 240, Y = 0 });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = end, X = 480, Y = 0 });

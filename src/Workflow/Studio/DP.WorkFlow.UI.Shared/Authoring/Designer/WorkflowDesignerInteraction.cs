@@ -26,13 +26,13 @@ public static class WorkflowDesignerInteraction
 
     /// <summary>返回指定屏幕坐标命中的最上层节点。</summary>
     public static WorkflowCanvasNode? HitNode(WorkflowDesignerSession session, double x, double y) =>
-        session.Canvas.Nodes
+        session.Document.Nodes
             .Reverse()
             .FirstOrDefault(node => WorkflowDesignerGeometry.GetNodeScreenRect(session, node).Contains(x, y));
 
     /// <summary>返回鼠标悬停的最上层节点：范围比节点外扩一个端口拾取半径，移到边上的端口时节点仍算悬停，端口保持放大。</summary>
     public static WorkflowCanvasNode? HitHoverNode(WorkflowDesignerSession session, double x, double y) =>
-        session.Canvas.Nodes
+        session.Document.Nodes
             .Reverse()
             .FirstOrDefault(node => IsNearRect(WorkflowDesignerGeometry.GetNodeScreenRect(session, node), x, y, PortHitRadius));
 
@@ -51,7 +51,7 @@ public static class WorkflowDesignerInteraction
         WorkflowPortDirection direction,
         WorkflowCanvasNode? connectingFrom = null)
     {
-        foreach (var node in session.Canvas.Nodes.Reverse())
+        foreach (var node in session.Document.Nodes.Reverse())
         {
             var ports = session.GetPorts(node.Node.Id, direction);
             foreach (var port in ports)
@@ -77,9 +77,9 @@ public static class WorkflowDesignerInteraction
         WorkflowDesignerSession session, double x, double y)
     {
         Guard.NotNull(session);
-        for (var index = session.Canvas.Nodes.Count - 1; index >= 0; index--)
+        for (var index = session.Document.Nodes.Count - 1; index >= 0; index--)
         {
-            var node = session.Canvas.Nodes[index];
+            var node = session.Document.Nodes[index];
             if (node.ExposedOutputMembers.Count == 0) continue;
             foreach (var (member, point) in WorkflowDesignerGeometry.GetDataPortPoints(session, node))
                 if (Distance(point, x, y) <= PortHitRadius)
@@ -92,7 +92,7 @@ public static class WorkflowDesignerInteraction
     public static WorkflowPortHit? HitSingleOutputSideTarget(WorkflowDesignerSession session, double x, double y)
     {
         if (session.SelectedNodeIds.Count != 1) return null;
-        var node = session.Canvas.Nodes.FirstOrDefault(item => session.SelectedNodeIds.Contains(item.Node.Id));
+        var node = session.Document.Nodes.FirstOrDefault(item => session.SelectedNodeIds.Contains(item.Node.Id));
         if (node is null) return null;
         var outputs = session.GetPorts(node.Node.Id, WorkflowPortDirection.Output);
         if (outputs.Count != 1) return null;
@@ -126,7 +126,7 @@ public static class WorkflowDesignerInteraction
         double x,
         double y,
         double tolerance = 7) =>
-        session.Canvas.Connections.Reverse().FirstOrDefault(connection =>
+        session.Document.Connections.Reverse().FirstOrDefault(connection =>
         {
             var points = GetConnectionPath(session, connection);
             return points.Zip(points.Skip(1), (first, second) => DistanceToSegment(x, y, first, second))
@@ -140,7 +140,7 @@ public static class WorkflowDesignerInteraction
         double y,
         double tolerance)
     {
-        foreach (var connection in session.Canvas.Connections.Reverse())
+        foreach (var connection in session.Document.Connections.Reverse())
         {
             var points = GetConnectionPath(session, connection);
             for (var index = 0; index < points.Count - 1; index++)
@@ -180,7 +180,7 @@ public static class WorkflowDesignerInteraction
 
     /// <summary>返回与屏幕框选矩形相交的节点标识。</summary>
     public static string[] GetNodeIdsInScreenRect(WorkflowDesignerSession session, WorkflowDesignerRect marquee) =>
-        session.Canvas.Nodes
+        session.Document.Nodes
             .Where(node =>
             {
                 var rect = WorkflowDesignerGeometry.GetNodeScreenRect(session, node);
@@ -197,7 +197,7 @@ public static class WorkflowDesignerInteraction
         string portKey,
         WorkflowPortDirection direction)
     {
-        var node = session.Canvas.Nodes.FirstOrDefault(item => item.Node.Id == nodeId);
+        var node = session.Document.Nodes.FirstOrDefault(item => item.Node.Id == nodeId);
         var port = node is null
             ? null
             : session.GetPorts(nodeId, direction).FirstOrDefault(item => item.Key == portKey);
@@ -214,7 +214,7 @@ public static class WorkflowDesignerInteraction
         WorkflowPortDirection direction,
         WorkflowPortSide? sideOverride = null)
     {
-        var node = session.Canvas.Nodes.FirstOrDefault(item => item.Node.Id == nodeId);
+        var node = session.Document.Nodes.FirstOrDefault(item => item.Node.Id == nodeId);
         if (node is null)
             return null;
         var ports = session.GetPorts(nodeId, direction);
@@ -252,7 +252,7 @@ public static class WorkflowDesignerInteraction
             Math.Min(canvasStart.Y, canvasEnd.Y) - ObstacleSearchMargin,
             Math.Abs(canvasEnd.X - canvasStart.X) + ObstacleSearchMargin * 2,
             Math.Abs(canvasEnd.Y - canvasStart.Y) + ObstacleSearchMargin * 2);
-        var obstacles = session.Canvas.Nodes
+        var obstacles = session.Document.Nodes
             .Where(node => node.Node.Id != connection.FromNodeId && node.Node.Id != connection.ToNodeId)
             .Select(node => new WorkflowDesignerRect(node.X - grid, node.Y - grid, node.Width + grid * 2, node.Height + grid * 2))
             .Where(rect => rect.X <= search.X + search.Width && rect.X + rect.Width >= search.X
@@ -275,7 +275,7 @@ public static class WorkflowDesignerInteraction
         WorkflowCanvasNode node,
         WorkflowPortDescriptor port,
         WorkflowPortSide side) =>
-        session.Canvas.Connections.Any(connection => port.Direction == WorkflowPortDirection.Output
+        session.Document.Connections.Any(connection => port.Direction == WorkflowPortDirection.Output
             ? connection.FromNodeId == node.Node.Id && connection.FromPort == port.Key
               && (connection.FromSide ?? node.GetPortSide(port)) == side
             : connection.ToNodeId == node.Node.Id && connection.ToPort == port.Key
@@ -297,7 +297,7 @@ public static class WorkflowDesignerInteraction
         WorkflowPortDirection direction)
     {
         var ports = session.GetPorts(node.Node.Id, direction);
-        var endpoints = session.Canvas.Connections
+        var endpoints = session.Document.Connections
             .Select(connection => direction == WorkflowPortDirection.Input
                 ? (NodeId: connection.ToNodeId, PortKey: connection.ToPort, Side: connection.ToSide)
                 : (NodeId: connection.FromNodeId, PortKey: connection.FromPort, Side: connection.FromSide))
@@ -361,11 +361,11 @@ public static class WorkflowDesignerInteraction
     /// <param name="session">设计会话。</param><param name="connection">连线。</param>
     public static bool CanDisableConnection(WorkflowDesignerSession session, WorkflowConnectionModel connection) =>
         connection.FromPort == WorkflowPorts.Branch
-        && session.Canvas.Nodes.FirstOrDefault(n => n.Node.Id == connection.FromNodeId)?.Node is IWorkflowParallelForkNode;
+        && session.Document.Nodes.FirstOrDefault(n => n.Node.Id == connection.FromNodeId)?.Node is IWorkflowParallelForkNode;
 
     // 同一并行节点 Branch 端口的连线按画布顺序编号，从 1 开始。
     private static int BranchNumber(WorkflowDesignerSession session, WorkflowConnectionModel connection) =>
-        session.Canvas.Connections.Where(c => c.FromNodeId == connection.FromNodeId && c.FromPort == WorkflowPorts.Branch)
+        session.Document.Connections.Where(c => c.FromNodeId == connection.FromNodeId && c.FromPort == WorkflowPorts.Branch)
             .TakeWhile(c => !ReferenceEquals(c, connection)).Count() + 1;
 
     /// <summary>生成节点执行序号和耗时显示文本；节点尚未执行时返回 null。</summary>
@@ -570,9 +570,9 @@ public sealed class WorkflowNodeDragOperation
     {
         _session = session;
         _startCanvas = startCanvas;
-        foreach (var selected in session.Canvas.Nodes.Where(item => session.SelectedNodeIds.Contains(item.Node.Id)))
+        foreach (var selected in session.Document.Nodes.Where(item => session.SelectedNodeIds.Contains(item.Node.Id)))
             _nodeOrigins[selected.Node.Id] = new WorkflowPoint(selected.X, selected.Y);
-        foreach (var connection in session.Canvas.Connections.Where(connection =>
+        foreach (var connection in session.Document.Connections.Where(connection =>
                      (session.SelectedNodeIds.Contains(connection.FromNodeId)
                       || session.SelectedNodeIds.Contains(connection.ToNodeId))
                      && connection.Waypoints.Count > 0))
@@ -586,7 +586,7 @@ public sealed class WorkflowNodeDragOperation
     {
         var deltaX = currentCanvas.X - _startCanvas.X;
         var deltaY = currentCanvas.Y - _startCanvas.Y;
-        foreach (var selected in _session.Canvas.Nodes.Where(item => _nodeOrigins.ContainsKey(item.Node.Id)))
+        foreach (var selected in _session.Document.Nodes.Where(item => _nodeOrigins.ContainsKey(item.Node.Id)))
         {
             var origin = _nodeOrigins[selected.Node.Id];
             var snapped = _session.SnapNodePosition(selected, new WorkflowPoint(origin.X + deltaX, origin.Y + deltaY));
@@ -610,13 +610,13 @@ public sealed class WorkflowNodeDragOperation
             id => id,
             id =>
             {
-                var selected = _session.Canvas.Nodes.First(item => item.Node.Id == id);
+                var selected = _session.Document.Nodes.First(item => item.Node.Id == id);
                 return new WorkflowPoint(selected.X, selected.Y);
             },
             StringComparer.Ordinal);
         foreach (var pair in _nodeOrigins)
         {
-            var selected = _session.Canvas.Nodes.First(item => item.Node.Id == pair.Key);
+            var selected = _session.Document.Nodes.First(item => item.Node.Id == pair.Key);
             selected.X = pair.Value.X;
             selected.Y = pair.Value.Y;
         }
@@ -629,7 +629,7 @@ public sealed class WorkflowNodeDragOperation
     {
         foreach (var pair in _nodeOrigins)
         {
-            var node = _session.Canvas.Nodes.FirstOrDefault(item => item.Node.Id == pair.Key);
+            var node = _session.Document.Nodes.FirstOrDefault(item => item.Node.Id == pair.Key);
             if (node is not null) { node.X = pair.Value.X; node.Y = pair.Value.Y; }
         }
         RestoreWaypoints();

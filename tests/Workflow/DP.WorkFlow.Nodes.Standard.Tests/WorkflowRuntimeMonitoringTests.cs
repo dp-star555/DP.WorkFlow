@@ -114,7 +114,7 @@ public sealed class WorkflowRuntimeMonitoringTests
         var first = new ActionNodeModel { Id = "Action1", Title = "动作1", FunctionKey = "First" };
         var second = new ActionNodeModel { Id = "Action2", Title = "动作2", FunctionKey = "Second" };
         var canvasDocument = new WorkflowDocument { Name = "运行监视" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = first });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = second });
         canvas.Connections.Add(new WorkflowConnectionModel { FromNodeId = first.Id, ToNodeId = second.Id });

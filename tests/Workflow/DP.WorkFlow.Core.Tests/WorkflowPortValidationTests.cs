@@ -18,7 +18,7 @@ public sealed class WorkflowPortValidationTests
     {
         var catalog = CreateCatalog();
         var canvasDocument = new WorkflowDocument { Name = "非法输出" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new SinkNode { Id = "Sink", Title = "终点" } });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new SourceNode { Id = "Source", Title = "来源" } });
         canvas.Connections.Add(new WorkflowConnectionModel { FromNodeId = "Sink", ToNodeId = "Source" });
@@ -35,7 +35,7 @@ public sealed class WorkflowPortValidationTests
     {
         var catalog = CreateCatalog();
         var canvasDocument = new WorkflowDocument { Name = "端口基数" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new SourceNode { Id = "Source", Title = "来源" } });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new SinkNode { Id = "Sink1", Title = "终点1" } });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new SinkNode { Id = "Sink2", Title = "终点2" } });

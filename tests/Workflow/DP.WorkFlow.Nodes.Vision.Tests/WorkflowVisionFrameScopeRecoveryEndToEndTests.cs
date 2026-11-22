@@ -36,7 +36,7 @@ public sealed class WorkflowVisionFrameScopeRecoveryEndToEndTests
 
             // 处置子流程：单节点，只要它被真的跑起来就会触发 prepare: true 的嵌套运行。
             var subflow = new WorkflowDocument { Name = "处置子流程", EntryNodeId = treat.Id };
-            subflow.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = treat });
+            subflow.Nodes.Add(new WorkflowCanvasNode { Node = treat });
 
             // 采图 → 故障 → 消费原图。消费节点绑定的是采图节点的输出。
             var document = new WorkflowDocument { Name = "主流程" };
@@ -45,7 +45,7 @@ public sealed class WorkflowVisionFrameScopeRecoveryEndToEndTests
             var consume = new ConsumeFrameNode { Id = "consume", Frame = Input<ImageFrame>("file") };
             document.EntryNodeId = file.Id;
             foreach (var node in new IWorkflowNodeModel[] { file, fault, consume })
-                document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+                document.Nodes.Add(new WorkflowCanvasNode { Node = node });
             Connect(document, file.Id, fault.Id);
             Connect(document, fault.Id, consume.Id);
 
@@ -72,7 +72,7 @@ public sealed class WorkflowVisionFrameScopeRecoveryEndToEndTests
         WorkflowInput<T>.FromBinding(new WorkflowBindingKey(nodeId, "$"));
 
     private static void Connect(WorkflowDocument document, string from, string to) =>
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        document.Connections.Add(new WorkflowConnectionModel
         { FromNodeId = from, FromPort = WorkflowPorts.Success, ToNodeId = to, ToPort = WorkflowPorts.Input });
 
     /// <summary>确定性读取器：像素值取文件名序号，不依赖 OpenCV 与真实解码。</summary>

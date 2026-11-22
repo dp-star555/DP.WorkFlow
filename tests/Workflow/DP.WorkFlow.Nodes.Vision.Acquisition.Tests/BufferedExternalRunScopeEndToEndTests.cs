@@ -184,7 +184,7 @@ public sealed class BufferedExternalRunScopeEndToEndTests
 
         var treat = new TreatNode { Id = "treat" };
         var subflow = new WorkflowDocument { Name = "处置子流程", EntryNodeId = treat.Id };
-        subflow.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = treat });
+        subflow.Nodes.Add(new WorkflowCanvasNode { Node = treat });
 
         var trigger = new TriggerHandler(() => Device(device), ("f51", 51), ("f52", 52));
         var faultNode = new FaultNode { Id = "fault" };
@@ -209,7 +209,7 @@ public sealed class BufferedExternalRunScopeEndToEndTests
         var secondCapture = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.AreaCamera, Id = "capture2", Source = new VisionSourceReference(SourceId) };
         document.EntryNodeId = trigger.Node.Id;
         foreach (var node in new IWorkflowNodeModel[] { trigger.Node, firstCapture, faultNode, secondCapture, sink.Node })
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+            document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         Connect(document, trigger.Node.Id, firstCapture.Id);
         Connect(document, firstCapture.Id, faultNode.Id);
         Connect(document, faultNode.Id, secondCapture.Id);
@@ -265,14 +265,14 @@ public sealed class BufferedExternalRunScopeEndToEndTests
         var sink = new SinkNode { Id = sinkId };
         document.EntryNodeId = trigger.Id;
         foreach (var node in new IWorkflowNodeModel[] { trigger, capture, sink })
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+            document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         Connect(document, trigger.Id, capture.Id);
         Connect(document, capture.Id, sink.Id);
         return document;
     }
 
     private static void Connect(WorkflowDocument document, string from, string to) =>
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        document.Connections.Add(new WorkflowConnectionModel
         { FromNodeId = from, FromPort = WorkflowPorts.Success, ToNodeId = to, ToPort = WorkflowPorts.Input });
 
     /// <summary>站点级采集运行时 + 一个可控假流式Provider；可跨多根根运行复用。</summary>
@@ -333,7 +333,7 @@ public sealed class BufferedExternalRunScopeEndToEndTests
         {
             if (exposureMicroseconds is not null)
             {
-                foreach (var node in document.CanvasProjection.Nodes
+                foreach (var node in document.Nodes
                     .Select(item => item.Node).OfType<AcquireVisionImageNodeModel>())
                     node.ExposureMicroseconds = exposureMicroseconds;
             }

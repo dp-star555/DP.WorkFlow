@@ -33,7 +33,7 @@ public sealed class WorkflowFailedPortVisibilityTests
     {
         // 已有失败连线的旧流程：即使没启用也显示，连线不悬空。
         var document = new WorkflowDocument();
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         var find = new FindVisionLineNodeModel { Id = "find" };
         var next = new FindVisionLineNodeModel { Id = "next" };
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = find });

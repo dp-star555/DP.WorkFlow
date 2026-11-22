@@ -10,7 +10,7 @@ public sealed class WorkflowPropertyInspectorTests
     {
         var node = new LocateVisionTemplatePoseNodeModel { Id = "pose", MinimumAngleRadians = -Math.PI / 4, MaximumAngleRadians = Math.PI / 2 };
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new() { Node = node });
+        document.Nodes.Add(new() { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterImageNodes();
         var session = new WorkflowDesignerSession(document, catalog) { SelectedNodeId = node.Id };
         using var inspector = new WorkflowPropertyInspectorModel(session, node.Id);
@@ -26,7 +26,7 @@ public sealed class WorkflowPropertyInspectorTests
         inspector.SetValue(entry, 15d);
         Assert.Equal(Math.PI / 12, node.MaximumAngleRadians, 12);
         var store = new WorkflowDocumentJsonStore(catalog);
-        var loaded = Assert.IsType<LocateVisionTemplatePoseNodeModel>(Assert.Single(store.Deserialize(store.Serialize(document)).Document.CanvasProjection.Nodes).Node);
+        var loaded = Assert.IsType<LocateVisionTemplatePoseNodeModel>(Assert.Single(store.Deserialize(store.Serialize(document)).Document.Nodes).Node);
         Assert.Equal(-Math.PI / 6, loaded.MinimumAngleRadians, 12);
         Assert.Equal(Math.PI / 12, loaded.MaximumAngleRadians, 12);
         Assert.Equal(15d, Assert.IsType<double>(entry.Value), 10);
@@ -38,7 +38,7 @@ public sealed class WorkflowPropertyInspectorTests
         var node = new LabeledEnumNode { Id = "labeled" };
         var catalog = new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<LabeledEnumNode>());
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new() { Node = node });
+        document.Nodes.Add(new() { Node = node });
         var session = new WorkflowDesignerSession(document, catalog) { SelectedNodeId = node.Id };
         using var inspector = new WorkflowPropertyInspectorModel(session, node.Id);
         var mode = inspector.Entries.Single(e => e.Name == nameof(node.Mode));
@@ -57,7 +57,7 @@ public sealed class WorkflowPropertyInspectorTests
         var node = new AngleInputNode { Id = "angles", Rotation = Math.PI / 2, Angle = WorkflowInput<double>.FromLiteral(Math.PI / 4) };
         var catalog = new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<AngleInputNode>());
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new() { Node = node });
+        document.Nodes.Add(new() { Node = node });
         var session = new WorkflowDesignerSession(document, catalog) { SelectedNodeId = node.Id };
         using var inspector = new WorkflowPropertyInspectorModel(session, node.Id);
         var scalar = inspector.Entries.Single(e => e.Name == nameof(node.Rotation));
@@ -114,7 +114,7 @@ public sealed class WorkflowPropertyInspectorTests
     public void Inspector_EditsScalarAndWorkflowInputUsingTypedCandidates()
     {
         var canvasDocument = new WorkflowDocument { Name = "Properties" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var session = new WorkflowDesignerSession(canvasDocument, catalog);
         var source = session.AddNode("Decision", 0, 0);
@@ -165,7 +165,7 @@ public sealed class WorkflowPropertyInspectorTests
         var catalog = new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<ConditionalNode>());
         var node = new ConditionalNode { Id = "Conditional", Title = "条件参数" };
         var canvasDocument = new WorkflowDocument();
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var session = new WorkflowDesignerSession(canvasDocument, catalog) { SelectedNodeId = node.Id };
         using var inspector = new WorkflowPropertyInspectorModel(session, node.Id);
@@ -195,7 +195,7 @@ public sealed class WorkflowPropertyInspectorTests
         var catalog = new WorkflowNodeCatalog().Register(WorkflowNodeDescriptor.Create<ConditionalNode>());
         var node = new ConditionalNode { Id = "Metadata", Title = "元数据" };
         var canvasDocument = new WorkflowDocument();
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var session = new WorkflowDesignerSession(canvasDocument, catalog) { SelectedNodeId = node.Id };
         using var inspector = new WorkflowPropertyInspectorModel(session, node.Id);
@@ -222,7 +222,7 @@ public sealed class WorkflowPropertyInspectorTests
         var catalog = new WorkflowNodeCatalog().RegisterImageNodes();
         var node = new AnalyzeVisionBlobsNodeModel { Id = "Blobs", Title = "连通域" };
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var session = new WorkflowDesignerSession(document, catalog) { SelectedNodeId = node.Id };
         using var inspector = new WorkflowPropertyInspectorModel(session, node.Id);
         Assert.DoesNotContain(inspector.Entries, entry => entry.Name == "ParametersJson");
@@ -234,7 +234,7 @@ public sealed class WorkflowPropertyInspectorTests
             "[{\"Id\":\"hole\",\"CenterX\":5,\"CenterY\":5,\"Width\":2,\"Height\":2,\"Exclude\":true}]");
         var store = new WorkflowDocumentJsonStore(catalog);
         var loaded = store.Deserialize(store.Serialize(document)).Document;
-        var restored = Assert.IsType<AnalyzeVisionBlobsNodeModel>(loaded.CanvasProjection.Nodes[0].Node);
+        var restored = Assert.IsType<AnalyzeVisionBlobsNodeModel>(loaded.Nodes[0].Node);
         Assert.Equal(140, restored.MinimumGray);
         Assert.Equal(200, restored.MaximumGray);
         Assert.True(Assert.Single(restored.Regions).Exclude);
@@ -249,8 +249,8 @@ public sealed class WorkflowPropertyInspectorTests
         var area = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.AreaCamera, Id = "Area", Title = "面阵采集" };
         var line = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.LineCamera, Id = "Line", Title = "线扫采集" };
         var document = new WorkflowDocument { EntryNodeId = area.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = area });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = line });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = area });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = line });
         var session = new WorkflowDesignerSession(document, catalog) { SelectedNodeId = area.Id };
 
         // 宿主按编辑器键注入候选：键必须原样传给提供者，否则面阵与线扫会拿到同一份源列表。

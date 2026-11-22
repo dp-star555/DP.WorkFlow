@@ -27,10 +27,10 @@ public sealed class WorkflowRunPreparationScopeDeclarationTests
 
         // 处置子流程：单节点即可，本测试只要求它被真的跑起来。
         var subflow = new WorkflowDocument { Name = "处置子流程", EntryNodeId = treat.Id };
-        subflow.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = treat });
+        subflow.Nodes.Add(new WorkflowCanvasNode { Node = treat });
 
         var document = new WorkflowDocument { Name = "主流程", EntryNodeId = faulty.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = faulty });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = faulty });
 
         var services = new WorkflowServiceProvider()
             .Add<IWorkflowRunPreparationService>(preparation)

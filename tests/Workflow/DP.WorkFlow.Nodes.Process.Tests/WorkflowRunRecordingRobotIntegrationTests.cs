@@ -23,7 +23,7 @@ public sealed class WorkflowRunRecordingRobotIntegrationTests
             ArmBinding = WorkflowInput<E_EndEffectorType>.FromLiteral(E_EndEffectorType.Arm2)
         };
         var document = new WorkflowDocument { Name = "机器人血缘", EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
 
         var service = new RecordingRobotService();
         var services = new WorkflowServiceProvider().Add<IWorkflowWaferRobotService>(service);

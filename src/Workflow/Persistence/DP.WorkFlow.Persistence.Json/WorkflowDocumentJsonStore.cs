@@ -139,7 +139,7 @@ public sealed class WorkflowDocumentJsonStore
             ?? throw new InvalidOperationException("旧版流程 JSON 反序列化失败。");
         var report = CreateReport(schemaVersion);
         var workflowDocument = new WorkflowDocument { Name = legacy.Name ?? string.Empty };
-        var canvas = workflowDocument.CanvasProjection;
+        var canvas = workflowDocument;
 
         foreach (var source in legacy.Nodes)
         {
@@ -251,7 +251,7 @@ public sealed class WorkflowDocumentJsonStore
     {
         if (!ancestors.Add(workflowDocument))
             throw new InvalidOperationException("检测到子文档循环引用，无法序列化复合流程。");
-        var canvas = workflowDocument.CanvasProjection;
+        var canvas = workflowDocument;
         var document = new WorkflowJsonDocument
         {
             SchemaVersion = CurrentSchemaVersion,
@@ -313,7 +313,7 @@ public sealed class WorkflowDocumentJsonStore
         int sourceSchemaVersion)
     {
         var workflowDocument = new WorkflowDocument { Name = document.Name };
-        var canvas = workflowDocument.CanvasProjection;
+        var canvas = workflowDocument;
         foreach (var source in document.Nodes)
         {
             IWorkflowNodeModel node;
@@ -413,7 +413,7 @@ public sealed class WorkflowDocumentJsonStore
 
     private static string ResolveEntryNodeId(
         string persistedEntryNodeId,
-        WorkflowCanvasModel canvas,
+        WorkflowDocument canvas,
         int sourceSchemaVersion,
         WorkflowMigrationReport report)
     {
@@ -536,7 +536,7 @@ public sealed class WorkflowDocumentJsonStore
             ? value
             : defaultValue;
 
-    private static void AppendConnections(WorkflowCanvasModel canvas, IEnumerable<WorkflowJsonConnection> sources)
+    private static void AppendConnections(WorkflowDocument canvas, IEnumerable<WorkflowJsonConnection> sources)
     {
         foreach (var source in sources)
         {

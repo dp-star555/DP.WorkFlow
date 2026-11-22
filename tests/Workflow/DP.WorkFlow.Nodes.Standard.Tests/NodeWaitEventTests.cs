@@ -53,7 +53,7 @@ public sealed class NodeWaitEventTests
     private static WorkflowEngine CreateEngine(IWorkflowNodeModel node, WorkflowServiceProvider services, IWorkflowNodeHandler handler)
     {
         var document = new WorkflowDocument { Name = "等待", EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var plan = new WorkflowCompiler(new WorkflowNodeCatalog().RegisterStandardNodes()).Compile(document);
         return new WorkflowEngine(plan, new WorkflowNodeHandlerCatalog().Register(handler), new WorkflowContext(services));
     }

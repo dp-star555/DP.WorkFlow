@@ -131,7 +131,7 @@ public sealed class WorkflowBindingAnalyzerTests
         Assert.DoesNotContain(analysis.GetCandidates(fromDisabled.Id, typeof(bool)), c => c.SourceNodeId == off.Id);
 
         // 全部停用：WF023；只剩一个启用分支（另一个停用）时并行仍然有效。
-        var enabled = document.CanvasProjection.Connections.Single(c => c.ToNodeId == source.Id && c.FromPort == WorkflowPorts.Branch);
+        var enabled = document.Connections.Single(c => c.ToNodeId == source.Id && c.FromPort == WorkflowPorts.Branch);
         enabled.Enabled = false;
         var exception = Assert.Throws<WorkflowCompilationException>(() => new WorkflowCompiler(catalog, validateBindings: false).Compile(document));
         Assert.Contains(exception.Errors, e => e.Code == "WF023");
@@ -246,7 +246,7 @@ public sealed class WorkflowBindingAnalyzerTests
         params object[] items)
     {
         var document = new WorkflowDocument { Name = "BindingAnalysis" };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = first });
         foreach (var item in items)
         {

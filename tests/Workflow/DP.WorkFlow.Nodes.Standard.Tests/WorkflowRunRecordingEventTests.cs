@@ -99,7 +99,7 @@ public sealed class WorkflowRunRecordingEventTests
         var sink = new CollectingSink();
         var document = new WorkflowDocument { Name = "失败不提交" };
         var failing = new ActionNodeModel { Id = "Failing", Title = "失败", FunctionKey = "Fail" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = failing });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = failing });
         var services = new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(
             new WorkflowActionRegistry().Register(
                 "Fail",
@@ -140,7 +140,7 @@ public sealed class WorkflowRunRecordingEventTests
     {
         var sink = new CollectingSink();
         var document = new WorkflowDocument { Name = "记录异常", EntryNodeId = "Trace" };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new ThrowingTraceNodeModel { Id = "Trace", Title = "抛异常跟踪" } });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new EndNodeModel { Id = "End", Title = "结束" } });
         canvas.Connections.Add(Connect("Trace", WorkflowPorts.Success, "End"));
@@ -211,7 +211,7 @@ public sealed class WorkflowRunRecordingEventTests
     private static WorkflowDocument BuildLinearDocument()
     {
         var document = new WorkflowDocument { Name = "线性事件" };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         foreach (var node in new IWorkflowNodeModel[]
                  {
                      new ActionNodeModel { Id = "A", Title = "节点A", FunctionKey = "A" },
@@ -227,7 +227,7 @@ public sealed class WorkflowRunRecordingEventTests
     private static WorkflowDocument BuildParallelDocument()
     {
         var document = new WorkflowDocument { Name = "并行事件" };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         foreach (var node in new IWorkflowNodeModel[]
                  {
                      new ParallelAllNodeModel { Id = "Parallel", Title = "并行" },
@@ -248,7 +248,7 @@ public sealed class WorkflowRunRecordingEventTests
     private static WorkflowDocument BuildLoopDocument(int iterations = 3)
     {
         var document = new WorkflowDocument { Name = "循环事件" };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         foreach (var node in new IWorkflowNodeModel[]
                  {
                      new LoopNodeModel { Id = "Loop", Title = "循环", Iterations = iterations },
@@ -265,7 +265,7 @@ public sealed class WorkflowRunRecordingEventTests
     private static WorkflowDocument BuildBindingDocument()
     {
         var document = new WorkflowDocument { Name = "数据血缘" };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         foreach (var node in new IWorkflowNodeModel[]
                  {
                      new ActionNodeModel { Id = "Producer", Title = "生产", FunctionKey = "Produce" },

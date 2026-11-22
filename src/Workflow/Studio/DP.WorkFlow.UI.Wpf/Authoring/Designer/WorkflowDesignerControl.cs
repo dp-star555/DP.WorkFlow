@@ -97,7 +97,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             return;
         DrawConnections(drawingContext);
         DrawDataLinks(drawingContext);
-        foreach (var node in _session.Canvas.Nodes)
+        foreach (var node in _session.Document.Nodes)
             DrawNode(drawingContext, node);
         if (_mode == InteractionMode.DataLink && _dataLinkStart is { } dataLink)
             DrawDataCurve(drawingContext, new Pen(DataPortBrush, 2) { DashStyle = DashStyles.Dash }, dataLink.Point, new WorkflowPoint(_pointer.X, _pointer.Y));
@@ -459,7 +459,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             return;
         if (e.Key == Key.A && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
-            _session.SelectNodes(_session.Canvas.Nodes.Select(node => node.Node.Id));
+            _session.SelectNodes(_session.Document.Nodes.Select(node => node.Node.Id));
             e.Handled = true;
         }
         else if (e.Key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
@@ -506,7 +506,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     {
         if (_session is null)
             return;
-        foreach (var connection in _session.Canvas.Connections)
+        foreach (var connection in _session.Document.Connections)
         {
             var source = WorkflowDesignerInteraction.FindPortPoint(
                 _session, connection.FromNodeId, connection.FromPort, WorkflowPortDirection.Output, connection.FromSide);
@@ -689,7 +689,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         if (_session is null) return;
         var links = _session.GetDataLinks();
         if (links.Count == 0) return;
-        var nodes = _session.Canvas.Nodes.ToDictionary(node => node.Node.Id, StringComparer.Ordinal);
+        var nodes = _session.Document.Nodes.ToDictionary(node => node.Node.Id, StringComparer.Ordinal);
         var pen = new Pen(Brush(WorkflowDesignerPalette.DataPort.WithAlpha(170)), 1.5) { DashStyle = DashStyles.Dash };
         foreach (var link in links.DistinctBy(link => (link.SourceNodeId, link.Member, link.ConsumerNodeId)))
         {
@@ -1047,7 +1047,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     /// <param name="x">屏幕横坐标。</param>
     /// <param name="y">屏幕纵坐标。</param>
     private WorkflowConnectionModel? HitConnectionLabel(double x, double y) =>
-        _session?.Canvas.Connections.Reverse().FirstOrDefault(connection =>
+        _session?.Document.Connections.Reverse().FirstOrDefault(connection =>
             WorkflowDesignerInteraction.ShouldDrawConnectionLabel(_session, connection)
             && GetConnectionLabelBounds(connection).Contains(x, y));
 

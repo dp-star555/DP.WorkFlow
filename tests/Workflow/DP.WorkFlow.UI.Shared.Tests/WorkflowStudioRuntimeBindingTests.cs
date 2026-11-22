@@ -10,7 +10,7 @@ public sealed class WorkflowStudioRuntimeBindingTests
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var start = new StartNodeModel { Id = "Start", Title = "开始" };
         var canvasDocument = new WorkflowDocument { Name = "Run" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = start });
         canvasDocument.EntryNodeId = start.Id;
         var navigator = new WorkflowDesignerNavigator(canvasDocument, catalog);
@@ -36,7 +36,7 @@ public sealed class WorkflowStudioRuntimeBindingTests
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes();
         var childStart = new StartNodeModel { Id = "ChildStart", Title = "子开始" };
         var childDocument = new WorkflowDocument { Name = "Child" };
-        var child = childDocument.CanvasProjection;
+        var child = childDocument;
         child.Nodes.Add(new WorkflowCanvasNode { Node = childStart });
         childDocument.EntryNodeId = childStart.Id;
         var rootStart = new StartNodeModel { Id = "RootStart", Title = "根开始" };
@@ -47,7 +47,7 @@ public sealed class WorkflowStudioRuntimeBindingTests
             SubDocument = childDocument
         };
         var rootDocument = new WorkflowDocument { Name = "Root" };
-        var root = rootDocument.CanvasProjection;
+        var root = rootDocument;
         root.Nodes.Add(new WorkflowCanvasNode { Node = rootStart });
         root.Nodes.Add(new WorkflowCanvasNode { Node = block });
         rootDocument.EntryNodeId = rootStart.Id;
@@ -76,9 +76,9 @@ public sealed class WorkflowStudioRuntimeBindingTests
         var start = new StartNodeModel { Id = "Start", Title = "开始" };
         var action = new ActionNodeModel { Id = "Wait", Title = "等待", FunctionKey = "Wait" };
         var document = new WorkflowDocument { Name = "Frames", EntryNodeId = start.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = start });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = action });
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = start.Id, ToNodeId = action.Id });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = start });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = action });
+        document.Connections.Add(new WorkflowConnectionModel { FromNodeId = start.Id, ToNodeId = action.Id });
         var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var actions = new WorkflowActionRegistry().Register("Wait", async (_, token) =>
         {

@@ -40,11 +40,6 @@ internal static class WorkflowNodeConfigurationValidator
         int depth,
         ICollection<WorkflowValidationError> diagnostics)
     {
-        if (instance is WorkflowCanvasModel)
-        {
-            diagnostics.Add(Error(node, path, "节点配置不得持有 WorkflowCanvasModel；复合节点必须持有 WorkflowDocument。"));
-            return;
-        }
         if (instance is null || depth > 5 || instance is string or WorkflowDocument || instance.GetType().IsValueType)
             return;
         if (!visited.Add(instance))

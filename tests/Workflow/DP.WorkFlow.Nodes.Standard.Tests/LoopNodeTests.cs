@@ -9,7 +9,7 @@ public sealed class LoopNodeTests
         var body = new ActionNodeModel { Id = "Body", Title = "循环体", FunctionKey = "Body" };
         var end = new EndNodeModel { Id = "End", Title = "结束" };
         var canvasDocument = new WorkflowDocument { Name = "固定循环" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         foreach (var node in new IWorkflowNodeModel[] { loop, body, end })
             canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvas.Connections.Add(Connect("Loop", WorkflowPorts.Loop, "Body"));
@@ -51,7 +51,7 @@ public sealed class LoopNodeTests
         var body = new ActionNodeModel { Id = "Body", Title = "循环体", FunctionKey = "Body" };
         var reentry = new ReentryNode { Id = "Reentry", Title = "再次进入" };
         var canvasDocument = new WorkflowDocument { Name = "循环帧重入" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         foreach (var node in new IWorkflowNodeModel[] { loop, body, reentry })
             canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvas.Connections.Add(Connect(loop.Id, WorkflowPorts.Loop, body.Id));
@@ -92,7 +92,7 @@ public sealed class LoopNodeTests
     {
         var jump = new JumpNodeModel { Id = "Jump", Title = "循环跳转" };
         var canvasDocument = new WorkflowDocument { Name = "无限循环" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = jump });
         canvas.Connections.Add(Connect("Jump", WorkflowPorts.Success, "Jump"));
         canvasDocument.EntryNodeId = jump.Id;
@@ -123,7 +123,7 @@ public sealed class LoopNodeTests
     {
         var delay = new DelayNodeModel { Id = "Delay", Title = "延时", DelayMs = 10_000 };
         var canvasDocument = new WorkflowDocument { Name = "延时取消" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = delay });
         canvasDocument.EntryNodeId = delay.Id;
         var definition = new WorkflowCompiler().Compile(canvasDocument);
@@ -149,13 +149,13 @@ public sealed class LoopNodeTests
         var end = new EndNodeModel { Id = "End", Title = "结束" };
         var document = new WorkflowDocument { Name = "不限次数循环", EntryNodeId = loop.Id };
         foreach (var node in new IWorkflowNodeModel[] { loop, body, gate, exit, end })
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
-        document.CanvasProjection.Connections.Add(Connect(loop.Id, WorkflowPorts.Loop, body.Id));
-        document.CanvasProjection.Connections.Add(Connect(body.Id, WorkflowPorts.Success, gate.Id));
-        document.CanvasProjection.Connections.Add(Connect(gate.Id, WorkflowPorts.False, loop.Id));
-        document.CanvasProjection.Connections.Add(Connect(gate.Id, WorkflowPorts.True, exit.Id));
-        document.CanvasProjection.Connections.Add(Connect(exit.Id, WorkflowPorts.Success, loop.Id));
-        document.CanvasProjection.Connections.Add(Connect(loop.Id, WorkflowPorts.Completed, end.Id));
+            document.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Connections.Add(Connect(loop.Id, WorkflowPorts.Loop, body.Id));
+        document.Connections.Add(Connect(body.Id, WorkflowPorts.Success, gate.Id));
+        document.Connections.Add(Connect(gate.Id, WorkflowPorts.False, loop.Id));
+        document.Connections.Add(Connect(gate.Id, WorkflowPorts.True, exit.Id));
+        document.Connections.Add(Connect(exit.Id, WorkflowPorts.Success, loop.Id));
+        document.Connections.Add(Connect(loop.Id, WorkflowPorts.Completed, end.Id));
         var executions = 0;
         var actions = new WorkflowActionRegistry().Register("Body", (_, _) => ValueTask.FromResult<object?>(++executions >= 4));
         var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions));
@@ -180,10 +180,10 @@ public sealed class LoopNodeTests
         var end = new EndNodeModel { Id = "End", Title = "结束" };
         var document = new WorkflowDocument { Name = "外部退出", EntryNodeId = loop.Id };
         foreach (var node in new IWorkflowNodeModel[] { loop, body, end })
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
-        document.CanvasProjection.Connections.Add(Connect(loop.Id, WorkflowPorts.Loop, body.Id));
-        document.CanvasProjection.Connections.Add(Connect(body.Id, WorkflowPorts.Success, loop.Id));
-        document.CanvasProjection.Connections.Add(Connect(loop.Id, WorkflowPorts.Completed, end.Id));
+            document.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Connections.Add(Connect(loop.Id, WorkflowPorts.Loop, body.Id));
+        document.Connections.Add(Connect(body.Id, WorkflowPorts.Success, loop.Id));
+        document.Connections.Add(Connect(loop.Id, WorkflowPorts.Completed, end.Id));
         var executions = 0;
         WorkflowContext? context = null;
         var actions = new WorkflowActionRegistry().Register("Body", (_, _) =>

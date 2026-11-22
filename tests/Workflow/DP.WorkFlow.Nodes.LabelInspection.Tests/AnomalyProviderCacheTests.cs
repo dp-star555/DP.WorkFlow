@@ -18,11 +18,11 @@ public sealed class AnomalyProviderCacheTests
         var recipe = Recipe(key);
         rig.Node.RecipeJson = rig.Json(recipe);
         var second = (InspectLabelNodeModel)WorkflowNodeConfigurationSnapshotter.Capture(rig.Node); second.Id = "inspect2";
-        rig.Document.CanvasProjection.Nodes.Add(new() { Node = second });
-        var connection = rig.Document.CanvasProjection.Connections.Single(c => c.FromNodeId == "inspect");
-        rig.Document.CanvasProjection.Connections.Remove(connection);
-        rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = "inspect", FromPort = WorkflowPorts.Success, ToNodeId = "inspect2", ToPort = WorkflowPorts.Input });
-        rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = "inspect2", FromPort = WorkflowPorts.Success, ToNodeId = "consumer", ToPort = WorkflowPorts.Input });
+        rig.Document.Nodes.Add(new() { Node = second });
+        var connection = rig.Document.Connections.Single(c => c.FromNodeId == "inspect");
+        rig.Document.Connections.Remove(connection);
+        rig.Document.Connections.Add(new() { FromNodeId = "inspect", FromPort = WorkflowPorts.Success, ToNodeId = "inspect2", ToPort = WorkflowPorts.Input });
+        rig.Document.Connections.Add(new() { FromNodeId = "inspect2", FromPort = WorkflowPorts.Success, ToNodeId = "consumer", ToPort = WorkflowPorts.Input });
         Assert.Equal(0, provider.Loads);
         Assert.True((await rig.RunAsync()).Success);
         Assert.Equal(1, provider.Loads); Assert.Equal(1, rig.Runtime.CacheStatistics.ModelLoads);

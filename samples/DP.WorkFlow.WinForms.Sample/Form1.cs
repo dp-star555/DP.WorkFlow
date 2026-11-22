@@ -128,7 +128,7 @@ public partial class Form1 : Form
         // 算法实现与“坐标系”下拉；坐标系下拉按本轮运行结果换算ROI等范围。
         var algorithmProperties = WorkflowVisionAlgorithmProperties.CreateProvider(algorithmCatalog);
         var coordinateProperties = WorkflowVisionCoordinateProperties.CreateProvider(_frameScope,
-            () => _workspace.Navigator?.CurrentSession.Canvas.Nodes.Select(n => n.Node).ToArray() ?? []);
+            () => _workspace.Navigator?.CurrentSession.Document.Nodes.Select(n => n.Node).ToArray() ?? []);
         workflowStudioControl1.Properties.AdditionalProperties = node => [.. algorithmProperties(node), .. coordinateProperties(node)];
 
         // 5. 注册宿主运行能力；节点和 Handler 已由上面的 Runtime Module 成组注册。

@@ -153,9 +153,9 @@ public sealed class WorkflowFaultSessionTests
     {
         var document = new WorkflowDocument { Name = "处理流程", EntryNodeId = nodes[0].Id };
         foreach (var node in nodes)
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+            document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         for (var index = 1; index < nodes.Length; index++)
-            document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = nodes[index - 1].Id, FromPort = WorkflowPorts.Success, ToNodeId = nodes[index].Id });
+            document.Connections.Add(new WorkflowConnectionModel { FromNodeId = nodes[index - 1].Id, FromPort = WorkflowPorts.Success, ToNodeId = nodes[index].Id });
         return document;
     }
 

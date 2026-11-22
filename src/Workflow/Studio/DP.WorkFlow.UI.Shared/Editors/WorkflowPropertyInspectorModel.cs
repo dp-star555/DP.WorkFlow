@@ -560,9 +560,9 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
     private void Refresh()
     {
         SelectedNode = _session.SelectedNodeId is { } selectedId
-            ? _session.Canvas.Nodes.FirstOrDefault(item => item.Node.Id == selectedId)?.Node
+            ? _session.Document.Nodes.FirstOrDefault(item => item.Node.Id == selectedId)?.Node
             : null;
-        _entries = SelectedNode is null ? Array.Empty<WorkflowPropertyEntry>() : BuildEntries(SelectedNode, _choiceProvider, _session.Canvas.Nodes.Select(item => item.Node).ToArray(), _session.PublicData)
+        _entries = SelectedNode is null ? Array.Empty<WorkflowPropertyEntry>() : BuildEntries(SelectedNode, _choiceProvider, _session.Document.Nodes.Select(item => item.Node).ToArray(), _session.PublicData)
             .Concat(_additionalProperties?.Invoke(SelectedNode) ?? Array.Empty<WorkflowPropertyEntry>()).ToArray();
         Changed?.Invoke(this, EventArgs.Empty);
     }

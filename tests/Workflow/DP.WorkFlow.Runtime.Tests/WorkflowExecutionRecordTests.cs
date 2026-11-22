@@ -85,7 +85,7 @@ public sealed class WorkflowExecutionRecordTests
         flow.Connect("Grip", "Read");
         flow.Connect("Read", "Place");
         var handler = new WorkflowDocument { Name = "处理流程", EntryNodeId = "Undo" };
-        handler.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new UndoAllNode { Id = "Undo" } });
+        handler.Nodes.Add(new WorkflowCanvasNode { Node = new UndoAllNode { Id = "Undo" } });
         var options = new WorkflowRunCenterOptions { DefaultFaultHandler = handler, FaultSettleMilliseconds = 0 };
         var catalog = TestFlow.Catalog()
             .Register(WorkflowNodeDescriptor.Create<LiftNode>(ports: new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output() }))

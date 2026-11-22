@@ -300,12 +300,12 @@ public sealed class WorkflowStopPointTests
         public void Add(WorkflowNodeModel node)
         {
             if (string.IsNullOrWhiteSpace(node.Title)) node.Title = node.Id;
-            Document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+            Document.Nodes.Add(new WorkflowCanvasNode { Node = node });
             if (string.IsNullOrWhiteSpace(Document.EntryNodeId)) Document.EntryNodeId = node.Id;
         }
 
         public void Connect(string from, string to, string port = WorkflowPorts.Success) =>
-            Document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = from, FromPort = port, ToNodeId = to });
+            Document.Connections.Add(new WorkflowConnectionModel { FromNodeId = from, FromPort = port, ToNodeId = to });
 
         public WorkflowNodeHandlerCatalog Handlers() => new WorkflowNodeHandlerCatalog()
             .Register(new StepHandler(Probe)).Register(new ActHandler(Probe)).Register(new EntryHandler(Probe))

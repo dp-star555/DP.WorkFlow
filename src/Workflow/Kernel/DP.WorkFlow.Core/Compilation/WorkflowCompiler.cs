@@ -31,7 +31,10 @@ public sealed class WorkflowCompiler
     public WorkflowExecutionPlan Compile(WorkflowDocument document)
     {
         Guard.NotNull(document);
-        // 子流程接口的类型跟随来源，编译前按当前文档解析并注入启动节点和复合节点。
+        // 子流程接口的类型跟随来源，编译前按当前文档解析并注入启动节点和复合节点（设计器依赖原文档上的解析结果）。
+        WorkflowSubflowInterfaces.Refresh(document, _catalog);
+        // R7-c：运行开始时按保存格式复制一份配置再编译，运行中修改原文档不会生效；派生内容在副本上重新解析。
+        document = WorkflowConfigurationCopy.CopyDocument(document);
         WorkflowSubflowInterfaces.Refresh(document, _catalog);
         // 公共数据清单登记在根文档上，覆盖全部子画布，在根上一次核对。
         return CompileCore(

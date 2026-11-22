@@ -41,8 +41,8 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule
         _warning = (WarningHandlerBlockNodeModel)session.AddNode("WarningHandlerBlock", 270, 300).Node;
         _warning.Title = "工程师预设的模拟处置";
         var document = _warning.SubDocument;
-        document.CanvasProjection.Nodes.Clear();
-        document.CanvasProjection.Connections.Clear();
+        document.Nodes.Clear();
+        document.Connections.Clear();
         Add(document, new WarningHandlerStartNodeModel { Id = "HandlerStart", Title = "处理入口" }, 60, 160);
         Add(document, new OperatorChoiceNodeModel
         {
@@ -102,9 +102,9 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule
 
     private static WorkflowPortDescriptor[] Ports() => new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output() };
     private static void Add(WorkflowDocument document, WorkflowNodeModel node, double x, double y) =>
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node, X = x, Y = y });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node, X = x, Y = y });
     private static void Connect(WorkflowDocument document, string from, string to, string port = WorkflowPorts.Success) =>
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = from, FromPort = port, ToNodeId = to });
+        document.Connections.Add(new WorkflowConnectionModel { FromNodeId = from, FromPort = port, ToNodeId = to });
 
     /// <summary>模拟运动标准输出，可在运行监控中查看命令和进料次数。</summary>
     /// <param name="Position">模拟位置。</param>

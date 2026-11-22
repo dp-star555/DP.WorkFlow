@@ -13,7 +13,7 @@ public sealed class ConvertValueNodeTests
             TargetType = E_SignalValueType.Double
         };
         var canvasDocument = new WorkflowDocument { Name = "转换" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         canvasDocument.EntryNodeId = node.Id;

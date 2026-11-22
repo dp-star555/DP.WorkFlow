@@ -88,7 +88,7 @@ public sealed class NewVisionCompletionTests
                 var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
                 var document = Document(new AnalyzeVisionBlobsNodeModel { Id = "blob" });
                 var session = new WorkflowDesignerSession(document, nodes);
-                var source = (AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes[0].Node;
+                var source = (AnalyzeVisionBlobsNodeModel)document.Nodes[0].Node;
                 var editor = new WorkflowNodeEditorModel(session, "blob", "blob", new[] { new VisionFrameEditorPageProvider() });
                 var page = editor.Pages.Single(p => p.RendererKey == VisionFrameEditorPageProvider.RendererKey);
                 var model = Assert.IsType<VisionFrameEditorPageModel>(page.Model);
@@ -102,10 +102,10 @@ public sealed class NewVisionCompletionTests
                 var wpf = new DP.WorkFlow.Vision.UI.Wpf.VisionFrameEditorRenderer().CreateElement(page);
                 Assert.IsAssignableFrom<System.Windows.Controls.DockPanel>(wpf);
                 editor.ApplyChanges();
-                var committed = (AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes[0].Node;
+                var committed = (AnalyzeVisionBlobsNodeModel)document.Nodes[0].Node;
                 Assert.Single(committed.Regions); Assert.Equal(EWorkflowVisionRoiShape.Ellipse, committed.Regions[0].Shape);
                 Assert.True(session.Undo());
-                Assert.Empty(((AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes[0].Node).Regions);
+                Assert.Empty(((AnalyzeVisionBlobsNodeModel)document.Nodes[0].Node).Regions);
                 editor.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
             catch (Exception ex) { failure = ex; }
@@ -296,8 +296,8 @@ public sealed class NewVisionCompletionTests
     private static WorkflowDocument Document(params IWorkflowNodeModel[] nodes)
     {
         var doc = new WorkflowDocument { EntryNodeId = nodes[0].Id };
-        foreach (var node in nodes) doc.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
-        for (int i = 1; i < nodes.Length; i++) doc.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        foreach (var node in nodes) doc.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        for (int i = 1; i < nodes.Length; i++) doc.Connections.Add(new WorkflowConnectionModel
         { FromNodeId = nodes[i - 1].Id, ToNodeId = nodes[i].Id, FromPort = WorkflowPorts.Success, ToPort = WorkflowPorts.Input });
         return doc;
     }

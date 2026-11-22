@@ -217,8 +217,8 @@ public sealed class OperatorWindowTests
         demo.ConfigureServices(services, nodes, handlers, new WorkflowActionRegistry());
         var document = workspace.Navigator.RootSession.Document;
         var block = document.Graph.Nodes.OfType<WarningHandlerBlockNodeModel>().Single();
-        block.SubDocument.CanvasProjection.Connections.Clear();
-        block.SubDocument.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        block.SubDocument.Connections.Clear();
+        block.SubDocument.Connections.Add(new WorkflowConnectionModel
             { FromNodeId = "HandlerStart", FromPort = WorkflowPorts.Success, ToNodeId = "Stop" });
         block.SubDocument.Graph.Nodes.OfType<StopCurrentStationNodeModel>().Single().Reason = "工程师改为停止";
         using var host = new WorkflowRuntimeHost(nodes, handlers);

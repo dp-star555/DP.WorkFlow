@@ -21,10 +21,10 @@ public sealed class WorkflowVisionFrameScopeLoopReleaseTests
             var file = new AcquireVisionImageNodeModel { Id = "file", FilePath = path };
             var counter = new CounterNode { Id = "counter" };
             var document = new WorkflowDocument { Name = "环形采图", EntryNodeId = file.Id };
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = file });
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = counter });
-            document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = file.Id, FromPort = WorkflowPorts.Success, ToNodeId = counter.Id });
-            document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = counter.Id, FromPort = WorkflowPorts.Success, ToNodeId = file.Id });
+            document.Nodes.Add(new WorkflowCanvasNode { Node = file });
+            document.Nodes.Add(new WorkflowCanvasNode { Node = counter });
+            document.Connections.Add(new WorkflowConnectionModel { FromNodeId = file.Id, FromPort = WorkflowPorts.Success, ToNodeId = counter.Id });
+            document.Connections.Add(new WorkflowConnectionModel { FromNodeId = counter.Id, FromPort = WorkflowPorts.Success, ToNodeId = file.Id });
             var counterHandler = new CounterNodeHandler(iterations: 6);
             var handlers = new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers().Register(counterHandler);
             var services = new WorkflowServiceProvider()

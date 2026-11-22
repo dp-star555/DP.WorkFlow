@@ -49,7 +49,7 @@ public sealed class WorkflowFailedPortTests
         var ok = new FailedPortTestNode { Id = "OnOk", Title = "OK" };
         var ng = new FailedPortTestNode { Id = "OnNg", Title = "NG" };
         var document = new WorkflowDocument { Name = "失败出口", EntryNodeId = inspect.Id };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         foreach (var node in new[] { inspect, ok, ng }) canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvas.Connections.Add(new WorkflowConnectionModel { FromNodeId = inspect.Id, FromPort = WorkflowPorts.Success, ToNodeId = ok.Id, ToPort = WorkflowPorts.Input });
         if (connectFailed)

@@ -25,7 +25,7 @@ public sealed class WorkflowNodeResultPageTests
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var start = new StartNodeModel { Id = "Start", Title = "开始" };
         var document = new WorkflowDocument { Name = "Run" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = start });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = start });
         document.EntryNodeId = start.Id;
         var navigator = new WorkflowDesignerNavigator(document, catalog);
         using var host = new WorkflowRuntimeHost(catalog, new WorkflowNodeHandlerCatalog().Register(new StartNodeHandler()));
@@ -180,7 +180,7 @@ public sealed class WorkflowNodeResultPageTests
     {
         var start = new StartNodeModel { Id = "Start", Title = "开始" };
         var document = new WorkflowDocument { Name = "Results" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = start });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = start });
         document.EntryNodeId = start.Id;
         return (new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterStandardNodes()), start);
     }

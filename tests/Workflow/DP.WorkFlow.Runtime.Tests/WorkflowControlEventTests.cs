@@ -63,7 +63,7 @@ public sealed class WorkflowControlEventTests
     {
         var gate = new ControlTestNode { Id = "Gate", Title = "门" };
         var document = new WorkflowDocument { Name = "控制事件", EntryNodeId = gate.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = gate });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = gate });
         var catalog = new WorkflowNodeCatalog().Register<ControlTestNode>(1, WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output());
         var handlers = new WorkflowNodeHandlerCatalog().Register(new GateHandler(entered, proceed));
         return new WorkflowEngine(

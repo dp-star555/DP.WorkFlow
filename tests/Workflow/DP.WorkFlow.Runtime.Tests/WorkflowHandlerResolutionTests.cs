@@ -31,7 +31,7 @@ public sealed class WorkflowHandlerResolutionTests
     {
         var node = new TestNode { Id = "Node", Title = "节点" };
         var canvasDocument = new WorkflowDocument { Name = "Handler 预解析" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvasDocument.EntryNodeId = node.Id;
         return new WorkflowCompiler().Compile(canvasDocument);

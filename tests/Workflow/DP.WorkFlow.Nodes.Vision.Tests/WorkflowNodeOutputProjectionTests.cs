@@ -19,7 +19,7 @@ public sealed class WorkflowNodeOutputProjectionTests
         var handlers = new WorkflowNodeHandlerCatalog().Register(new ProjectingNodeHandler(projection));
 
         var document = new WorkflowDocument { Name = "投影流程", EntryNodeId = "project" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new ProjectingNode { Id = "project" } });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new ProjectingNode { Id = "project" } });
 
         var engine = new WorkflowEngine(
             new WorkflowCompiler(catalog).Compile(document),
@@ -45,7 +45,7 @@ public sealed class WorkflowNodeOutputProjectionTests
         var handlers = new WorkflowNodeHandlerCatalog().Register(new ProjectingNodeHandler(projection, fail: true));
 
         var document = new WorkflowDocument { Name = "投影失败流程", EntryNodeId = "project" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new ProjectingNode { Id = "project" } });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new ProjectingNode { Id = "project" } });
 
         var engine = new WorkflowEngine(
             new WorkflowCompiler(catalog).Compile(document),
@@ -117,7 +117,7 @@ public sealed class WorkflowNodeOutputProjectionTests
             var fault = new FaultOnceNode { Id = "fault" };
             document.EntryNodeId = entry.Id;
             foreach (var node in new IWorkflowNodeModel[] { entry, file, fault })
-                document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+                document.Nodes.Add(new WorkflowCanvasNode { Node = node });
             Connect(document, "entry", "file");
             Connect(document, "file", "fault");
 
@@ -164,7 +164,7 @@ public sealed class WorkflowNodeOutputProjectionTests
     }
 
     private static void Connect(WorkflowDocument document, string from, string to) =>
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        document.Connections.Add(new WorkflowConnectionModel
         { FromNodeId = from, FromPort = WorkflowPorts.Success, ToNodeId = to, ToPort = WorkflowPorts.Input });
 
     private static async Task RunLoadFileAsync(WorkflowVisionFrameScope scope)
@@ -179,7 +179,7 @@ public sealed class WorkflowNodeOutputProjectionTests
             var document = new WorkflowDocument { Name = "采图流程" };
             var file = new AcquireVisionImageNodeModel { Id = "file", FilePath = path };
             document.EntryNodeId = file.Id;
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = file });
+            document.Nodes.Add(new WorkflowCanvasNode { Node = file });
 
             var services = new WorkflowServiceProvider()
                 .Add<IImageFileReader>(new NumberedReader())

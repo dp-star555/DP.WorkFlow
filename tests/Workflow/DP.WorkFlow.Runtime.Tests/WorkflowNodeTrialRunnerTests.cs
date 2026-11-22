@@ -45,9 +45,9 @@ public sealed class WorkflowNodeTrialRunnerTests
         var producer = new ProducerNode { Id = "Producer" };
         var consumer = new ConsumerNode { Id = "Consumer", Input = WorkflowInput<long>.FromBinding(new WorkflowBindingKey("Producer", "Count")) };
         var document = new WorkflowDocument { Name = "试运行" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = producer });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = consumer });
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = producer.Id, ToNodeId = consumer.Id });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = producer });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = consumer });
+        document.Connections.Add(new WorkflowConnectionModel { FromNodeId = producer.Id, ToNodeId = consumer.Id });
         document.EntryNodeId = producer.Id;
         var handlers = new WorkflowNodeHandlerCatalog().Register(new ProducerHandler()).Register(new ConsumerHandler());
         var context = new WorkflowContext();

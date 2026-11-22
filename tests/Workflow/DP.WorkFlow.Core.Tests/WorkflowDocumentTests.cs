@@ -3,35 +3,26 @@ namespace DP.WorkFlow.Tests;
 public sealed class WorkflowDocumentTests
 {
     [Fact]
-    public void Construction_HasSingleDocumentRootAndOneWayCanvasProjection()
+    public void Document_IsTheOnlyModel()
     {
         var documentConstructors = typeof(WorkflowDocument).GetConstructors();
-        var canvasConstructors = typeof(WorkflowCanvasModel).GetConstructors();
 
         Assert.Single(documentConstructors);
         Assert.Empty(documentConstructors[0].GetParameters());
-        Assert.Empty(canvasConstructors);
-        Assert.DoesNotContain(
-            typeof(WorkflowGraph).GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic),
-            field => field.FieldType == typeof(WorkflowCanvasModel));
-        Assert.DoesNotContain(
-            typeof(WorkflowLayout).GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic),
-            field => field.FieldType == typeof(WorkflowCanvasModel));
+        // R6-b：过渡视图已去掉，节点和连线直接挂在文档上。
+        Assert.Null(typeof(WorkflowDocument).GetProperty("CanvasProjection"));
+        Assert.Null(typeof(WorkflowDocument).Assembly.GetType("DP.WorkFlow.WorkflowCanvasModel"));
     }
 
     [Fact]
-    public void CanvasProjection_MutatesStateOwnedAndExposedByDocument()
+    public void Nodes_AreVisibleThroughGraphAndLayoutViews()
     {
         var document = new WorkflowDocument { Name = "Owned" };
-        var canvas = document.CanvasProjection;
         var node = new TestNode { Id = "Node", Title = "Node" };
 
-        canvas.Nodes.Add(new WorkflowCanvasNode { Node = node, X = 12, Y = 34 });
-        canvas.Name = "Renamed";
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node, X = 12, Y = 34 });
+        document.Name = "Renamed";
 
-        Assert.DoesNotContain(
-            typeof(WorkflowCanvasModel).GetProperties(),
-            property => property.PropertyType == typeof(WorkflowDocument));
         Assert.Equal("Renamed", document.Name);
         Assert.Same(node, Assert.Single(document.Graph.Nodes));
         var layout = Assert.Single(document.Layout.Nodes);
@@ -41,26 +32,12 @@ public sealed class WorkflowDocumentTests
     }
 
     [Fact]
-    public void CoreAnalysisAndCompilation_DoNotExposeCanvasEntryPoints()
-    {
-        Assert.DoesNotContain(
-            typeof(WorkflowCompiler).GetMethods(),
-            method => method.GetParameters().Any(parameter => parameter.ParameterType == typeof(WorkflowCanvasModel)));
-        Assert.DoesNotContain(
-            typeof(WorkflowGraphValidator).GetMethods(),
-            method => method.GetParameters().Any(parameter => parameter.ParameterType == typeof(WorkflowCanvasModel)));
-        Assert.DoesNotContain(
-            typeof(WorkflowBindingAnalyzer).GetMethods(),
-            method => method.GetParameters().Any(parameter => parameter.ParameterType == typeof(WorkflowCanvasModel)));
-    }
-
-    [Fact]
     public void Compile_UsesPersistedEntryAndIgnoresDesignerLayout()
     {
         var document = new WorkflowDocument { Name = "Document", EntryNodeId = "Start" };
         var start = new TestNode { Id = "Start", Title = "Start" };
         var end = new TestNode { Id = "End", Title = "End" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode
+        document.Nodes.Add(new WorkflowCanvasNode
         {
             Node = start,
             X = 20,
@@ -68,8 +45,8 @@ public sealed class WorkflowDocumentTests
             Width = 180,
             Height = 60
         });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = end, X = 300, Y = 30 });
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        document.Nodes.Add(new WorkflowCanvasNode { Node = end, X = 300, Y = 30 });
+        document.Connections.Add(new WorkflowConnectionModel
         {
             FromNodeId = start.Id,
             FromPort = WorkflowPorts.Success,
@@ -79,9 +56,9 @@ public sealed class WorkflowDocumentTests
         });
 
         var first = new WorkflowCompiler().Compile(document);
-        document.CanvasProjection.Nodes[0].X = 900;
-        document.CanvasProjection.Nodes[0].Width = 420;
-        document.CanvasProjection.Connections[0].Waypoints.Clear();
+        document.Nodes[0].X = 900;
+        document.Nodes[0].Width = 420;
+        document.Connections[0].Waypoints.Clear();
         var second = new WorkflowCompiler().Compile(document);
 
         Assert.Equal("Start", first.EntryNodeId);
@@ -94,7 +71,7 @@ public sealed class WorkflowDocumentTests
     public void Compile_RejectsDocumentWithoutExplicitEntry()
     {
         var document = new WorkflowDocument();
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode
+        document.Nodes.Add(new WorkflowCanvasNode
         {
             Node = new TestNode { Id = "Node", Title = "Node" }
         });
@@ -108,13 +85,13 @@ public sealed class WorkflowDocumentTests
     public void Compile_RejectsNestedDocumentWithoutExplicitEntry()
     {
         var child = new WorkflowDocument();
-        child.CanvasProjection.Nodes.Add(new WorkflowCanvasNode
+        child.Nodes.Add(new WorkflowCanvasNode
         {
             Node = new TestNode { Id = "ChildStart", Title = "Child" }
         });
         var block = new TestSubDocumentNode { Id = "Block", Title = "Block", SubDocument = child };
         var parent = new WorkflowDocument { EntryNodeId = block.Id };
-        parent.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = block });
+        parent.Nodes.Add(new WorkflowCanvasNode { Node = block });
 
         var exception = Assert.Throws<WorkflowCompilationException>(() => new WorkflowCompiler().Compile(parent));
 

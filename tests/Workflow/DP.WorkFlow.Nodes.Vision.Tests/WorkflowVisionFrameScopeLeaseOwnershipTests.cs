@@ -96,7 +96,7 @@ public sealed class WorkflowVisionFrameScopeLeaseOwnershipTests
     {
         var file = new AcquireVisionImageNodeModel { Id = "file", FilePath = path };
         var document = new WorkflowDocument { Name = "采图", EntryNodeId = file.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = file });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = file });
 
         var catalog = new WorkflowNodeCatalog().RegisterImageNodes();
         var handlers = new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers();

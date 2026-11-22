@@ -68,9 +68,9 @@ public sealed partial class WorkflowDesignerSession
     public IReadOnlyList<WorkflowDataLink> GetDataLinks()
     {
         if (_dataLinks is not null) return _dataLinks;
-        if (Canvas.Nodes.All(node => node.ExposedOutputMembers.Count == 0) || Canvas.Nodes.Count == 0)
+        if (Document.Nodes.All(node => node.ExposedOutputMembers.Count == 0) || Document.Nodes.Count == 0)
             return _dataLinks = Array.Empty<WorkflowDataLink>();
-        var exposed = Canvas.Nodes.ToDictionary(node => node.Node.Id, node => node.ExposedOutputMembers, StringComparer.Ordinal);
+        var exposed = Document.Nodes.ToDictionary(node => node.Node.Id, node => node.ExposedOutputMembers, StringComparer.Ordinal);
         try
         {
             var analysis = new WorkflowBindingAnalyzer(Catalog).Analyze(Document, ResolveAnalysisEntry());
@@ -175,7 +175,7 @@ public sealed partial class WorkflowDesignerSession
                 ?? property.Name));
 
     private string ResolveAnalysisEntry() =>
-        !string.IsNullOrWhiteSpace(Document.EntryNodeId) ? Document.EntryNodeId : Canvas.Nodes[0].Node.Id;
+        !string.IsNullOrWhiteSpace(Document.EntryNodeId) ? Document.EntryNodeId : Document.Nodes[0].Node.Id;
 
     // 绑定路径对应的数据端口：已显示的成员中与路径相同或作为其前缀的最长一个。
     private static string? ExposedMember(ICollection<string> exposed, string memberPath) => exposed

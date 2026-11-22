@@ -119,7 +119,7 @@ public sealed class VisionMaskEditingTests
         var catalog = new WorkflowNodeCatalog().RegisterImageNodes();
         var store = new WorkflowDocumentJsonStore(catalog);
         var document = store.Deserialize(store.Serialize(Document(source, mask, color))).Document;
-        var edited = Assert.IsType<AnalyzeVisionColorNodeModel>(document.CanvasProjection.Nodes.Last().Node);
+        var edited = Assert.IsType<AnalyzeVisionColorNodeModel>(document.Nodes.Last().Node);
         using var frames = new WorkflowVisionFrameScope();
         using var host = new WorkflowRuntimeHost(catalog, new WorkflowNodeHandlerCatalog().RegisterImageNodeHandlers());
         host.Configure(document, new WorkflowContext(new WorkflowServiceProvider().Add<IImageFileReader>(new Reader())
@@ -160,8 +160,8 @@ public sealed class VisionMaskEditingTests
     internal static WorkflowDocument Document(params IWorkflowNodeModel[] nodes)
     {
         var document = new WorkflowDocument { EntryNodeId = nodes[0].Id };
-        foreach (var node in nodes) document.CanvasProjection.Nodes.Add(new() { Node = node });
-        for (int i = 1; i < nodes.Length; i++) document.CanvasProjection.Connections.Add(new()
+        foreach (var node in nodes) document.Nodes.Add(new() { Node = node });
+        for (int i = 1; i < nodes.Length; i++) document.Connections.Add(new()
             { FromNodeId = nodes[i - 1].Id, FromPort = WorkflowPorts.Success, ToNodeId = nodes[i].Id, ToPort = WorkflowPorts.Input });
         return document;
     }
