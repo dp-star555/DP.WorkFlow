@@ -31,6 +31,8 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     private readonly TabPage _diagnosticsPage = new() { Name = "diagnosticsPage", Text = "诊断", Padding = new Padding(6) };
     private readonly TabPage _runtimePage = new() { Name = "runtimePage", Text = "运行监视", Padding = new Padding(6) };
     private readonly TabPage _noticesPage = new() { Name = "noticesPage", Text = "提示", Padding = new Padding(6) };
+    private readonly TabPage _publicDataPage = new() { Name = "publicDataPage", Text = "公共数据", Padding = new Padding(6) };
+    private WorkflowPublicDataManifestModel? _publicDataModel;
     private WorkflowDesignerSession? _session;
     private IWorkflowCanvasRunCommands? _runCommands;
     private bool _autoFitPending;
@@ -61,9 +63,14 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _diagnosticsPage.Controls.Add(Diagnostics);
         _runtimePage.Controls.Add(RuntimeMonitor);
         _noticesPage.Controls.Add(Notices);
+        PublicData = new WorkflowPublicDataPage { Dock = DockStyle.Fill };
+        _publicDataPage.Controls.Add(PublicData);
+        PublicData.UseActivated += (_, use) => RevealNode(use.PlanPath, use.NodeId, $"节点 {use.NodeId}");
+        PublicData.EditError += (_, message) => InteractionError?.Invoke(this, message);
         _bottomTabs.TabPages.Add(_diagnosticsPage);
         _bottomTabs.TabPages.Add(_runtimePage);
         _bottomTabs.TabPages.Add(_noticesPage);
+        _bottomTabs.TabPages.Add(_publicDataPage);
         Notices.CountChanged += (_, _) => _noticesPage.Text = Notices.NoticeCount == 0 ? "提示" : $"提示 ({Notices.NoticeCount})";
         Notices.NoticeActivated += (_, notice) => RevealNotice(notice);
         Designer.NoticesPageRequested += (_, _) => ShowNotices();
@@ -141,6 +148,12 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     /// <summary>提示页：全部节点提示与画布级提示，提示板取自画布会话（运行绑定设置）。</summary>
     public WorkflowNoticesControl Notices { get; }
 
+    /// <summary>公共数据清单页（随画布会话切换）。</summary>
+    public WorkflowPublicDataPage PublicData { get; }
+
+    /// <summary>切到公共数据页。</summary>
+    public void ShowPublicData() => _bottomTabs.SelectedTab = _publicDataPage;
+
     /// <summary>切到提示页。</summary>
     public void ShowNotices()
     {
@@ -178,6 +191,9 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             Toolbox.Session = value;
             Diagnostics.Session = value;
             Notices.Board = value?.Notices;
+            _publicDataModel?.Dispose();
+            _publicDataModel = value is null ? null : new WorkflowPublicDataManifestModel(value);
+            PublicData.Model = _publicDataModel;
             _autoFitPending = value is not null;
             QueueAutoFit();
             UpdateCommands();
@@ -252,6 +268,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             Toolbox.NodeTypeActivated -= OnNodeTypeActivated;
             if (_session is not null) _session.Changed -= OnSessionChanged;
             if (_runCommands is not null) _runCommands.Changed -= OnRunCommandsChanged;
+            _publicDataModel?.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -339,17 +356,21 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     /// <summary>
     /// 定位提示：本画布上的节点直接选中；子画布里的提示选中本画布上包含它的最外层复合节点（子画布以节点窗口打开）。
     /// </summary>
-    private void RevealNotice(WorkflowNotice notice)
+    private void RevealNotice(WorkflowNotice notice) =>
+        RevealNode(notice.PlanPath, notice.NodeId, "提示位于 " + WorkflowNoticeLocation.Describe(notice));
+
+    /// <summary>定位到画布路径下的节点；子画布里的节点选中本画布上包含它的最外层复合节点。</summary>
+    private void RevealNode(string planPath, string? nodeId, string what)
     {
         if (_session is not { } session) return;
         var here = WorkflowNoticeLocation.Split(session.NoticePlanPath);
-        var there = WorkflowNoticeLocation.Split(notice.PlanPath);
+        var there = WorkflowNoticeLocation.Split(planPath);
         if (there.Count < here.Count || !there.Take(here.Count).SequenceEqual(here, StringComparer.Ordinal))
         {
-            InteractionError?.Invoke(this, $"提示位于 {WorkflowNoticeLocation.Describe(notice)}，不在当前画布中。");
+            InteractionError?.Invoke(this, $"{what}，不在当前画布中。");
             return;
         }
-        var target = there.Count > here.Count ? there[here.Count] : notice.NodeId;
+        var target = there.Count > here.Count ? there[here.Count] : nodeId;
         if (target is null || !session.Document.Nodes.Any(node => node.Node.Id == target)) return;
         session.SelectedNodeId = target;
         Designer.Focus();
