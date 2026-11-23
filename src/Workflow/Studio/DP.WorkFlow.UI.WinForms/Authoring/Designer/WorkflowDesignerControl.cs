@@ -92,6 +92,13 @@ public sealed partial class WorkflowDesignerControl : Control
         }
     }
 
+    /// <summary>
+    /// 只读：只能平移、缩放、选中和看提示，不能拖动、连线、删除、粘贴、拖入节点，双击也不打开节点编辑。
+    /// 运行监视页的画布用它。
+    /// </summary>
+    [System.ComponentModel.DefaultValue(false)]
+    public bool ReadOnly { get; set; }
+
     /// <summary>获取当前是否因节点超出可视区域而显示右上角概览窗口。</summary>
     public bool IsOverviewMapVisible => TryCreateOverviewMapLayout(out _);
 
@@ -152,14 +159,14 @@ public sealed partial class WorkflowDesignerControl : Control
         drgevent.Effect = ToolboxDragEffect(drgevent);
     }
 
-    private static DragDropEffects ToolboxDragEffect(DragEventArgs e) =>
-        e.Data?.GetDataPresent(typeof(WorkflowToolboxItem)) == true ? DragDropEffects.Copy : DragDropEffects.None;
+    private DragDropEffects ToolboxDragEffect(DragEventArgs e) =>
+        !ReadOnly && e.Data?.GetDataPresent(typeof(WorkflowToolboxItem)) == true ? DragDropEffects.Copy : DragDropEffects.None;
 
     /// <inheritdoc />
     protected override void OnDragDrop(DragEventArgs drgevent)
     {
         base.OnDragDrop(drgevent);
-        if (_session is null || drgevent.Data?.GetData(typeof(WorkflowToolboxItem)) is not WorkflowToolboxItem item)
+        if (ReadOnly || _session is null || drgevent.Data?.GetData(typeof(WorkflowToolboxItem)) is not WorkflowToolboxItem item)
             return;
         var client = PointToClient(new Point(drgevent.X, drgevent.Y));
         var canvas = WorkflowDesignerGeometry.ScreenToCanvas(_session, client.X, client.Y);
@@ -185,7 +192,7 @@ public sealed partial class WorkflowDesignerControl : Control
         if (_session is null)
             return;
         _pointer = e.Location;
-        if (e.Button == MouseButtons.Right)
+        if (e.Button == MouseButtons.Right && !ReadOnly)
         {
             var contextConnection = HitConnectionLabel(e.X, e.Y) ?? WorkflowDesignerInteraction.HitConnection(_session, e.X, e.Y);
             if (contextConnection is not null)
@@ -224,6 +231,11 @@ public sealed partial class WorkflowDesignerControl : Control
             _mode = InteractionMode.NavigateOverview;
             Capture = true;
             Cursor = Cursors.Hand;
+            return;
+        }
+        if (ReadOnly)
+        {
+            SelectReadOnly(e.X, e.Y);
             return;
         }
         var waypoint = WorkflowDesignerInteraction.HitWaypoint(_session, e.X, e.Y);
@@ -499,11 +511,23 @@ public sealed partial class WorkflowDesignerControl : Control
         _session.SetViewport(zoom, e.X - canvasPoint.X * zoom, e.Y - canvasPoint.Y * zoom);
     }
 
+    // 只读时左键只选中：节点、连线，点空白取消选中。
+    private void SelectReadOnly(int x, int y)
+    {
+        if (_session is null) return;
+        if (WorkflowDesignerInteraction.HitNode(_session, x, y) is { } node)
+            _session.SelectNode(node.Node.Id);
+        else if (WorkflowDesignerInteraction.HitConnection(_session, x, y) is { } connection)
+            _session.SelectConnection(connection);
+        else
+            _session.SelectNodes(Array.Empty<string>());
+    }
+
     /// <inheritdoc />
     protected override void OnMouseDoubleClick(MouseEventArgs e)
     {
         base.OnMouseDoubleClick(e);
-        if (_session is null)
+        if (_session is null || ReadOnly)
             return;
         var node = WorkflowDesignerInteraction.HitNode(_session, e.X, e.Y);
         if (node is not null)
@@ -539,6 +563,8 @@ public sealed partial class WorkflowDesignerControl : Control
             }
             if (keyData == (Keys.Control | Keys.C))
                 return _session.CopySelection();
+            if (ReadOnly)
+                return base.ProcessCmdKey(ref msg, keyData);
             if (keyData == (Keys.Control | Keys.V))
                 return _session.PasteSelection().Count > 0;
             if (keyData == Keys.Delete && _session.SelectedNodeIds.Count > 0)

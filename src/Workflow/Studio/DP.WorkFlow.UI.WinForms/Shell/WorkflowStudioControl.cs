@@ -145,7 +145,9 @@ public sealed partial class WorkflowStudioControl : UserControl
                 return;
             _runCommands?.Dispose();
             _runCommands = null;
+            if (_runtimeBinding is not null) _runtimeBinding.OperationFailed -= OnBindingOperationFailed;
             _runtimeBinding = value;
+            if (_runtimeBinding is not null) _runtimeBinding.OperationFailed += OnBindingOperationFailed;
             RuntimeMonitor.RuntimeBinding = value;
             if (_runtimeBinding is not null)
             {
@@ -354,6 +356,20 @@ public sealed partial class WorkflowStudioControl : UserControl
         {
             InteractionError?.Invoke(this, $"无法打开节点工作台：{exception.Message}");
         }
+    }
+
+    private void OnBindingOperationFailed(object? sender, string message)
+    {
+        if (IsDisposed) return;
+        if (InvokeRequired) BeginInvoke(new Action(() => InteractionError?.Invoke(this, message)));
+        else InteractionError?.Invoke(this, message);
+    }
+
+    /// <summary>重新读取运行按钮的可用性和提示（例如整线状态、权限变化后）。</summary>
+    public void RefreshRunCommands()
+    {
+        _runCommands?.Refresh();
+        canvasWorkspace.RefreshRunCommands();
     }
 
     /// <summary>应用Navigator。</summary>

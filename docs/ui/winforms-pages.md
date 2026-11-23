@@ -11,7 +11,7 @@
 ## 打包给 DP.Foundation
 
 - DP.Foundation 的 Workflow 功能包引用本仓库的包，不引用源码：内核、持久化、标准 / 复合 / 工艺 / 运动节点、脚本、UI.Shared、UI.WinForms，加上 DP.Vision 的 DP.Plugins.Runtime，共 13 个。
-- 版本在根目录 `Directory.Build.props` 的 `<Version>`（现在 1.0.0-preview.1）。改了这些库：版本加一，运行 `tools/Pack-ForFoundation.ps1`（打包并复制到同级 DP.Foundation\vendor\packages），再在 Foundation 改引用版本、vendor\README.md 的哈希，`dotnet restore --force-evaluate`。
+- 版本在根目录 `Directory.Build.props` 的 `<Version>`（现在 1.0.0-preview.2）。改了这些库：版本加一，运行 `tools/Pack-ForFoundation.ps1`（打包并复制到同级 DP.Foundation\vendor\packages），再在 Foundation 改引用版本、vendor\README.md 的哈希，`dotnet restore --force-evaluate`。
 - 脚本库的包 ID 改成 `DP.WorkFlow.ScriptEngine` / `DP.WorkFlow.ScriptEngine.WinForms`（程序集名不变）。后者带一个 buildTransitive 目标，间接引用时也把 Scintilla 原生库复制到程序目录。
 
 ## 主题
@@ -82,6 +82,34 @@
   - 各流程的状态、恢复轮次、提示条数、记录健康，可以启动和停止。
   - 选中流程的提示。
   - 故障工作台。
+
+## 运行监视页
+
+- `WorkflowRunMonitorPage(center, catalog, documentOf)`：选一个流程，上面一排是状态、运行次数、圈数、节拍、界面同步，中间是只读画布，下面是 `WorkflowRuntimeMonitorControl`（令牌、并行域、子流程、事件、输出、节点耗时）。
+- 画布 `WorkflowDesignerControl.ReadOnly`：只能平移、缩放、选中、看提示，不能拖动、连线、删除、粘贴、拖入节点，双击不打开节点编辑。
+- 统计 `WorkflowRunStatistics`（UI.Shared）：只从界面拉到的快照推算。
+  - 节拍：根画布有循环块时是主循环相邻两圈的间隔（一帧跳过多圈时平分），没有时是每次运行结束时的总耗时；取近 60 次平均。
+  - 显示延迟：快照时刻到界面应用它的时刻。
+
+## 流程库
+
+- `WorkflowFlowLibrary`（Persistence.Json）：一个目录的流程文件加历史版本，只按 JSON 文本操作，不需要节点目录。
+  - 文件名就是流程名：复制、改名、导入时把文件里的流程名一起改掉。
+  - 历史版本在 `.history\名字\`：`v0001.json`… 和 `versions.json`（时间、保存人、说明）。`RecordVersion` 内容没变时不重复记。
+  - 删除只删文件，先记一版；恢复前也记一版。`Compare` 比根画布：新增、删掉、参数变了、只挪了位置的节点，新增和删掉的连线，流程名、入口、公共数据清单。
+- `WorkflowFlowLibraryPage`（UI.WinForms）：表格、搜索、显示已删除，新建（交给宿主）、复制、改名、删除、导入、导出、历史版本对话框（比较、恢复）。状态文字由宿主给。
+- `WorkflowDocumentWorkspace.Saved`：写到文件后发生（打开文件、放弃修改不发），宿主据此记版本、重新加载。
+
+## 操作准入（审计）
+
+- `IWorkflowOperationGate`（UI.Shared）：宿主对界面操作的准入与记录，默认 `WorkflowOperationGates.Direct` 直接执行。
+- `WorkflowOperation(Kind, Target, Detail)`，`Key` 是稳定的操作键，例如 `workflow.flow.start`、`workflow.fault.release`、`workflow.design.run`。
+- 经过它的操作：
+  - 运行总览：单独启动 / 停止、全部启动 / 停止（`WorkflowRunCenterPage.Gate`）。
+  - 故障工作台：放行、重新运行处理流程、全部停止（`WorkflowFaultWorkbenchControl.Gate`，另有 `CanOperate`）。
+  - 设计器运行：开始（整个流程、当前子流程、单节点）和停止（`WorkflowStudioRuntimeBinding.Gate`）。
+- 只包住“发出命令”，不等流程跑完。
+- `WorkflowStudioRuntimeBinding.RunBlockedReason`：不能开始运行的原因，运行按钮灰显并在提示里写明。
 
 ## 未做（等阶段 G 或后续确认）
 

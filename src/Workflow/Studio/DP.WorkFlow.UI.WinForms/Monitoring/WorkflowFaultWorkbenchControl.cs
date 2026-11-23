@@ -55,17 +55,22 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
         _options.DrawItem += DrawOption;
         _options.SelectedIndexChanged += (_, _) => ChooseOption();
         _view.SelectedIndexChanged += (_, _) => { if (!_rebuilding) { _signature = string.Empty; RefreshView(); } };
-        _release.Click += (_, _) => Guarded(() => _model?.Release(_choices));
+        _release.Click += (_, _) =>
+        {
+            var choices = new Dictionary<string, WorkflowResumeDirective>(_choices, StringComparer.Ordinal);
+            var detail = string.Join("；", choices.Select(pair => pair.Key + "：" + pair.Value.DisplayName));
+            Gated(new WorkflowOperation(WorkflowOperationKind.ReleaseFault, "*", detail), () => _model?.Release(choices));
+        };
         _rerun.Click += (_, _) =>
         {
             if (MessageBox.Show(FindForm(), "处理流程会从头再跑一遍。已经撤回过的动作不会再撤回；请确认现场可以重新处理。",
                     "重新运行处理流程", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) == DialogResult.OK)
-                Guarded(() => _model?.RerunHandler());
+                Gated(new WorkflowOperation(WorkflowOperationKind.RerunFaultHandler, "*"), () => _model?.RerunHandler());
         };
         _stopAll.Click += (_, _) =>
         {
             if (MessageBox.Show(FindForm(), "停止全部受影响的流程？", "全部停止", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) == DialogResult.OK)
-                Guarded(() => _model?.StopAll());
+                Gated(new WorkflowOperation(WorkflowOperationKind.StopFaultedFlows, "*"), () => _model?.StopAll());
         };
 
         var header = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(0, 0, 0, 8) };
@@ -112,6 +117,23 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
             RefreshView();
         }
     }
+
+    /// <summary>操作准入（宿主的鉴权和审计）；为空时直接执行。</summary>
+    public IWorkflowOperationGate? Gate { get; set; }
+
+    /// <summary>是否允许操作（放行、重新运行、全部停止）；宿主按权限设置。默认允许。</summary>
+    public bool CanOperate
+    {
+        get => _canOperate;
+        set
+        {
+            if (_canOperate == value) return;
+            _canOperate = value;
+            UpdateActions();
+        }
+    }
+
+    private bool _canOperate = true;
 
     /// <summary>出现等待操作员选择的兜底询问时发生（界面线程），宿主可以据此切到工作台。</summary>
     public event EventHandler? DecisionRequested;
@@ -308,11 +330,12 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
     {
         var deciding = _shown?.Fallback is not null && _view.SelectedItem is not HistoryChoice;
         _release.Visible = _rerun.Visible = _stopAll.Visible = deciding;
-        _rerun.Enabled = _shown?.Fallback?.HasHandler == true;
+        _rerun.Enabled = _canOperate && _shown?.Fallback?.HasHandler == true;
+        _stopAll.Enabled = _canOperate;
         var missing = deciding
             ? _shown!.Flows.Where(flow => flow.NeedsDirective && !_choices.ContainsKey(flow.FlowName)).Select(flow => flow.FlowName).ToArray()
             : Array.Empty<string>();
-        _release.Enabled = deciding && missing.Length == 0;
+        _release.Enabled = _canOperate && deciding && missing.Length == 0;
         _hint.Text = !deciding ? string.Empty
             : missing.Length > 0 ? "还要给这些流程选去向：" + string.Join("、", missing)
             : "各流程的去向都选好了。";
@@ -331,6 +354,28 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
         var text = option.Allowed ? option.Text : option.Text + "（不可用）";
         TextRenderer.DrawText(e.Graphics, text, _options.Font, Rectangle.Inflate(e.Bounds, -8, 0), color,
             TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+    }
+
+    // 经过宿主的准入：拒绝或出错时显示消息；完成后刷新。
+    private async void Gated(WorkflowOperation operation, Action action)
+    {
+        if (Gate is not { } gate)
+        {
+            Guarded(action);
+            return;
+        }
+        try
+        {
+            await gate.RunAsync(operation, () => { action(); return Task.CompletedTask; });
+            _choices.Clear();
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            ActionError?.Invoke(this, exception.Message);
+        }
+        if (IsDisposed) return;
+        _signature = string.Empty;
+        RefreshView();
     }
 
     private void Guarded(Action action)

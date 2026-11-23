@@ -46,15 +46,35 @@ public sealed class WorkflowRunCenterPage : WorkflowPage
         Controls.Add(layout);
 
         _flows.SelectionChanged += (_, _) => { Notices.Board = SelectedFlow is { } name ? _overview.GetNotices(name) : null; UpdateCommands(); };
-        _start.Click += (_, _) => Act(name => _ = Observe(name, _overview.Start(name)));
-        _stop.Click += (_, _) => Act(name => _ = _overview.Stop(name));
-        _startAll.Click += (_, _) => { foreach (var task in _overview.StartAll()) _ = Observe(null, task); };
-        _stopAll.Click += (_, _) => _ = _overview.StopAll();
+        _start.Click += (_, _) => Act(WorkflowOperationKind.StartFlow, name => { _ = Observe(name, _overview.Start(name)); return Task.CompletedTask; });
+        _stop.Click += (_, _) => Act(WorkflowOperationKind.StopFlow, name => _overview.Stop(name));
+        _startAll.Click += (_, _) => Run(new WorkflowOperation(WorkflowOperationKind.StartAll, "*"), () =>
+        {
+            foreach (var task in _overview.StartAll()) _ = Observe(null, task);
+            return Task.CompletedTask;
+        });
+        _stopAll.Click += (_, _) => Run(new WorkflowOperation(WorkflowOperationKind.StopAll, "*"), () => _overview.StopAll());
         Workbench.ActionError += (_, message) => ShowMessage(message);
     }
 
     /// <summary>故障工作台。</summary>
     public WorkflowFaultWorkbenchControl Workbench { get; }
+
+    /// <summary>
+    /// 操作准入（宿主的鉴权和审计），同时交给故障工作台；为空时直接执行。
+    /// 单独启动只等命令发出，不等流程跑完。
+    /// </summary>
+    public IWorkflowOperationGate? Gate
+    {
+        get => _gate;
+        set
+        {
+            _gate = value;
+            Workbench.Gate = value;
+        }
+    }
+
+    private IWorkflowOperationGate? _gate;
 
     /// <summary>选中流程的提示。</summary>
     public WorkflowNoticesControl Notices { get; }
@@ -95,6 +115,7 @@ public sealed class WorkflowRunCenterPage : WorkflowPage
             }
             RestoreSelection(_flows, selected ?? rows.FirstOrDefault()?.Name, row => row.Tag);
         }
+        Workbench.CanOperate = CanOperate;
         UpdateCommands();
     }
 
@@ -119,11 +140,16 @@ public sealed class WorkflowRunCenterPage : WorkflowPage
         _stopAll.Enabled = CanOperate && rows.Any(row => row.State is E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused);
     }
 
-    private void Act(Action<string> action)
+    private void Act(WorkflowOperationKind kind, Func<string, Task> action)
     {
         if (SelectedFlow is not { } name) return;
-        try { action(name); }
-        catch (InvalidOperationException exception) { ShowMessage(exception.Message); }
+        Run(new WorkflowOperation(kind, name), () => action(name));
+    }
+
+    private async void Run(WorkflowOperation operation, Func<Task> action)
+    {
+        try { await (Gate ?? WorkflowOperationGates.Direct).RunAsync(operation, action); }
+        catch (Exception exception) when (exception is not OutOfMemoryException) { ShowMessage(exception.Message); }
     }
 
     private async Task Observe(string? name, Task<WorkflowRunResult> run)

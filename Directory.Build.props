@@ -17,7 +17,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <!-- 给 DP.Foundation 打包用的版本（tools/Pack-ForFoundation.ps1）；工程自己写了 Version 的（如 ModernUI 源码）以工程为准。 -->
-    <Version>1.0.0-preview.1</Version>
+    <Version>1.0.0-preview.2</Version>
     <Authors>DP</Authors>
   </PropertyGroup>
 </Project>

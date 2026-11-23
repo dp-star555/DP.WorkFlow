@@ -41,6 +41,9 @@ public sealed class WorkflowDocumentWorkspace : IDisposable
     /// <summary>在文档未保存状态变化时发生。</summary>
     public event EventHandler? DirtyStateChanged;
 
+    /// <summary>文档写到文件之后发生（保存、另存为），参数是文件路径。打开文件、放弃修改不会触发。</summary>
+    public event EventHandler<string>? Saved;
+
     /// <summary>创建空白文档，并添加一个 Start 节点。</summary>
     /// <param name="name">名称。</param>
     public WorkflowDesignerNavigator New(string name = "未命名流程")
@@ -88,6 +91,7 @@ public sealed class WorkflowDocumentWorkspace : IDisposable
         _store.SaveToFile(_navigator.RootDocument, CurrentFilePath);
         SetDirty(false);
         AddRecentFile(CurrentFilePath);
+        Saved?.Invoke(this, CurrentFilePath!);
     }
 
     /// <summary>保存到新路径。</summary>
