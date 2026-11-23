@@ -36,7 +36,6 @@ public sealed partial class WorkflowDesignerControl : Control
     private WorkflowDesignerRect? _overviewAnchorViewport;
     private double _overviewAnchorZoom;
     private Size _overviewAnchorClientSize;
-    private readonly System.Windows.Forms.Timer _runtimeTimer;
 
     /// <summary>初始化控件。</summary>
     public WorkflowDesignerControl()
@@ -44,13 +43,12 @@ public sealed partial class WorkflowDesignerControl : Control
         InitializeComponent();
         SetStyle(ControlStyles.Selectable | ControlStyles.OptimizedDoubleBuffer
             | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true);
-        _runtimeTimer = new System.Windows.Forms.Timer { Interval = 100 };
-        _runtimeTimer.Tick += (_, _) =>
+        // 运行中的节点有外发光和耗时，按统一刷新时钟重画；画布不可见时时钟不会叫它。
+        WorkflowRefreshClock.Subscribe(this, () =>
         {
             if (_session?.RuntimeSnapshot?.ExecutionState is E_WorkflowExecutionState.Running)
                 Invalidate();
-        };
-        _runtimeTimer.Start();
+        });
         ApplyThemeColors();
         WorkflowWinFormsTheme.Changed += OnThemeChanged;
     }
@@ -106,7 +104,6 @@ public sealed partial class WorkflowDesignerControl : Control
             if (_session is not null)
                 _session.Changed -= OnSessionChanged;
             WorkflowWinFormsTheme.Changed -= OnThemeChanged;
-            _runtimeTimer.Dispose();
         }
         base.Dispose(disposing);
     }

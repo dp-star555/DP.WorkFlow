@@ -19,8 +19,8 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     private WorkflowStudioRuntimeBinding? _runtimeBinding;
     private IWorkflowRuntimeMonitorSource? _source;
     private ILocalizationContext _localizationContext = null!;
-    // 运行数据变化只置脏标记，由定时器合并刷新：快速循环时每秒可能有上千次变化，逐次重建表格会占满界面线程。
-    private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 250 };
+    // 运行数据变化只置脏标记，由统一刷新时钟合并刷新：快速循环时每秒可能有上千次变化，逐次重建表格会占满界面线程。
+    private readonly IDisposable _refreshFrame;
     private bool _runtimeDirty;
     private bool _applyingRuntimeData;
     private bool _traceReset = true;
@@ -55,7 +55,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         traceListView.RetrieveVirtualItem += (_, e) => e.Item = TraceItem(_shownTrace, e.ItemIndex);
         outputListView.VirtualMode = true;
         outputListView.RetrieveVirtualItem += (_, e) => e.Item = OutputItem(_shownOutput, e.ItemIndex);
-        _refreshTimer.Tick += (_, _) => FlushRuntimeData();
+        _refreshFrame = WorkflowRefreshClock.Subscribe(this, FlushRuntimeData);
         monitorTabs.SelectedIndexChanged += (_, _) => RefreshLists(autoScrollTrace: false);
         VisibleChanged += (_, _) => { if (Visible) FlushRuntimeData(); };
 
@@ -175,13 +175,11 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     {
         if (IsDisposed) return;
         _runtimeDirty = true;
-        if (!_refreshTimer.Enabled) _refreshTimer.Start();
     }
 
     /// <summary>把累计的运行数据变化一次性应用到界面；控件不可见时推迟到重新显示。</summary>
     private void FlushRuntimeData()
     {
-        _refreshTimer.Stop();
         if (!_runtimeDirty || IsDisposed || !Visible) return;
         _runtimeDirty = false;
         RefreshRuntimeData();
@@ -479,7 +477,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     private void DisposeRuntimeMonitor()
     {
         if (_source is not null) _source.Changed -= OnRuntimeChanged;
-        _refreshTimer.Dispose();
+        _refreshFrame.Dispose();
         _model.Changed -= ModelChanged;
         if (_localizationContext is not null) _localizationContext.Changed -= LocalizationChanged;
         commandManager.Owner = null;

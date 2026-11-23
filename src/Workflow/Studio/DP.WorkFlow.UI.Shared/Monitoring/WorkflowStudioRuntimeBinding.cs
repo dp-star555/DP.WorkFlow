@@ -23,12 +23,14 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
     private readonly SynchronizationContext? _dispatchContext;
     private readonly object _snapshotSync = new();
     private readonly Timer _frameTimer;
-    private int _frameIntervalMilliseconds = DefaultFrameIntervalMilliseconds;
+    private int _frameIntervalMilliseconds = WorkflowUiRefresh.FrameIntervalMilliseconds;
+    // 没有单独设置间隔时跟随全局刷新节拍（WorkflowUiRefresh）。
+    private bool _followsUiRefresh = true;
     // 已排队但尚未在界面线程执行的一帧；同一时刻最多一帧，界面线程忙时不会越积越多。
     private bool _frameQueued;
     private long _lastPulledVersion = long.MinValue;
-    /// <summary>默认刷新间隔（毫秒），约每秒 10 帧。</summary>
-    public const int DefaultFrameIntervalMilliseconds = 100;
+    /// <summary>默认刷新间隔（毫秒），约每秒 10 帧；实际默认值跟随 <see cref="WorkflowUiRefresh.FramesPerSecond"/>。</summary>
+    public const int DefaultFrameIntervalMilliseconds = 1000 / WorkflowUiRefresh.DefaultFramesPerSecond;
     private Guid _lastAppliedRunId;
     private long _lastAppliedSequence = -1;
     private bool _disposed;
@@ -49,21 +51,36 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
         _navigator.SetRuntimeSnapshot(_host.GetSnapshot());
         _frameTimer = new Timer(static state => ((WorkflowStudioRuntimeBinding)state!).OnFrameTick(), this,
             _frameIntervalMilliseconds, _frameIntervalMilliseconds);
+        WorkflowUiRefresh.Changed += OnUiRefreshChanged;
     }
 
-    /// <summary>获取或设置检查运行状态变化的间隔（毫秒，至少 16）。</summary>
+    private void OnUiRefreshChanged(object? sender, EventArgs e)
+    {
+        if (_followsUiRefresh) SetFrameInterval(WorkflowUiRefresh.FrameIntervalMilliseconds);
+    }
+
+    /// <summary>
+    /// 获取或设置检查运行状态变化的间隔（毫秒，至少 16）。不设置时跟随 <see cref="WorkflowUiRefresh.FramesPerSecond"/>；
+    /// 设置后本绑定固定用这个间隔。
+    /// </summary>
     public int FrameIntervalMilliseconds
     {
         get => _frameIntervalMilliseconds;
         set
         {
-            var interval = Math.Max(16, value);
-            lock (_snapshotSync)
-            {
-                _frameIntervalMilliseconds = interval;
-                if (!_disposed)
-                    _frameTimer.Change(interval, interval);
-            }
+            _followsUiRefresh = false;
+            SetFrameInterval(value);
+        }
+    }
+
+    private void SetFrameInterval(int value)
+    {
+        var interval = Math.Max(16, value);
+        lock (_snapshotSync)
+        {
+            _frameIntervalMilliseconds = interval;
+            if (!_disposed)
+                _frameTimer.Change(interval, interval);
         }
     }
 
@@ -227,6 +244,7 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
             _frameTimer.Dispose();
         }
         _host.StateChanged -= OnHostStateChanged;
+        WorkflowUiRefresh.Changed -= OnUiRefreshChanged;
     }
 
     /// <summary>帧计时器：状态有变化才排队一帧，没变化什么都不做。</summary>

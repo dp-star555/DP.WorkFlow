@@ -27,7 +27,6 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
     private readonly Label _issue = State("TemplateFailure");
     private readonly List<(WorkflowPropertyEntry Entry, ModernUI.WinForms.ModernButton Button)> _actions = new();
     private readonly List<(WorkflowPropertyEntry Entry, Label Label)> _readOnly = new();
-    private readonly System.Windows.Forms.Timer _timer = new() { Interval = 150 };
     private readonly ToolTip _tips = new();
     private bool _running;
     private string _operation = "";
@@ -60,7 +59,7 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         _properties.PropertyValueChanged += (_, e) => { RefreshProperties(e.Property.Name); RefreshState(); };
         bool opened = false;
         Load += async (_, _) => { if (opened) return; opened = true; await Run(model.OpenAsync, "读取模板"); };
-        _timer.Tick += (_, _) => { if (!IsDisposed) { RefreshPropertiesIfChanged(); RefreshState(); } }; _timer.Start();
+        DP.WorkFlow.UI.WinForms.WorkflowRefreshClock.Subscribe(this, () => { if (!IsDisposed) { RefreshPropertiesIfChanged(); RefreshState(); } });
         RefreshProperties(); RefreshState(); model.Frame.RegisterViewLifetime(Dispose);
     }
     private async Task Run(Func<Task> action, string operation, bool pageOwnsOperation = false)
@@ -151,7 +150,7 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         _tips.SetToolTip(_issue, _issue.Text);
     }
     private static Label State(string name) => new() { Name = name, Dock = DockStyle.Fill, AutoEllipsis = true, Padding = new Padding(2), Margin = new Padding(2), TextAlign = ContentAlignment.MiddleLeft };
-    protected override void Dispose(bool disposing) { if (disposing) { _timer.Stop(); _timer.Dispose(); _tips.Dispose(); } base.Dispose(disposing); }
+    protected override void Dispose(bool disposing) { if (disposing) _tips.Dispose(); base.Dispose(disposing); }
 
     private sealed class ActionEditor(VisionTemplateWorkspaceControl owner) : IPropertyEditorProvider
     {
