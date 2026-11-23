@@ -36,15 +36,15 @@ public sealed class WorkflowCSharpScriptEditorControl : UserControl
     public WorkflowCSharpScriptEditorControl()
     {
         Name = nameof(WorkflowCSharpScriptEditorControl);
-        BackColor = ModernTheme.Dark.Background;
-        ForeColor = ModernTheme.Dark.Text;
+        BackColor = WorkflowWinFormsTheme.Modern.Background;
+        ForeColor = WorkflowWinFormsTheme.Modern.Text;
         Padding = new Padding(2);
 
         _compileCommand = Command("编译", ModernIconKind.Play, () => _ = CompileAsync());
         _referenceCommand = Command("DLL 引用", ModernIconKind.Key, ManageReferences);
         _referenceCommand.Visible = false;
         _commands.Name = "ScriptCommandBar";
-        _commands.Theme = ModernTheme.Dark;
+        _commands.Theme = WorkflowWinFormsTheme.Modern;
         _commands.DisplayMode = ModernCommandBarDisplayMode.Adaptive;
         _commands.Dock = DockStyle.Fill;
         _commands.Commands.Add(_compileCommand);
@@ -56,23 +56,23 @@ public sealed class WorkflowCSharpScriptEditorControl : UserControl
 
         _editor.Name = "ScriptCodeEditor";
         _editor.Dock = DockStyle.Fill;
-        _editor.BackColor = Color.FromArgb(30, 30, 30);
-        _editor.ForeColor = ModernTheme.Dark.Text;
+        _editor.BackColor = WorkflowWinFormsTheme.Modern.Control;
+        _editor.ForeColor = WorkflowWinFormsTheme.Modern.Text;
         _editor.TextChanged += OnEditorTextChanged;
         _editor.CompletionRequested += (_, _) => _ = ShowCompletionsAsync();
 
-        _diagnostics.Theme = ModernTheme.Dark;
+        _diagnostics.Theme = WorkflowWinFormsTheme.Modern;
         _diagnostics.Dock = DockStyle.Fill;
         _diagnostics.RowHeight = 26;
         _diagnostics.Visible = false;
 
         _status.Name = "ScriptStatusBar";
-        _status.Theme = ModernTheme.Dark;
+        _status.Theme = WorkflowWinFormsTheme.Modern;
         _status.AutoSize = false;
         _status.Dock = DockStyle.Fill;
         _status.Items.Add(_statusText);
 
-        _feedbackSurface.Theme = ModernTheme.Dark;
+        _feedbackSurface.Theme = WorkflowWinFormsTheme.Modern;
         _feedbackSurface.Radius = 5;
         _feedbackSurface.Padding = new Padding(1);
         _feedbackSurface.Margin = Padding.Empty;

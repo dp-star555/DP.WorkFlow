@@ -10,7 +10,7 @@ internal sealed class VisionRoiListControl : UserControl
     private readonly ModernDataGridView _grid = new()
     {
         Dock = DockStyle.Fill,
-        Theme = ModernTheme.Dark,
+        Theme = DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern,
         ReadOnly = true,
         AllowUserToAddRows = false,
         AllowUserToDeleteRows = false,
@@ -86,7 +86,7 @@ internal sealed class VisionRoiListControl : UserControl
         var button = new ModernButton
         {
             Text = text,
-            Theme = ModernTheme.Dark,
+            Theme = DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern,
             Size = new Size(TextRenderer.MeasureText(text, Font).Width + 28, 30),
             Margin = new Padding(0, 0, 6, 0)
         };

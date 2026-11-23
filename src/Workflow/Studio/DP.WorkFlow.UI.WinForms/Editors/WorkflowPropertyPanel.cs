@@ -49,7 +49,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         _modernGrid = new ModernPropertyGrid.WinForms.ModernPropertyGrid
         {
             Dock = DockStyle.Fill,
-            Theme = ModernTheme.Dark
+            Theme = WorkflowWinFormsTheme.Modern
         };
         _modernActions = new FlowLayoutPanel
         {
@@ -574,8 +574,8 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             AllowUserToAddRows = true,
             AllowUserToDeleteRows = true,
             RowHeadersVisible = true,
-            BackgroundColor = Color.FromArgb(15, 23, 42),
-            ForeColor = Color.FromArgb(226, 232, 240)
+            BackgroundColor = WorkflowWinFormsTheme.Modern.Container,
+            ForeColor = WorkflowWinFormsTheme.Modern.Text
         };
         foreach (var column in table.Columns)
             grid.Columns.Add(column, column);
@@ -633,7 +633,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             ButtonType = bound ? ModernButtonType.Primary : ModernButtonType.Default,
             Dock = DockStyle.Fill,
             MinimumSize = new Size(0, 24),
-            Theme = ModernTheme.Dark,
+            Theme = WorkflowWinFormsTheme.Modern,
             Margin = new Padding(0, 0, 3, 0),
             AccessibleName = bound ? "来源：绑定" : "来源：固定值"
         };
@@ -736,7 +736,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         Text = text,
         Dock = DockStyle.Fill,
         MinimumSize = new Size(0, 24),
-        Theme = ModernTheme.Dark,
+        Theme = WorkflowWinFormsTheme.Modern,
         LocalizationContext = LocalizationContext,
         Margin = Padding.Empty
     };
@@ -747,7 +747,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         Dock = DockStyle.Fill,
         // ModernSelect 默认最小宽 120：单元格更窄时会伸进相邻单元格并盖住右侧控件；宽度交给所在单元格决定。
         MinimumSize = new Size(0, 24),
-        Theme = ModernTheme.Dark,
+        Theme = WorkflowWinFormsTheme.Modern,
         DropDownAnimationDuration = 0
     };
 
@@ -756,7 +756,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     {
         Text = text,
         Dock = DockStyle.Fill,
-        Theme = ModernTheme.Dark,
+        Theme = WorkflowWinFormsTheme.Modern,
         Margin = Padding.Empty
     };
 

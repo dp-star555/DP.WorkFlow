@@ -14,7 +14,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     private readonly WorkflowRuntimeMonitorModel _model = new();
     private readonly ILocalizationManager _defaultLocalizationManager = WorkflowUiLocalization.CreateManager(CultureInfo.GetCultureInfo("zh-CN"));
     private readonly ModernCommand _exportCommand;
-    private readonly ModernContextMenu _listMenu = new() { Theme = ModernTheme.Dark };
+    private readonly ModernContextMenu _listMenu = new() { Theme = WorkflowWinFormsTheme.Modern };
     private ListView? _menuList;
     private WorkflowStudioRuntimeBinding? _runtimeBinding;
     private IWorkflowRuntimeMonitorSource? _source;

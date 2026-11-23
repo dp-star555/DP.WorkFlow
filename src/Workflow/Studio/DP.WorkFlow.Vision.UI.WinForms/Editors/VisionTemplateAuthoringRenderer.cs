@@ -20,7 +20,7 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
 {
     private readonly VisionTemplateAuthoringPageModel _model;
     private readonly VisionFrameEditorControl _frame;
-    private readonly ModernPropertyGrid.WinForms.ModernPropertyGrid _properties = new() { Dock = DockStyle.Fill, Theme = ModernUI.WinForms.ModernTheme.Dark, ShowSearchBar = false };
+    private readonly ModernPropertyGrid.WinForms.ModernPropertyGrid _properties = new() { Dock = DockStyle.Fill, Theme = DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern, ShowSearchBar = false };
     private readonly Label _buildState = State("TemplateBuildState");
     private readonly Label _buildVerification = State("TemplateBuildVerification");
     private readonly Label _testState = State("TemplateTestState");
@@ -160,7 +160,7 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         public Control CreateEditor(PropertyEditorContext context)
         {
             var entry = ((EntryProperty)context.Property).Entry;
-            var button = new ModernUI.WinForms.ModernButton { Text = Convert.ToString(entry.Value), Theme = ModernUI.WinForms.ModernTheme.Dark, Dock = DockStyle.Fill };
+            var button = new ModernUI.WinForms.ModernButton { Text = Convert.ToString(entry.Value), Theme = DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern, Dock = DockStyle.Fill };
             owner._actions.Add((entry, button));
             button.Click += async (_, _) =>
             {
@@ -193,7 +193,7 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         public Control CreateEditor(PropertyEditorContext context)
         {
             var entry = ((EntryProperty)context.Property).Entry;
-            var combo = new ModernUI.WinForms.ModernSelect { Dock = DockStyle.Fill, Theme = ModernUI.WinForms.ModernTheme.Dark, DropDownAnimationDuration = 0 };
+            var combo = new ModernUI.WinForms.ModernSelect { Dock = DockStyle.Fill, Theme = DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern, DropDownAnimationDuration = 0 };
             combo.Items.AddRange(entry.Choices.Cast<object>().ToArray()); combo.SelectedItem = entry.Choices.FirstOrDefault(c => Equals(c.Value, entry.Value));
             combo.SelectedIndexChanged += (_, _) => { if (combo.SelectedItem is WorkflowPropertyChoice choice) context.CommitValue(choice.Value); };
             return combo;

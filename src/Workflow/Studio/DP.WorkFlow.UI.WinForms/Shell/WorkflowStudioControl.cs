@@ -32,13 +32,14 @@ public sealed partial class WorkflowStudioControl : UserControl
         Properties.EditError += (_, message) => InteractionError?.Invoke(this, message);
         Properties.PropertyActionRequested += OnPropertyActionRequested;
         UpdateNavigation();
-        WorkflowWinFormsStyle.Apply(this);
+        WorkflowWinFormsTheme.Follow(this);
     }
 
     /// <summary>向下拉菜单添加带图标的命令项。</summary>
     private void AddMenuItem(ToolStripDropDownItem menu, string text, ModernIconKind icon, Action action)
     {
-        var item = new ToolStripMenuItem(text, canvasWorkspace.CreateIcon(icon, ModernTheme.Dark.Text), (_, _) => action());
+        var item = new ToolStripMenuItem(text, null, (_, _) => action());
+        canvasWorkspace.RegisterThemedIcon(item, icon);
         menu.DropDownItems.Add(item);
     }
 
@@ -88,7 +89,7 @@ public sealed partial class WorkflowStudioControl : UserControl
                 };
                 content.Dock = DockStyle.Fill;
                 window.Controls.Add(content);
-                WorkflowWinFormsStyle.Apply(window);
+                WorkflowWinFormsTheme.Follow(window);
                 window.FormClosing += (_, e) =>
                 {
                     if (e.CloseReason != CloseReason.UserClosing) return;

@@ -62,7 +62,7 @@ public sealed class LabelInspectionWorkbenchRenderer(Func<string> baseDirectory,
 
 internal sealed class LabelWorkbenchControl : UserControl
 {
-    private static readonly ModernTheme Theme = ModernTheme.Dark;
+    private static ModernTheme Theme => DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern;
     private readonly LabelInspectionEditorPageModel _model;
     private readonly Func<string> _baseDirectory;
     private readonly IWorkflowVisionPreviewSource? _previews;

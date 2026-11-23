@@ -27,7 +27,7 @@ public sealed class VisionFrameEditorRenderer : IWorkflowWinFormsNodeEditorPageR
 
 internal sealed class VisionFrameEditorControl : UserControl
 {
-    private static readonly ModernUI.WinForms.ModernTheme Theme = ModernUI.WinForms.ModernTheme.Dark;
+    private static ModernUI.WinForms.ModernTheme Theme => DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern;
     private readonly VisionFrameEditorPageModel _model;
     private readonly DP.Vision.Winform.VisionCanvasControl _canvas = new() { Dock = DockStyle.Fill };
     private readonly ModernUI.WinForms.ModernToolStrip _toolbar = new() { Dock = DockStyle.Top, Theme = Theme };

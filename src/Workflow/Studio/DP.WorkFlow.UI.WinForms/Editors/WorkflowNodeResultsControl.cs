@@ -22,7 +22,7 @@ internal sealed class WorkflowNodeResultsControl : UserControl
     private readonly ModernDataGridView _grid = new()
     {
         Dock = DockStyle.Fill,
-        Theme = ModernTheme.Dark,
+        Theme = WorkflowWinFormsTheme.Modern,
         AllowUserToAddRows = false,
         AllowUserToDeleteRows = false,
         AllowUserToResizeRows = false,

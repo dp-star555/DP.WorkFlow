@@ -228,7 +228,7 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
         var button = new ModernButton
         {
             Text = addText,
-            Theme = ModernTheme.Dark,
+            Theme = WorkflowWinFormsTheme.Modern,
             Size = new Size(TextRenderer.MeasureText(addText, DefaultFont).Width + 32, 30),
             Margin = new Padding(0, 2, 8, 2)
         };
@@ -239,7 +239,7 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
             Text = hint,
             AutoSize = true,
             MaximumSize = new Size(560, 0),
-            ForeColor = Color.FromArgb(148, 163, 184),
+            ForeColor = WorkflowWinFormsTheme.Modern.TextSecondary,
             Margin = new Padding(0, 4, 0, 0)
         });
         return header;
@@ -258,7 +258,7 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
     private static ModernDataGridView CreateGrid() => new()
     {
         Dock = DockStyle.Fill,
-        Theme = ModernTheme.Dark,
+        Theme = WorkflowWinFormsTheme.Modern,
         AllowUserToAddRows = false,
         AllowUserToDeleteRows = false,
         AllowUserToResizeRows = false,

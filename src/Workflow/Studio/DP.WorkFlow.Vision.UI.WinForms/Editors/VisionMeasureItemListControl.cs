@@ -8,7 +8,7 @@ internal sealed class VisionMeasureItemListControl : UserControl
     private readonly VisionFrameEditorPageModel _model;
     private readonly ModernDataGridView _grid = new()
     {
-        Dock = DockStyle.Fill, Theme = ModernTheme.Dark, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
+        Dock = DockStyle.Fill, Theme = DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
         AllowUserToResizeRows = false, MultiSelect = false, SelectionMode = DataGridViewSelectionMode.FullRowSelect,
         RowHeadersVisible = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
     };
@@ -53,7 +53,7 @@ internal sealed class VisionMeasureItemListControl : UserControl
 
     private ModernButton Action(FlowLayoutPanel host, string text, Action action)
     {
-        var button = new ModernButton { Text = text, Theme = ModernTheme.Dark, Size = new Size(TextRenderer.MeasureText(text, Font).Width + 28, 30), Margin = new Padding(0, 0, 6, 6) };
+        var button = new ModernButton { Text = text, Theme = DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern, Size = new Size(TextRenderer.MeasureText(text, Font).Width + 28, 30), Margin = new Padding(0, 0, 6, 6) };
         button.Click += (_, _) =>
         {
             try { action(); }
