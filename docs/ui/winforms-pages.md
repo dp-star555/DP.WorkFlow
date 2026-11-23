@@ -8,6 +8,12 @@
 - 以 DP.Foundation 的 `vendor/src/ModernUI.WinForms` 为准。要改 ModernUI，先在 Foundation 改并打新包，再把新包复制到本仓库 `vendor/packages`，同时改 `Directory.Packages.props` 里的版本。
 - 本仓库 `src/Platform/Desktop/ModernUI.WinForms` 源码现在只给 Gallery、示例和 ModernUI 自己的测试用，Workflow 界面不再引用它。
 
+## 打包给 DP.Foundation
+
+- DP.Foundation 的 Workflow 功能包引用本仓库的包，不引用源码：内核、持久化、标准 / 复合 / 工艺 / 运动节点、脚本、UI.Shared、UI.WinForms，加上 DP.Vision 的 DP.Plugins.Runtime，共 13 个。
+- 版本在根目录 `Directory.Build.props` 的 `<Version>`（现在 1.0.0-preview.1）。改了这些库：版本加一，运行 `tools/Pack-ForFoundation.ps1`（打包并复制到同级 DP.Foundation\vendor\packages），再在 Foundation 改引用版本、vendor\README.md 的哈希，`dotnet restore --force-evaluate`。
+- 脚本库的包 ID 改成 `DP.WorkFlow.ScriptEngine` / `DP.WorkFlow.ScriptEngine.WinForms`（程序集名不变）。后者带一个 buildTransitive 目标，间接引用时也把 Scintilla 原生库复制到程序目录。
+
 ## 主题
 
 - `WorkflowThemePalette`（UI.Shared）：与 DP.Foundation 操作台 `ThemePalette` 同一组颜色角色和取值，内置 blue（默认）、night、mint、warm、orange 5 套。`Resolve` 兼容旧写法 Light / Dark。

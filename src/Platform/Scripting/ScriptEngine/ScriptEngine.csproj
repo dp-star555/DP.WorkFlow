@@ -7,6 +7,7 @@
     <PackageReference Include="System.Threading.Tasks.Extensions" />
   </ItemGroup>
   <PropertyGroup>
+    <PackageId>DP.WorkFlow.ScriptEngine</PackageId>
     <TargetFrameworks>net48;net8.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

@@ -1,0 +1,24 @@
+<Project>
+  <!--
+    作为包被间接引用时，Scintilla.NET 自带的 build 目标不会传到最终应用，原生 Scintilla.dll / Lexilla.dll 不会复制。
+    这里补上：x64 / x86 子目录（.NET 8 包装器从这里找），.NET Framework 包装器还要 packages\Scintilla.NET.版本\build\ 下的一份。
+  -->
+  <PropertyGroup>
+    <_DPWorkFlowScintillaVersion>5.3.2.9</_DPWorkFlowScintillaVersion>
+    <_DPWorkFlowScintillaRoot>$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))scintilla.net\$(_DPWorkFlowScintillaVersion)\build\</_DPWorkFlowScintillaRoot>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(_DPWorkFlowScintillaRoot)')">
+    <None Include="$(_DPWorkFlowScintillaRoot)**\*.dll">
+      <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <Visible>false</Visible>
+    </None>
+    <None Include="$(_DPWorkFlowScintillaRoot)**\*.dll" Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'">
+      <Link>packages\Scintilla.NET.$(_DPWorkFlowScintillaVersion)\build\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <Visible>false</Visible>
+    </None>
+  </ItemGroup>
+</Project>
