@@ -88,11 +88,12 @@ public sealed class WorkflowGraphValidator
         foreach (var node in validNodes.Where(node => string.IsNullOrWhiteSpace(node.NodeType)))
             errors.Add(new WorkflowValidationError("WF007", $"节点 {node.Id} 的 NodeType 不能为空。", node.Id));
 
-        foreach (var layout in layouts.Where(layout => layout.Width <= 0 || layout.Height <= 0))
+        // 尺寸为 0 表示未设定（由设计器按内容决定），只有负数才是错的。
+        foreach (var layout in layouts.Where(layout => layout.Width < 0 || layout.Height < 0))
         {
             errors.Add(new WorkflowValidationError(
                 "WF008",
-                $"节点 {layout.NodeId} 的画布尺寸必须大于 0。",
+                $"节点 {layout.NodeId} 的画布尺寸不能为负数。",
                 layout.NodeId,
                 WorkflowValidationSeverity.Warning));
         }

@@ -12,11 +12,11 @@ public sealed class WorkflowCanvasNode
     /// <summary>获取或设置节点左上角 Y 坐标。</summary>
     public double Y { get; set; }
 
-    /// <summary>获取或设置节点宽度。</summary>
-    public double Width { get; set; } = 180;
+    /// <summary>获取或设置节点宽度；0 表示未设定，由设计器打开时按节点内容决定。</summary>
+    public double Width { get; set; }
 
-    /// <summary>获取或设置节点高度。</summary>
-    public double Height { get; set; } = 60;
+    /// <summary>获取或设置节点高度；0 表示未设定，由设计器打开时按节点内容决定。</summary>
+    public double Height { get; set; }
 
     /// <summary>获取按“Direction:PortKey”保存的端口边覆盖配置。</summary>
     public IDictionary<string, WorkflowPortSide> PortSides { get; } =  new Dictionary<string, WorkflowPortSide>(StringComparer.Ordinal);

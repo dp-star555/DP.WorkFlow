@@ -113,6 +113,10 @@ public static class WorkflowDesignerGeometry
     public const double RowHeight = GridSize;
     /// <summary>节点允许的最小设计高度：只有标题行。</summary>
     public const double MinimumNodeHeight = HeaderHeight;
+    /// <summary>节点最小宽度，也是目录中找不到节点类型（插件未加载）且文档没写尺寸时的显示宽度。</summary>
+    public const double DefaultNodeWidth = 180;
+    /// <summary>目录中找不到节点类型且文档没写尺寸时的显示高度。</summary>
+    public const double DefaultNodeHeight = 60;
     /// <summary>端口命中使用的基础半径。</summary>
     public const double PortRadius = 5;
 
