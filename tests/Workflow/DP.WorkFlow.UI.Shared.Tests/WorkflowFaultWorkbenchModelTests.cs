@@ -89,6 +89,32 @@ public sealed class WorkflowFaultWorkbenchModelTests
         Assert.Throws<InvalidOperationException>(() => model.StopAll());
     }
 
+    [Fact]
+    public async Task Overview_ShowsFlowStateNoticesAndFault()
+    {
+        var options = new WorkflowRunCenterOptions { FaultSettleMilliseconds = 10 };
+        using var center = CreateCenter(options);
+        using var model = new WorkflowFaultWorkbenchModel(center, options);
+        var overview = new WorkflowRunCenterOverviewModel(center);
+        var flow = center.AddFlow(FailingOnce("S"), "A");
+        flow.Host.Notices.Raise(Guid.Empty, "$", "S", "超时", "相机响应慢");
+
+        var idle = Assert.Single(overview.GetRows());
+        Assert.Equal("未运行", idle.StateText);
+        Assert.Equal(1, idle.NoticeCount);
+
+        var run = overview.Start("A");
+        await WaitUntilAsync(() => model.IsAwaitingDecision);
+        Assert.Equal("故障处理中", Assert.Single(overview.GetRows()).StateText);
+        model.Release(new Dictionary<string, WorkflowResumeDirective> { ["A"] = WorkflowResumeDirective.Redo() });
+        Assert.True((await run.WaitAsync(TimeSpan.FromSeconds(10))).Success);
+
+        var done = Assert.Single(overview.GetRows());
+        Assert.Equal("已完成", done.StateText);
+        Assert.Equal(1, done.RecoveryRound);
+        Assert.Throws<InvalidOperationException>(() => { _ = overview.Start("missing"); });
+    }
+
     private static WorkflowFaultDirectiveOption Option(WorkflowFaultFlowView flow, WorkflowResumeKind kind) =>
         flow.Options.First(option => option.Directive.Kind == kind);
 
