@@ -30,6 +30,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     private readonly ModernTabControl _bottomTabs = new();
     private readonly TabPage _diagnosticsPage = new() { Name = "diagnosticsPage", Text = "诊断", Padding = new Padding(6) };
     private readonly TabPage _runtimePage = new() { Name = "runtimePage", Text = "运行监视", Padding = new Padding(6) };
+    private readonly TabPage _noticesPage = new() { Name = "noticesPage", Text = "提示", Padding = new Padding(6) };
     private WorkflowDesignerSession? _session;
     private IWorkflowCanvasRunCommands? _runCommands;
     private bool _autoFitPending;
@@ -56,10 +57,16 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         Toolbox = new WorkflowToolboxControl { Dock = DockStyle.Fill };
         Diagnostics = new WorkflowDiagnosticsControl { Dock = DockStyle.Fill };
         RuntimeMonitor = new WorkflowRuntimeMonitorControl { Dock = DockStyle.Fill };
+        Notices = new WorkflowNoticesControl { Dock = DockStyle.Fill };
         _diagnosticsPage.Controls.Add(Diagnostics);
         _runtimePage.Controls.Add(RuntimeMonitor);
+        _noticesPage.Controls.Add(Notices);
         _bottomTabs.TabPages.Add(_diagnosticsPage);
         _bottomTabs.TabPages.Add(_runtimePage);
+        _bottomTabs.TabPages.Add(_noticesPage);
+        Notices.CountChanged += (_, _) => _noticesPage.Text = Notices.NoticeCount == 0 ? "提示" : $"提示 ({Notices.NoticeCount})";
+        Notices.NoticeActivated += (_, notice) => RevealNotice(notice);
+        Designer.NoticesPageRequested += (_, _) => ShowNotices();
         _bottomTabs.Dock = DockStyle.Fill;
 
         // 先给出足够尺寸，避免默认 150px 宽度下设置最小尺寸、分隔位置越界。
@@ -131,6 +138,16 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     /// <summary>运行监视。</summary>
     public WorkflowRuntimeMonitorControl RuntimeMonitor { get; }
 
+    /// <summary>提示页：全部节点提示与画布级提示，提示板取自画布会话（运行绑定设置）。</summary>
+    public WorkflowNoticesControl Notices { get; }
+
+    /// <summary>切到提示页。</summary>
+    public void ShowNotices()
+    {
+        Notices.RefreshNotices();
+        _bottomTabs.SelectedTab = _noticesPage;
+    }
+
     /// <summary>工具栏；宿主可在最前面插入自己的条目（例如“文件”菜单）。</summary>
     public ModernToolStrip Toolbar => _toolbar;
 
@@ -160,6 +177,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             Designer.Session = value;
             Toolbox.Session = value;
             Diagnostics.Session = value;
+            Notices.Board = value?.Notices;
             _autoFitPending = value is not null;
             QueueAutoFit();
             UpdateCommands();
@@ -311,7 +329,31 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         Session.AddNode(item.NodeType, center.X - 90, center.Y - 30);
     }
 
-    private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e) => UpdateCommands();
+    private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
+    {
+        // 提示板由运行绑定在应用快照时交给会话，所以随运行类变化同步一次。
+        if (e.Kind == WorkflowDesignerChangeKind.Runtime) Notices.Board = _session?.Notices;
+        UpdateCommands();
+    }
+
+    /// <summary>
+    /// 定位提示：本画布上的节点直接选中；子画布里的提示选中本画布上包含它的最外层复合节点（子画布以节点窗口打开）。
+    /// </summary>
+    private void RevealNotice(WorkflowNotice notice)
+    {
+        if (_session is not { } session) return;
+        var here = WorkflowNoticeLocation.Split(session.NoticePlanPath);
+        var there = WorkflowNoticeLocation.Split(notice.PlanPath);
+        if (there.Count < here.Count || !there.Take(here.Count).SequenceEqual(here, StringComparer.Ordinal))
+        {
+            InteractionError?.Invoke(this, $"提示位于 {WorkflowNoticeLocation.Describe(notice)}，不在当前画布中。");
+            return;
+        }
+        var target = there.Count > here.Count ? there[here.Count] : notice.NodeId;
+        if (target is null || !session.Document.Nodes.Any(node => node.Node.Id == target)) return;
+        session.SelectedNodeId = target;
+        Designer.Focus();
+    }
 
     private void OnRunCommandsChanged(object? sender, EventArgs e)
     {

@@ -213,6 +213,8 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
         _navigator.CurrentSession.RunNodeOutputProvider = FindLatestRunOutput;
         _navigator.RootSession.Runtime = this;
         _navigator.CurrentSession.Runtime = this;
+        _navigator.RootSession.Notices = _host.Notices;
+        _navigator.CurrentSession.Notices = _host.Notices;
         _navigator.RootSession.RuntimePath = Array.Empty<string>();
         // 运行当前子画布时它就是运行的根画布；否则它位于根运行的子运行中。
         if (_navigator.Depth > 0)

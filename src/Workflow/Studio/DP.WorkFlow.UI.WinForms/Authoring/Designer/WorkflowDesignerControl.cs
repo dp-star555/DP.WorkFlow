@@ -31,6 +31,9 @@ public sealed partial class WorkflowDesignerControl : Control
     private WorkflowPortSide? _portDropSide;
     private Point _pointer;
     private string? _hoverNodeId;
+    // 提示：上次重画时的提示板版本，以及画布级提示胶囊的位置（没有时为空）。
+    private long _shownNoticeVersion = -1;
+    private RectangleF? _canvasNoticeBounds;
     private (WorkflowCanvasNode Node, WorkflowOutputMember Member, WorkflowPoint Point)? _dataLinkStart;
     private InteractionMode _mode;
     private WorkflowDesignerRect? _overviewAnchorViewport;
@@ -44,9 +47,11 @@ public sealed partial class WorkflowDesignerControl : Control
         SetStyle(ControlStyles.Selectable | ControlStyles.OptimizedDoubleBuffer
             | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true);
         // 运行中的节点有外发光和耗时，按统一刷新时钟重画；画布不可见时时钟不会叫它。
+        // 提示板变化（运行中或运行结束后都会有）也在下一帧重画角标。
         WorkflowRefreshClock.Subscribe(this, () =>
         {
-            if (_session?.RuntimeSnapshot?.ExecutionState is E_WorkflowExecutionState.Running)
+            if (_session?.RuntimeSnapshot?.ExecutionState is E_WorkflowExecutionState.Running
+                || (_session is not null && _session.NoticeVersion != _shownNoticeVersion))
                 Invalidate();
         });
         ApplyThemeColors();
@@ -96,6 +101,9 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>交互产生无法创建的连接时发生。</summary>
     public event EventHandler<string>? InteractionError;
 
+    /// <summary>在提示弹层中点“查看全部提示”时发生，由宿主切到提示页。</summary>
+    public event EventHandler? NoticesPageRequested;
+
     /// <inheritdoc />
     protected override void Dispose(bool disposing)
     {
@@ -121,10 +129,13 @@ public sealed partial class WorkflowDesignerControl : Control
         DrawDataLinks(e.Graphics);
         foreach (var node in _session.Document.Nodes)
             DrawNode(e.Graphics, node);
+        _shownNoticeVersion = _session.NoticeVersion;
+        DrawNoticeBadges(e.Graphics);
         DrawPendingConnection(e.Graphics);
         DrawPendingDataLink(e.Graphics);
         DrawMarquee(e.Graphics);
         DrawOverviewMap(e.Graphics);
+        DrawCanvasNotices(e.Graphics);
     }
 
     /// <inheritdoc />
@@ -194,6 +205,20 @@ public sealed partial class WorkflowDesignerControl : Control
         }
         if (e.Button != MouseButtons.Left)
             return;
+        // 提示角标和画布级提示画在最上层，先于节点命中。
+        if (_canvasNoticeBounds is { } canvasNotice && canvasNotice.Contains(e.Location))
+        {
+            ShowNoticePopup(null, new Point((int)canvasNotice.Left, (int)canvasNotice.Bottom + 4));
+            return;
+        }
+        if (WorkflowDesignerGeometry.HitNoticeBadge(_session, e.X, e.Y) is { } noticeNode)
+        {
+            _session.SelectNode(noticeNode.Node.Id);
+            var badge = WorkflowDesignerGeometry.NoticeBadgeBounds(
+                WorkflowDesignerGeometry.GetNodeScreenRect(_session, noticeNode), _session.Zoom, _session.GetNodeNotices(noticeNode.Node.Id).Count);
+            ShowNoticePopup(noticeNode, new Point((int)badge.X, (int)(badge.Y + badge.Height) + 4));
+            return;
+        }
         if (TryNavigateOverview(e.Location))
         {
             _mode = InteractionMode.NavigateOverview;
@@ -846,6 +871,84 @@ public sealed partial class WorkflowDesignerControl : Control
     {
         try { action(); }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException) { InteractionError?.Invoke(this, exception.Message); }
+    }
+
+    /// <summary>
+    /// 节点提示角标：警告色圆点（多位数时为胶囊），跨在节点右上角外沿，显示条数；和异常的红色、执行序号区分开。
+    /// </summary>
+    private void DrawNoticeBadges(Graphics graphics)
+    {
+        if (_session?.Notices is null) return;
+        foreach (var node in _session.Document.Nodes)
+        {
+            var count = _session.GetNodeNotices(node.Node.Id).Count;
+            if (count == 0) continue;
+            var bounds = ToRectangle(WorkflowDesignerGeometry.NoticeBadgeBounds(
+                WorkflowDesignerGeometry.GetNodeScreenRect(_session, node), _session.Zoom, count));
+            using var path = RoundedRectangle(bounds, bounds.Height / 2);
+            using (var fill = new SolidBrush(ToColor(Colors.Notice)))
+                graphics.FillPath(fill, path);
+            // 一圈画布色描边，让角标从节点边框上"浮"出来。
+            using (var ring = new Pen(ToColor(Colors.Canvas), Math.Max(1.5f, (float)(2 * _session.Zoom))))
+                graphics.DrawPath(ring, path);
+            using var font = CanvasFont(Math.Max(9, 11 * _session.Zoom), FontStyle.Bold);
+            using var text = new SolidBrush(ToColor(Colors.NoticeText));
+            using var format = TextFormat(StringAlignment.Center);
+            graphics.DrawString(WorkflowDesignerGeometry.NoticeBadgeText(count), font, text, bounds, format);
+        }
+    }
+
+    /// <summary>
+    /// 画布级提示（无法归属到节点，例如记录丢失）：右上角一个浮层胶囊，概览图出现时排在它下面。
+    /// </summary>
+    private void DrawCanvasNotices(Graphics graphics)
+    {
+        _canvasNoticeBounds = null;
+        if (_session?.Notices is null) return;
+        var notices = _session.GetCanvasNotices();
+        if (notices.Count == 0) return;
+        var text = $"画布提示 {WorkflowDesignerGeometry.NoticeBadgeText(notices.Count)}";
+        using var font = new Font(Font.FontFamily, 12f, FontStyle.Regular, GraphicsUnit.Pixel);
+        var size = graphics.MeasureString(text, font);
+        var dot = 8f;
+        var width = size.Width + dot + 28;
+        var height = Math.Max(26f, size.Height + 10);
+        var top = 12f;
+        if (TryCreateOverviewMapLayout(out var overview))
+            top = overview.MapBounds.Bottom + 8;
+        var bounds = new RectangleF(ClientSize.Width - width - 12, top, width, height);
+        using var path = RoundedRectangle(bounds, height / 2);
+        using (var fill = new SolidBrush(ToColor(Colors.Overlay.WithAlpha(240))))
+            graphics.FillPath(fill, path);
+        using (var border = new Pen(ToColor(Colors.Notice), 1.5f))
+            graphics.DrawPath(border, path);
+        using (var dotBrush = new SolidBrush(ToColor(Colors.Notice)))
+            graphics.FillEllipse(dotBrush, bounds.X + 12, bounds.Y + (height - dot) / 2, dot, dot);
+        using var brush = new SolidBrush(ToColor(Colors.OverlayText));
+        using var format = TextFormat(StringAlignment.Near);
+        graphics.DrawString(text, font, brush, new RectangleF(bounds.X + 12 + dot + 6, bounds.Y, width - dot - 18, height), format);
+        _canvasNoticeBounds = bounds;
+    }
+
+    /// <summary>打开节点（为空时为画布级）提示弹层。</summary>
+    private void ShowNoticePopup(WorkflowCanvasNode? node, Point location)
+    {
+        if (_session is not { } session) return;
+        var notices = node is null ? session.GetCanvasNotices() : session.GetNodeNotices(node.Node.Id);
+        if (notices.Count == 0) return;
+        var title = node is null ? "画布" : node.Node.Title;
+        var popup = new WorkflowNoticePopup(
+            title,
+            notices,
+            () =>
+            {
+                if (node is null) session.AcknowledgeCanvasNotices();
+                else session.AcknowledgeNodeNotices(node.Node.Id);
+                Invalidate();
+            },
+            NoticesPageRequested is null ? null : () => NoticesPageRequested?.Invoke(this, EventArgs.Empty));
+        popup.Closed += (_, _) => BeginInvoke(new Action(popup.Dispose));
+        popup.Show(this, location);
     }
 
     /// <summary>在标题行右侧绘制执行序号徽标（异常时为红底）和中性色耗时。</summary>
