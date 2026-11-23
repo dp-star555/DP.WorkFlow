@@ -20,6 +20,21 @@ public sealed class WorkflowServiceProvider : IServiceProvider
         return this;
     }
 
+    /// <summary>
+    /// 追加一个属性候选来源。多方都可以追加，按追加顺序登记为 <c>IEnumerable&lt;IWorkflowPropertyChoiceSource&gt;</c>，
+    /// 不会互相覆盖（<see cref="Add{TService}"/> 按类型只留一个）。
+    /// </summary>
+    /// <param name="source">候选来源。</param>
+    /// <returns>当前容器实例，便于链式注册。</returns>
+    public WorkflowServiceProvider AddPropertyChoices(IWorkflowPropertyChoiceSource source)
+    {
+        Guard.NotNull(source);
+        _services.AddOrUpdate(typeof(IEnumerable<IWorkflowPropertyChoiceSource>),
+            _ => new[] { source },
+            (_, existing) => ((IEnumerable<IWorkflowPropertyChoiceSource>)existing).Append(source).ToArray());
+        return this;
+    }
+
     /// <inheritdoc />
     public object? GetService(Type serviceType)
     {

@@ -3,13 +3,17 @@ namespace DP.WorkFlow;
 /// <summary>触发扫码设备采集。</summary>
 [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("CodeReaderTrigger", DisplayName = "触发扫码枪", Category = "4.Motion/CodeReader", OutputType = typeof(string))]
-public sealed class CodeReaderTriggerNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
+public sealed class CodeReaderTriggerNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode, IWorkflowNodeEnvironmentValidator
 {
+    /// <inheritdoc />
+    public IReadOnlyList<string> ValidateEnvironment(IServiceProvider services) =>
+        WorkflowMotionEnvironment.Check(services, catalog => new[] { WorkflowMotionEnvironment.Key(catalog, WorkflowMotionObjectKind.CodeReader, ReaderKey, "读码器") });
     /// <inheritdoc />
     public RecoverableInterruptOption Interrupt { get; set; } = new();
     /// <inheritdoc />
     public override string NodeType => "CodeReaderTrigger";
     /// <summary>获取或设置设备键。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.CodeReader)]
     public string ReaderKey { get; set; } = string.Empty;
     /// <summary>获取或设置设备关闭时是否自动打开。</summary>
     public bool AutoOpenWhenClosed { get; set; } = true;

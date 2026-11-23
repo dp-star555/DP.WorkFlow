@@ -4,8 +4,11 @@ namespace DP.WorkFlow;
 [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("IOMultiCheck", DisplayName = "判断多 IO 条件", Category = "4.Motion/IO", OutputType = typeof(IoMultiNodeResult))]
 [WorkflowOutputPorts(WorkflowPorts.True, WorkflowPorts.False)]
-public sealed class IoMultiCheckNodeModel : WorkflowNodeModel
+public sealed class IoMultiCheckNodeModel : WorkflowNodeModel, IWorkflowNodeEnvironmentValidator
 {
+    /// <inheritdoc />
+    public IReadOnlyList<string> ValidateEnvironment(IServiceProvider services) =>
+        WorkflowMotionEnvironment.Check(services, catalog => Conditions.Select(condition => WorkflowMotionEnvironment.Address(catalog, condition.DriveId, condition.Index, "IO 点", WorkflowMotionEnvironment.IoKind(condition.IOType))));
     /// <inheritdoc />
     public override string NodeType => "IOMultiCheck";
     /// <summary>获取或设置 All/Any 组合模式。</summary>

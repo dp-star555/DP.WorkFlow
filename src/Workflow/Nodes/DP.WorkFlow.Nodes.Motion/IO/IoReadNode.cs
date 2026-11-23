@@ -3,15 +3,20 @@ namespace DP.WorkFlow;
 /// <summary>按旧版 DriveId、Index 和 IOType 读取 IO 点位。</summary>
 [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("IORead", DisplayName = "读 IO", Category = "4.Motion/IO", OutputType = typeof(WorkflowIoNodeResult))]
-public sealed class IoReadNodeModel : WorkflowNodeModel
+public sealed class IoReadNodeModel : WorkflowNodeModel, IWorkflowNodeEnvironmentValidator
 {
+    /// <inheritdoc />
+    public IReadOnlyList<string> ValidateEnvironment(IServiceProvider services) =>
+        WorkflowMotionEnvironment.Check(services, catalog => new[] { WorkflowMotionEnvironment.Address(catalog, DriveId, Index, "IO 点", WorkflowMotionEnvironment.IoKind(IOType)) });
     /// <inheritdoc />
     public override string NodeType => "IORead";
     /// <summary>获取或设置 IO 类型。</summary>
     public WorkflowIoPointType IOType { get; set; } = WorkflowIoPointType.Input;
     /// <summary>获取或设置驱动 ID。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.IoDevice)]
     public string DriveId { get; set; } = string.Empty;
     /// <summary>获取或设置兼容旧 JSON 的字符串索引。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.IoIndex)]
     public string Index { get; set; } = "0";
 }
 

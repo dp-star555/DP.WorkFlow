@@ -5,11 +5,12 @@ using ModernUI.WinForms;
 namespace DP.WorkFlow.UI.WinForms;
 
 /// <summary>
-/// 流程库页：列出流程目录里的流程（名字、状态、版本、最近修改、修改人、节点和连线数），可以搜索，
-/// 新建、复制、改名、删除、导入、导出、打开设计，查看历史版本、和当前比较、恢复。
+/// 流程库页：列出流程目录里的流程（名字、状态、草稿、已发布版本、最近修改、发布人、节点和连线数），可以搜索，
+/// 新建、复制、改名、删除、导入、导出、打开设计，查看修改、发布、放弃草稿，查看历史版本、比较、恢复。
 /// </summary>
 /// <remarks>
 /// 状态由宿主给（<see cref="StatusOf"/>），例如“生产中”“已加载”“有诊断”。
+/// 设计页编辑的是草稿；新建、复制、导入、恢复也都落成草稿。发布才替换正式文件并记一版（见 <see cref="WorkflowFlowLibrary"/>）。
 /// 会改文件的操作在 <see cref="CanEdit"/> 为假时灰掉；改完发 <see cref="FilesChanged"/>，宿主据此重新加载到运行。
 /// 列文件是 I/O：只在切到本页、操作之后、点“刷新”时列，不在每秒刷新里列。
 /// </remarks>
@@ -18,7 +19,7 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
     private readonly WorkflowFlowLibrary _library;
     private readonly TextBox _search = new() { Width = 260, Margin = new Padding(0, 3, 12, 0) };
     private readonly CheckBox _showDeleted = new() { Text = "显示已删除", AutoSize = true, Margin = new Padding(0, 5, 12, 0) };
-    private readonly ModernDataGridView _table = Table("名称", "状态", "版本", "最近修改", "修改人", "节点 / 连线");
+    private readonly ModernDataGridView _table = Table("名称", "状态", "草稿", "版本", "最近修改", "发布人", "节点 / 连线");
     private readonly ModernButton _open = new() { Text = "打开设计", AutoSize = true, ButtonType = ModernButtonType.Primary };
     private readonly ModernButton _new = new() { Text = "新建", AutoSize = true };
     private readonly ModernButton _copy = new() { Text = "复制", AutoSize = true };
@@ -27,6 +28,9 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
     private readonly ModernButton _import = new() { Text = "导入…", AutoSize = true };
     private readonly ModernButton _export = new() { Text = "导出…", AutoSize = true };
     private readonly ModernButton _history = new() { Text = "历史版本…", AutoSize = true };
+    private readonly ModernButton _changes = new() { Text = "查看修改", AutoSize = true };
+    private readonly ModernButton _publish = new() { Text = "发布…", AutoSize = true, ButtonType = ModernButtonType.Primary };
+    private readonly ModernButton _discard = new() { Text = "放弃草稿", AutoSize = true };
     private readonly ModernButton _refresh = new() { Text = "刷新", AutoSize = true };
     private readonly Label _summary = Label();
     private readonly Label _message = Label();
@@ -41,8 +45,9 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _table.Columns[0].FillWeight = 160;
         _table.Columns[1].FillWeight = 80;
-        _table.Columns[2].FillWeight = 50;
-        _table.Columns[3].FillWeight = 110;
+        _table.Columns[2].FillWeight = 70;
+        _table.Columns[3].FillWeight = 50;
+        _table.Columns[4].FillWeight = 110;
 
         var filter = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false, Padding = new Padding(0, 0, 0, 6) };
         filter.Controls.Add(new Label { Text = "搜索", AutoSize = true, Margin = new Padding(0, 6, 6, 0) });
@@ -50,7 +55,7 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         filter.Controls.Add(_showDeleted);
         filter.Controls.Add(_refresh);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Padding = new Padding(0, 0, 0, 6) };
-        buttons.Controls.AddRange(new Control[] { _open, _new, _copy, _rename, _delete, _import, _export, _history });
+        buttons.Controls.AddRange(new Control[] { _open, _changes, _publish, _discard, _new, _copy, _rename, _delete, _import, _export, _history });
         _summary.Dock = DockStyle.Bottom;
         _summary.Height = 24;
         var body = new Panel();
@@ -70,7 +75,7 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         _table.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) OpenSelected(); };
         _open.Click += (_, _) => OpenSelected();
         _new.Click += (_, _) => NewRequested?.Invoke(this, EventArgs.Empty);
-        _copy.Click += (_, _) => Edit(entry => Done($"已复制为 {_library.Duplicate(entry.Name)}"));
+        _copy.Click += (_, _) => Edit(entry => Done($"已复制为 {_library.Duplicate(entry.Name)}（草稿，发布后才会加载）"));
         _rename.Click += (_, _) => Edit(entry =>
         {
             if (Ask("改名", "新名字（也是流程名）：", entry.Name) is not { } name || name == entry.Name) return;
@@ -79,7 +84,7 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         });
         _delete.Click += (_, _) => Edit(entry =>
         {
-            if (MessageBox.Show(FindForm(), $"删除流程 {entry.Name}？历史版本会保留，之后可以从历史版本恢复。", "删除流程",
+            if (MessageBox.Show(FindForm(), $"删除流程 {entry.Name}（连同草稿）？已发布的版本历史会保留，之后可以从历史版本恢复。", "删除流程",
                     MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK) return;
             _library.Delete(entry.Name, CurrentUser?.Invoke());
             Done($"已删除 {entry.Name}");
@@ -87,13 +92,24 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         _import.Click += (_, _) => Import();
         _export.Click += (_, _) => Export();
         _history.Click += (_, _) => { if (Selected is { } entry) ShowHistory(entry); };
+        _changes.Click += (_, _) => ShowChanges();
+        _publish.Click += async (_, _) => await PublishAsync().ConfigureAwait(true);
+        _discard.Click += async (_, _) => await DiscardAsync().ConfigureAwait(true);
+        Publisher = new WorkflowDraftPublisher(library);
     }
+
+    /// <summary>发布 / 放弃草稿用的发布器：宿主在上面设置检查、准入和操作人。</summary>
+    public WorkflowDraftPublisher Publisher { get; }
 
     /// <summary>流程的状态文字（宿主给，例如“生产中”）；为空时不显示状态。必须快速、无 I/O。</summary>
     public Func<WorkflowLibraryEntry, string?>? StatusOf { get; set; }
 
-    /// <summary>当前操作人（记进版本）；为空时不记。</summary>
-    public Func<string?>? CurrentUser { get; set; }
+    /// <summary>当前操作人（记进版本）；为空时不记。和 <see cref="Publisher"/> 的操作人是同一个。</summary>
+    public Func<string?>? CurrentUser
+    {
+        get => Publisher.CurrentUser;
+        set => Publisher.CurrentUser = value;
+    }
 
     /// <summary>是否允许改文件（新建、复制、改名、删除、导入、恢复）；宿主按权限和整线状态设置。</summary>
     public bool CanEdit
@@ -107,13 +123,13 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         }
     }
 
-    /// <summary>请求在设计页打开一个流程文件（界面线程）。</summary>
+    /// <summary>请求在设计页打开一个流程（界面线程）；参数是已发布的文件路径，从没发布过的流程是草稿路径。</summary>
     public event EventHandler<string>? OpenRequested;
 
     /// <summary>请求新建流程（界面线程）；宿主在设计页里新建，因为新流程要有入口节点。</summary>
     public event EventHandler? NewRequested;
 
-    /// <summary>流程文件被本页改了（复制、改名、删除、导入、恢复）之后发生。</summary>
+    /// <summary>流程文件被本页改了（复制、改名、删除、导入、恢复、发布、放弃草稿）之后发生。</summary>
     public event EventHandler? FilesChanged;
 
     /// <summary>重新列文件。</summary>
@@ -173,7 +189,8 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         foreach (var entry in shown)
         {
             var status = entry.IsDeleted ? "已删除" : entry.Error is not null ? "读不出" : StatusOf?.Invoke(entry) ?? string.Empty;
-            var index = _table.Rows.Add(entry.Name, status,
+            var draft = entry.IsDeleted ? string.Empty : !entry.IsPublished ? "未发布" : entry.HasDraft ? "有修改" : string.Empty;
+            var index = _table.Rows.Add(entry.Name, status, draft,
                 entry.Version == 0 ? "—" : "v" + entry.Version.ToString(CultureInfo.InvariantCulture),
                 entry.ModifiedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
                 entry.ModifiedBy ?? string.Empty,
@@ -181,14 +198,18 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
             var row = _table.Rows[index];
             row.Tag = entry;
             if (entry.Error is not null) row.Cells[1].ToolTipText = entry.Error;
+            row.Cells[2].Style.ForeColor = theme.Warning;
+            if (entry.DraftModifiedUtc is { } draftTime)
+                row.Cells[2].ToolTipText = "草稿保存于 " + draftTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
             row.Cells[1].Style.ForeColor = entry.IsDeleted ? theme.TextDisabled
                 : entry.Error is not null || status.Contains("诊断") ? theme.Error
                 : status.Contains("运行") || status.Contains("生产") ? theme.Success
                 : theme.TextSecondary;
         }
         RestoreSelection(_table, selected, row => (row.Tag as WorkflowLibraryEntry)?.Name);
+        var drafts = _entries.Count(entry => !entry.IsDeleted && (entry.HasDraft || !entry.IsPublished));
         _summary.Text = keyword.Length == 0
-            ? $"共 {_entries.Count(entry => !entry.IsDeleted)} 个流程"
+            ? $"共 {_entries.Count(entry => !entry.IsDeleted)} 个流程" + (drafts > 0 ? $"，{drafts} 个有没发布的修改" : string.Empty)
             : $"找到 {shown.Length} 个（共 {_entries.Count} 个）";
         UpdateCommands();
     }
@@ -205,11 +226,57 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         _import.Enabled = _canEdit;
         _export.Enabled = live;
         _history.Enabled = entry is not null;
+        var hasDraft = live && (entry!.HasDraft || !entry.IsPublished);
+        _changes.Enabled = hasDraft;
+        _publish.Enabled = _canEdit && hasDraft && entry!.Error is null;
+        _discard.Enabled = _canEdit && hasDraft;
     }
 
     private void OpenSelected()
     {
-        if (Selected is { IsDeleted: false, Error: null, FilePath: { } path }) OpenRequested?.Invoke(this, path);
+        if (Selected is { IsDeleted: false, Error: null } entry)
+            OpenRequested?.Invoke(this, entry.FilePath ?? _library.DraftPathOf(entry.Name));
+    }
+
+    private void ShowChanges()
+    {
+        if (Selected is not { IsDeleted: false } entry) return;
+        Guarded(() => MessageBox.Show(FindForm(), Publisher.DescribeChanges(entry.Name), $"没发布的修改 · {entry.Name}", MessageBoxButtons.OK, MessageBoxIcon.Information));
+    }
+
+    private async Task PublishAsync()
+    {
+        if (!_canEdit || Selected is not { IsDeleted: false } entry) return;
+        try
+        {
+            if (await WorkflowPublishDialog.RunAsync(FindForm(), Publisher, entry.Name).ConfigureAwait(true) is { } version)
+                Done($"{entry.Name} 已发布为 {WorkflowPublishDialog.Describe(version)}", entry.Name);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException
+                                          or InvalidDataException or System.Text.Json.JsonException or System.Security.SecurityException)
+        {
+            ShowMessage(exception.Message);
+            Reload();
+        }
+    }
+
+    private async Task DiscardAsync()
+    {
+        if (!_canEdit || Selected is not { IsDeleted: false } entry) return;
+        var text = entry.IsPublished
+            ? $"放弃 {entry.Name} 没发布的修改，回到已发布的 v{entry.Version}？"
+            : $"{entry.Name} 还从没发布过，放弃草稿后这个流程就没了。继续？";
+        if (MessageBox.Show(FindForm(), text, "放弃草稿", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK) return;
+        try
+        {
+            await Publisher.DiscardAsync(entry.Name).ConfigureAwait(true);
+            Done($"已放弃 {entry.Name} 的草稿", entry.Name);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or System.Security.SecurityException)
+        {
+            ShowMessage(exception.Message);
+            Reload();
+        }
     }
 
     // 改文件的操作：出错显示消息，不让异常冒出去。
@@ -247,12 +314,8 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         {
             var names = new List<string>();
             foreach (var file in dialog.FileNames)
-            {
-                var name = _library.Import(file);
-                _library.RecordVersion(name, CurrentUser?.Invoke(), "导入自 " + Path.GetFileName(file));
-                names.Add(name);
-            }
-            Done("已导入 " + string.Join("、", names), names.LastOrDefault());
+                names.Add(_library.Import(file));
+            Done("已导入 " + string.Join("、", names) + "（草稿，发布后才会加载）", names.LastOrDefault());
         });
     }
 
@@ -270,11 +333,11 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
 
     private void ShowHistory(WorkflowLibraryEntry entry)
     {
-        using var dialog = new WorkflowFlowHistoryDialog(_library, entry, _canEdit, CurrentUser);
+        using var dialog = new WorkflowFlowHistoryDialog(_library, entry, _canEdit);
         WorkflowWinFormsTheme.Follow(dialog);
         dialog.ShowDialog(FindForm());
         if (dialog.Restored is { } version)
-            Done($"{entry.Name} 已恢复到 v{version}", entry.Name);
+            Done($"{entry.Name} 的草稿已恢复成 v{version}，发布后生效", entry.Name);
     }
 
     private string? Ask(string title, string prompt, string value)
@@ -296,23 +359,21 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
     }
 }
 
-/// <summary>历史版本：列出版本，和当前文件（或上一版）比较，恢复到所选版本。</summary>
+/// <summary>历史版本（每次发布一版）：列出版本，和已发布的（或上一版）比较，把所选版本恢复成草稿。</summary>
 internal sealed class WorkflowFlowHistoryDialog : Form
 {
     private readonly WorkflowFlowLibrary _library;
     private readonly WorkflowLibraryEntry _entry;
-    private readonly Func<string?>? _user;
-    private readonly ModernDataGridView _versions = WorkflowPage.Table("版本", "时间", "保存人", "说明");
+    private readonly ModernDataGridView _versions = WorkflowPage.Table("版本", "时间", "发布人", "说明");
     private readonly TextBox _diff = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.None };
-    private readonly ModernButton _compare = new() { Text = "和当前比较", AutoSize = true };
+    private readonly ModernButton _compare = new() { Text = "和已发布的比较", AutoSize = true };
     private readonly ModernButton _comparePrevious = new() { Text = "和上一版比较", AutoSize = true };
-    private readonly ModernButton _restore = new() { Text = "恢复到这一版", AutoSize = true, ButtonType = ModernButtonType.Primary };
+    private readonly ModernButton _restore = new() { Text = "恢复成草稿", AutoSize = true, ButtonType = ModernButtonType.Primary };
 
-    public WorkflowFlowHistoryDialog(WorkflowFlowLibrary library, WorkflowLibraryEntry entry, bool canEdit, Func<string?>? user)
+    public WorkflowFlowHistoryDialog(WorkflowFlowLibrary library, WorkflowLibraryEntry entry, bool canEdit)
     {
         _library = library;
         _entry = entry;
-        _user = user;
         Text = $"历史版本 · {entry.Name}";
         StartPosition = FormStartPosition.CenterParent;
         Size = new Size(820, 560);
@@ -339,13 +400,13 @@ internal sealed class WorkflowFlowHistoryDialog : Form
                 version.SavedBy ?? string.Empty, version.Note ?? string.Empty);
             _versions.Rows[index].Tag = version;
         }
-        _compare.Enabled = !entry.IsDeleted;
+        _compare.Enabled = entry.IsPublished;
         _restore.Enabled = canEdit;
         _versions.SelectionChanged += (_, _) => _comparePrevious.Enabled = Previous(Selected) is not null;
-        _compare.Click += (_, _) => { if (Selected is { } version) ShowDiff($"v{version.Version} → 当前", version.Version, 0); };
+        _compare.Click += (_, _) => { if (Selected is { } version) ShowDiff($"v{version.Version} → 已发布", version.Version, 0); };
         _comparePrevious.Click += (_, _) => { if (Selected is { } version && Previous(version) is { } previous) ShowDiff($"v{previous.Version} → v{version.Version}", previous.Version, version.Version); };
         _restore.Click += (_, _) => Restore();
-        _diff.Text = _versions.Rows.Count == 0 ? "还没有历史版本。每次在设计页保存会记一版。" : "选一个版本，再点“和当前比较”或“和上一版比较”。";
+        _diff.Text = _versions.Rows.Count == 0 ? "还没有历史版本。每次发布会记一版。" : "选一个版本，再点“和当前比较”或“和上一版比较”。";
     }
 
     /// <summary>恢复到的版本；没恢复时为空。</summary>
@@ -369,32 +430,17 @@ internal sealed class WorkflowFlowHistoryDialog : Form
         }
     }
 
-    internal static string Describe(string title, WorkflowFlowComparison diff)
-    {
-        if (diff.IsSame) return title + "：没有差别。";
-        var lines = new List<string> { title + "：" };
-        void Add(string label, IReadOnlyList<string> items)
-        {
-            if (items.Count > 0) lines.Add($"{label}（{items.Count}）：{string.Join("、", items)}");
-        }
-        Add("新增节点", diff.AddedNodes);
-        Add("删掉节点", diff.RemovedNodes);
-        Add("参数变了", diff.ChangedNodes);
-        Add("只挪了位置", diff.MovedNodes);
-        Add("新增连线", diff.AddedConnections);
-        Add("删掉连线", diff.RemovedConnections);
-        foreach (var other in diff.OtherChanges) lines.Add(other);
-        return string.Join(Environment.NewLine, lines);
-    }
+    internal static string Describe(string title, WorkflowFlowComparison diff) => WorkflowFlowComparisonText.Describe(title, diff);
 
     private void Restore()
     {
         if (Selected is not { } version) return;
-        if (MessageBox.Show(this, $"把 {_entry.Name} 恢复到 v{version.Version}？当前内容会先记成一版，之后还能再恢复回来。", "恢复版本",
+        var replace = File.Exists(_library.DraftPathOf(_entry.Name)) ? "现有的草稿会被替换。" : string.Empty;
+        if (MessageBox.Show(this, $"把 v{version.Version} 恢复成 {_entry.Name} 的草稿？{replace}发布后才生效，正在跑的流程不受影响。", "恢复版本",
                 MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
         try
         {
-            _library.Restore(_entry.Name, version.Version, _user?.Invoke());
+            _library.Restore(_entry.Name, version.Version);
             Restored = version.Version;
             Close();
         }

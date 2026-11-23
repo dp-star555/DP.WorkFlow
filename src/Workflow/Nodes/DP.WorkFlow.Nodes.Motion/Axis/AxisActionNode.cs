@@ -11,8 +11,13 @@ public enum E_AxisStepValueSource
 
 /// <summary>按 AxisStep 仓库中的 StepKey 执行完整轴步骤。</summary>
 [WorkflowNode("AxisAction", DisplayName = "轴动作", Category = "4.Motion/Axis", OutputType = typeof(WorkflowAxisStepResult))]
-public sealed class AxisActionNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
+public sealed class AxisActionNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode, IWorkflowNodeEnvironmentValidator
 {
+    /// <inheritdoc />
+    public IReadOnlyList<string> ValidateEnvironment(IServiceProvider services) =>
+        WorkflowMotionEnvironment.Check(services, catalog => StepKeySource == E_AxisStepValueSource.Literal
+            ? new[] { WorkflowMotionEnvironment.Key(catalog, WorkflowMotionObjectKind.AxisStep, StepKey, "轴步骤") }
+            : Array.Empty<string?>());
     /// <inheritdoc />
     public override string NodeType => "AxisAction";
 
@@ -26,6 +31,7 @@ public sealed class AxisActionNodeModel : WorkflowNodeModel, IRecoverableWorkflo
 
     /// <summary>获取或设置固定 StepKey。</summary>
     [WorkflowProperty("步骤键", "轴步骤仓库中需要执行的固定步骤键。", Category = "运动参数")]
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.AxisStep)]
     public string StepKey { get; set; } = string.Empty;
 
     /// <summary>获取或设置绑定形式的 StepKey。</summary>

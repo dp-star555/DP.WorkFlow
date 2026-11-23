@@ -3,13 +3,17 @@ namespace DP.WorkFlow;
 /// <summary>打开扫码设备连接。</summary>
 [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("CodeReaderOpen", DisplayName = "打开扫码枪", Category = "4.Motion/CodeReader", OutputType = typeof(string))]
-public sealed class CodeReaderOpenNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
+public sealed class CodeReaderOpenNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode, IWorkflowNodeEnvironmentValidator
 {
+    /// <inheritdoc />
+    public IReadOnlyList<string> ValidateEnvironment(IServiceProvider services) =>
+        WorkflowMotionEnvironment.Check(services, catalog => new[] { WorkflowMotionEnvironment.Key(catalog, WorkflowMotionObjectKind.CodeReader, ReaderKey, "读码器") });
     /// <inheritdoc />
     public RecoverableInterruptOption Interrupt { get; set; } = new();
     /// <inheritdoc />
     public override string NodeType => "CodeReaderOpen";
     /// <summary>获取或设置设备键。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.CodeReader)]
     public string ReaderKey { get; set; } = string.Empty;
 }
 

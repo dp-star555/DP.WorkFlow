@@ -63,19 +63,26 @@ public interface IWorkflowAxisService
 }
 
 /// <summary>轴节点共享的设备和轴号配置。</summary>
-public abstract class WorkflowAxisNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
+public abstract class WorkflowAxisNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode, IWorkflowNodeEnvironmentValidator
 {
+    /// <inheritdoc />
+    public IReadOnlyList<string> ValidateEnvironment(IServiceProvider services) =>
+        WorkflowMotionEnvironment.Check(services, catalog => DeviceIdSource == E_AxisValueSource.Literal && AxisIdSource == E_AxisValueSource.Literal
+            ? new[] { WorkflowMotionEnvironment.Address(catalog, DeviceId, AxisId, "轴", WorkflowMotionObjectKind.Axis) }
+            : Array.Empty<string?>());
     /// <inheritdoc />
     public RecoverableInterruptOption Interrupt { get; set; } = new();
     /// <summary>获取或设置设备 ID 来源。</summary>
     public E_AxisValueSource DeviceIdSource { get; set; }
     /// <summary>获取或设置固定设备 ID。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.AxisDevice)]
     public string DeviceId { get; set; } = string.Empty;
     /// <summary>获取或设置绑定形式的设备 ID。</summary>
     public WorkflowInput<string> DeviceIdBinding { get; set; } = WorkflowInput<string>.FromLiteral(string.Empty);
     /// <summary>获取或设置轴号来源。</summary>
     public E_AxisValueSource AxisIdSource { get; set; }
     /// <summary>获取或设置固定轴号。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.AxisNumber)]
     public string AxisId { get; set; } = "0";
     /// <summary>获取或设置绑定形式的轴号。</summary>
     public WorkflowInput<int> AxisIdBinding { get; set; } = WorkflowInput<int>.FromLiteral(0);

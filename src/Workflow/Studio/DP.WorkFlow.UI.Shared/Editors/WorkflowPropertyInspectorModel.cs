@@ -677,7 +677,8 @@ public sealed class WorkflowPropertyInspectorModel : IDisposable
         || propertyEditor?.EditorKey is WorkflowPropertyEditorKeys.VisionAreaSource
             or WorkflowPropertyEditorKeys.VisionLineScanSource
             or WorkflowPropertyEditorKeys.DocumentChoice
-        || propertyEditor?.EditorKey.StartsWith(WorkflowPropertyEditorKeys.VisionAlgorithmPrefix, StringComparison.Ordinal) == true;
+        || propertyEditor?.EditorKey.StartsWith(WorkflowPropertyEditorKeys.VisionAlgorithmPrefix, StringComparison.Ordinal) == true
+        || propertyEditor?.EditorKey.StartsWith(WorkflowPropertyEditorKeys.HostChoicePrefix, StringComparison.Ordinal) == true;
 
     /// <summary>
     /// 解析候选值。宿主提供者抛错时退回文本编辑而不是让整个属性面板不可用；

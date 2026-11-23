@@ -4,8 +4,11 @@ namespace DP.WorkFlow;
 [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("IOMultiWait", DisplayName = "等待多 IO", Category = "4.Motion/IO", OutputType = typeof(IoMultiNodeResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
-public sealed class IoMultiWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
+public sealed class IoMultiWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode, IWorkflowNodeEnvironmentValidator
 {
+    /// <inheritdoc />
+    public IReadOnlyList<string> ValidateEnvironment(IServiceProvider services) =>
+        WorkflowMotionEnvironment.Check(services, catalog => Conditions.Select(condition => WorkflowMotionEnvironment.Address(catalog, condition.DriveId, condition.Index, "IO 点", WorkflowMotionEnvironment.IoKind(condition.IOType))));
     /// <inheritdoc />
     public RecoverableInterruptOption Interrupt { get; set; } = new();
     /// <inheritdoc />

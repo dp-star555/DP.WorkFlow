@@ -3,13 +3,17 @@ namespace DP.WorkFlow;
 /// <summary>控制气缸伸出、缩回或全部断电。</summary>
 [WorkflowRecovery(WorkflowRecoveryCategory.VerifyThenContinue)]
 [WorkflowNode("CylinderControl", DisplayName = "气缸控制节点", Category = "4.Motion/Pneumatic", OutputType = typeof(PneumaticNodeResult))]
-public sealed class CylinderControlNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
+public sealed class CylinderControlNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode, IWorkflowNodeEnvironmentValidator
 {
+    /// <inheritdoc />
+    public IReadOnlyList<string> ValidateEnvironment(IServiceProvider services) =>
+        WorkflowMotionEnvironment.Check(services, catalog => new[] { WorkflowMotionEnvironment.Key(catalog, WorkflowMotionObjectKind.Cylinder, CylinderName, "气缸") });
     /// <inheritdoc />
     public RecoverableInterruptOption Interrupt { get; set; } = new();
     /// <inheritdoc />
     public override string NodeType => "CylinderControl";
     /// <summary>获取或设置气缸注册名称。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.Cylinder)]
     public string CylinderName { get; set; } = string.Empty;
     /// <summary>获取或设置动作命令。</summary>
     public WorkflowCylinderCommand Command { get; set; } = WorkflowCylinderCommand.Extend;

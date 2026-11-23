@@ -54,7 +54,7 @@ public sealed class WorkflowFlowLibraryTests : IDisposable
     }
 
     [Fact]
-    public void DuplicateRenameImport_KeepFlowNameEqualToFileName()
+    public void DuplicateRenameImport_KeepFlowNameEqualToFileName_AndLandAsDrafts()
     {
         var library = Library();
         File.WriteAllText(library.PathOf("上料"), Flow("上料", ("a", "开始", 0)));
@@ -62,10 +62,17 @@ public sealed class WorkflowFlowLibraryTests : IDisposable
 
         var copy = library.Duplicate("上料");
         Assert.Equal("上料-副本", copy);
-        Assert.Equal("上料-副本", library.List().Single(entry => entry.Name == copy).FlowName);
+        var copied = library.List().Single(entry => entry.Name == copy);
+        Assert.Equal("上料-副本", copied.FlowName);
+        Assert.False(copied.IsPublished);
+        Assert.True(copied.HasDraft);
+        Assert.False(File.Exists(library.PathOf(copy)));
 
+        library.EnsureDraft("上料");
         library.Rename("上料", "上料搬运");
         Assert.False(File.Exists(library.PathOf("上料")));
+        Assert.False(File.Exists(library.DraftPathOf("上料")));
+        Assert.True(File.Exists(library.DraftPathOf("上料搬运")));
         Assert.Equal("上料搬运", library.List().Single(entry => entry.Name == "上料搬运").FlowName);
         Assert.Single(library.GetVersions("上料搬运"));
         Assert.Throws<InvalidOperationException>(() => library.Rename("上料搬运", "上料-副本"));
@@ -75,6 +82,7 @@ public sealed class WorkflowFlowLibraryTests : IDisposable
         var imported = library.Import(outside);
         Assert.Equal("上料搬运2", imported);
         Assert.Equal("上料搬运2", library.List().Single(entry => entry.Name == imported).FlowName);
+        Assert.False(File.Exists(library.PathOf(imported)));
 
         File.WriteAllText(outside, "{\"Name\":\"x\"}");
         Assert.Throws<InvalidDataException>(() => library.Import(outside, "坏文件"));
@@ -82,34 +90,80 @@ public sealed class WorkflowFlowLibraryTests : IDisposable
     }
 
     [Fact]
-    public void DeleteAndRestore_KeepHistory()
+    public void Drafts_DoNotTouchPublishedFile_UntilPublished()
+    {
+        var library = Library();
+        File.WriteAllText(library.PathOf("主流程"), Flow("主流程", ("a", "开始", 0)));
+        library.RecordVersion("主流程", "张工");
+
+        var draft = library.EnsureDraft("主流程");
+        Assert.Equal(library.DraftPathOf("主流程"), draft);
+        Assert.Equal("主流程", library.NameOf(draft));
+        Assert.False(library.HasDraftChanges("主流程"));
+        Assert.False(library.List().Single().HasDraft);
+
+        File.WriteAllText(draft, Flow("主流程", ("a", "开始", 0), ("b", "延时", 100)));
+        Assert.True(library.HasDraftChanges("主流程"));
+        Assert.Equal(1, library.List().Single().NodeCount);
+        Assert.True(library.List().Single().HasDraft);
+        Assert.Equal(new[] { "延时" }, library.CompareDraft("主流程").AddedNodes);
+
+        _now = _now.AddMinutes(5);
+        var published = library.Publish("主流程", "李工", "加延时");
+        Assert.Equal(2, published.Version);
+        Assert.Equal("加延时", published.Note);
+        Assert.False(File.Exists(draft));
+        var entry = library.List().Single();
+        Assert.Equal(2, entry.NodeCount);
+        Assert.False(entry.HasDraft);
+        Assert.Equal("李工", entry.ModifiedBy);
+
+        // 放弃草稿回到已发布的。
+        File.WriteAllText(library.EnsureDraft("主流程"), Flow("主流程"));
+        library.DiscardDraft("主流程");
+        Assert.Equal(2, library.List().Single().NodeCount);
+        Assert.False(File.Exists(draft));
+
+        // 新建的流程只有草稿，发布后才有正式文件和第一版。
+        library.CreateDraft("新流程", Flow("随便", ("a", "开始", 0)));
+        var fresh = library.List().Single(item => item.Name == "新流程");
+        Assert.False(fresh.IsPublished);
+        Assert.Equal("新流程", fresh.FlowName);
+        Assert.Equal(1, library.Publish("新流程").Version);
+        Assert.True(library.List().Single(item => item.Name == "新流程").IsPublished);
+        Assert.Equal("发布", library.GetVersions("新流程").Single().Note);
+    }
+
+    [Fact]
+    public void DeleteAndRestore_KeepHistory_RestoreGoesToDraft()
     {
         var library = Library();
         File.WriteAllText(library.PathOf("剔除"), Flow("剔除", ("a", "开始", 0)));
         library.RecordVersion("剔除", "张工");
         File.WriteAllText(library.PathOf("剔除"), Flow("剔除", ("a", "开始", 0), ("b", "吹气", 50)));
+        library.EnsureDraft("剔除");
 
         library.Delete("剔除", "王工");
         Assert.Empty(library.List());
+        Assert.False(File.Exists(library.DraftPathOf("剔除")));
         var deleted = Assert.Single(library.List(includeDeleted: true));
         Assert.True(deleted.IsDeleted);
         Assert.Equal(2, deleted.Version);
         Assert.Equal("删除前", library.GetVersions("剔除")[1].Note);
         Assert.Equal("剔除2", library.UniqueName("剔除"));
 
-        library.Restore("剔除", 1, "王工");
+        library.Restore("剔除", 1);
         var restored = Assert.Single(library.List());
+        Assert.False(restored.IsPublished);
         Assert.Equal(1, restored.NodeCount);
-        Assert.Equal("从 v1 恢复", library.GetVersions("剔除").Last().Note);
+        library.Publish("剔除", "王工", "从 v1 恢复");
+        Assert.True(library.List().Single().IsPublished);
+        // 内容和 v1 相同，但和最新一版（删除前）不同，所以记成 v3。
+        Assert.Equal(new[] { null, "删除前", "从 v1 恢复" }, library.GetVersions("剔除").Select(version => version.Note));
 
-        library.Restore("剔除", 2, "王工");
-        Assert.Equal(2, library.List().Single().NodeCount);
-        // 当前内容就是上一版（从 v1 恢复的那版），“恢复到 v2 前”不重复记。
-        Assert.Equal(new[] { null, "删除前", "从 v1 恢复", "从 v2 恢复" }, library.GetVersions("剔除").Select(version => version.Note));
-
-        File.WriteAllText(library.PathOf("剔除"), Flow("剔除"));
-        library.Restore("剔除", 1, "王工");
-        Assert.Equal("恢复到 v1 前", library.GetVersions("剔除")[^2].Note);
+        library.Restore("剔除", 2);
+        Assert.Equal(1, library.List().Single().NodeCount);
+        Assert.True(library.HasDraftChanges("剔除"));
     }
 
     [Fact]

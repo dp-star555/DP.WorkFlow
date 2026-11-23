@@ -3,15 +3,20 @@ namespace DP.WorkFlow;
 /// <summary>按旧版命令集写入数字输出。</summary>
 [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("IOWrite", DisplayName = "写 IO", Category = "4.Motion/IO", OutputType = typeof(WorkflowIoWriteResult))]
-public sealed class IoWriteNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
+public sealed class IoWriteNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode, IWorkflowNodeEnvironmentValidator
 {
+    /// <inheritdoc />
+    public IReadOnlyList<string> ValidateEnvironment(IServiceProvider services) =>
+        WorkflowMotionEnvironment.Check(services, catalog => new[] { WorkflowMotionEnvironment.Address(catalog, DriveId, Index, "输出点", WorkflowMotionObjectKind.DigitalOutput) });
     /// <inheritdoc />
     public RecoverableInterruptOption Interrupt { get; set; } = new();
     /// <inheritdoc />
     public override string NodeType => "IOWrite";
     /// <summary>获取或设置驱动 ID。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.IoDevice)]
     public string DriveId { get; set; } = string.Empty;
     /// <summary>获取或设置兼容旧 JSON 的字符串索引。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.IoIndex)]
     public string Index { get; set; } = "0";
     /// <summary>获取或设置写入命令。</summary>
     public WorkflowIoWriteCommand Command { get; set; } = WorkflowIoWriteCommand.Toggle;

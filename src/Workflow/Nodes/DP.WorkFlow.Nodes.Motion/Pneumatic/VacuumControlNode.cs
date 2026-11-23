@@ -3,13 +3,17 @@ namespace DP.WorkFlow;
 /// <summary>控制真空打开、关闭和破真空时序。</summary>
 [WorkflowRecovery(WorkflowRecoveryCategory.VerifyThenContinue)]
 [WorkflowNode("VacuumControl", DisplayName = "真空控制", Category = "4.Motion/Pneumatic", OutputType = typeof(PneumaticNodeResult), Icon = "vacuum")]
-public sealed class VacuumControlNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
+public sealed class VacuumControlNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode, IWorkflowNodeEnvironmentValidator
 {
+    /// <inheritdoc />
+    public IReadOnlyList<string> ValidateEnvironment(IServiceProvider services) =>
+        WorkflowMotionEnvironment.Check(services, catalog => new[] { WorkflowMotionEnvironment.Key(catalog, WorkflowMotionObjectKind.Vacuum, VacuumName, "真空") });
     /// <inheritdoc />
     public RecoverableInterruptOption Interrupt { get; set; } = new();
     /// <inheritdoc />
     public override string NodeType => "VacuumControl";
     /// <summary>获取或设置真空注册名称。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.Vacuum)]
     public string VacuumName { get; set; } = string.Empty;
     /// <summary>获取或设置命令。</summary>
     public WorkflowVacuumCommand Command { get; set; } = WorkflowVacuumCommand.VacuumOn;

@@ -4,8 +4,11 @@ namespace DP.WorkFlow;
 [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("IOWait", DisplayName = "等待 IO 等于", Category = "4.Motion/IO", OutputType = typeof(WorkflowIoNodeResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
-public sealed class IoWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
+public sealed class IoWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode, IWorkflowNodeEnvironmentValidator
 {
+    /// <inheritdoc />
+    public IReadOnlyList<string> ValidateEnvironment(IServiceProvider services) =>
+        WorkflowMotionEnvironment.Check(services, catalog => new[] { WorkflowMotionEnvironment.Address(catalog, DriveId, Index, "IO 点", WorkflowMotionEnvironment.IoKind(IOType)) });
     /// <inheritdoc />
     public RecoverableInterruptOption Interrupt { get; set; } = new();
     /// <inheritdoc />
@@ -13,8 +16,10 @@ public sealed class IoWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNod
     /// <summary>获取或设置 IO 类型。</summary>
     public WorkflowIoPointType IOType { get; set; } = WorkflowIoPointType.Input;
     /// <summary>获取或设置驱动 ID。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.IoDevice)]
     public string DriveId { get; set; } = string.Empty;
     /// <summary>获取或设置字符串索引。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.IoIndex)]
     public string Index { get; set; } = "0";
     /// <summary>获取或设置期望值。</summary>
     public bool ExpectedValue { get; set; } = true;

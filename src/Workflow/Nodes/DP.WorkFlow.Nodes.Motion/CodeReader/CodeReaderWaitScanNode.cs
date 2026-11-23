@@ -4,13 +4,17 @@ namespace DP.WorkFlow;
 [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("CodeReaderWaitScan", DisplayName = "等待扫码结果", Category = "4.Motion/CodeReader", OutputType = typeof(CodeReaderScanResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
-public sealed class CodeReaderWaitScanNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
+public sealed class CodeReaderWaitScanNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode, IWorkflowNodeEnvironmentValidator
 {
+    /// <inheritdoc />
+    public IReadOnlyList<string> ValidateEnvironment(IServiceProvider services) =>
+        WorkflowMotionEnvironment.Check(services, catalog => new[] { WorkflowMotionEnvironment.Key(catalog, WorkflowMotionObjectKind.CodeReader, ReaderKey, "读码器") });
     /// <inheritdoc />
     public RecoverableInterruptOption Interrupt { get; set; } = new();
     /// <inheritdoc />
     public override string NodeType => "CodeReaderWaitScan";
     /// <summary>获取或设置设备键。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.CodeReader)]
     public string ReaderKey { get; set; } = string.Empty;
     /// <summary>获取或设置等待超时毫秒数。</summary>
     public int TimeoutMs { get; set; } = 5000;

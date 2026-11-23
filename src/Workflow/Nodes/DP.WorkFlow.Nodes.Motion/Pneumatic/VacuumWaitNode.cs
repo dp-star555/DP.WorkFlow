@@ -4,13 +4,17 @@ namespace DP.WorkFlow;
 [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("VacuumWait", DisplayName = "真空等待节点", Category = "4.Motion/Pneumatic", OutputType = typeof(PneumaticNodeResult), Icon = "vacuum")]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
-public sealed class VacuumWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
+public sealed class VacuumWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode, IWorkflowNodeEnvironmentValidator
 {
+    /// <inheritdoc />
+    public IReadOnlyList<string> ValidateEnvironment(IServiceProvider services) =>
+        WorkflowMotionEnvironment.Check(services, catalog => new[] { WorkflowMotionEnvironment.Key(catalog, WorkflowMotionObjectKind.Vacuum, VacuumName, "真空") });
     /// <inheritdoc />
     public RecoverableInterruptOption Interrupt { get; set; } = new();
     /// <inheritdoc />
     public override string NodeType => "VacuumWait";
     /// <summary>获取或设置真空注册名称。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.Vacuum)]
     public string VacuumName { get; set; } = string.Empty;
     /// <summary>获取或设置目标状态。</summary>
     public WorkflowVacuumTargetState TargetState { get; set; } = WorkflowVacuumTargetState.VacuumOk;

@@ -11,7 +11,7 @@
 ## 打包给 DP.Foundation
 
 - DP.Foundation 的 Workflow 功能包引用本仓库的包，不引用源码：内核、持久化、标准 / 复合 / 工艺 / 运动节点、脚本、UI.Shared、UI.WinForms，加上 DP.Vision 的 DP.Plugins.Runtime，共 13 个。
-- 版本在根目录 `Directory.Build.props` 的 `<Version>`（现在 1.0.0-preview.2）。改了这些库：版本加一，运行 `tools/Pack-ForFoundation.ps1`（打包并复制到同级 DP.Foundation\vendor\packages），再在 Foundation 改引用版本、vendor\README.md 的哈希，`dotnet restore --force-evaluate`。
+- 版本在根目录 `Directory.Build.props` 的 `<Version>`（现在 1.0.0-preview.3）。改了这些库：版本加一，运行 `tools/Pack-ForFoundation.ps1`（打包并复制到同级 DP.Foundation\vendor\packages），再在 Foundation 改引用版本、vendor\README.md 的哈希，`dotnet restore --force-evaluate`。
 - 脚本库的包 ID 改成 `DP.WorkFlow.ScriptEngine` / `DP.WorkFlow.ScriptEngine.WinForms`（程序集名不变）。后者带一个 buildTransitive 目标，间接引用时也把 Scintilla 原生库复制到程序目录。
 
 ## 主题
@@ -91,14 +91,28 @@
   - 节拍：根画布有循环块时是主循环相邻两圈的间隔（一帧跳过多圈时平分），没有时是每次运行结束时的总耗时；取近 60 次平均。
   - 显示延迟：快照时刻到界面应用它的时刻。
 
-## 流程库
+## 流程库（草稿 / 发布）
 
-- `WorkflowFlowLibrary`（Persistence.Json）：一个目录的流程文件加历史版本，只按 JSON 文本操作，不需要节点目录。
-  - 文件名就是流程名：复制、改名、导入时把文件里的流程名一起改掉。
-  - 历史版本在 `.history\名字\`：`v0001.json`… 和 `versions.json`（时间、保存人、说明）。`RecordVersion` 内容没变时不重复记。
-  - 删除只删文件，先记一版；恢复前也记一版。`Compare` 比根画布：新增、删掉、参数变了、只挪了位置的节点，新增和删掉的连线，流程名、入口、公共数据清单。
-- `WorkflowFlowLibraryPage`（UI.WinForms）：表格、搜索、显示已删除，新建（交给宿主）、复制、改名、删除、导入、导出、历史版本对话框（比较、恢复）。状态文字由宿主给。
-- `WorkflowDocumentWorkspace.Saved`：写到文件后发生（打开文件、放弃修改不发），宿主据此记版本、重新加载。
+- `WorkflowFlowLibrary`（Persistence.Json）：一个目录的流程文件、草稿和发布历史，只按 JSON 文本操作，不需要节点目录。
+  - 已发布的文件在目录下，流程管理只加载这些；草稿在 `.drafts\名字.json`，不影响正在跑的流程，重启也还在。
+  - 设计页打开的是 `EnsureDraft` 给的草稿（没有时从已发布的复制一份），保存只写草稿。`HasDraftChanges` 按内容比较（格式差别不算）。
+  - `Publish`：草稿写成正式文件（流程名改成库里的名字），记一版（说明默认“发布”），删掉草稿。检查草稿、确认没有流程在运行由调用方负责。
+  - `DiscardDraft` 回到已发布的版本；从没发布过的流程放弃草稿就没了。
+  - 新建（`CreateDraft`）、复制、导入、恢复（`Restore` 把版本写成草稿）都先落成草稿，发布后才加载。
+  - 文件名就是流程名：复制、改名、导入时把文件里的流程名一起改掉；改名时草稿和历史跟着走。
+  - 历史版本在 `.history\名字\`：`v0001.json`… 和 `versions.json`（时间、发布人、说明）。发布和删除前各记一版，内容没变时不重复记。
+  - `Compare` 比根画布：新增、删掉、参数变了、只挪了位置的节点，新增和删掉的连线，流程名、入口、公共数据清单。`CompareDraft` 比草稿和已发布的。
+- `WorkflowDraftPublisher`（UI.Shared）：发布 / 放弃草稿的共同流程。`BlockedReason`（例如有流程在运行）、`CheckDraft`（宿主编译 + 设备检查）、`Gate`（准入，操作键 `workflow.design.publish` / `workflow.design.discard`）、`CurrentUser`。
+- `WorkflowPublishDialog`（UI.WinForms）：先检查，不过就列原因；过了显示这次改了什么，填发布说明，再发布。流程库页和设计页共用。
+- `WorkflowFlowLibraryPage`（UI.WinForms）：表格（多一列“草稿”：未发布 / 有修改）、搜索、显示已删除；查看修改、发布、放弃草稿，新建（交给宿主）、复制、改名、删除、导入、导出、历史版本对话框（比较、恢复成草稿）。状态文字由宿主给，发布器在 `Publisher` 上配置。
+- `WorkflowDocumentWorkspace.Saved`：写到文件后发生（打开文件、放弃修改不发）。
+
+## 宿主候选与设备检查（节点解耦）
+
+- 节点属性用 `WorkflowPropertyEditorKeys.HostChoicePrefix`（`Host/`）开头的编辑器键声明要哪一类候选，例如 `Host/Motion.Axis…`。
+- 候选由流程服务表里的 `IWorkflowPropertyChoiceSource` 回答（`WorkflowServiceProvider.AddPropertyChoices` 可以多方追加）；`WorkflowHostPropertyChoices.CreateProvider` 接成属性面板的候选提供者。没有候选时退回文本输入。
+- `IWorkflowNodeEnvironmentValidator`：节点按宿主服务检查自己固定引用的外部对象；`WorkflowEnvironmentCheck.Check` 走整份流程（含子画布）。宿主没有目录时节点跳过检查。
+- 运动节点：`IWorkflowMotionCatalog`（轴、步骤、IO、气缸、真空、读码器）和 `WorkflowMotionCatalog`（同时是候选来源）。节点只认这些接口和逻辑名称，不引用 Motion；执行仍走 `IWorkflowAxisService` 等设备服务。
 
 ## 操作准入（审计）
 

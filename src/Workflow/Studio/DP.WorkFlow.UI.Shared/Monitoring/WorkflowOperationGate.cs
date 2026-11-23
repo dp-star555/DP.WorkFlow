@@ -28,7 +28,13 @@ public enum WorkflowOperationKind
     TrialRun,
 
     /// <summary>设计页停止试运行。</summary>
-    StopTrialRun
+    StopTrialRun,
+
+    /// <summary>发布草稿：替换正式流程文件并记一版。</summary>
+    Publish,
+
+    /// <summary>放弃草稿，回到已发布的版本。</summary>
+    DiscardDraft
 }
 
 /// <summary>一次界面操作。</summary>
@@ -48,6 +54,8 @@ public sealed record WorkflowOperation(WorkflowOperationKind Kind, string Target
         WorkflowOperationKind.RerunFaultHandler => "workflow.fault.rerun",
         WorkflowOperationKind.StopFaultedFlows => "workflow.fault.stopAll",
         WorkflowOperationKind.TrialRun => "workflow.design.run",
+        WorkflowOperationKind.Publish => "workflow.design.publish",
+        WorkflowOperationKind.DiscardDraft => "workflow.design.discard",
         _ => "workflow.design.stop"
     };
 

@@ -24,6 +24,12 @@ public static class WorkflowPropertyEditorKeys
     /// <summary>候选由节点按所在文档提供（见 <see cref="IWorkflowDocumentPropertyChoices"/>），可作用在非字符串的取值对象上。</summary>
     public const string DocumentChoice = "DocumentChoice";
 
+    /// <summary>
+    /// 宿主候选键前缀，后接对象类别（例如 Host/Motion.Axis）。候选由流程服务表里的 <see cref="IWorkflowPropertyChoiceSource"/> 提供；
+    /// 没有候选时退回文本输入。可作用在非字符串的取值对象上。
+    /// </summary>
+    public const string HostChoicePrefix = "Host/";
+
     /// <summary>从流程公共数据清单中选择 bool 信号键；清单为空时退回文本输入。</summary>
     public const string PublicDataSignal = "PublicData/Signal";
 

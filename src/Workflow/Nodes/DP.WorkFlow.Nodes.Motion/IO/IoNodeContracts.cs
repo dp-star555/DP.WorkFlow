@@ -24,8 +24,10 @@ public enum WorkflowIoMatchMode
 public sealed class WorkflowIoExpectation
 {
     /// <summary>获取或设置驱动 ID。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.IoDevice)]
     public string DriveId { get; set; } = string.Empty;
     /// <summary>获取或设置字符串索引。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.IoIndex)]
     public string Index { get; set; } = "0";
     /// <summary>获取或设置输入/输出类型。</summary>
     public WorkflowIoPointType IOType { get; set; } = WorkflowIoPointType.Input;

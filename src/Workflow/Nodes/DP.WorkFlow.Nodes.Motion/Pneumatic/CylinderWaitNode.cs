@@ -4,13 +4,17 @@ namespace DP.WorkFlow;
 [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("CylinderWait", DisplayName = "气缸等待节点", Category = "4.Motion/Pneumatic", OutputType = typeof(PneumaticNodeResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
-public sealed class CylinderWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
+public sealed class CylinderWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode, IWorkflowNodeEnvironmentValidator
 {
+    /// <inheritdoc />
+    public IReadOnlyList<string> ValidateEnvironment(IServiceProvider services) =>
+        WorkflowMotionEnvironment.Check(services, catalog => new[] { WorkflowMotionEnvironment.Key(catalog, WorkflowMotionObjectKind.Cylinder, CylinderName, "气缸") });
     /// <inheritdoc />
     public RecoverableInterruptOption Interrupt { get; set; } = new();
     /// <inheritdoc />
     public override string NodeType => "CylinderWait";
     /// <summary>获取或设置气缸注册名称。</summary>
+    [WorkflowPropertyEditor(WorkflowMotionEditorKeys.Cylinder)]
     public string CylinderName { get; set; } = string.Empty;
     /// <summary>获取或设置目标状态。</summary>
     public WorkflowCylinderTargetState TargetState { get; set; } = WorkflowCylinderTargetState.Extended;
