@@ -2,6 +2,12 @@
 
 2026-11-23 起只维护 WinForms 界面，WPF 以后再适配（WPF 继续用原来固定的深色画布 `WorkflowCanvasPalette.Classic`）。
 
+## ModernUI 与 DP.Foundation 共用一份
+
+- `DP.WorkFlow.UI.WinForms` 引用 `ModernUI.WinForms` 包 1.1.1-foundation.23（`vendor/packages`，`NuGet.Config` 把 `ModernUI.*` 映射到这里），和 DP.Foundation 操作台是同一份。两边程序集同名，一个进程只能加载一份，所以 Workflow 页面才能放进操作台。
+- 以 DP.Foundation 的 `vendor/src/ModernUI.WinForms` 为准。要改 ModernUI，先在 Foundation 改并打新包，再把新包复制到本仓库 `vendor/packages`，同时改 `Directory.Packages.props` 里的版本。
+- 本仓库 `src/Platform/Desktop/ModernUI.WinForms` 源码现在只给 Gallery、示例和 ModernUI 自己的测试用，Workflow 界面不再引用它。
+
 ## 主题
 
 - `WorkflowThemePalette`（UI.Shared）：与 DP.Foundation 操作台 `ThemePalette` 同一组颜色角色和取值，内置 blue（默认）、night、mint、warm、orange 5 套。`Resolve` 兼容旧写法 Light / Dark。

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <ProjectReference Include="..\..\..\Platform\Localization\ModernUI.Localization\ModernUI.Localization.csproj" />
-    <ProjectReference Include="..\..\..\Platform\Desktop\ModernUI.WinForms\ModernUI.WinForms.csproj" />
+    <!-- 与 DP.Foundation 操作台同一份 ModernUI（同名程序集一个进程只能有一份）。 -->
+    <PackageReference Include="ModernUI.WinForms" />
     <ProjectReference Include="..\DP.WorkFlow.UI.Shared\DP.WorkFlow.UI.Shared.csproj" />
     <ProjectReference Include="..\..\..\Platform\Scripting\ScriptEngine.WinForms\ScriptEngine.WinForms.csproj" />
   </ItemGroup>
