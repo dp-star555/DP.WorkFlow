@@ -121,6 +121,8 @@
 
 `WorkflowStudioControl.LoadNodeEditorPlugins(插件目录, 加载器)` 装插件里的 Studio / WinForms 扩展。有 plugin.json 的按分组装；直接放进插件目录的 dll（没有 plugin.json）按类型自动发现，和运行节点一样。宿主要把装运行节点的同一个 `WorkflowPluginLoader` 传进来，否则 net8 下节点类型会被装成两份。
 
+插件目录里的 dll 用哪一份：程序目录（`WorkflowPluginLoader.HostDirectory`，默认程序所在目录）里有同名的，一律用程序目录那份，插件目录里的副本不加载也不扫描；插件目录只补程序目录没有的。节点工程因此可以把编译输出整个放进来，不用关心基座装了哪些功能包。
+
 ## 节点自己提供候选与设备检查
 
 - 下拉候选：属性标 `[WorkflowPropertyEditor(WorkflowPropertyEditorKeys.NodeChoice)]`，节点实现 `IWorkflowPropertyChoices.GetPropertyChoices(属性名, 上下文)`。上下文里有同文档节点和宿主交给流程的服务表（`Services`），节点自己从服务表取需要的服务并返回候选。没有候选时退回文本输入。基座不需要为新节点登记任何东西。
