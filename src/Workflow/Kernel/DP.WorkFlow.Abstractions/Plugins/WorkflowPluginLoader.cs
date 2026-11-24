@@ -112,14 +112,13 @@ public sealed class WorkflowPluginLoader
                 .ThenBy(item => item.TypeName, StringComparer.Ordinal)
                 .Select(item => item.Module)
                 .ToArray();
-            // Manifest 包仍严格按分组加载；直接投放的 Runtime DLL 可自动发现。
-            // 不扫描已有 Manifest 包，避免把未请求的桌面分组误当作 Runtime。
-            if (typeof(TModule) != typeof(IWorkflowRuntimePluginModule)
-                || !string.Equals(moduleGroup, WorkflowPluginModuleGroups.Runtime, StringComparison.OrdinalIgnoreCase))
-                return ordered;
+            // Manifest 包仍严格按分组加载；直接投放（没有 Manifest）的 DLL 按类型自动发现：
+            // 运行节点找 Runtime Module，设计器的专用编辑器找对应平台的 Studio Module。
+            // 不扫描已有 Manifest 包，避免把未请求的分组误当作当前分组。
             var manifestRoots = manifests.Select(m => Path.GetDirectoryName(m.ManifestPath)! + Path.DirectorySeparatorChar).ToArray();
             var discovered = _session.Discover<TModule>(root, path => !manifestRoots.Any(package => path.StartsWith(package, StringComparison.OrdinalIgnoreCase)));
-            DiscoveryFailures = discovered.Failures;
+            if (typeof(TModule) == typeof(IWorkflowRuntimePluginModule))
+                DiscoveryFailures = discovered.Failures;
             return ordered.Concat(discovered.Modules).Distinct().ToArray();
         }
     }

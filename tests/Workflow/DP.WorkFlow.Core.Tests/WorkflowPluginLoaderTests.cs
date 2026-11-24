@@ -137,6 +137,27 @@ public sealed class WorkflowPluginLoaderTests
     }
 
     [Fact]
+    public void LoadModules_FindsStudioModulesInDllDroppedWithoutManifest()
+    {
+        // 节点工程的 dll 直接放进插件目录（没有 plugin.json）：设计器的专用编辑器和运行节点一样按类型自动发现。
+        var root = Path.Combine(Path.GetTempPath(), "workflow-dropped-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var sourceAssembly = typeof(WorkflowPluginLoaderTests).Assembly.Location;
+            File.Copy(sourceAssembly, Path.Combine(root, Path.GetFileName(sourceAssembly)));
+
+            var modules = new WorkflowPluginLoader().LoadModules<ITestWorkflowPluginModule>(root, WorkflowPluginModuleGroups.WinForms);
+
+            Assert.Equal("demo.module", Assert.Single(modules).ModuleId);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void LoadModules_DoesNotLoadAssemblyFromUnrequestedPlatformGroup()
     {
         var root = CreatePluginRoot("wpf.only", WorkflowPluginModuleGroups.Wpf);

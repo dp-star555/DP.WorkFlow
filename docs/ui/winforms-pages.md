@@ -117,6 +117,10 @@
 - `WorkflowFlowLibraryPage`（UI.WinForms）：表格（多一列“草稿”：未发布 / 有修改）、搜索、显示已删除；查看修改、发布、放弃草稿，新建（交给宿主）、复制、改名、删除、导入、导出、历史版本对话框（比较、恢复成草稿）。状态文字由宿主给，发布器在 `Publisher` 上配置。
 - `WorkflowDocumentWorkspace.Saved`：写到文件后发生（打开文件、放弃修改不发）。
 
+## 插件节点的专用编辑器
+
+`WorkflowStudioControl.LoadNodeEditorPlugins(插件目录, 加载器)` 装插件里的 Studio / WinForms 扩展。有 plugin.json 的按分组装；直接放进插件目录的 dll（没有 plugin.json）按类型自动发现，和运行节点一样。宿主要把装运行节点的同一个 `WorkflowPluginLoader` 传进来，否则 net8 下节点类型会被装成两份。
+
 ## 宿主候选与设备检查（节点解耦）
 
 - 节点属性用 `WorkflowPropertyEditorKeys.HostChoicePrefix`（`Host/`）开头的编辑器键声明要哪一类候选，例如 `Host/Motion.Axis…`。
