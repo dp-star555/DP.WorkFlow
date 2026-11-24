@@ -51,6 +51,8 @@ public sealed record WorkflowNodeEditorContext(
 {
     /// <summary>宿主为隔离编辑副本提供的候选值。</summary>
     public WorkflowPropertyChoiceProvider? ChoiceProvider { get; init; }
+    /// <summary>宿主交给流程的服务表，供节点自己提供候选。</summary>
+    public IServiceProvider? Services { get; init; }
     /// <summary>宿主提供的领域属性；回调接收编辑副本。</summary>
     public Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? AdditionalProperties { get; init; }
 
@@ -100,6 +102,8 @@ public sealed record WorkflowPropertyEditorPageModel(WorkflowDesignerSession Ses
 {
     /// <summary>属性页候选值来源。</summary>
     public WorkflowPropertyChoiceProvider? ChoiceProvider { get; init; }
+    /// <summary>宿主交给流程的服务表，供节点自己提供候选。</summary>
+    public IServiceProvider? Services { get; init; }
     /// <summary>属性页领域扩展。</summary>
     public Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? AdditionalProperties { get; init; }
 }
@@ -324,7 +328,8 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
     /// <summary>创建带宿主属性扩展的隔离节点编辑器，沿用应用、取消及撤销语义。</summary>
     public WorkflowNodeEditorModel(WorkflowDesignerSession session, string startNodeId, string nodeId,
         IEnumerable<IWorkflowNodeEditorPageProvider>? providers, WorkflowPropertyChoiceProvider? choiceProvider,
-        Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? additionalProperties, string? propertyEditorKey = null)
+        Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? additionalProperties, string? propertyEditorKey = null,
+        IServiceProvider? services = null)
     {
         _providers = providers?.ToArray() ?? [];
         _choiceProvider = choiceProvider; _additionalProperties = additionalProperties;
@@ -337,7 +342,7 @@ public sealed class WorkflowNodeEditorModel : IAsyncDisposable
         (EditingSession, EditingNode) = CreateEditingSession(session, nodeId);
         var context = new WorkflowNodeEditorContext(EditingSession, startNodeId, EditingNode)
         {
-            ChoiceProvider = choiceProvider, AdditionalProperties = additionalProperties,
+            ChoiceProvider = choiceProvider, Services = services, AdditionalProperties = additionalProperties,
             RequestedPropertyEditor = propertyEditorKey, RuntimeSession = session
         };
         var pageCatalog = WorkflowNodeEditorPageCatalog.CreateDefault();

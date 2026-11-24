@@ -27,7 +27,6 @@
     <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Standard\DP.WorkFlow.Nodes.Standard.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Process\DP.WorkFlow.Nodes.Process.csproj" />
     <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Composite\DP.WorkFlow.Nodes.Composite.csproj" />
-    <ProjectReference Include="..\..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Motion\DP.WorkFlow.Nodes.Motion.csproj" />
   </ItemGroup>
 
 </Project>

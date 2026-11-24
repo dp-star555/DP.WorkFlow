@@ -21,7 +21,6 @@ $projects = @(
     'src/Workflow/Nodes/DP.WorkFlow.Nodes.Standard/DP.WorkFlow.Nodes.Standard.csproj',
     'src/Workflow/Nodes/DP.WorkFlow.Nodes.Composite/DP.WorkFlow.Nodes.Composite.csproj',
     'src/Workflow/Nodes/DP.WorkFlow.Nodes.Process/DP.WorkFlow.Nodes.Process.csproj',
-    'src/Workflow/Nodes/DP.WorkFlow.Nodes.Motion/DP.WorkFlow.Nodes.Motion.csproj',
     'src/Platform/Scripting/ScriptEngine/ScriptEngine.csproj',
     'src/Platform/Scripting/ScriptEngine.WinForms/ScriptEngine.WinForms.csproj',
     'src/Workflow/Studio/DP.WorkFlow.UI.Shared/DP.WorkFlow.UI.Shared.csproj',

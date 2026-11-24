@@ -300,6 +300,7 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         var panel = new WorkflowPropertyPanel
         {
             ChoiceProvider = page.ChoiceProvider,
+            Services = page.Services,
             AdditionalProperties = WorkflowNodeEditorPropertyContributors.Compose(page.AdditionalProperties, Model.Pages),
             Session = page.Session,
             EntryNodeId = page.EntryNodeId,

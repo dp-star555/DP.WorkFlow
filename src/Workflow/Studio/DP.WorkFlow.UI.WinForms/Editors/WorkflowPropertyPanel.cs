@@ -14,6 +14,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
 {
     private WorkflowDesignerSession? _session;
     private WorkflowPropertyChoiceProvider? _choiceProvider;
+    private IServiceProvider? _services;
     private Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? _additionalProperties;
 
     /// <summary>领域描述生成的附加属性；与普通属性共用提交及撤销。</summary>
@@ -151,6 +152,18 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         }
     }
 
+    /// <summary>宿主交给流程的服务表；节点通过 <see cref="IWorkflowPropertyChoices"/> 用它提供下拉候选。</summary>
+    public IServiceProvider? Services
+    {
+        get => _services;
+        set
+        {
+            if (ReferenceEquals(_services, value)) return;
+            _services = value;
+            if (_model is not null) _model.Services = value;
+        }
+    }
+
     /// <summary>在专用脚本页面存在时隐藏参数表中的脚本正文。</summary>
     public bool HideScriptProperty
     {
@@ -174,7 +187,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         _modernSchemaKey = null;
         if (_session is not null && !string.IsNullOrWhiteSpace(_startNodeId))
         {
-            _model = new WorkflowPropertyInspectorModel(_session, _startNodeId, _choiceProvider, _additionalProperties);
+            _model = new WorkflowPropertyInspectorModel(_session, _startNodeId, _choiceProvider, _additionalProperties) { Services = _services };
             _model.Changed += OnModelChanged;
         }
         Rebuild();

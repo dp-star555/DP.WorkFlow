@@ -54,7 +54,6 @@ public partial class Form1 : Form
         var plugins = new WorkflowRuntimePluginCatalog(_nodeCatalog, handlers)
             .Register(new WorkflowStandardRuntimePluginModule())
             .Register(new WorkflowCompositeRuntimePluginModule())
-            .Register(new WorkflowMotionRuntimePluginModule())
             .Register(new WorkflowProcessRuntimePluginModule())
             .Register(new WorkflowImageRuntimePluginModule())
             .Register(new WorkflowLabelInspectionModule());
@@ -161,10 +160,6 @@ public partial class Form1 : Form
             .Add<IWorkflowSignalService>(new WorkflowSignalService())
             .Add<IWorkflowValueSignalService>(new WorkflowValueSignalService())
             .Add<IWorkflowQueueService>(new WorkflowQueueService())
-            .Add<IWorkflowIoService>(new DemoIoService())
-            .Add<IWorkflowAxisService>(new DemoAxisService())
-            .Add<IWorkflowPneumaticService>(new DemoPneumaticService())
-            .Add<IWorkflowCodeReaderService>(new DemoCodeReaderService())
             .Add<IWorkflowOperatorService>(_operatorService)
             .Add<IWorkflowProcessService>(new DemoProcessService())
             .Add<IWorkflowProductFlowService>(new DemoProductFlowService())

@@ -88,8 +88,7 @@ public sealed class WorkflowNodeConfigRoundTripTests
         new WorkflowNodeCatalog()
             .RegisterStandardNodes()
             .RegisterCompositeNodes()
-            .RegisterProcessNodes()
-            .RegisterMotionNodes();
+            .RegisterProcessNodes();
 
     private static WorkflowDocument Wrap(IWorkflowNodeModel node)
     {

@@ -121,12 +121,12 @@
 
 `WorkflowStudioControl.LoadNodeEditorPlugins(插件目录, 加载器)` 装插件里的 Studio / WinForms 扩展。有 plugin.json 的按分组装；直接放进插件目录的 dll（没有 plugin.json）按类型自动发现，和运行节点一样。宿主要把装运行节点的同一个 `WorkflowPluginLoader` 传进来，否则 net8 下节点类型会被装成两份。
 
-## 宿主候选与设备检查（节点解耦）
+## 节点自己提供候选与设备检查
 
-- 节点属性用 `WorkflowPropertyEditorKeys.HostChoicePrefix`（`Host/`）开头的编辑器键声明要哪一类候选，例如 `Host/Motion.Axis…`。
-- 候选由流程服务表里的 `IWorkflowPropertyChoiceSource` 回答（`WorkflowServiceProvider.AddPropertyChoices` 可以多方追加）；`WorkflowHostPropertyChoices.CreateProvider` 接成属性面板的候选提供者。没有候选时退回文本输入。
-- `IWorkflowNodeEnvironmentValidator`：节点按宿主服务检查自己固定引用的外部对象；`WorkflowEnvironmentCheck.Check` 走整份流程（含子画布）。宿主没有目录时节点跳过检查。
-- 运动节点：`IWorkflowMotionCatalog`（轴、步骤、IO、气缸、真空、读码器）和 `WorkflowMotionCatalog`（同时是候选来源）。节点只认这些接口和逻辑名称，不引用 Motion；执行仍走 `IWorkflowAxisService` 等设备服务。
+- 下拉候选：属性标 `[WorkflowPropertyEditor(WorkflowPropertyEditorKeys.NodeChoice)]`，节点实现 `IWorkflowPropertyChoices.GetPropertyChoices(属性名, 上下文)`。上下文里有同文档节点和宿主交给流程的服务表（`Services`），节点自己从服务表取需要的服务并返回候选。没有候选时退回文本输入。基座不需要为新节点登记任何东西。
+- 宿主把服务表交给设计器：`WorkflowStudioControl.Properties.Services = 服务表`（属性面板和节点工作台都会用到）。
+- `IWorkflowNodeEnvironmentValidator`：节点按宿主服务检查自己固定引用的外部对象；`WorkflowEnvironmentCheck.Check` 走整份流程（含子画布）。
+- 设备类节点（运动、IO、气缸……）不在本仓库：由宿主侧的节点工程直接使用宿主服务实现，dll 放进插件目录即进工具箱。
 
 ## 操作准入（审计）
 

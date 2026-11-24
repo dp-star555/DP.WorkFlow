@@ -52,7 +52,7 @@ public sealed record WorkflowVisionCoordinateChoice(string Id, string Name, int 
 [WorkflowNode("Vision.BuildCoordinateSystem", DisplayName = "构建本帧坐标系", Category = WorkflowVisionCategories.Location, OutputType = typeof(DP.Vision.Algorithms.VisionCoordinateSystemResult), Icon = "axes")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometryNodeModel, IWorkflowNodeDocumentConfigurationValidator,
-    IWorkflowVisionCoordinateProducerNode, IWorkflowDocumentPropertyChoices
+    IWorkflowVisionCoordinateProducerNode, IWorkflowPropertyChoices
 {
     /// <inheritdoc/>
     public override string NodeType => "Vision.BuildCoordinateSystem";
@@ -73,7 +73,7 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
     /// <summary>从本文档已有坐标系中选择，或新建。</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     [WorkflowProperty("坐标系", "选择本文档已有的坐标系：采用它的名称、版本和单位，本节点成为它的又一个来源；选择“新建坐标系”：新增一个坐标系。", Category = "坐标系")]
-    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.DocumentChoice)]
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.NodeChoice)]
     public WorkflowVisionCoordinateChoice CoordinateSystem
     {
         get => new(CoordinateId, CoordinateName, DefinitionVersion, Unit);
@@ -86,10 +86,10 @@ public sealed class BuildVisionCoordinateSystemNodeModel : WorkflowVisionGeometr
     /// <inheritdoc/>
     public VisionCoordinateDefinition GetCoordinateDefinition() => new(CoordinateId, CoordinateName, DefinitionVersion, Unit);
     /// <inheritdoc/>
-    public IReadOnlyList<KeyValuePair<string, object?>> GetPropertyChoices(string propertyName, IReadOnlyList<IWorkflowNodeModel> documentNodes)
+    public IReadOnlyList<KeyValuePair<string, object?>> GetPropertyChoices(string propertyName, WorkflowPropertyChoiceContext context)
     {
         if (propertyName != nameof(CoordinateSystem)) return [];
-        var existing = documentNodes.OfType<BuildVisionCoordinateSystemNodeModel>().Where(n => n.Id != Id).Select(n => n.CoordinateSystem)
+        var existing = context.DocumentNodes.OfType<BuildVisionCoordinateSystemNodeModel>().Where(n => n.Id != Id).Select(n => n.CoordinateSystem)
             .Prepend(CoordinateSystem).Distinct().ToArray();
         string Label(WorkflowVisionCoordinateChoice c)
         {

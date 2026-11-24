@@ -329,7 +329,7 @@ public sealed partial class WorkflowStudioControl : UserControl
         try
         {
             model = new WorkflowNodeEditorModel(Session, EntryNodeId, request.NodeId, NodeEditorExtensions.GetPageProviders(),
-                Properties.ChoiceProvider, Properties.AdditionalProperties, request.EditorKey);
+                Properties.ChoiceProvider, Properties.AdditionalProperties, request.EditorKey, Properties.Services);
             using var dialog = new WorkflowNodeEditorDialog(model, NodeEditorExtensions.GetRenderers());
             dialog.ShowDialog(this);
         }
@@ -347,7 +347,7 @@ public sealed partial class WorkflowStudioControl : UserControl
         {
             var model = new WorkflowNodeEditorModel(
                 Session, EntryNodeId, node.Id, NodeEditorExtensions.GetPageProviders(),
-                Properties.ChoiceProvider, Properties.AdditionalProperties);
+                Properties.ChoiceProvider, Properties.AdditionalProperties, services: Properties.Services);
             using var dialog = new WorkflowNodeEditorDialog(model, NodeEditorExtensions.GetRenderers());
             _ = dialog.ShowDialog(this);
             NodeEditRequested?.Invoke(this, node);

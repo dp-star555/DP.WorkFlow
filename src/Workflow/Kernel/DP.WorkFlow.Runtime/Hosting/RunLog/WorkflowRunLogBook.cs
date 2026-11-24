@@ -85,7 +85,7 @@ public sealed class WorkflowRunLogBook
         };
     }
 
-    /// <summary>加一条事件：根运行的 RunStarted 开始新的一次运行，其余加到该流程最近一次运行里。</summary>
+    /// <summary>加一条事件：根运行的 RunStarted 开始新的一次运行，其余加到该流程最近一次运行里；还没有运行时丢掉统管层事件。</summary>
     /// <param name="flowName">流程名。</param>
     /// <param name="runEvent">运行事件。</param>
     public void Add(string flowName, WorkflowRunEvent runEvent)
@@ -95,6 +95,8 @@ public sealed class WorkflowRunLogBook
         lock (_sync)
         {
             var logs = Logs(flowName);
+            // 统管层自己的事件（故障、停靠等）不属于某次运行，且可能先于 RunStarted 到达：只挂到已有运行上，不单独开一次运行。
+            if (runEvent.RunId == Guid.Empty && logs.Runs.Count == 0) return;
             var starts = runEvent.EventType == "RunStarted" && runEvent.Parents is not { Count: > 0 } && runEvent.ParentRunId is null;
             if (starts || logs.Runs.Count == 0)
             {

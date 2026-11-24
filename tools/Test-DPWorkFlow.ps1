@@ -34,7 +34,6 @@ $projects = @(
     'tests/Platform/ScriptEngine.Workspaces.Tests/ScriptEngine.Workspaces.Tests.csproj',
     'tests/Workflow/DP.WorkFlow.Core.Tests/DP.WorkFlow.Core.Tests.csproj',
     'tests/Workflow/DP.WorkFlow.Nodes.Composite.Tests/DP.WorkFlow.Nodes.Composite.Tests.csproj',
-    'tests/Workflow/DP.WorkFlow.Nodes.Motion.Tests/DP.WorkFlow.Nodes.Motion.Tests.csproj',
     'tests/Workflow/DP.WorkFlow.Nodes.Process.Tests/DP.WorkFlow.Nodes.Process.Tests.csproj',
     'tests/Workflow/DP.WorkFlow.Nodes.Standard.Tests/DP.WorkFlow.Nodes.Standard.Tests.csproj',
     'tests/Workflow/DP.WorkFlow.Persistence.Tests/DP.WorkFlow.Persistence.Tests.csproj',

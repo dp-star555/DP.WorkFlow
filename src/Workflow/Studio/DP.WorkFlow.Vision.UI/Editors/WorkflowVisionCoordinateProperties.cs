@@ -41,6 +41,6 @@ public static class WorkflowVisionCoordinateProperties
                 if (target == Current()) return;
                 if (target.Length == 0) VisionCoordinateRebinding.Unbind(node, frames);
                 else VisionCoordinateRebinding.Bind(node, target, frames);
-            }, choices, new WorkflowPropertyEditorAttribute(WorkflowPropertyEditorKeys.DocumentChoice));
+            }, choices, new WorkflowPropertyEditorAttribute(WorkflowPropertyEditorKeys.NodeChoice));
     }
 }
