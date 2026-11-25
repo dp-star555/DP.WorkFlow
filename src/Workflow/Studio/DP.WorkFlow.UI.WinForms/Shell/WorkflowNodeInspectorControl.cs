@@ -28,7 +28,7 @@ public sealed class WorkflowNodeInspectorControl : UserControl
         ShowItemToolTips = true,
         BorderStyle = BorderStyle.None
     };
-    private readonly ModernButton _clearNotices = new() { Text = "确认并清除", AutoSize = true, ButtonType = ModernButtonType.Text };
+    private readonly ModernButton _clearNotices = new() { Text = "确认并清除", ButtonType = ModernButtonType.Text };
     private readonly ModernButton _openEditor = new() { Text = "打开节点编辑", Dock = DockStyle.Fill };
     private readonly Label _empty = new()
     {
@@ -61,7 +61,8 @@ public sealed class WorkflowNodeInspectorControl : UserControl
         _tabs.TabPages.Add(_resultsPage);
         _tabs.TabPages.Add(_noticesPage);
 
-        var footer = new Panel { Dock = DockStyle.Bottom, Height = LogicalToDeviceUnits(52), Padding = new Padding(LogicalToDeviceUnits(14), LogicalToDeviceUnits(10), LogicalToDeviceUnits(14), LogicalToDeviceUnits(10)) };
+        WorkflowCommandSizing.Fit(_clearNotices);
+        var footer = new WorkflowBlock { Dock = DockStyle.Bottom, LogicalExtent = 52, LogicalPadding = new Padding(14, 10, 14, 10) };
         footer.Controls.Add(_openEditor);
         footer.Paint += (_, e) =>
         {
@@ -208,13 +209,13 @@ public sealed class WorkflowNodeInspectorControl : UserControl
     }
 
     /// <summary>检查器标题：图标方块、节点标题、类型 · 标识，右边一个上次运行状态的标签。</summary>
-    private sealed class InspectorHeader : Control
+    private sealed class InspectorHeader : WorkflowBlock
     {
         public InspectorHeader()
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
             Dock = DockStyle.Top;
-            Height = LogicalToDeviceUnits(58);
+            LogicalExtent = 58;
         }
 
         public WorkflowDesignerSession? Session { get; set; }
