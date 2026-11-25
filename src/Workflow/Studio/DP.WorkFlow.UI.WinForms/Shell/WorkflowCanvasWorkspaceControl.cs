@@ -26,22 +26,22 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         AutoSize = true,
         WrapContents = false,
         FlowDirection = FlowDirection.RightToLeft
-    };
-    private readonly ModernButton _fitButton = new() { Name = "fitButton", Text = "适合画布", ButtonType = ModernButtonType.Text, AutoSize = true };
-    private readonly ModernButton _autoLayoutButton = new() { Name = "autoLayoutButton", Text = "自动布局", ButtonType = ModernButtonType.Text, AutoSize = true };
-    private readonly ModernButton _alignButton = new() { Name = "alignButton", Text = "对齐 ▾", ButtonType = ModernButtonType.Text, AutoSize = true };
+  };
+    private readonly ModernButton _fitButton = new() { Name = "fitButton", Text = "适合画布", ButtonType = ModernButtonType.Text};
+    private readonly ModernButton _autoLayoutButton = new() { Name = "autoLayoutButton", Text = "自动布局", ButtonType = ModernButtonType.Text};
+    private readonly ModernButton _alignButton = new() { Name = "alignButton", Text = "对齐 ▾", ButtonType = ModernButtonType.Text};
     private readonly ModernContextMenu _alignMenu = new();
-    private readonly ModernButton _validateButton = new() { Name = "validateButton", Text = "校验", AutoSize = true };
-    private readonly ModernButton _runButton = new() { Name = "_runButton", Text = "调试运行", ButtonType = ModernButtonType.Primary, AutoSize = true, Icon = ModernIconKind.Play };
-    private readonly ModernButton _pauseButton = new() { Name = "_pauseButton", Text = "暂停", AutoSize = true, Icon = ModernIconKind.Pause };
-    private readonly ModernButton _resumeButton = new() { Name = "_resumeButton", Text = "继续", AutoSize = true, Icon = ModernIconKind.Resume };
-    private readonly ModernButton _stopButton = new() { Name = "_stopButton", Text = "停止", AutoSize = true, Icon = ModernIconKind.Stop, ButtonType = ModernButtonType.DangerOutline };
+    private readonly ModernButton _validateButton = new() { Name = "validateButton", Text = "校验"};
+    private readonly ModernButton _runButton = new() { Name = "_runButton", Text = "调试运行", ButtonType = ModernButtonType.Primary, Icon = ModernIconKind.Play };
+    private readonly ModernButton _pauseButton = new() { Name = "_pauseButton", Text = "暂停", Icon = ModernIconKind.Pause };
+    private readonly ModernButton _resumeButton = new() { Name = "_resumeButton", Text = "继续", Icon = ModernIconKind.Resume };
+    private readonly ModernButton _stopButton = new() { Name = "_stopButton", Text = "停止", Icon = ModernIconKind.Stop, ButtonType = ModernButtonType.DangerOutline };
     private readonly List<Control> _hostCommands = new();
     private readonly WorkflowCard _commandCard = new() { Dock = DockStyle.Top };
     private readonly WorkflowCard _toolboxCard = new() { Dock = DockStyle.Left };
     private readonly WorkflowCard _canvasCard = new() { Dock = DockStyle.Fill };
     private readonly WorkflowCard _inspectorCard = new() { Dock = DockStyle.Right, Visible = false };
-    private readonly Panel _inspectorGap = new() { Dock = DockStyle.Right, Visible = false };
+    private readonly WorkflowBlock _inspectorGap = new() { Dock = DockStyle.Right, LogicalExtent = 10, Visible = false };
     private readonly WorkflowCard _bottomCard = new() { Dock = DockStyle.Fill };
     private readonly ModernSplitter _canvasAndBottom = new();
     private readonly ModernTabControl _bottomTabs = new();
@@ -50,7 +50,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     private readonly TabPage _runtimePage = new() { Name = "runtimePage", Text = "运行监视", Padding = new Padding(6) };
     private readonly TabPage _publicDataPage = new() { Name = "publicDataPage", Text = "公共数据", Padding = new Padding(6) };
     private readonly Label _statusLabel = new() { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
-    private readonly Label _messageLabel = new() { Dock = DockStyle.Right, AutoSize = true, TextAlign = ContentAlignment.MiddleRight };
+    private readonly Label _messageLabel = new() { Dock = DockStyle.Right , TextAlign = ContentAlignment.MiddleRight };
     private WorkflowPublicDataManifestModel? _publicDataModel;
     private WorkflowDesignerSession? _session;
     private IWorkflowCanvasRunCommands? _runCommands;
@@ -72,7 +72,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         {
             AllowDrop = true,
             Dock = DockStyle.Fill
-        };
+      };
         Toolbox = new WorkflowToolboxControl { Dock = DockStyle.Fill };
         Diagnostics = new WorkflowDiagnosticsControl { Dock = DockStyle.Fill };
         RuntimeMonitor = new WorkflowRuntimeMonitorControl { Dock = DockStyle.Fill };
@@ -97,21 +97,20 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         // 命令卡：左边工具条（宿主条目、撤销重做、路径），右边一组按钮。
         _commands.Controls.AddRange(new Control[] { _stopButton, _resumeButton, _pauseButton, _runButton, _validateButton, Separator(), _alignButton, _autoLayoutButton, _fitButton });
         foreach (Control command in _commands.Controls)
-            command.Margin = new Padding(S(3), S(6), S(3), S(6));
-        _commandCard.Height = S(46);
+            if (command is ModernButton button) WorkflowCommandSizing.Fit(button);
+        _commandCard.LogicalExtent = 46;
         _commandCard.Controls.Add(_toolbar);
         _commandCard.Controls.Add(_commands);
 
         // 中间：工具箱卡 | 画布卡 | 检查器卡，卡片之间留 10。
-        _toolboxCard.Width = S(220);
+        _toolboxCard.LogicalExtent = 220;
         _toolboxCard.Controls.Add(Toolbox);
         _toolboxCard.Controls.Add(new WorkflowCardHeader("工具箱", "拖到画布"));
         _canvasCard.Controls.Add(Designer);
-        _inspectorCard.Width = S(300);
-        _inspectorGap.Width = S(10);
+        _inspectorCard.LogicalExtent = 300;
         var middle = new Panel { Dock = DockStyle.Fill };
         middle.Controls.Add(_canvasCard);
-        middle.Controls.Add(new Panel { Dock = DockStyle.Left, Width = S(10) });
+        middle.Controls.Add(new WorkflowBlock { Dock = DockStyle.Left, LogicalExtent = 10 });
         middle.Controls.Add(_toolboxCard);
         middle.Controls.Add(_inspectorGap);
         middle.Controls.Add(_inspectorCard);
@@ -128,12 +127,12 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _canvasAndBottom.Panel1.Controls.Add(middle);
         _canvasAndBottom.Panel2.Controls.Add(_bottomCard);
 
-        var status = new Panel { Dock = DockStyle.Bottom, Height = S(26), Padding = new Padding(S(4), 0, S(4), 0) };
+        var status = new WorkflowBlock { Dock = DockStyle.Bottom, LogicalExtent = 30, LogicalPadding = new Padding(4, 4, 4, 0) };
         status.Controls.Add(_statusLabel);
         status.Controls.Add(_messageLabel);
 
         Controls.Add(_canvasAndBottom);
-        Controls.Add(new Panel { Dock = DockStyle.Top, Height = S(10) });
+        Controls.Add(new WorkflowBlock { Dock = DockStyle.Top, LogicalExtent = 10 });
         Controls.Add(_commandCard);
         Controls.Add(status);
         Size = new Size(1180, 720);
@@ -157,7 +156,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         {
             Diagnostics.RefreshDiagnostics();
             _bottomTabs.SelectedTab = _diagnosticsPage;
-        };
+      };
         _runButton.Click += async (_, _) => await RunAsync();
         _pauseButton.Click += (_, _) => RunCommands?.Pause();
         _resumeButton.Click += (_, _) => RunCommands?.Resume();
@@ -214,7 +213,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     public void AddCommand(Control command)
     {
         Guard.NotNull(command);
-        command.Margin = new Padding(LogicalToDeviceUnits(3), LogicalToDeviceUnits(6), LogicalToDeviceUnits(3), LogicalToDeviceUnits(6));
+        if (command is ModernButton button) WorkflowCommandSizing.Fit(button);
         _hostCommands.Add(command);
         _commands.Controls.Add(command);
         _commands.Controls.SetChildIndex(command, _commands.Controls.GetChildIndex(_validateButton) + 1);

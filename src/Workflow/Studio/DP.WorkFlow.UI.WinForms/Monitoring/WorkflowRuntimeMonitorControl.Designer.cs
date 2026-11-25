@@ -45,10 +45,10 @@ partial class WorkflowRuntimeMonitorControl
         traceToolbar.SuspendLayout();
         SuspendLayout();
 
+        monitorTabs.TabPages.Add(tracePage);
         monitorTabs.TabPages.Add(tokensPage);
         monitorTabs.TabPages.Add(scopesPage);
         monitorTabs.TabPages.Add(childrenPage);
-        monitorTabs.TabPages.Add(tracePage);
         monitorTabs.TabPages.Add(outputPage);
         monitorTabs.TabPages.Add(timingPage);
         monitorTabs.Dock = DockStyle.Fill;

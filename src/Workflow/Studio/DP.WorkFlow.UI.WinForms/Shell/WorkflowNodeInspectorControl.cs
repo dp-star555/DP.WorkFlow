@@ -14,7 +14,7 @@ namespace DP.WorkFlow.UI.WinForms;
 /// </remarks>
 public sealed class WorkflowNodeInspectorControl : UserControl
 {
-    private readonly InspectorHeader _header = new();
+    private readonly WorkflowNodeHeader _header = new();
     private readonly ModernTabControl _tabs = new() { Dock = DockStyle.Fill };
     private readonly TabPage _parametersPage = new() { Text = "参数" };
     private readonly TabPage _resultsPage = new() { Text = "结果" };
@@ -28,7 +28,7 @@ public sealed class WorkflowNodeInspectorControl : UserControl
         ShowItemToolTips = true,
         BorderStyle = BorderStyle.None
     };
-    private readonly ModernButton _clearNotices = new() { Text = "确认并清除", AutoSize = true, ButtonType = ModernButtonType.Text };
+    private readonly ModernButton _clearNotices = new() { Text = "确认并清除", ButtonType = ModernButtonType.Text };
     private readonly ModernButton _openEditor = new() { Text = "打开节点编辑", Dock = DockStyle.Fill };
     private readonly Label _empty = new()
     {
@@ -61,7 +61,8 @@ public sealed class WorkflowNodeInspectorControl : UserControl
         _tabs.TabPages.Add(_resultsPage);
         _tabs.TabPages.Add(_noticesPage);
 
-        var footer = new Panel { Dock = DockStyle.Bottom, Height = LogicalToDeviceUnits(52), Padding = new Padding(LogicalToDeviceUnits(14), LogicalToDeviceUnits(10), LogicalToDeviceUnits(14), LogicalToDeviceUnits(10)) };
+        WorkflowCommandSizing.Fit(_clearNotices);
+        var footer = new WorkflowBlock { Dock = DockStyle.Bottom, LogicalExtent = 52, LogicalPadding = new Padding(14, 10, 14, 10) };
         footer.Controls.Add(_openEditor);
         footer.Paint += (_, e) =>
         {
@@ -206,69 +207,69 @@ public sealed class WorkflowNodeInspectorControl : UserControl
         _clearNotices.Enabled = notices.Count > 0;
         _header.Invalidate();
     }
+}
 
-    /// <summary>检查器标题：图标方块、节点标题、类型 · 标识，右边一个上次运行状态的标签。</summary>
-    private sealed class InspectorHeader : Control
+/// <summary>节点标题（检查器和节点编辑窗口共用）：图标方块、节点标题、类型 · 标识，右边一个上次运行状态的标签。</summary>
+internal sealed class WorkflowNodeHeader : WorkflowBlock
+{
+    public WorkflowNodeHeader()
     {
-        public InspectorHeader()
-        {
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
-            Dock = DockStyle.Top;
-            Height = LogicalToDeviceUnits(58);
-        }
-
-        public WorkflowDesignerSession? Session { get; set; }
-
-        public string? NodeId
-        {
-            get => _nodeId;
-            set { _nodeId = value; Invalidate(); }
-        }
-
-        private string? _nodeId;
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            var theme = WorkflowWinFormsTheme.Modern;
-            var g = e.Graphics;
-            g.Clear(BackColor);
-            if (Session is not { } session || NodeId is null
-                || session.Document.Nodes.FirstOrDefault(item => item.Node.Id == NodeId)?.Node is not { } node)
-                return;
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            int S(int value) => LogicalToDeviceUnits(value);
-            var box = new Rectangle(S(14), S(12), S(34), S(34));
-            using (var path = WorkflowCard.Rounded(box, S(WorkflowWinFormsTheme.Palette.ControlRadius)))
-            using (var fill = new SolidBrush(theme.PrimaryBackground))
-                g.FillPath(fill, path);
-            WorkflowDesignerControl.DrawIcon(g, session.GetNodeIcon(node), RectangleF.Inflate(box, -S(8), -S(8)),
-                new WorkflowColor(theme.Primary.R, theme.Primary.G, theme.Primary.B, 255));
-
-            var (badgeText, badgeFore, badgeBack) = Badge(session.GetNodeRuntimeInfo(node.Id), theme);
-            using var small = new Font(Font.FontFamily, Font.Size * .88f);
-            var flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter;
-            var badgeSize = TextRenderer.MeasureText(g, badgeText, small, Size.Empty, flags);
-            var badge = new Rectangle(Width - S(14) - badgeSize.Width - S(12), S(19), badgeSize.Width + S(12), S(20));
-            using (var path = WorkflowCard.Rounded(badge, badge.Height / 2f))
-            using (var fill = new SolidBrush(badgeBack))
-                g.FillPath(fill, path);
-            TextRenderer.DrawText(g, badgeText, small, badge, badgeFore, flags | TextFormatFlags.HorizontalCenter);
-
-            var left = box.Right + S(10);
-            var width = Math.Max(0, badge.Left - S(8) - left);
-            using var bold = new Font(Font.FontFamily, Font.Size * 1.08f, FontStyle.Bold);
-            TextRenderer.DrawText(g, node.Title, bold, new Rectangle(left, S(10), width, S(20)), theme.Text, flags);
-            var type = session.Catalog.TryGet(node.NodeType, out var descriptor) && descriptor?.DisplayName is { } name ? name : node.NodeType;
-            TextRenderer.DrawText(g, type + " · " + node.Id, small, new Rectangle(left, S(30), width, S(18)), theme.TextSecondary, flags);
-        }
-
-        private static (string Text, Color Fore, Color Back) Badge(WorkflowNodeRuntimeInfo? info, ModernTheme theme) => info?.State switch
-        {
-            E_NodeState.Completed => ("成功", theme.Success, theme.SuccessSurface),
-            E_NodeState.Failed => ("失败", theme.Error, theme.ErrorSurface),
-            E_NodeState.Running => ("运行中", theme.Primary, theme.PrimaryBackground),
-            E_NodeState.Canceled => ("已取消", theme.Warning, theme.WarningSurface),
-            _ => ("未运行", theme.TextSecondary, theme.Control)
-        };
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+        Dock = DockStyle.Top;
+        LogicalExtent = 58;
     }
+
+    public WorkflowDesignerSession? Session { get; set; }
+
+    public string? NodeId
+    {
+        get => _nodeId;
+        set { _nodeId = value; Invalidate(); }
+    }
+
+    private string? _nodeId;
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var theme = WorkflowWinFormsTheme.Modern;
+        var g = e.Graphics;
+        g.Clear(BackColor);
+        if (Session is not { } session || NodeId is null
+            || session.Document.Nodes.FirstOrDefault(item => item.Node.Id == NodeId)?.Node is not { } node)
+            return;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        int S(int value) => LogicalToDeviceUnits(value);
+        var box = new Rectangle(S(14), S(12), S(34), S(34));
+        using (var path = WorkflowCard.Rounded(box, S(WorkflowWinFormsTheme.Palette.ControlRadius)))
+        using (var fill = new SolidBrush(theme.PrimaryBackground))
+            g.FillPath(fill, path);
+        WorkflowDesignerControl.DrawIcon(g, session.GetNodeIcon(node), RectangleF.Inflate(box, -S(8), -S(8)),
+            new WorkflowColor(theme.Primary.R, theme.Primary.G, theme.Primary.B, 255));
+
+        var (badgeText, badgeFore, badgeBack) = Badge(session.GetNodeRuntimeInfo(node.Id), theme);
+        using var small = new Font(Font.FontFamily, Font.Size * .88f);
+        var flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter;
+        var badgeSize = TextRenderer.MeasureText(g, badgeText, small, Size.Empty, flags);
+        var badge = new Rectangle(Width - S(14) - badgeSize.Width - S(12), S(19), badgeSize.Width + S(12), S(20));
+        using (var path = WorkflowCard.Rounded(badge, badge.Height / 2f))
+        using (var fill = new SolidBrush(badgeBack))
+            g.FillPath(fill, path);
+        TextRenderer.DrawText(g, badgeText, small, badge, badgeFore, flags | TextFormatFlags.HorizontalCenter);
+
+        var left = box.Right + S(10);
+        var width = Math.Max(0, badge.Left - S(8) - left);
+        using var bold = new Font(Font.FontFamily, Font.Size * 1.08f, FontStyle.Bold);
+        TextRenderer.DrawText(g, node.Title, bold, new Rectangle(left, S(10), width, S(20)), theme.Text, flags);
+        var type = session.Catalog.TryGet(node.NodeType, out var descriptor) && descriptor?.DisplayName is { } name ? name : node.NodeType;
+        TextRenderer.DrawText(g, type + " · " + node.Id, small, new Rectangle(left, S(30), width, S(18)), theme.TextSecondary, flags);
+    }
+
+    private static (string Text, Color Fore, Color Back) Badge(WorkflowNodeRuntimeInfo? info, ModernTheme theme) => info?.State switch
+    {
+        E_NodeState.Completed => ("成功", theme.Success, theme.SuccessSurface),
+        E_NodeState.Failed => ("失败", theme.Error, theme.ErrorSurface),
+        E_NodeState.Running => ("运行中", theme.Primary, theme.PrimaryBackground),
+        E_NodeState.Canceled => ("已取消", theme.Warning, theme.WarningSurface),
+        _ => ("未运行", theme.TextSecondary, theme.Control)
+    };
 }

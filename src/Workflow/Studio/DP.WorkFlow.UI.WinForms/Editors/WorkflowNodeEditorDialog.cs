@@ -89,8 +89,8 @@ public sealed partial class WorkflowNodeEditorDialog : Form
 
         var hasSpecialContent = model.Pages.Any(page => !IsSidePage(page));
         // 默认尺寸应能完整放入常见的 1366×768 工作区，并给宿主任务栏保留空间。
-        ClientSize = hasSpecialContent ? new Size(1040, 680) : new Size(720, 640);
-        MinimumSize = hasSpecialContent ? new Size(760, 520) : new Size(620, 480);
+        ClientSize = hasSpecialContent ? new Size(1280, 720) : new Size(1040, 680);
+        MinimumSize = hasSpecialContent ? new Size(900, 560) : new Size(760, 480);
 
         if (model.PropertyEditorKey == null)
         {
@@ -151,8 +151,9 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     }
 
     /// <summary>
-    /// 构建节点窗口主体。左侧为分页列表：参数、渲染器贡献的列表页（如视觉 ROI）和运行结果；
-    /// 右侧按页面顺序纵向放置子流程、脚本、图像等主体页面。没有主体页面时左侧分页铺满窗口。
+    /// 构建节点窗口主体（按设计稿“节点编辑页”）：顶部节点标题卡（图标、标题、类型 · 标识、上次运行状态）；
+    /// 左边分页卡（参数、输入输出、渲染器贡献的列表页如视觉 ROI），中间按页面顺序放子流程、脚本、图像等主体卡，
+    /// 右边是运行结果和本节点提示。没有主体页面时左边分页卡填满中间。
     /// </summary>
     private Control CreateWorkspace()
     {
@@ -182,58 +183,67 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         if (visible.FirstOrDefault(page => page.Kind == WorkflowNodeEditorPageKind.SubflowInterface) is { } subflowInterface)
             panels.Add(Panel(subflowInterface));
         panels.AddRange(sidePanels);
-        if (visible.FirstOrDefault(page => page.Kind == WorkflowNodeEditorPageKind.Results) is { } results)
-            panels.Add(Panel(results));
-        var side = CreateSidePanels(panels);
-        if (specialPages.Length == 0) return side;
 
-        var specialHost = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = specialPages.Length };
-        for (var index = 0; index < specialPages.Length; index++)
+        var root = new Panel { Dock = DockStyle.Fill };
+        var middle = new Panel { Dock = DockStyle.Fill };
+        var sideCard = new WorkflowCard { Dock = specialPages.Length == 0 ? DockStyle.Fill : DockStyle.Left, LogicalExtent = specialPages.Length == 0 ? 0 : 380 };
+        sideCard.Controls.Add(CreateSidePanels(panels));
+
+        // 右栏：运行结果（有运行会话时）和本节点提示。
+        var right = new Panel { Dock = DockStyle.Right, Width = LogicalToDeviceUnits(320) };
+        if (visible.FirstOrDefault(page => page.Kind == WorkflowNodeEditorPageKind.Results) is { } results)
+            right.Controls.Add(WorkflowPage.Section("运行结果", null, CreatePageControl(results)));
+        var notices = new WorkflowFactList();
+        var noticeCard = WorkflowPage.Section("本节点提示", null, notices, right.Controls.Count == 0 ? DockStyle.Fill : DockStyle.Bottom, 200);
+        ShowNotices(notices, noticeCard);
+        if (right.Controls.Count > 0) right.Controls.Add(WorkflowPage.Gap(DockStyle.Bottom));
+        right.Controls.Add(noticeCard);
+
+        if (specialPages.Length > 0)
         {
-            specialHost.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / specialPages.Length));
-            specialControls[index].Dock = DockStyle.Fill;
-            var group = new ModernUI.WinForms.ModernGroupBox { Text = specialPages[index].Title, Dock = DockStyle.Fill, Padding = new Padding(6) };
-            group.Controls.Add(specialControls[index]);
-            specialHost.Controls.Add(group, 0, index);
+            var specialHost = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = specialPages.Length };
+            for (var index = 0; index < specialPages.Length; index++)
+            {
+                specialHost.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / specialPages.Length));
+                var card = WorkflowPage.Section(specialPages[index].Title, null, specialControls[index]);
+                card.Margin = new Padding(0, 0, 0, index == specialPages.Length - 1 ? 0 : LogicalToDeviceUnits(10));
+                specialHost.Controls.Add(card, 0, index);
+            }
+            middle.Controls.Add(specialHost);
+            middle.Controls.Add(WorkflowPage.Gap(DockStyle.Left));
         }
-        var split = new SplitContainer
-        {
-            Dock = DockStyle.Fill,
-            Orientation = Orientation.Vertical,
-            FixedPanel = FixedPanel.Panel1
-        };
-        var initialDistanceApplied = false;
-        split.SizeChanged += (_, _) =>
-        {
-            if (initialDistanceApplied || split.ClientSize.Width < 640) return;
-            var maximum = split.ClientSize.Width - split.SplitterWidth - 320;
-            if (maximum < 260) return;
-            var preferred = (int)Math.Round(split.ClientSize.Width * 0.34d);
-            split.SplitterDistance = Polyfill.Clamp(preferred, 300, Math.Min(400, maximum));
-            split.Panel1MinSize = Math.Min(280, split.SplitterDistance);
-            split.Panel2MinSize = Math.Min(320, split.ClientSize.Width - split.SplitterDistance - split.SplitterWidth);
-            initialDistanceApplied = true;
-        };
-        split.Panel1.Controls.Add(side);
-        split.Panel2.Controls.Add(specialHost);
-        return split;
+        middle.Controls.Add(sideCard);
+        root.Controls.Add(middle);
+        root.Controls.Add(WorkflowPage.Gap(DockStyle.Right));
+        root.Controls.Add(right);
+
+        var header = new WorkflowCard { Dock = DockStyle.Top, LogicalExtent = 64 };
+        header.Controls.Add(new WorkflowNodeHeader { Dock = DockStyle.Fill, Session = Model.Session, NodeId = Model.Node.Id });
+        root.Controls.Add(WorkflowPage.Gap(DockStyle.Top));
+        root.Controls.Add(header);
+        return root;
 
         WorkflowWinFormsNodeEditorSidePanel Panel(WorkflowNodeEditorPageDescriptor page) =>
             new(page.PageId, page.Title, CreatePageControl(page));
+    }
+
+    /// <summary>本节点在运行会话里累计的提示（只读，确认在画布角标或节点提示页上做）。</summary>
+    private void ShowNotices(WorkflowFactList list, WorkflowCard card)
+    {
+        var notices = Model.Session.GetNodeNotices(Model.Node.Id);
+        WorkflowPage.HeaderOf(card).Subtitle = notices.Count == 0 ? null : notices.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        list.Show(notices.Count == 0
+            ? new[] { new WorkflowFact("本节点没有提示") }
+            : notices.Reverse().Select(notice => new WorkflowFact(notice.Category + "  " + notice.Message, "× " + notice.Count.ToString(System.Globalization.CultureInfo.InvariantCulture))));
     }
 
     /// <summary>显示在左侧分页中的页面；其余页面（子画布、脚本、图像等）放在右侧主体区。</summary>
     private static bool IsSidePage(WorkflowNodeEditorPageDescriptor page) => page.Kind is WorkflowNodeEditorPageKind.Properties
         or WorkflowNodeEditorPageKind.Diagnostics or WorkflowNodeEditorPageKind.Results or WorkflowNodeEditorPageKind.SubflowInterface;
 
-    /// <summary>只有一页时直接显示内容，多页时使用 ModernTabControl 分页。</summary>
+    /// <summary>左边分页卡：参数、输入输出、列表页（只有参数一页时也用页签，和设计稿一致）。</summary>
     private static Control CreateSidePanels(IReadOnlyList<WorkflowWinFormsNodeEditorSidePanel> panels)
     {
-        if (panels.Count == 1)
-        {
-            panels[0].Content.Dock = DockStyle.Fill;
-            return panels[0].Content;
-        }
         var tabs = new ModernUI.WinForms.ModernTabControl { Dock = DockStyle.Fill, Theme = WorkflowWinFormsTheme.Modern };
         foreach (var panel in panels)
         {
