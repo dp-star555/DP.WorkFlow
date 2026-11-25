@@ -11,7 +11,7 @@
 ## 打包给 DP.Foundation
 
 - DP.Foundation 的 Workflow 功能包引用本仓库的包，不引用源码：内核、持久化、标准 / 复合 / 工艺 / 运动节点、脚本、UI.Shared、UI.WinForms，加上 DP.Vision 的 DP.Plugins.Runtime，共 13 个。
-- 版本在根目录 `Directory.Build.props` 的 `<Version>`（现在 1.0.0-preview.3）。改了这些库：版本加一，运行 `tools/Pack-ForFoundation.ps1`（打包并复制到同级 DP.Foundation\vendor\packages），再在 Foundation 改引用版本、vendor\README.md 的哈希，`dotnet restore --force-evaluate`。
+- 版本在根目录 `Directory.Build.props` 的 `<Version>`（现在 1.0.0-preview.8）。改了这些库：版本加一，运行 `tools/Pack-ForFoundation.ps1`（打包并复制到同级 DP.Foundation\vendor\packages），再在 Foundation 改引用版本、vendor\README.md 的哈希，`dotnet restore --force-evaluate`。
 - 脚本库的包 ID 改成 `DP.WorkFlow.ScriptEngine` / `DP.WorkFlow.ScriptEngine.WinForms`（程序集名不变）。后者带一个 buildTransitive 目标，间接引用时也把 Scintilla 原生库复制到程序目录。
 
 ## 主题
@@ -22,6 +22,17 @@
   - `Canvas`：画布配色 `WorkflowCanvasPalette.From(palette)`。
   - `Follow(root, reapply)`：着色并跟随主题，控件释放时自动取消。
 - 挂进操作台后，由操作台在切换主题时调用 `WorkflowWinFormsTheme.Use(当前主题 Id)`。页面里不写死颜色。
+
+## 设计页布局（按设计稿“流程设计”画板）
+
+- `WorkflowCanvasWorkspaceControl` 排成卡片（`WorkflowCard`：表面色底、细线描边、主题圆角；卡片里的宿主控件按表面色着色）：
+  - 上面命令卡：左边工具条（宿主条目如“文件”、保存，撤销、重做，当前路径和“已修改”），右边适合画布、自动布局、对齐 ▾、宿主按钮（`AddCommand`，如“发布”）、校验（带问题数）、调试运行；运行中换成暂停 / 继续 / 停止。
+  - 中间：工具箱卡（220，标题“工具箱 · 拖到画布”、搜索、分类树）| 画布卡（点状网格）| 检查器卡（300，`Inspector`，为空时不显示）。
+  - 下面页签卡：诊断 (n) | 节点提示 (n) | 运行监视 | 公共数据，和中间之间可以拖动。
+  - 最下面一行状态：节点数、连线数、选中节点；右边是宿主消息（`StatusMessage`）。
+- `WorkflowNodeInspectorControl`：选中节点的图标、标题、类型 · 标识、上次运行状态；“参数 | 结果 | 提示”三页；底部“打开节点编辑”进完整的节点窗口。参数改了立即写进流程（可撤销），不另设“应用”。
+- `WorkflowStudioControl` 把检查器挂上；`FileMenu` / `AddFileMenuItem` / `Save` 给宿主换成自己的文件命令（操作台换成流程库的新建、打开、放弃草稿、重新加载）。
+- 节点窗口里的子画布也用同一个工作区，但不挂检查器。
 
 ## 统一刷新节拍（R4-b）
 

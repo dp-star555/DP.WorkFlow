@@ -579,7 +579,7 @@ public sealed partial class WorkflowDesignerControl : Control
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
-    /// <summary>绘制随缩放和平移变化的淡细线栅格：每格一条细线、每 5 格一条主线；缩小后先隐藏细线，再按 2 的幂合并主线。</summary>
+    /// <summary>绘制随缩放和平移变化的点状栅格（设计稿：每格一个小圆点）；缩小后按 2 的幂合并，点不会挤成一片。</summary>
     /// <param name="graphics">GDI+ 绘图表面。</param>
     private void DrawGrid(Graphics graphics)
     {
@@ -587,22 +587,12 @@ public sealed partial class WorkflowDesignerControl : Control
         if (_session is null)
             return;
         var (minor, major) = WorkflowDesignerGeometry.GridLineSpacing(_session.Zoom);
-        var smoothing = graphics.SmoothingMode;
-        graphics.SmoothingMode = SmoothingMode.None;
-        if (minor > 0)
-            DrawGridLines(graphics, Colors.GridMinor, minor);
-        DrawGridLines(graphics, Colors.GridMajor, major);
-        graphics.SmoothingMode = smoothing;
-    }
-
-    /// <summary>按像素对齐绘制一组等距栅格线，栅格原点跟随画布平移。</summary>
-    private void DrawGridLines(Graphics graphics, WorkflowColor color, double spacing)
-    {
-        using var pen = new Pen(ToColor(color), 1);
-        for (var x = PositiveModulo(_session!.PanX, spacing); x < Width; x += spacing)
-            graphics.DrawLine(pen, (float)Math.Round(x), 0, (float)Math.Round(x), Height);
-        for (var y = PositiveModulo(_session.PanY, spacing); y < Height; y += spacing)
-            graphics.DrawLine(pen, 0, (float)Math.Round(y), Width, (float)Math.Round(y));
+        var spacing = minor > 0 ? minor : major;
+        var size = (float)Math.Max(1.5, Math.Min(2.5, 2 * _session.Zoom)) * DeviceDpi / 96f;
+        using var brush = new SolidBrush(ToColor(Colors.GridMajor));
+        for (var x = PositiveModulo(_session.PanX, spacing); x < Width; x += spacing)
+            for (var y = PositiveModulo(_session.PanY, spacing); y < Height; y += spacing)
+                graphics.FillEllipse(brush, (float)x - size / 2, (float)y - size / 2, size, size);
     }
 
     private static double PositiveModulo(double value, double modulus) => (value % modulus + modulus) % modulus;

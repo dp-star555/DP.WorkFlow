@@ -4,9 +4,12 @@ using ModernUI.WinForms;
 namespace DP.WorkFlow.UI.WinForms;
 
 /// <summary>
-/// 画布工作区：工具栏（撤销、重做、适合画布、布局、运行/暂停/继续/停止）、工具箱、画布，以及底部“诊断 | 运行监视”。
+/// 画布工作区（设计页的主体，按设计稿排成卡片）：
+/// 上面一条命令卡（宿主的“文件”等条目、撤销、重做、路径和“已修改”标记；右边适合画布、自动布局、对齐、校验、调试运行），
+/// 中间左边工具箱卡、中间画布卡、右边可选的检查器卡（<see cref="Inspector"/>），
+/// 下面页签卡“诊断 | 节点提示 | 运行监视 | 公共数据”，最下面一行状态（节点数、连线数、选中节点、宿主消息）。
 /// 工作台主画布和节点窗口的子画布共用这一个控件；两者的差别只在运行命令（<see cref="RunCommands"/>）、
-/// 监视来源（<see cref="WorkflowRuntimeMonitorControl.Source"/>）和宿主在工具栏前端加入的条目（例如“文件”菜单）。
+/// 监视来源（<see cref="WorkflowRuntimeMonitorControl.Source"/>）、检查器和宿主加入的条目。
 /// </summary>
 public sealed class WorkflowCanvasWorkspaceControl : UserControl
 {
@@ -15,26 +18,43 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     private readonly ToolStripButton _redoButton = new() { Name = "_redoButton", Text = "重做" };
     private readonly ToolStripSeparator _editSeparator = new();
     private readonly ToolStripLabel _breadcrumbLabel = new() { Name = "_breadcrumbLabel" };
-    private readonly ToolStripSeparator _navigationSeparator = new();
-    private readonly ToolStripButton _fitButton = new() { Name = "fitButton", Text = "适合画布" };
-    private readonly ToolStripDropDownButton _layoutMenu = new() { Name = "layoutMenu", Text = "布局" };
-    private readonly ToolStripSeparator _runtimeSeparator = new();
-    private readonly ToolStripButton _runButton = new() { Name = "_runButton", Text = "运行" };
-    private readonly ToolStripButton _pauseButton = new() { Name = "_pauseButton", Text = "暂停" };
-    private readonly ToolStripButton _resumeButton = new() { Name = "_resumeButton", Text = "继续" };
-    private readonly ToolStripButton _stopButton = new() { Name = "_stopButton", Text = "停止" };
-    private readonly ToolStripLabel _runtimeLabel = new() { Name = "_runtimeLabel", Text = "Idle" };
+    private readonly ToolStripLabel _stateLabel = new() { Name = "_stateLabel", Visible = false };
     private readonly List<(ToolStripItem Item, ModernIconKind Icon, Func<ModernTheme, Color> Color)> _icons = new();
-    private readonly ModernSplitter _toolboxAndEditor = new();
+    private readonly FlowLayoutPanel _commands = new()
+    {
+        Dock = DockStyle.Right,
+        AutoSize = true,
+        WrapContents = false,
+        FlowDirection = FlowDirection.RightToLeft
+    };
+    private readonly ModernButton _fitButton = new() { Name = "fitButton", Text = "适合画布", ButtonType = ModernButtonType.Text, AutoSize = true };
+    private readonly ModernButton _autoLayoutButton = new() { Name = "autoLayoutButton", Text = "自动布局", ButtonType = ModernButtonType.Text, AutoSize = true };
+    private readonly ModernButton _alignButton = new() { Name = "alignButton", Text = "对齐 ▾", ButtonType = ModernButtonType.Text, AutoSize = true };
+    private readonly ModernContextMenu _alignMenu = new();
+    private readonly ModernButton _validateButton = new() { Name = "validateButton", Text = "校验", AutoSize = true };
+    private readonly ModernButton _runButton = new() { Name = "_runButton", Text = "调试运行", ButtonType = ModernButtonType.Primary, AutoSize = true, Icon = ModernIconKind.Play };
+    private readonly ModernButton _pauseButton = new() { Name = "_pauseButton", Text = "暂停", AutoSize = true, Icon = ModernIconKind.Pause };
+    private readonly ModernButton _resumeButton = new() { Name = "_resumeButton", Text = "继续", AutoSize = true, Icon = ModernIconKind.Resume };
+    private readonly ModernButton _stopButton = new() { Name = "_stopButton", Text = "停止", AutoSize = true, Icon = ModernIconKind.Stop, ButtonType = ModernButtonType.DangerOutline };
+    private readonly List<Control> _hostCommands = new();
+    private readonly WorkflowCard _commandCard = new() { Dock = DockStyle.Top };
+    private readonly WorkflowCard _toolboxCard = new() { Dock = DockStyle.Left };
+    private readonly WorkflowCard _canvasCard = new() { Dock = DockStyle.Fill };
+    private readonly WorkflowCard _inspectorCard = new() { Dock = DockStyle.Right, Visible = false };
+    private readonly Panel _inspectorGap = new() { Dock = DockStyle.Right, Visible = false };
+    private readonly WorkflowCard _bottomCard = new() { Dock = DockStyle.Fill };
     private readonly ModernSplitter _canvasAndBottom = new();
     private readonly ModernTabControl _bottomTabs = new();
     private readonly TabPage _diagnosticsPage = new() { Name = "diagnosticsPage", Text = "诊断", Padding = new Padding(6) };
+    private readonly TabPage _noticesPage = new() { Name = "noticesPage", Text = "节点提示", Padding = new Padding(6) };
     private readonly TabPage _runtimePage = new() { Name = "runtimePage", Text = "运行监视", Padding = new Padding(6) };
-    private readonly TabPage _noticesPage = new() { Name = "noticesPage", Text = "提示", Padding = new Padding(6) };
     private readonly TabPage _publicDataPage = new() { Name = "publicDataPage", Text = "公共数据", Padding = new Padding(6) };
+    private readonly Label _statusLabel = new() { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
+    private readonly Label _messageLabel = new() { Dock = DockStyle.Right, AutoSize = true, TextAlign = ContentAlignment.MiddleRight };
     private WorkflowPublicDataManifestModel? _publicDataModel;
     private WorkflowDesignerSession? _session;
     private IWorkflowCanvasRunCommands? _runCommands;
+    private Control? _inspector;
     private bool _autoFitPending;
     private bool _autoFitQueued;
 
@@ -42,13 +62,10 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     public WorkflowCanvasWorkspaceControl()
     {
         SuspendLayout();
+        int S(int value) => LogicalToDeviceUnits(value);
         _toolbar.GripStyle = ToolStripGripStyle.Hidden;
-        _toolbar.Dock = DockStyle.Top;
-        _toolbar.Items.AddRange(new ToolStripItem[]
-        {
-            _undoButton, _redoButton, _editSeparator, _breadcrumbLabel, _navigationSeparator, _fitButton, _layoutMenu,
-            _runtimeSeparator, _runButton, _pauseButton, _resumeButton, _stopButton, _runtimeLabel
-        });
+        _toolbar.Dock = DockStyle.Fill;
+        _toolbar.Items.AddRange(new ToolStripItem[] { _undoButton, _redoButton, _editSeparator, _breadcrumbLabel, _stateLabel });
         BreadcrumbText = null;
 
         Designer = new WorkflowDesignerControl
@@ -68,54 +85,79 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         PublicData.UseActivated += (_, use) => RevealNode(use.PlanPath, use.NodeId, $"节点 {use.NodeId}");
         PublicData.EditError += (_, message) => InteractionError?.Invoke(this, message);
         _bottomTabs.TabPages.Add(_diagnosticsPage);
-        _bottomTabs.TabPages.Add(_runtimePage);
         _bottomTabs.TabPages.Add(_noticesPage);
+        _bottomTabs.TabPages.Add(_runtimePage);
         _bottomTabs.TabPages.Add(_publicDataPage);
-        Notices.CountChanged += (_, _) => _noticesPage.Text = Notices.NoticeCount == 0 ? "提示" : $"提示 ({Notices.NoticeCount})";
+        _bottomTabs.Dock = DockStyle.Fill;
+        Notices.CountChanged += (_, _) => _noticesPage.Text = Notices.NoticeCount == 0 ? "节点提示" : $"节点提示 ({Notices.NoticeCount})";
         Notices.NoticeActivated += (_, notice) => RevealNotice(notice);
         Designer.NoticesPageRequested += (_, _) => ShowNotices();
-        _bottomTabs.Dock = DockStyle.Fill;
+        Diagnostics.SummaryChanged += (_, _) => UpdateDiagnosticsCount();
 
-        // 先给出足够尺寸，避免默认 150px 宽度下设置最小尺寸、分隔位置越界。
-        _canvasAndBottom.Size = new Size(916, 695);
+        // 命令卡：左边工具条（宿主条目、撤销重做、路径），右边一组按钮。
+        _commands.Controls.AddRange(new Control[] { _stopButton, _resumeButton, _pauseButton, _runButton, _validateButton, Separator(), _alignButton, _autoLayoutButton, _fitButton });
+        foreach (Control command in _commands.Controls)
+            command.Margin = new Padding(S(3), S(6), S(3), S(6));
+        _commandCard.Height = S(46);
+        _commandCard.Controls.Add(_toolbar);
+        _commandCard.Controls.Add(_commands);
+
+        // 中间：工具箱卡 | 画布卡 | 检查器卡，卡片之间留 10。
+        _toolboxCard.Width = S(220);
+        _toolboxCard.Controls.Add(Toolbox);
+        _toolboxCard.Controls.Add(new WorkflowCardHeader("工具箱", "拖到画布"));
+        _canvasCard.Controls.Add(Designer);
+        _inspectorCard.Width = S(300);
+        _inspectorGap.Width = S(10);
+        var middle = new Panel { Dock = DockStyle.Fill };
+        middle.Controls.Add(_canvasCard);
+        middle.Controls.Add(new Panel { Dock = DockStyle.Left, Width = S(10) });
+        middle.Controls.Add(_toolboxCard);
+        middle.Controls.Add(_inspectorGap);
+        middle.Controls.Add(_inspectorCard);
+        _bottomCard.Controls.Add(_bottomTabs);
+
+        // 中间和底部页签之间可以拖动分隔，默认底部 190。
+        _canvasAndBottom.Size = new Size(1180, 640);
         _canvasAndBottom.Dock = DockStyle.Fill;
         _canvasAndBottom.Orientation = Orientation.Horizontal;
-        _canvasAndBottom.InitialPanel2Size = 220;
-        _canvasAndBottom.SplitterDistance = 475;
-        _canvasAndBottom.Panel1.Controls.Add(Designer);
-        _canvasAndBottom.Panel2.Controls.Add(_bottomTabs);
+        _canvasAndBottom.FixedPanel = FixedPanel.Panel2;
+        _canvasAndBottom.SplitterWidth = S(10);
+        _canvasAndBottom.InitialPanel2Size = 190;
+        _canvasAndBottom.SplitterDistance = 440;
+        _canvasAndBottom.Panel1.Controls.Add(middle);
+        _canvasAndBottom.Panel2.Controls.Add(_bottomCard);
 
-        _toolboxAndEditor.Size = new Size(1180, 695);
-        _toolboxAndEditor.Dock = DockStyle.Fill;
-        _toolboxAndEditor.FixedPanel = FixedPanel.Panel1;
-        _toolboxAndEditor.InitialPanel2Size = 0;
-        _toolboxAndEditor.SplitterDistance = 210;
-        _toolboxAndEditor.Panel1.Controls.Add(Toolbox);
-        _toolboxAndEditor.Panel2.Controls.Add(_canvasAndBottom);
+        var status = new Panel { Dock = DockStyle.Bottom, Height = S(26), Padding = new Padding(S(4), 0, S(4), 0) };
+        status.Controls.Add(_statusLabel);
+        status.Controls.Add(_messageLabel);
 
-        Controls.Add(_toolboxAndEditor);
-        Controls.Add(_toolbar);
+        Controls.Add(_canvasAndBottom);
+        Controls.Add(new Panel { Dock = DockStyle.Top, Height = S(10) });
+        Controls.Add(_commandCard);
+        Controls.Add(status);
         Size = new Size(1180, 720);
         ResumeLayout(false);
 
-        AddMenuItem(_layoutMenu, "自动布局", ModernIconKind.AutoLayout, () => Session?.AutoLayout());
-        AddMenuItem(_layoutMenu, "左对齐", ModernIconKind.AlignLeft, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Left));
-        AddMenuItem(_layoutMenu, "右对齐", ModernIconKind.AlignRight, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Right));
-        AddMenuItem(_layoutMenu, "顶端对齐", ModernIconKind.AlignTop, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Top));
-        AddMenuItem(_layoutMenu, "底端对齐", ModernIconKind.AlignBottom, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Bottom));
-        AddMenuItem(_layoutMenu, "水平分布", ModernIconKind.DistributeHorizontal, () => Session?.DistributeSelectedNodes(WorkflowNodeDistribution.Horizontal));
-        AddMenuItem(_layoutMenu, "垂直分布", ModernIconKind.DistributeVertical, () => Session?.DistributeSelectedNodes(WorkflowNodeDistribution.Vertical));
+        AddMenuItem(_alignMenu, "左对齐", ModernIconKind.AlignLeft, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Left));
+        AddMenuItem(_alignMenu, "右对齐", ModernIconKind.AlignRight, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Right));
+        AddMenuItem(_alignMenu, "顶端对齐", ModernIconKind.AlignTop, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Top));
+        AddMenuItem(_alignMenu, "底端对齐", ModernIconKind.AlignBottom, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Bottom));
+        AddMenuItem(_alignMenu, "水平分布", ModernIconKind.DistributeHorizontal, () => Session?.DistributeSelectedNodes(WorkflowNodeDistribution.Horizontal));
+        AddMenuItem(_alignMenu, "垂直分布", ModernIconKind.DistributeVertical, () => Session?.DistributeSelectedNodes(WorkflowNodeDistribution.Vertical));
         SetIconOnly(_undoButton, ModernIconKind.Undo, theme => theme.Text, "撤销 (Ctrl+Z)");
         SetIconOnly(_redoButton, ModernIconKind.Redo, theme => theme.Text, "重做 (Ctrl+Y)");
-        SetIconOnly(_fitButton, ModernIconKind.FitWindow, theme => theme.Text, "适合画布");
-        SetIconOnly(_runButton, ModernIconKind.Play, theme => theme.Success, "运行");
-        SetIconOnly(_pauseButton, ModernIconKind.Pause, theme => theme.Warning, "暂停");
-        SetIconOnly(_resumeButton, ModernIconKind.Resume, theme => theme.Success, "继续");
-        SetIconOnly(_stopButton, ModernIconKind.Stop, theme => theme.Error, "停止");
 
         _undoButton.Click += (_, _) => Session?.Undo();
         _redoButton.Click += (_, _) => Session?.Redo();
         _fitButton.Click += (_, _) => Session?.FitToView(Designer.ClientSize.Width, Designer.ClientSize.Height);
+        _autoLayoutButton.Click += (_, _) => Session?.AutoLayout();
+        _alignButton.Click += (_, _) => _alignMenu.Show(_alignButton, new Point(0, _alignButton.Height));
+        _validateButton.Click += (_, _) =>
+        {
+            Diagnostics.RefreshDiagnostics();
+            _bottomTabs.SelectedTab = _diagnosticsPage;
+        };
         _runButton.Click += async (_, _) => await RunAsync();
         _pauseButton.Click += (_, _) => RunCommands?.Pause();
         _resumeButton.Click += (_, _) => RunCommands?.Resume();
@@ -123,14 +165,60 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         Toolbox.NodeTypeActivated += OnNodeTypeActivated;
         Designer.InteractionError += (_, message) => InteractionError?.Invoke(this, message);
         Designer.SizeChanged += (_, _) => QueueAutoFit();
-        Load += (_, _) =>
-        {
-            if (_toolboxAndEditor.Width > 500)
-                _toolboxAndEditor.SplitterDistance = Math.Min(210, _toolboxAndEditor.Width - 300);
-            QueueAutoFit();
-        };
+        Load += (_, _) => QueueAutoFit();
         UpdateCommands();
         WorkflowWinFormsTheme.Follow(this, ApplyThemeImages);
+    }
+
+    /// <summary>右侧检查器卡的内容；为空时不显示检查器（节点窗口里的子画布）。</summary>
+    public Control? Inspector
+    {
+        get => _inspector;
+        set
+        {
+            if (ReferenceEquals(_inspector, value)) return;
+            if (_inspector is not null) _inspectorCard.Controls.Remove(_inspector);
+            _inspector = value;
+            if (value is WorkflowNodeInspectorControl inspector) inspector.Session = _session;
+            if (value is not null)
+            {
+                value.Dock = DockStyle.Fill;
+                _inspectorCard.Controls.Add(value);
+                WorkflowWinFormsTheme.Apply(_inspectorCard);
+            }
+            _inspectorCard.Visible = value is not null;
+            _inspectorGap.Visible = value is not null;
+        }
+    }
+
+    /// <summary>路径后面的文档状态标记（例如“已修改”）；为空时不显示。</summary>
+    public string? DocumentState
+    {
+        get => _stateLabel.Visible ? _stateLabel.Text : null;
+        set
+        {
+            _stateLabel.Text = value is null ? string.Empty : " " + value + " ";
+            _stateLabel.Visible = !string.IsNullOrEmpty(value);
+        }
+    }
+
+    /// <summary>状态行右边的消息（宿主的保存、发布结果等）；为空时清除。</summary>
+    public string? StatusMessage
+    {
+        get => _messageLabel.Text;
+        set => _messageLabel.Text = value ?? string.Empty;
+    }
+
+    /// <summary>在命令卡右边、“校验”左边加一个宿主按钮（例如“发布”）。</summary>
+    /// <param name="command">按钮。</param>
+    public void AddCommand(Control command)
+    {
+        Guard.NotNull(command);
+        command.Margin = new Padding(LogicalToDeviceUnits(3), LogicalToDeviceUnits(6), LogicalToDeviceUnits(3), LogicalToDeviceUnits(6));
+        _hostCommands.Add(command);
+        _commands.Controls.Add(command);
+        _commands.Controls.SetChildIndex(command, _commands.Controls.GetChildIndex(_validateButton) + 1);
+        WorkflowWinFormsTheme.Apply(command);
     }
 
     /// <summary>画布。</summary>
@@ -161,7 +249,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _bottomTabs.SelectedTab = _noticesPage;
     }
 
-    /// <summary>工具栏；宿主可在最前面插入自己的条目（例如“文件”菜单）。</summary>
+    /// <summary>命令卡左边的工具条；宿主可在最前面插入自己的条目（例如“文件”菜单、保存）。</summary>
     public ModernToolStrip Toolbar => _toolbar;
 
     /// <summary>工具栏上的路径文字；为空时不显示路径。</summary>
@@ -173,7 +261,6 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             var visible = !string.IsNullOrEmpty(value);
             _breadcrumbLabel.Text = value ?? string.Empty;
             _breadcrumbLabel.Visible = visible;
-            _navigationSeparator.Visible = visible;
         }
     }
 
@@ -191,11 +278,13 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             Toolbox.Session = value;
             Diagnostics.Session = value;
             Notices.Board = value?.Notices;
+            if (_inspector is WorkflowNodeInspectorControl inspector) inspector.Session = value;
             _publicDataModel?.Dispose();
             _publicDataModel = value is null ? null : new WorkflowPublicDataManifestModel(value);
             PublicData.Model = _publicDataModel;
             _autoFitPending = value is not null;
             QueueAutoFit();
+            UpdateStatus();
             UpdateCommands();
         }
     }
@@ -273,12 +362,14 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         base.Dispose(disposing);
     }
 
-    private void AddMenuItem(ToolStripDropDownItem menu, string text, ModernIconKind icon, Action action)
+    private void AddMenuItem(ToolStrip menu, string text, ModernIconKind icon, Action action)
     {
         var item = new ToolStripMenuItem(text, null, (_, _) => action());
         _icons.Add((item, icon, theme => theme.Text));
-        menu.DropDownItems.Add(item);
+        menu.Items.Add(item);
     }
+
+    private Control Separator() => new Panel { Width = LogicalToDeviceUnits(1), Height = LogicalToDeviceUnits(20), Tag = "separator" };
 
     /// <summary>
     /// 登记一个随主题重画图标的工具栏条目（宿主加入的“文件”菜单等也可以用）；立即按当前主题画一次。
@@ -303,8 +394,14 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             item.Image = CreateIcon(icon, color(theme));
             old?.Dispose();
         }
-        _breadcrumbLabel.ForeColor = theme.TextSecondary;
-        _runtimeLabel.ForeColor = theme.TextSecondary;
+        _breadcrumbLabel.ForeColor = theme.Text;
+        _stateLabel.ForeColor = theme.TextSecondary;
+        _stateLabel.BackColor = theme.Control;
+        _statusLabel.ForeColor = theme.TextSecondary;
+        _messageLabel.ForeColor = theme.TextSecondary;
+        foreach (Control control in _commands.Controls)
+            if (Equals(control.Tag, "separator")) control.BackColor = theme.BorderSecondary;
+        _alignMenu.Theme = theme;
     }
 
     /// <summary>工具栏按钮只显示图标，文字保留为提示与无障碍名称。</summary>
@@ -350,7 +447,33 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     {
         // 提示板由运行绑定在应用快照时交给会话，所以随运行类变化同步一次。
         if (e.Kind == WorkflowDesignerChangeKind.Runtime) Notices.Board = _session?.Notices;
+        if (e.Kind is WorkflowDesignerChangeKind.Document or WorkflowDesignerChangeKind.Selection) UpdateStatus();
         UpdateCommands();
+    }
+
+    /// <summary>状态行：节点数、连线数、选中的节点。</summary>
+    private void UpdateStatus()
+    {
+        if (_session is not { } session)
+        {
+            _statusLabel.Text = string.Empty;
+            return;
+        }
+        var text = $"节点 {session.Document.Nodes.Count} · 连线 {session.Document.Connections.Count}";
+        var selected = session.SelectedNodeIds.Count;
+        if (selected == 1 && session.Document.Nodes.FirstOrDefault(item => item.Node.Id == session.SelectedNodeId) is { } node)
+            text += " · 选中：" + node.Node.Title;
+        else if (selected > 1)
+            text += $" · 选中 {selected} 个节点";
+        _statusLabel.Text = text;
+    }
+
+    private void UpdateDiagnosticsCount()
+    {
+        var count = Diagnostics.IssueCount;
+        _validateButton.Text = count == 0 ? "校验" : $"校验 · {count}";
+        _validateButton.ButtonType = count == 0 ? ModernButtonType.Default : ModernButtonType.Warning;
+        _diagnosticsPage.Text = count == 0 ? "诊断" : $"诊断 ({count})";
     }
 
     /// <summary>
@@ -395,13 +518,14 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         if (IsDisposed) return;
         var commands = RunCommands;
         var state = commands?.State ?? E_WorkflowExecutionState.Idle;
+        var active = state is E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused;
+        _runButton.Visible = !active;
         _runButton.Enabled = commands?.CanRun == true;
-        _runButton.Text = commands?.RunText ?? "运行";
-        // 不能运行时提示里说明原因。
-        _runButton.ToolTipText = commands?.RunToolTip ?? "运行";
-        _pauseButton.Enabled = state == E_WorkflowExecutionState.Running;
-        _resumeButton.Enabled = state == E_WorkflowExecutionState.Paused;
-        _stopButton.Enabled = state is E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused;
-        _runtimeLabel.Text = state.ToString();
+        _runButton.Text = commands?.RunText ?? "调试运行";
+        // 不能运行时悬停说明原因。
+        _runButton.AccessibleDescription = commands?.RunToolTip;
+        _pauseButton.Visible = state == E_WorkflowExecutionState.Running;
+        _resumeButton.Visible = state == E_WorkflowExecutionState.Paused;
+        _stopButton.Visible = active;
     }
 }

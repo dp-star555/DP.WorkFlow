@@ -15,17 +15,25 @@ public sealed partial class WorkflowStudioControl : UserControl
     private WorkflowDocumentWorkspace? _workspace;
     private string? _startNodeId;
     private WorkflowStudioRunCommands? _runCommands;
+    private readonly ToolStripButton _saveButton = new() { Name = "_saveButton", Text = "保存", DisplayStyle = ToolStripItemDisplayStyle.Image, ToolTipText = "保存 (Ctrl+S)" };
+    private readonly WorkflowNodeInspectorControl _inspector;
 
     /// <summary>初始化集设计器、工具箱、诊断和运行控制于一体的工作室控件。</summary>
     public WorkflowStudioControl()
     {
         InitializeComponent();
 
-        // 画布工具栏、工具箱、诊断与运行监视来自共用的画布工作区；这里只加工作台自己的文档命令。
+        // 画布工具栏、工具箱、诊断与运行监视来自共用的画布工作区；这里只加工作台自己的文档命令和右侧检查器。
         AddMenuItem(fileMenu, "新建", ModernIconKind.FileNew, NewDocument);
         AddMenuItem(fileMenu, "打开…", ModernIconKind.FolderOpen, OpenDocument);
         AddMenuItem(fileMenu, "保存", ModernIconKind.Save, () => SaveDocument(false));
         AddMenuItem(fileMenu, "另存为…", ModernIconKind.SaveAs, () => SaveDocument(true));
+        canvasWorkspace.Toolbar.Items.Insert(1, _saveButton);
+        canvasWorkspace.RegisterThemedIcon(_saveButton, ModernIconKind.Save);
+        _saveButton.Click += (_, _) => SaveDocument(false);
+        _inspector = new WorkflowNodeInspectorControl(propertyPanel);
+        _inspector.EditRequested += (_, node) => OpenNodeEditor(node);
+        canvasWorkspace.Inspector = _inspector;
         canvasWorkspace.InteractionError += (_, message) => InteractionError?.Invoke(this, message);
         canvasWorkspace.RunFaulted += (_, message) => RunFaulted?.Invoke(this, message);
         Designer.NodeEditRequested += OnDesignerNodeEditRequested;
@@ -52,8 +60,32 @@ public sealed partial class WorkflowStudioControl : UserControl
     /// <summary>获取工具箱控件。</summary>
     public WorkflowToolboxControl Toolbox => canvasWorkspace.Toolbox;
 
-    /// <summary>获取属性面板。</summary>
+    /// <summary>获取属性面板（右侧检查器的“参数”页）。</summary>
     public WorkflowPropertyPanel Properties => propertyPanel;
+
+    /// <summary>获取右侧节点检查器。</summary>
+    public WorkflowNodeInspectorControl Inspector => _inspector;
+
+    /// <summary>
+    /// “文件”菜单。宿主有自己的流程库时可以清空后放自己的条目（新建、打开库里的流程、放弃草稿等），保存用 <see cref="Save"/>。
+    /// </summary>
+    public ToolStripDropDownButton FileMenu => fileMenu;
+
+    /// <summary>向“文件”菜单加一个带图标的条目。</summary>
+    /// <param name="text">文字。</param>
+    /// <param name="icon">图标。</param>
+    /// <param name="action">点击时执行。</param>
+    /// <returns>加入的条目。</returns>
+    public ToolStripMenuItem AddFileMenuItem(string text, ModernIconKind icon, Action action)
+    {
+        var item = new ToolStripMenuItem(text, null, (_, _) => action());
+        canvasWorkspace.RegisterThemedIcon(item, icon);
+        fileMenu.DropDownItems.Add(item);
+        return item;
+    }
+
+    /// <summary>保存当前文件（还没有路径时询问保存位置）。</summary>
+    public void Save() => SaveDocument(false);
 
     /// <summary>获取编译诊断面板。</summary>
     public WorkflowDiagnosticsControl Diagnostics => canvasWorkspace.Diagnostics;
@@ -159,7 +191,7 @@ public sealed partial class WorkflowStudioControl : UserControl
                         : WorkflowStudioRunTarget.RootWorkflow;
                 }
                 _runCommands = new WorkflowStudioRunCommands(_runtimeBinding,
-                    () => Navigator?.Depth > 0 ? "运行当前子流程" : "运行");
+                    () => Navigator?.Depth > 0 ? "运行当前子流程" : "调试运行");
             }
             canvasWorkspace.RunCommands = _runCommands;
         }
@@ -210,6 +242,7 @@ public sealed partial class WorkflowStudioControl : UserControl
         {
             _startNodeId = value;
             Diagnostics.EntryNodeId = value;
+            propertyPanel.EntryNodeId = value;
         }
     }
 
@@ -337,11 +370,14 @@ public sealed partial class WorkflowStudioControl : UserControl
         finally { if (model != null) await model.DisposeAsync(); }
     }
 
-    /// <summary>处理“Designer Node Edit Requested”事件。</summary>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="node">目标画布节点。</param>
-    private void OnDesignerNodeEditRequested(object? sender, IWorkflowNodeModel node)
+    /// <summary>双击画布节点：打开完整的节点编辑窗口。</summary>
+    private void OnDesignerNodeEditRequested(object? sender, IWorkflowNodeModel node) => OpenNodeEditor(node);
+
+    /// <summary>打开节点编辑窗口（专用页面、子画布、脚本等）；关闭后通知宿主。</summary>
+    /// <param name="node">节点。</param>
+    public void OpenNodeEditor(IWorkflowNodeModel node)
     {
+        Guard.NotNull(node);
         if (Session is null || string.IsNullOrWhiteSpace(EntryNodeId)) return;
         try
         {
@@ -354,7 +390,7 @@ public sealed partial class WorkflowStudioControl : UserControl
         }
         catch (InvalidOperationException exception)
         {
-            InteractionError?.Invoke(this, $"无法打开节点工作台：{exception.Message}");
+            InteractionError?.Invoke(this, $"无法打开节点编辑：{exception.Message}");
         }
     }
 
@@ -396,9 +432,11 @@ public sealed partial class WorkflowStudioControl : UserControl
     private void UpdateNavigation()
     {
         var path = Navigator is null
-            ? "Root"
+            ? null
             : string.Join("  /  ", Navigator.Breadcrumbs.Select(item => item.Title));
-        canvasWorkspace.BreadcrumbText = Workspace?.IsDirty == true ? path + " *" : path;
+        canvasWorkspace.BreadcrumbText = path;
+        canvasWorkspace.DocumentState = Workspace?.IsDirty == true ? "已修改" : null;
+        _saveButton.Enabled = Workspace is not null;
         _runCommands?.Refresh();
     }
 }

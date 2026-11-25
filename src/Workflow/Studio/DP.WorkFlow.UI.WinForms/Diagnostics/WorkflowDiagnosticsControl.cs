@@ -100,6 +100,12 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
     /// <summary>获取当前语言下的诊断摘要文本。</summary>
     public string SummaryText => _summaryText;
 
+    /// <summary>当前错误和警告条数（工具栏“校验”和页签上的数字）。</summary>
+    public int IssueCount { get; private set; }
+
+    /// <summary>诊断列表刷新后发生。</summary>
+    public event EventHandler? SummaryChanged;
+
     /// <summary>执行 Recreate Model 相关处理。</summary>
     private void RecreateModel()
     {
@@ -188,6 +194,8 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
             ? LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsEmpty)
             : LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsSummary,
                 new Dictionary<string, object?> { ["errors"] = errors, ["warnings"] = warnings });
+        IssueCount = errors + warnings;
+        SummaryChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void DisposeLocalization()

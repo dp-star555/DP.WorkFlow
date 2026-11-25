@@ -78,6 +78,16 @@ internal static class WorkflowWinFormsStyle
             }
             return;
         }
+        // 卡片：表面色底；卡片里的宿主控件以表面色作底，和设计稿一致。
+        if (control is WorkflowCard card)
+        {
+            card.BackColor = palette.Surface;
+            card.ApplyInset();
+            var inner = palette with { Window = palette.Surface };
+            foreach (Control child in card.Controls)
+                ApplyControl(child, inner, follow);
+            return;
+        }
         // 其余 Modern 控件（树、列表、输入框、工具栏等）自带完整主题树。
         if (control.GetType().Namespace == typeof(ModernUI.WinForms.ModernTheme).Namespace)
         {
