@@ -3,7 +3,7 @@ using static DP.WorkFlow.Tests.WorkflowStopPointTests;
 
 namespace DP.WorkFlow.Tests;
 
-/// <summary>第 8 类：合并执行记录、联合逆序撤回、恢复轮次号与"恢复时清除"的公共数据。</summary>
+/// <summary>第 8 类：合并执行记录、逆序回退、恢复轮次号与"恢复时清除"的公共数据。</summary>
 public sealed class WorkflowExecutionRecordTests
 {
     [Fact]
@@ -14,7 +14,7 @@ public sealed class WorkflowExecutionRecordTests
         Add(record, "A", "A1", undone);
         Add(record, "B", "B1", undone);
         Add(record, "A", "A2", undone);
-        Add(record, "A", "Read", null, WorkflowRecoveryCategory.Redoable);
+        Add(record, "A", "Read", null, sideEffectFree: true);
         Add(record, "B", "B2", undone);
 
         var report = await record.UndoAsync(new[] { new WorkflowUndoTarget("A", "A1"), new WorkflowUndoTarget("B", null) }, null, CancellationToken.None);
@@ -22,8 +22,8 @@ public sealed class WorkflowExecutionRecordTests
         Assert.True(report.Success, report.Failure);
         Assert.Equal(new[] { "B2", "A2", "B1" }, undone);
         Assert.Equal(new[] { "B2", "Read", "A2", "B1" }, report.Steps.Select(step => step.Entry.NodeId));
-        Assert.Equal(WorkflowUndoStepKind.Skipped, report.Steps[1].Kind);
-        // 重新运行处理流程：已撤回的不再撤回。
+        Assert.All(report.Steps, step => Assert.Equal(WorkflowUndoStepKind.Undone, step.Kind));
+        // 重新运行处理流程：已回退的不再回退。
         var again = await record.UndoAsync(new[] { new WorkflowUndoTarget("A", "A1"), new WorkflowUndoTarget("B", null) }, null, CancellationToken.None);
         Assert.True(again.Success);
         Assert.Empty(again.Steps);
@@ -63,7 +63,7 @@ public sealed class WorkflowExecutionRecordTests
         var record = new WorkflowExecutionRecord(capacity: 3);
         Add(record, "A", "A1", null);
         Add(record, "B", "B1", null);
-        record.Add("A", 0, new WorkflowJournalEntry("Hand", "Hand", "T", "$/Hand", WorkflowRecoveryCategory.NotRedoable, true, null));
+        record.Add("A", 0, new WorkflowJournalEntry("Hand", "Hand", "T", "$/Hand", true, null));
         Assert.Equal(new[] { "B1", "Hand" }, record.Entries.Select(entry => entry.NodeId));
 
         Add(record, "A", "A2", null);
@@ -107,18 +107,19 @@ public sealed class WorkflowExecutionRecordTests
         Assert.Equal(1, centerFlow.RecoveryRound);
         Assert.False(center.PublicData.Signals.Read("Handshake"));
         Assert.True(center.PublicData.Signals.Read("Keep"));
-        // 撤回过的记录留着标记，恢复后新执行的节点带新的轮次号。
+        // 回退过的记录留着标记，恢复后新执行的节点带新的轮次号。
         var entries = center.ExecutionRecord.EntriesOf("A");
         Assert.All(entries.Where(entry => entry.Round == 0), entry => Assert.True(entry.Undone));
         Assert.Contains(entries, entry => entry.NodeId == "Place" && entry.Round == 1 && !entry.Undone);
     }
 
     private static void Add(WorkflowExecutionRecord record, string flow, string node, List<string>? undone,
-        WorkflowRecoveryCategory category = WorkflowRecoveryCategory.NotRedoable) =>
-        record.Add(flow, 0, new WorkflowJournalEntry(node, node, "T", "$/" + node, category, false,
-            undone is null ? null : _ => { undone.Add(node); return Task.CompletedTask; }));
+        bool sideEffectFree = false) =>
+        record.Add(flow, 0, new WorkflowJournalEntry(node, node, "T", "$/" + node, false,
+            sideEffectFree ? _ => Task.CompletedTask
+            : undone is null ? null : _ => { undone.Add(node); return Task.CompletedTask; }));
 
-    /// <summary>有撤回动作的节点（例如下降 / 夹紧）。</summary>
+    /// <summary>支持回退的节点（例如下降 / 夹紧）。</summary>
     [WorkflowNode("T.Lift")]
     private sealed class LiftNode : WorkflowNodeModel
     {
@@ -137,7 +138,7 @@ public sealed class WorkflowExecutionRecordTests
         }
     }
 
-    /// <summary>处理流程：撤回出故障流程的全部动作，然后继续原操作。</summary>
+    /// <summary>处理流程：回退出故障流程的全部动作，然后就地恢复。</summary>
     [WorkflowNode("T.UndoAll")]
     private sealed class UndoAllNode : WorkflowNodeModel
     {
@@ -152,7 +153,7 @@ public sealed class WorkflowExecutionRecordTests
             var report = await session.Center.ExecutionRecord.UndoAsync(new[] { new WorkflowUndoTarget(session.OriginFlow!, null) }, null, cancellationToken);
             if (!report.Success)
                 return NodeExecutionResult.Fail(report.Failure!);
-            session.SetDirective(null, WorkflowResumeDirective.Continue());
+            session.SetDirective(null, WorkflowResumeDirective.RecoverInPlace());
             return NodeExecutionResult.Continue();
         }
     }

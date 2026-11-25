@@ -1,6 +1,6 @@
 namespace DP.WorkFlow;
 
-/// <summary>发起正常或虚拟创建型产品流转会话。是交接起点（检查点）：走过它之后，本流程更早的动作不再参与联合逆序撤回。</summary>
+/// <summary>发起正常或虚拟创建型产品流转会话。是交接起点（检查点）：走过它之后，本流程更早的动作不再参与回退再继续。</summary>
 [WorkflowNode("ProductMoveStart", DisplayName = "开始流转节点", Category = "8.Process/ProductFlow", OutputType = typeof(ProductMoveStartNodeResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Failed)]
 public sealed class ProductMoveStartNodeModel : WorkflowNodeModel, IWorkflowCheckpointNode

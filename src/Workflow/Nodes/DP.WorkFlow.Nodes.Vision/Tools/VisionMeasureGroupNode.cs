@@ -93,7 +93,6 @@ public sealed class VisionMeasureItem
 /// 测量组：在同一张图、同一坐标系下测量多个找线/找圆/找矩形项。每项产出与对应单节点相同的结果类型，
 /// 下游按 <c>Items.&lt;测量项标识&gt;.成员</c> 绑定（例如 <c>Items.m3f9a1c2b.MeasuredLine</c>），设计器显示为“测量项名 · 成员”。
 /// </summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.MeasureGroup", DisplayName = "测量组", Category = WorkflowVisionCategories.Measurement,
     Description = "同一张图、同一坐标系下测量多个找线/找圆/找矩形项；每项结果可单独绑定。", OutputType = typeof(VisionMeasureGroupResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
@@ -316,7 +315,7 @@ public sealed class VisionMeasureGroupResult : IVisionGeometryFact, IVisionDispl
 }
 
 /// <summary>测量组：逐项测量，按失败策略汇总。</summary>
-public sealed class MeasureVisionGroupNodeHandler : WorkflowNodeHandler<MeasureVisionGroupNodeModel>
+public sealed class MeasureVisionGroupNodeHandler : WorkflowSideEffectFreeNodeHandler<MeasureVisionGroupNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(MeasureVisionGroupNodeModel node)

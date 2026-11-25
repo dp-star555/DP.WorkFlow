@@ -3,7 +3,6 @@ namespace DP.WorkFlow;
 /// <summary>
 /// 表示工作流当前路径的标准结束节点。
 /// </summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("End", DisplayName = "结束节点", Category = "1.Base/流程边界", Icon = "stop")]
 [WorkflowOutputPorts]
 public sealed class EndNodeModel : WorkflowNodeModel
@@ -13,7 +12,7 @@ public sealed class EndNodeModel : WorkflowNodeModel
 }
 
 /// <summary>执行标准结束节点。</summary>
-public sealed class EndNodeHandler : WorkflowNodeHandler<EndNodeModel>
+public sealed class EndNodeHandler : WorkflowSideEffectFreeNodeHandler<EndNodeModel>
 {
     /// <inheritdoc />
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(

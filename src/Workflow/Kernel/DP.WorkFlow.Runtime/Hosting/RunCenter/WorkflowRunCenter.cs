@@ -27,7 +27,7 @@ public sealed class WorkflowRunCenterOptions
     /// <summary>第一个停点到达后，再等其他路径一起停下的时间（毫秒），避免同一故障拆成多次处理。</summary>
     public int FaultSettleMilliseconds { get; set; } = 50;
 
-    /// <summary>合并执行记录最多保留的记录数（联合逆序撤回用）。</summary>
+    /// <summary>合并执行记录最多保留的记录数（回退再继续用）。</summary>
     public int ExecutionRecordCapacity { get; set; } = 500;
 }
 
@@ -72,7 +72,7 @@ public sealed partial class WorkflowRunCenter : IDisposable
         ExecutionRecord = new WorkflowExecutionRecord(_options.ExecutionRecordCapacity);
     }
 
-    /// <summary>合并执行记录：全部流程成功执行过的节点，按真实先后；联合逆序撤回按它的倒序撤回。</summary>
+    /// <summary>合并执行记录：全部流程成功执行过的节点，按真实先后；回退再继续按它的倒序回退。</summary>
     public WorkflowExecutionRecord ExecutionRecord { get; }
 
     /// <summary>各流程共用的公共数据中心；外部读写公共数据也经过它。</summary>

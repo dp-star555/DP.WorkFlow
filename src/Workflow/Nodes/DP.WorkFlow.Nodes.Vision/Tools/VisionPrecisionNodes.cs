@@ -4,7 +4,6 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>显式采样带卡尺（直线或圆弧），参数为原图像素边界坐标。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.MeasureCaliper", DisplayName = "亚像素采样卡尺", Category = WorkflowVisionCategories.Measurement, OutputType = typeof(VisionCaliperMeasurement), Icon = "caliper")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
@@ -151,7 +150,7 @@ public sealed class MeasureVisionCaliperNodeModel : AnalyzeVisionFrameNodeModel,
 }
 
 /// <summary>产生真实采样剖面及梯度峰插值证据。</summary>
-public sealed class MeasureVisionCaliperNodeHandler : WorkflowNodeHandler<MeasureVisionCaliperNodeModel>
+public sealed class MeasureVisionCaliperNodeHandler : WorkflowSideEffectFreeNodeHandler<MeasureVisionCaliperNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(MeasureVisionCaliperNodeModel node) =>
@@ -175,7 +174,6 @@ public sealed class MeasureVisionCaliperNodeHandler : WorkflowNodeHandler<Measur
 }
 
 /// <summary>聚合同帧多个卡尺证据，以RANSAC和正交TLS拟合直线。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.FitRobustLine", DisplayName = "鲁棒拟合直线", Category = WorkflowVisionCategories.Measurement, OutputType = typeof(DP.Vision.Algorithms.RobustLineResult), Icon = "line")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class FitVisionRobustLineNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
@@ -216,7 +214,7 @@ public sealed class FitVisionRobustLineNodeModel : AnalyzeVisionFrameNodeModel, 
 }
 
 /// <summary>拒绝混帧采样和超过预算的证据，失败不提交输出。</summary>
-public sealed class FitVisionRobustLineNodeHandler : WorkflowNodeHandler<FitVisionRobustLineNodeModel>
+public sealed class FitVisionRobustLineNodeHandler : WorkflowSideEffectFreeNodeHandler<FitVisionRobustLineNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(FitVisionRobustLineNodeModel node) =>

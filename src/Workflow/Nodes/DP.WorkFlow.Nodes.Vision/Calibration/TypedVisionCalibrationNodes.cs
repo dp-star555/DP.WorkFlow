@@ -17,7 +17,6 @@ public sealed class WorkflowCalibrationSample
 }
 
 /// <summary>输出独立DP.Vision标定事实，不写旧变量。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.SolveCalibration", DisplayName = "求解仿射标定", Category = WorkflowVisionCategories.Calibration, OutputType = typeof(DP.Vision.Algorithms.AffineCalibration))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class SolveVisionCalibrationNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
@@ -41,7 +40,7 @@ public sealed class SolveVisionCalibrationNodeModel : WorkflowNodeModel, IWorkfl
 }
 
 /// <summary>执行独立新版标定。</summary>
-public sealed class SolveVisionCalibrationNodeHandler : WorkflowNodeHandler<SolveVisionCalibrationNodeModel>
+public sealed class SolveVisionCalibrationNodeHandler : WorkflowSideEffectFreeNodeHandler<SolveVisionCalibrationNodeModel>
 {
     /// <inheritdoc/>
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(SolveVisionCalibrationNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken) =>
@@ -49,7 +48,6 @@ public sealed class SolveVisionCalibrationNodeHandler : WorkflowNodeHandler<Solv
 }
 
 /// <summary>强类型标定与数值绑定坐标转换。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.MapCoordinate", DisplayName = "映射标定坐标", Category = WorkflowVisionCategories.Calibration, OutputType = typeof(DP.Vision.Algorithms.Coordinate2D))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class MapVisionCoordinateNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
@@ -73,7 +71,7 @@ public sealed class MapVisionCoordinateNodeModel : WorkflowNodeModel, IWorkflowN
 }
 
 /// <summary>执行新版显式单位坐标映射。</summary>
-public sealed class MapVisionCoordinateNodeHandler : WorkflowNodeHandler<MapVisionCoordinateNodeModel>
+public sealed class MapVisionCoordinateNodeHandler : WorkflowSideEffectFreeNodeHandler<MapVisionCoordinateNodeModel>
 {
     /// <inheritdoc/>
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(MapVisionCoordinateNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)

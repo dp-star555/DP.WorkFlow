@@ -127,7 +127,7 @@ public sealed class WorkflowRunLog
             case "NodeUndone":
             {
                 var owner = Find(canvas, runEvent) ?? canvas.Container;
-                var row = NewRow(owner, WorkflowRunLogRowKind.Recovery, runEvent.EventType == "NodeUndone" ? "撤回完成" : "撤回", runEvent.Timestamp);
+                var row = NewRow(owner, WorkflowRunLogRowKind.Recovery, runEvent.EventType == "NodeUndone" ? "回退完成" : "回退", runEvent.Timestamp);
                 if (row is null) return;
                 Fill(row, runEvent, canvas);
                 row.Detail = Message(runEvent);

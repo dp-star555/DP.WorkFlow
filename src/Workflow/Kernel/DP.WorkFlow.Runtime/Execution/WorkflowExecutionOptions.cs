@@ -12,7 +12,7 @@ public sealed class WorkflowExecutionOptions
     public IWorkflowStopPointHandler? StopPointHandler { get; set; }
 
     /// <summary>
-    /// 执行记录入口（第 8 类：流程管理的合并执行记录）。节点成功执行后记一笔，供联合逆序撤回使用；
+    /// 执行记录入口（第 8 类：流程管理的合并执行记录）。节点成功执行后记一笔，供回退再继续使用；
     /// 同时提供恢复轮次号。为空时不记录，轮次号为 0。
     /// </summary>
     public IWorkflowExecutionJournal? ExecutionJournal { get; set; }

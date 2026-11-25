@@ -2,17 +2,17 @@ using System.Collections.Concurrent;
 
 namespace DP.WorkFlow.Tests;
 
-/// <summary>第 8 类：引擎的停点、去向和控制动作（停住、中断、继续原操作、重做、回到入口、结束本圈、停止）。</summary>
+/// <summary>第 8 类：引擎的停点、去向和控制动作（停住、中断、就地恢复、回退再继续、结束本圈、停止）。</summary>
 public sealed class WorkflowStopPointTests
 {
     [Fact]
-    public async Task Redo_ReexecutesRedoableNode()
+    public async Task RecoverInPlace_SideEffectFreeNodeRunsAgain()
     {
         var flow = new TestFlow();
         flow.Add(new StepNode { Id = "S", FailTimes = 1 });
         flow.Add(new StepNode { Id = "After" });
         flow.Connect("S", "After");
-        var handler = new ScriptedHandler(_ => WorkflowResumeDirective.Redo());
+        var handler = new ScriptedHandler(_ => WorkflowResumeDirective.RecoverInPlace());
 
         var result = await flow.RunAsync(handler);
 
@@ -21,18 +21,17 @@ public sealed class WorkflowStopPointTests
         Assert.Equal(1, flow.Probe.Count("After"));
         var point = Assert.Single(handler.Points);
         Assert.Equal(WorkflowStopReason.Fault, point.Reason);
-        Assert.Equal(WorkflowRecoveryCategory.Redoable, point.Category);
         Assert.Equal("$/S", point.Position.ToString());
-        Assert.False(point.CanContinueOperation);
+        Assert.True(point.CanRecoverInPlace);
     }
 
     [Fact]
-    public async Task Redo_NotAllowedForNotRedoableNode_AsksAgainWithRejection()
+    public async Task RecoverInPlace_NotAllowedForNodeWithoutIt_AsksAgainWithRejection()
     {
         var flow = new TestFlow();
-        flow.Add(new ActNode { Id = "A", FailTimes = 1 });
+        flow.Add(new PlainNode { Id = "A", FailTimes = 1 });
         var handler = new ScriptedHandler(point => point.Rejection is null
-            ? WorkflowResumeDirective.Redo()
+            ? WorkflowResumeDirective.RecoverInPlace()
             : WorkflowResumeDirective.Stop("操作员停止"));
 
         var result = await flow.RunAsync(handler);
@@ -40,18 +39,18 @@ public sealed class WorkflowStopPointTests
         Assert.False(result.Success);
         Assert.Contains("操作员停止", result.Message);
         Assert.Equal(2, handler.Points.Count);
-        Assert.Contains("不能直接重做", handler.Points[1].Rejection);
+        Assert.Contains("不支持就地恢复", handler.Points[1].Rejection);
         Assert.Equal(1, flow.Probe.Count("A"));
     }
 
     [Fact]
-    public async Task Continue_CallsVerifyAndCompleteInsteadOfRerunning()
+    public async Task RecoverInPlace_CallsNodeRecoveryInsteadOfRerunning()
     {
         var flow = new TestFlow();
         flow.Add(new ActNode { Id = "A", FailTimes = 1 });
         flow.Add(new StepNode { Id = "After" });
         flow.Connect("A", "After");
-        var handler = new ScriptedHandler(_ => WorkflowResumeDirective.Continue());
+        var handler = new ScriptedHandler(_ => WorkflowResumeDirective.RecoverInPlace());
 
         var result = await flow.RunAsync(handler);
 
@@ -64,7 +63,7 @@ public sealed class WorkflowStopPointTests
     }
 
     [Fact]
-    public async Task EnterAt_ReturnsToAnchorInSameLapAndInvalidatesLaterOutputs()
+    public async Task RollBack_ReturnsToAnchorInSameLapAndInvalidatesLaterOutputs()
     {
         var flow = new TestFlow();
         flow.Add(new LapNode { Id = "L", Iterations = 2 });
@@ -78,7 +77,7 @@ public sealed class WorkflowStopPointTests
         flow.Connect("X", "S");
         flow.Connect("S", "L");
         flow.Connect("L", "End", WorkflowPorts.Completed);
-        var handler = new ScriptedHandler(_ => WorkflowResumeDirective.EnterAt("Start"));
+        var handler = new ScriptedHandler(_ => WorkflowResumeDirective.RollBack("Start"));
 
         var result = await flow.RunAsync(handler);
 
@@ -88,21 +87,21 @@ public sealed class WorkflowStopPointTests
         Assert.Equal(2, point.Position.LoopIterations["L"]);
         Assert.Equal(3, flow.Probe.Count("E"));
         Assert.Equal(3, flow.Probe.Count("S"));
-        // 回到入口不改变圈次：循环节点共执行 3 次（第 1、2 圈，结束）。
+        // 回退再继续不改变圈次：循环节点共执行 3 次（第 1、2 圈，结束）。
         Assert.Equal(3, flow.Probe.Count("L"));
         Assert.Equal(1, flow.Probe.Count("End"));
     }
 
     [Fact]
-    public async Task EnterAt_UnknownEntryIsRejected()
+    public async Task RollBack_UnknownEntryIsRejected()
     {
         var flow = new TestFlow();
         flow.Add(new EntryNode { Id = "E", EntryKey = "Start" });
         flow.Add(new ActNode { Id = "A", FailTimes = 1 });
         flow.Connect("E", "A");
         var handler = new ScriptedHandler(point => point.Rejection is null
-            ? WorkflowResumeDirective.EnterAt("Elsewhere")
-            : WorkflowResumeDirective.EnterAt("Start"));
+            ? WorkflowResumeDirective.RollBack("Elsewhere")
+            : WorkflowResumeDirective.RollBack("Start"));
 
         var result = await flow.RunAsync(handler);
 
@@ -150,7 +149,7 @@ public sealed class WorkflowStopPointTests
     }
 
     [Fact]
-    public async Task EnterAt_FromInsideSubCanvas_ReturnsToAnchorOnOuterCanvas()
+    public async Task RollBack_FromInsideSubCanvas_ReturnsToAnchorOnOuterCanvas()
     {
         var inner = new TestFlow();
         inner.Add(new ActNode { Id = "Inner", FailTimes = 1 });
@@ -160,7 +159,7 @@ public sealed class WorkflowStopPointTests
         flow.Add(new StepNode { Id = "After" });
         flow.Connect("E", "Sub");
         flow.Connect("Sub", "After");
-        var handler = new ScriptedHandler(_ => WorkflowResumeDirective.EnterAt("Outer"));
+        var handler = new ScriptedHandler(_ => WorkflowResumeDirective.RollBack("Outer"));
 
         var result = await flow.RunAsync(handler);
 
@@ -197,7 +196,7 @@ public sealed class WorkflowStopPointTests
             holds.AddRange(stopped.ExternalHoldReasons);
             // 停在停点期间，另一条分支在节点之间停住：P2 还没有执行。
             Assert.Equal(0, flow.Probe.Count("P2"));
-            return WorkflowResumeDirective.Redo();
+            return WorkflowResumeDirective.RecoverInPlace();
         });
 
         var result = await flow.RunAsync(handler);
@@ -210,13 +209,13 @@ public sealed class WorkflowStopPointTests
     }
 
     [Fact]
-    public async Task Interrupt_StopsRunningNodeWithProgressAndContinueVerifies()
+    public async Task Interrupt_StopsRunningNodeWithProgressAndRecoversInPlace()
     {
         var flow = new TestFlow();
         flow.Add(new BlockNode { Id = "B" });
         flow.Add(new StepNode { Id = "After" });
         flow.Connect("B", "After");
-        var handler = new ScriptedHandler(_ => WorkflowResumeDirective.Continue());
+        var handler = new ScriptedHandler(_ => WorkflowResumeDirective.RecoverInPlace());
         var engine = flow.CreateEngine(handler);
 
         var run = engine.RunAsync();
@@ -233,7 +232,7 @@ public sealed class WorkflowStopPointTests
     }
 
     [Fact]
-    public async Task RequestStop_StopsBeforeNextNodeAndContinueRunsIt()
+    public async Task RequestStop_StopsBeforeNextNodeAndRecoverInPlaceRunsIt()
     {
         var flow = new TestFlow();
         flow.Add(new GateNode { Id = "G" });
@@ -242,7 +241,7 @@ public sealed class WorkflowStopPointTests
         var handler = new ScriptedHandler(point =>
         {
             Assert.Equal(0, flow.Probe.Count("Next"));
-            return WorkflowResumeDirective.Continue();
+            return WorkflowResumeDirective.RecoverInPlace();
         });
         var engine = flow.CreateEngine(handler);
 
@@ -310,10 +309,11 @@ public sealed class WorkflowStopPointTests
         public WorkflowNodeHandlerCatalog Handlers() => new WorkflowNodeHandlerCatalog()
             .Register(new StepHandler(Probe)).Register(new ActHandler(Probe)).Register(new EntryHandler(Probe))
             .Register(new LapHandler(Probe)).Register(new BlockHandler(Probe)).Register(new GateHandler(Probe))
-            .Register(new ForkHandler()).Register(new JoinHandler()).Register(new SubHandler());
+            .Register(new ForkHandler()).Register(new JoinHandler()).Register(new SubHandler()).Register(new PlainHandler(Probe));
 
         public static WorkflowNodeCatalog Catalog() => new WorkflowNodeCatalog()
             .Register(WorkflowNodeDescriptor.Create<StepNode>(ports: new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output(), WorkflowPortDescriptor.Output(WorkflowPorts.Failed) }))
+            .Register(WorkflowNodeDescriptor.Create<PlainNode>(ports: new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output() }))
             .Register(WorkflowNodeDescriptor.Create<ActNode>(ports: new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output() }))
             .Register(WorkflowNodeDescriptor.Create<EntryNode>(ports: new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output() }))
             .Register(WorkflowNodeDescriptor.Create<LapNode>(ports: new[] { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Loop), WorkflowPortDescriptor.Output(WorkflowPorts.Completed) }))
@@ -345,9 +345,8 @@ public sealed class WorkflowStopPointTests
         }
     }
 
-    /// <summary>可直接重做的步骤：前 FailTimes 次（或第 FailOnExecution 次）执行失败。</summary>
+    /// <summary>无副作用的步骤：前 FailTimes 次（或第 FailOnExecution 次）执行失败。</summary>
     [WorkflowNode("T.Step")]
-    [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
     internal sealed class StepNode : WorkflowNodeModel
     {
         public override string NodeType => "T.Step";
@@ -356,7 +355,15 @@ public sealed class WorkflowStopPointTests
         public int DelayMs { get; set; }
     }
 
-    /// <summary>不可重做、实现了核实并补完的动作。</summary>
+    /// <summary>没有恢复能力的动作：前 FailTimes 次执行失败。</summary>
+    [WorkflowNode("T.Plain")]
+    internal sealed class PlainNode : WorkflowNodeModel
+    {
+        public override string NodeType => "T.Plain";
+        public int FailTimes { get; set; }
+    }
+
+    /// <summary>有副作用、实现了就地恢复的动作。</summary>
     [WorkflowNode("T.Act")]
     internal sealed class ActNode : WorkflowNodeModel
     {
@@ -381,7 +388,6 @@ public sealed class WorkflowStopPointTests
     }
 
     [WorkflowNode("T.Block")]
-    [WorkflowRecovery(WorkflowRecoveryCategory.VerifyThenContinue)]
     internal sealed class BlockNode : WorkflowNodeModel
     {
         public override string NodeType => "T.Block";
@@ -415,7 +421,7 @@ public sealed class WorkflowStopPointTests
     private static bool ShouldFail(int execution, int failTimes, int failOnExecution) =>
         execution <= failTimes || execution == failOnExecution;
 
-    private sealed class StepHandler(Probe probe) : WorkflowNodeHandler<StepNode>
+    private sealed class StepHandler(Probe probe) : WorkflowSideEffectFreeNodeHandler<StepNode>
     {
         protected override async ValueTask<NodeExecutionResult> ExecuteAsync(StepNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
@@ -427,7 +433,15 @@ public sealed class WorkflowStopPointTests
         }
     }
 
-    private sealed class ActHandler(Probe probe) : WorkflowNodeHandler<ActNode>, IWorkflowContinuableNodeHandler
+    private sealed class PlainHandler(Probe probe) : WorkflowNodeHandler<PlainNode>
+    {
+        protected override ValueTask<NodeExecutionResult> ExecuteAsync(PlainNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(probe.Hit(node.Id) <= node.FailTimes
+                ? NodeExecutionResult.Fail($"{node.Id} 失败")
+                : NodeExecutionResult.Continue());
+    }
+
+    private sealed class ActHandler(Probe probe) : WorkflowNodeHandler<ActNode>, IWorkflowInPlaceRecoveryNodeHandler
     {
         protected override ValueTask<NodeExecutionResult> ExecuteAsync(ActNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
@@ -438,7 +452,7 @@ public sealed class WorkflowStopPointTests
                 : NodeExecutionResult.Continue(output: count));
         }
 
-        public ValueTask<NodeExecutionResult> VerifyAndCompleteAsync(IWorkflowNodeModel node, IWorkflowNodeExecutionContext context,
+        public ValueTask<NodeExecutionResult> RecoverInPlaceAsync(IWorkflowNodeModel node, IWorkflowNodeExecutionContext context,
             WorkflowNodeInterruption interruption, CancellationToken cancellationToken)
         {
             probe.Hit(node.Id + ":verify");
@@ -467,7 +481,7 @@ public sealed class WorkflowStopPointTests
         }
     }
 
-    private sealed class BlockHandler(Probe probe) : WorkflowNodeHandler<BlockNode>, IWorkflowContinuableNodeHandler
+    private sealed class BlockHandler(Probe probe) : WorkflowNodeHandler<BlockNode>, IWorkflowInPlaceRecoveryNodeHandler
     {
         protected override async ValueTask<NodeExecutionResult> ExecuteAsync(BlockNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
@@ -477,7 +491,7 @@ public sealed class WorkflowStopPointTests
             return NodeExecutionResult.Continue();
         }
 
-        public ValueTask<NodeExecutionResult> VerifyAndCompleteAsync(IWorkflowNodeModel node, IWorkflowNodeExecutionContext context,
+        public ValueTask<NodeExecutionResult> RecoverInPlaceAsync(IWorkflowNodeModel node, IWorkflowNodeExecutionContext context,
             WorkflowNodeInterruption interruption, CancellationToken cancellationToken)
         {
             probe.Hit(node.Id + ":verify");

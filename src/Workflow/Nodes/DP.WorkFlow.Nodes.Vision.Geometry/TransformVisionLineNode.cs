@@ -3,7 +3,6 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>显式转换直线的局部表达，原图端点不变。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.TransformLine", DisplayName = "直线坐标系转换", Category = WorkflowVisionCategories.Geometry, OutputType = typeof(DP.Vision.Algorithms.VisionLine))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class TransformVisionLineNodeModel : WorkflowVisionGeometryNodeModel
@@ -21,7 +20,7 @@ public sealed class TransformVisionLineNodeModel : WorkflowVisionGeometryNodeMod
 }
 
 /// <summary>拒绝不同帧，经过共同原图变更表达。</summary>
-public sealed class TransformVisionLineNodeHandler : WorkflowNodeHandler<TransformVisionLineNodeModel>
+public sealed class TransformVisionLineNodeHandler : WorkflowSideEffectFreeNodeHandler<TransformVisionLineNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(TransformVisionLineNodeModel node) =>

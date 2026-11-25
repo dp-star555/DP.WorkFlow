@@ -1,7 +1,6 @@
 namespace DP.WorkFlow;
 
 /// <summary>节点的报警配置：故障时带上的报警编号，故障会话据此选处理流程。</summary>
-[System.Text.Json.Serialization.JsonConverter(typeof(RecoverableInterruptOptionJsonConverter))]
 public sealed class RecoverableInterruptOption
 {
     /// <summary>可选报警编号；没有编号的故障也会进入故障会话，按默认处理流程处理。</summary>

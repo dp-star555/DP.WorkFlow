@@ -57,18 +57,6 @@ public static class WorkflowPublicDataManifest
         return result;
     }
 
-    /// <summary>把推断出的、清单里还没有的登记项补进文档清单。</summary>
-    /// <param name="document">根文档。</param>
-    /// <returns>补进的登记项。</returns>
-    public static IReadOnlyList<WorkflowPublicDataDeclaration> AddMissing(WorkflowDocument document)
-    {
-        Guard.NotNull(document);
-        var known = new HashSet<string>(document.PublicData.Select(item => item.Key), StringComparer.Ordinal);
-        var added = Infer(document).Where(item => known.Add(item.Key)).ToArray();
-        document.PublicData.AddRange(added);
-        return added;
-    }
-
     /// <summary>核对清单本身以及全部节点的使用。</summary>
     /// <param name="document">根文档。</param>
     /// <returns>诊断；错误阻止编译。</returns>

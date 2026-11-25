@@ -74,14 +74,11 @@ public sealed record WorkflowStopPoint
     /// <summary>报警编号；没有时为 0。</summary>
     public int AlarmCode { get; init; }
 
-    /// <summary>节点的恢复类别。</summary>
-    public WorkflowRecoveryCategory Category { get; init; }
-
     /// <summary>节点停下前报告的最后一步。</summary>
     public string? Progress { get; init; }
 
-    /// <summary>节点是否实现了「核实并补完」（可以"继续原操作"）。</summary>
-    public bool CanContinueOperation { get; init; }
+    /// <summary>节点是否支持就地恢复（实现了 <see cref="IWorkflowInPlaceRecoveryNodeHandler"/>）。</summary>
+    public bool CanRecoverInPlace { get; init; }
 
     /// <summary>所在路径上是否有可以结束本圈的循环（画布循环或循环块）。</summary>
     public bool CanEndLap { get; init; }
@@ -100,11 +97,9 @@ public sealed record WorkflowStopPoint
         Guard.NotNull(directive);
         reason = directive.Kind switch
         {
-            WorkflowResumeKind.Continue when Reason != WorkflowStopReason.Requested && !CanContinueOperation =>
-                $"节点 {NodeTitle} 没有实现核实并补完，不能继续原操作。",
-            WorkflowResumeKind.Redo when Reason != WorkflowStopReason.Requested && Category != WorkflowRecoveryCategory.Redoable =>
-                $"节点 {NodeTitle} 是\"{WorkflowRecoveryCategories.DisplayName(Category)}\"，不能直接重做。",
-            WorkflowResumeKind.EnterAt when !Entries.Any(entry => string.Equals(entry.Key, directive.EntryKey, StringComparison.Ordinal)) =>
+            WorkflowResumeKind.RecoverInPlace when Reason != WorkflowStopReason.Requested && !CanRecoverInPlace =>
+                $"节点 {NodeTitle} 不支持就地恢复。",
+            WorkflowResumeKind.RollBack when !Entries.Any(entry => string.Equals(entry.Key, directive.EntryKey, StringComparison.Ordinal)) =>
                 $"恢复入口 {directive.EntryKey} 不在本圈、当前路径上已经经过的入口里。",
             WorkflowResumeKind.EndLap when !CanEndLap => "所在路径上没有可以结束本圈的循环。",
             _ => null
@@ -116,41 +111,38 @@ public sealed record WorkflowStopPoint
 /// <summary>去向的种类（第 8 类：处理流程的去向节点）。</summary>
 public enum WorkflowResumeKind
 {
-    /// <summary>继续原操作：故障 / 中断的节点调用核实并补完；被要求停下的节点照常执行。</summary>
-    Continue = 0,
+    /// <summary>就地恢复：故障 / 中断的节点调用自己的就地恢复（由节点判断补完还是重做）；被要求停下的节点照常执行。</summary>
+    RecoverInPlace = 0,
 
-    /// <summary>重做本节点：重新执行一次（仅"可直接重做"的节点）。</summary>
-    Redo = 1,
-
-    /// <summary>回到入口 X：回到本圈、当前路径上已经经过的恢复入口，之后的结果作废。</summary>
-    EnterAt = 2,
+    /// <summary>
+    /// 回退再继续：处理方已把入口之后完成的动作逆序回退，流程回到本圈、当前路径上已经经过的恢复入口重新执行。
+    /// 引擎只负责回到入口；回退由处理方（统管层的故障会话）先做完。
+    /// </summary>
+    RollBack = 1,
 
     /// <summary>结束本圈：放弃当前这一圈，最内层循环进入下一圈。</summary>
-    EndLap = 3,
+    EndLap = 2,
 
     /// <summary>停止流程：终止本次运行。</summary>
-    Stop = 4
+    Stop = 3
 }
 
 /// <summary>给一个停点的去向。</summary>
 /// <param name="Kind">去向种类。</param>
-/// <param name="EntryKey">回到入口时的入口键。</param>
+/// <param name="EntryKey">回退再继续时的入口键。</param>
 /// <param name="Message">说明，记入运行记录。</param>
 public sealed record WorkflowResumeDirective(WorkflowResumeKind Kind, string? EntryKey = null, string? Message = null)
 {
-    /// <summary>继续原操作。</summary>
-    public static WorkflowResumeDirective Continue(string? message = null) => new(WorkflowResumeKind.Continue, Message: message);
+    /// <summary>就地恢复。</summary>
+    public static WorkflowResumeDirective RecoverInPlace(string? message = null) => new(WorkflowResumeKind.RecoverInPlace, Message: message);
 
-    /// <summary>重做本节点。</summary>
-    public static WorkflowResumeDirective Redo(string? message = null) => new(WorkflowResumeKind.Redo, Message: message);
-
-    /// <summary>回到入口。</summary>
+    /// <summary>回退到入口再继续。</summary>
     /// <param name="entryKey">入口键。</param>
     /// <param name="message">说明。</param>
-    public static WorkflowResumeDirective EnterAt(string entryKey, string? message = null)
+    public static WorkflowResumeDirective RollBack(string entryKey, string? message = null)
     {
         Guard.NotNullOrWhiteSpace(entryKey);
-        return new(WorkflowResumeKind.EnterAt, entryKey.Trim(), message);
+        return new(WorkflowResumeKind.RollBack, entryKey.Trim(), message);
     }
 
     /// <summary>结束本圈。</summary>
@@ -162,9 +154,8 @@ public sealed record WorkflowResumeDirective(WorkflowResumeKind Kind, string? En
     /// <summary>显示用名称。</summary>
     public string DisplayName => Kind switch
     {
-        WorkflowResumeKind.Continue => "继续原操作",
-        WorkflowResumeKind.Redo => "重做本节点",
-        WorkflowResumeKind.EnterAt => $"回到入口 {EntryKey}",
+        WorkflowResumeKind.RecoverInPlace => "就地恢复",
+        WorkflowResumeKind.RollBack => $"回退到入口 {EntryKey} 再继续",
         WorkflowResumeKind.EndLap => "结束本圈",
         _ => "停止流程"
     };

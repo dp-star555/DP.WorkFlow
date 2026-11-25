@@ -1,7 +1,6 @@
 namespace DP.WorkFlow;
 
 /// <summary>批量初始化布尔信号到默认状态。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("SignalStateBatchInitialize", DisplayName = "批量初始化布尔信号节点", Category = "3.Control/信号", OutputType = typeof(SignalStateBatchInitializeResult))]
 public sealed class SignalStateBatchInitializeNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
@@ -14,7 +13,7 @@ public sealed class SignalStateBatchInitializeNodeModel : WorkflowNodeModel, IWo
 }
 
 /// <summary>执行布尔信号批量初始化。</summary>
-public sealed class SignalStateBatchInitializeNodeHandler : WorkflowNodeHandler<SignalStateBatchInitializeNodeModel>
+public sealed class SignalStateBatchInitializeNodeHandler : WorkflowSideEffectFreeNodeHandler<SignalStateBatchInitializeNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(SignalStateBatchInitializeNodeModel node) =>

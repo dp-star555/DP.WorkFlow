@@ -4,7 +4,6 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>在明确空间生成带身份的视觉点。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.CreatePoint", DisplayName = "生成视觉点", Category = WorkflowVisionCategories.Geometry, OutputType = typeof(DP.Vision.Algorithms.VisionPoint))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class CreateVisionPointNodeModel : WorkflowVisionGeometryNodeModel
@@ -32,7 +31,7 @@ public sealed class CreateVisionPointNodeModel : WorkflowVisionGeometryNodeModel
 }
 
 /// <summary>将显式输入空间转换为保持原图位置的事实。</summary>
-public sealed class CreateVisionPointNodeHandler : WorkflowNodeHandler<CreateVisionPointNodeModel>
+public sealed class CreateVisionPointNodeHandler : WorkflowSideEffectFreeNodeHandler<CreateVisionPointNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(CreateVisionPointNodeModel node) =>

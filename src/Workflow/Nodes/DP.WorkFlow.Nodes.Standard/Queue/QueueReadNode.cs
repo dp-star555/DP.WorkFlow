@@ -1,7 +1,6 @@
 namespace DP.WorkFlow;
 
 /// <summary>读取强类型命名队列快照而不修改内容。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("QueueRead", DisplayName = "队列读取节点", Category = "3.Control/队列", OutputType = typeof(WorkflowQueueNodeResult))]
 public sealed class QueueReadNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
@@ -19,7 +18,7 @@ public sealed class QueueReadNodeModel : WorkflowNodeModel, IWorkflowPublicDataU
 }
 
 /// <summary>执行队列读取。</summary>
-public sealed class QueueReadNodeHandler : WorkflowNodeHandler<QueueReadNodeModel>
+public sealed class QueueReadNodeHandler : WorkflowSideEffectFreeNodeHandler<QueueReadNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(QueueReadNodeModel node) =>

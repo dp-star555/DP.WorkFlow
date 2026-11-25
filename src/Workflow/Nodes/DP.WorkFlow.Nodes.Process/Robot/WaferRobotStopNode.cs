@@ -1,7 +1,6 @@
 namespace DP.WorkFlow;
 
 /// <summary>停止晶圆机器人当前动作。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("WaferRobotStop", DisplayName = "晶圆机器人停止节点", Category = "8.Process/WaferRobot", OutputType = typeof(WaferRobotCommandNodeResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Failed)]
 public sealed class WaferRobotStopNodeModel : WaferRobotCommandNodeModel
@@ -13,7 +12,7 @@ public sealed class WaferRobotStopNodeModel : WaferRobotCommandNodeModel
 }
 
 /// <summary>执行机器人停止。</summary>
-public sealed class WaferRobotStopNodeHandler : WorkflowNodeHandler<WaferRobotStopNodeModel>
+public sealed class WaferRobotStopNodeHandler : WorkflowSideEffectFreeNodeHandler<WaferRobotStopNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(WaferRobotStopNodeModel node) =>

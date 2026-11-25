@@ -4,7 +4,7 @@ namespace DP.WorkFlow;
 
 /// <summary>
 /// 第 8 类：引擎只负责执行，对外只提供位置和控制动作——停住（Hold）、中断（Interrupt）、
-/// 从某位置继续（继续原操作 / 重做 / 回到入口 / 结束本圈）、作废之后、终止。
+/// 从某位置继续（就地恢复 / 回退到入口再继续 / 结束本圈）、作废之后、终止。
 /// 节点故障、被中断或被要求停下时，流程停在停点上，由 <see cref="IWorkflowStopPointHandler"/>（统管层的故障会话）给出去向。
 /// 引擎不判断设备是否安全、是否允许继续；只保证位置合法、数据一致。
 /// </summary>
@@ -138,8 +138,7 @@ public sealed partial class WorkflowEngine
         token.SeenStopEpoch = CurrentStopEpoch;
         var id = Guid.NewGuid();
         var hold = $"停点 {node.Id}（{id.ToString("N").Substring(0, 8)}）";
-        var category = WorkflowRecoveryCategories.Of(node);
-        var canContinue = _boundPlan.GetHandler(node.Id) is IWorkflowContinuableNodeHandler;
+        var canRecoverInPlace = _boundPlan.GetHandler(node.Id) is IWorkflowInPlaceRecoveryNodeHandler;
         var position = PositionOf(node.Id, token);
         RecordRunEvent(new WorkflowRunEventDraft(
             WorkflowRunEventCategory.Recovery,
@@ -153,7 +152,7 @@ public sealed partial class WorkflowEngine
             {
                 ["Reason"] = reason.ToString(),
                 ["AlarmCode"] = alarmCode,
-                ["Category"] = category.ToString(),
+                ["CanRecoverInPlace"] = canRecoverInPlace,
                 ["Progress"] = progress,
                 ["Position"] = position.ToString()
             }), WorkflowEventWriteMode.FlushRequested);
@@ -177,9 +176,8 @@ public sealed partial class WorkflowEngine
                     Reason = reason,
                     Message = message,
                     AlarmCode = alarmCode,
-                    Category = category,
                     Progress = progress,
-                    CanContinueOperation = canContinue,
+                    CanRecoverInPlace = canRecoverInPlace,
                     CanEndLap = FindLap(token) is not null,
                     Entries = entries.Select(entry => entry.Entry).ToArray(),
                     Rejection = rejection
@@ -198,7 +196,7 @@ public sealed partial class WorkflowEngine
                     continue;
                 }
                 var resolved = new ResolvedDirective(directive,
-                    directive.Kind == WorkflowResumeKind.EnterAt
+                    directive.Kind == WorkflowResumeKind.RollBack
                         ? entries.First(entry => string.Equals(entry.Entry.Key, directive.EntryKey, StringComparison.Ordinal)).Target
                         : directive.Kind == WorkflowResumeKind.EndLap ? FindLap(token) : null);
                 RecordRunEvent(new WorkflowRunEventDraft(

@@ -35,7 +35,7 @@ public sealed class WorkflowNodeConfigRoundTripTests
         var reloadedConfig = ConfigOf(store, Assert.Single(loaded.Document.Nodes).Node);
         var savedConfig = ConfigOf(store, node);
 
-        Assert.Empty(loaded.Migration.Warnings);
+        Assert.Empty(loaded.Warnings);
         Assert.Equal(savedConfig.ToJsonString(), reloadedConfig.ToJsonString());
         // 每一项填入的值都确实写进了文件（与默认值不同），而不是被序列化忽略。
         foreach (var property in populated)

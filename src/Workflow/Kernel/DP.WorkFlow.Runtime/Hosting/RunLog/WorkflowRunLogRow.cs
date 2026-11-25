@@ -27,7 +27,7 @@ public enum WorkflowRunLogRowKind
     /// <summary>节点故障。</summary>
     Fault,
 
-    /// <summary>故障处理（故障会话、撤回、放行）。</summary>
+    /// <summary>故障处理（故障会话、回退、放行）。</summary>
     Recovery,
 
     /// <summary>节点提示。</summary>
@@ -64,7 +64,7 @@ public enum WorkflowRunLogState
     /// <summary>失败后走了故障出口。</summary>
     FaultRouted,
 
-    /// <summary>撤回。</summary>
+    /// <summary>回退。</summary>
     Undone
 }
 

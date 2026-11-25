@@ -3,7 +3,6 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>从卡尺边缘、Blob质心等强类型点列表中明确选点。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.SelectPoint", DisplayName = "选择视觉点", Category = WorkflowVisionCategories.Geometry, OutputType = typeof(DP.Vision.Algorithms.VisionPoint))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class SelectVisionPointNodeModel : WorkflowVisionGeometryNodeModel
@@ -26,7 +25,7 @@ public sealed class SelectVisionPointNodeModel : WorkflowVisionGeometryNodeModel
 }
 
 /// <summary>越界及混帧输入不产生伪造点。</summary>
-public sealed class SelectVisionPointNodeHandler : WorkflowNodeHandler<SelectVisionPointNodeModel>
+public sealed class SelectVisionPointNodeHandler : WorkflowSideEffectFreeNodeHandler<SelectVisionPointNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(SelectVisionPointNodeModel node) =>

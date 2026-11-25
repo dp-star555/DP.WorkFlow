@@ -17,7 +17,6 @@ public enum E_StringCompareOperator
 }
 
 /// <summary>比较两个固定字符串或上游绑定值，并选择 True/False 端口。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("StringCompare", DisplayName = "字符串比较节点", Category = "2.Function/判断", OutputType = typeof(CompareNodeResult), Icon = "compare")]
 [WorkflowOutputPorts(WorkflowPorts.True, WorkflowPorts.False)]
 public sealed class StringCompareNodeModel : WorkflowNodeModel
@@ -36,7 +35,7 @@ public sealed class StringCompareNodeModel : WorkflowNodeModel
 }
 
 /// <summary>执行确定性的 Ordinal 字符串比较和通配符匹配。</summary>
-public sealed class StringCompareNodeHandler : WorkflowNodeHandler<StringCompareNodeModel>
+public sealed class StringCompareNodeHandler : WorkflowSideEffectFreeNodeHandler<StringCompareNodeModel>
 {
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 

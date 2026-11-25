@@ -7,7 +7,6 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>一次明确图像输入的完整标签检测业务节点，不携带通用ROI/坐标系配置。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("LabelInspection.Inspect", DisplayName = "标签检测", Category = "业务检测", OutputType = typeof(WorkflowLabelInspectionResult), Icon = "tag")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
@@ -211,7 +210,7 @@ public sealed class WorkflowLabelInspectionResult : IWorkflowVisionFrameFact
 }
 
 /// <summary>无界面调用；默认产品NG/Review仍使用Success出口输出原报告，开启“NG走失败出口”时走Failed出口。</summary>
-public sealed class InspectLabelNodeHandler : WorkflowNodeHandler<InspectLabelNodeModel>
+public sealed class InspectLabelNodeHandler : WorkflowSideEffectFreeNodeHandler<InspectLabelNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(InspectLabelNodeModel node) => new[]

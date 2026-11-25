@@ -18,7 +18,7 @@
 | `EndNodeModel` | `DP.WorkFlow.Nodes.Standard/EndNodeModel` | InProgress | 完成 | 完成 | Handler 分离 |
 | `WorkflowBindingKey` | `DP.WorkFlow.Abstractions/WorkflowBindingKey` | InProgress | 完成 | 完成 | 保留 `nodeId|memberPath` 文本兼容 |
 | Source/Value/BindingKey 三件套 | `DP.WorkFlow.Abstractions/WorkflowInput<T>` | InProgress | 完成 | 完成 | 统一固定值与绑定值配置 |
-| `WorkflowDocumentJsonStore` | `DP.WorkFlow.Persistence.Json/WorkflowDocumentJsonStore` | Completed | 完成 | 完成 | Schema 4，兼容迁移 Schema 1/2/3 |
+| `WorkflowDocumentJsonStore` | `DP.WorkFlow.Persistence.Json/WorkflowDocumentJsonStore` | Completed | 完成 | 完成 | Schema 5，只读写当前版本 |
 | 未安装的插件节点 | `UnknownWorkflowNodeModel` | InProgress | 完成 | 完成 | 当前格式下无损保留原始 Config |
 | `WorkflowBindingResolver` | `DP.WorkFlow.Runtime/WorkflowBindingResolver` | InProgress | 完成 | 完成 | 结构化输出、路径缓存和统一转换 |
 | `DecisionNodeModel` | `DP.WorkFlow.Nodes.Standard/DecisionNodeModel` | InProgress | 完成 | 完成 | 当前支持 Function 与强类型 Binding |

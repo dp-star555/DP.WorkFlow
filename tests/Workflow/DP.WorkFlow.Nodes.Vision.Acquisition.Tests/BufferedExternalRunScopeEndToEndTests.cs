@@ -446,7 +446,7 @@ public sealed class BufferedExternalRunScopeEndToEndTests
         }
     }
 
-    private sealed class FaultHandler : WorkflowNodeHandler<FaultNode>
+    private sealed class FaultHandler : WorkflowSideEffectFreeNodeHandler<FaultNode>
     {
         public int ExecutionCount { get; private set; }
 
@@ -466,7 +466,7 @@ public sealed class BufferedExternalRunScopeEndToEndTests
             TreatNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
             ((WorkflowFaultSession)context.Services.GetService(typeof(WorkflowFaultSession))!)
-                .SetDirective(null, WorkflowResumeDirective.Redo("已处置"));
+                .SetDirective(null, WorkflowResumeDirective.RecoverInPlace("已处置"));
             return ValueTask.FromResult(NodeExecutionResult.Continue());
         }
     }
@@ -490,7 +490,6 @@ public sealed class BufferedExternalRunScopeEndToEndTests
     }
 
     [WorkflowNode("TestBufferedFault")]
-    [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
     private sealed class FaultNode : WorkflowNodeModel
     {
         public override string NodeType => "TestBufferedFault";

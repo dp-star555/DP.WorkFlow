@@ -26,23 +26,17 @@ public sealed class WorkflowFaultStopInfo
     /// <summary>报警编号。</summary>
     [DisplayName("报警编号")]
     public int AlarmCode { get; set; }
-    /// <summary>节点的恢复类别。</summary>
-    [DisplayName("恢复类别")]
-    public string Category { get; set; } = string.Empty;
     /// <summary>节点停下前报告的最后一步。</summary>
     [DisplayName("做到哪一步")]
     public string Progress { get; set; } = string.Empty;
-    /// <summary>能否继续原操作。</summary>
-    [DisplayName("可继续原操作")]
-    public bool CanContinueOperation { get; set; }
-    /// <summary>能否重做本节点。</summary>
-    [DisplayName("可重做")]
-    public bool CanRedo { get; set; }
+    /// <summary>能否就地恢复。</summary>
+    [DisplayName("可就地恢复")]
+    public bool CanRecoverInPlace { get; set; }
     /// <summary>能否结束本圈。</summary>
     [DisplayName("可结束本圈")]
     public bool CanEndLap { get; set; }
     /// <summary>可以回去的恢复入口键。</summary>
-    [DisplayName("可回到的入口")]
+    [DisplayName("可回退到的入口")]
     public List<string> Entries { get; set; } = new();
 
     /// <summary>由停点生成。</summary>
@@ -61,10 +55,8 @@ public sealed class WorkflowFaultStopInfo
         },
         Message = point.Message ?? string.Empty,
         AlarmCode = point.AlarmCode,
-        Category = WorkflowRecoveryCategories.DisplayName(point.Category),
         Progress = point.Progress ?? string.Empty,
-        CanContinueOperation = point.Allows(WorkflowResumeDirective.Continue(), out _),
-        CanRedo = point.Allows(WorkflowResumeDirective.Redo(), out _),
+        CanRecoverInPlace = point.Allows(WorkflowResumeDirective.RecoverInPlace(), out _),
         CanEndLap = point.CanEndLap,
         Entries = point.Entries.Select(entry => entry.Key).ToList()
     };

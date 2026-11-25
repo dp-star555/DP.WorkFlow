@@ -4,7 +4,6 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>按角度及尺度区间搜索模板，输出中心、角度、缩放和参考点；角度和尺度区间都固定时即平移定位。坐标系由“构建本帧坐标系”生成。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.LocateTemplatePose", DisplayName = "模板定位", Category = WorkflowVisionCategories.Location, OutputType = typeof(DP.Vision.Algorithms.TemplatePoseResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode, IWorkflowVisionTemplateNode
@@ -109,7 +108,7 @@ public sealed class LocateVisionTemplatePoseNodeModel : AnalyzeVisionFrameNodeMo
 }
 
 /// <summary>调用本轮准备的节点定位实现，不在失败后自动切换实现。</summary>
-public sealed class LocateVisionTemplatePoseNodeHandler : WorkflowNodeHandler<LocateVisionTemplatePoseNodeModel>
+public sealed class LocateVisionTemplatePoseNodeHandler : WorkflowSideEffectFreeNodeHandler<LocateVisionTemplatePoseNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(LocateVisionTemplatePoseNodeModel node)

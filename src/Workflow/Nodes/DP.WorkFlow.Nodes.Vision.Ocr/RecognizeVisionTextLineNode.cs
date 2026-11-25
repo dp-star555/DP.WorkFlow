@@ -8,7 +8,6 @@ namespace DP.WorkFlow;
 /// 单行 OCR 节点：在图像页画一个矩形文字框（可旋转，宽度方向为文字行方向），识别前按文字框校正成水平小图。
 /// 绑定坐标系后文字框随工件移动和旋转；不包含文本检测。
 /// </summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.RecognizeTextLine", DisplayName = "识别单行文字", Category = WorkflowVisionCategories.Recognition, OutputType = typeof(WorkflowVisionTextLineFact), Icon = "text")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class RecognizeVisionTextLineNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
@@ -82,7 +81,7 @@ public sealed class WorkflowVisionTextLineFact : IWorkflowVisionFrameFact
 }
 
 /// <summary>只调用准备好的单行识别器。</summary>
-public sealed class RecognizeVisionTextLineNodeHandler : WorkflowNodeHandler<RecognizeVisionTextLineNodeModel>
+public sealed class RecognizeVisionTextLineNodeHandler : WorkflowSideEffectFreeNodeHandler<RecognizeVisionTextLineNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(RecognizeVisionTextLineNodeModel node) =>
