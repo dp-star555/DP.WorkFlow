@@ -48,7 +48,7 @@ internal sealed class WorkflowNoticePopup : ToolStripDropDown
         };
         panel.Controls.Add(header, 0, 0);
 
-        var list = new ListView
+        var list = new ModernListView
         {
             Dock = DockStyle.Fill,
             View = View.Details,
@@ -83,7 +83,7 @@ internal sealed class WorkflowNoticePopup : ToolStripDropDown
             Margin = new Padding(0, 8, 0, 0),
             BackColor = theme.Elevated
         };
-        var acknowledgeButton = new ModernButton { Text = "确认并清除", AutoSize = true, ButtonType = ModernButtonType.Primary };
+        var acknowledgeButton = WorkflowSizing.Fit(new ModernButton { Text = "确认并清除", ButtonType = ModernButtonType.Primary });
         acknowledgeButton.Click += (_, _) =>
         {
             Close(ToolStripDropDownCloseReason.ItemClicked);
@@ -92,7 +92,7 @@ internal sealed class WorkflowNoticePopup : ToolStripDropDown
         buttons.Controls.Add(acknowledgeButton);
         if (_showAll is not null)
         {
-            var showAllButton = new ModernButton { Text = "查看全部提示", AutoSize = true };
+            var showAllButton = WorkflowSizing.Fit(new ModernButton { Text = "查看全部提示" });
             showAllButton.Click += (_, _) =>
             {
                 Close(ToolStripDropDownCloseReason.ItemClicked);

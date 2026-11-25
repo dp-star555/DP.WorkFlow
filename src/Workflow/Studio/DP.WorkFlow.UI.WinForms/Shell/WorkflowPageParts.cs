@@ -34,16 +34,14 @@ public sealed class WorkflowMetricStrip : WorkflowCard
     public void AddTool(Control control)
     {
         Guard.NotNull(control);
-        if (control is ModernButton button) WorkflowCommandSizing.Fit(button);
-        else control.Margin = new Padding(LogicalToDeviceUnits(3), LogicalToDeviceUnits(7), LogicalToDeviceUnits(8), 0);
-        _tools.Controls.Add(control);
+        _tools.Controls.Add(WorkflowSizing.Fit(control));
     }
 
     /// <inheritdoc />
     protected internal override void ApplyMetrics()
     {
         base.ApplyMetrics();
-        _tools.Padding = new Padding(0, LogicalToDeviceUnits(9), LogicalToDeviceUnits(8), 0);
+        _tools.Padding = new Padding(0, Math.Max(0, (DisplayRectangle.Height - LogicalToDeviceUnits(38)) / 2), LogicalToDeviceUnits(8), 0);
     }
 
     /// <summary>更新内容；没变时不重绘。</summary>
@@ -70,15 +68,18 @@ public sealed class WorkflowMetricStrip : WorkflowCard
         var right = (_tools.Visible && _tools.Controls.Count > 0 ? _tools.Left : Width) - S(16);
         var flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.Left;
         using var bold = new Font(Font.FontFamily, Font.Size + 1.5f, FontStyle.Bold);
-        using var big = new Font(Font.FontFamily, Font.Size + 4f, FontStyle.Bold);
+        using var big = new Font(Font.FontFamily, Font.Size + 3f, FontStyle.Bold);
         using var small = new Font(Font.FontFamily, Math.Max(6f, Font.Size - .5f));
         var x = S(20);
-        var top = S(12);
+        // 两行文字的高度按字体量，整体在卡片里垂直居中，换字体、换 DPI 都不会被截。
+        var inner = DisplayRectangle;
+        var headTop = inner.Top + Math.Max(0, (inner.Height - bold.Height - small.Height - S(2)) / 2);
+        var valueTop = inner.Top + Math.Max(0, (inner.Height - big.Height - small.Height) / 2);
         var headWidth = Math.Min(S(260), Math.Max(
             TextRenderer.MeasureText(e.Graphics, _title, bold, Size.Empty, flags).Width,
             TextRenderer.MeasureText(e.Graphics, _subtitle, small, Size.Empty, flags).Width));
-        TextRenderer.DrawText(e.Graphics, _title, bold, new Rectangle(x, top, headWidth, S(22)), theme.Text, flags);
-        TextRenderer.DrawText(e.Graphics, _subtitle, small, new Rectangle(x, top + S(22), headWidth, S(18)), theme.TextSecondary, flags);
+        TextRenderer.DrawText(e.Graphics, _title, bold, new Rectangle(x, headTop, headWidth, bold.Height), theme.Text, flags);
+        TextRenderer.DrawText(e.Graphics, _subtitle, small, new Rectangle(x, headTop + bold.Height + S(2), headWidth, small.Height), theme.TextSecondary, flags);
         x += headWidth + S(32);
 
         var noteWidth = string.IsNullOrEmpty(_note) ? 0 : TextRenderer.MeasureText(e.Graphics, _note, small, Size.Empty, flags).Width;
@@ -89,9 +90,9 @@ public sealed class WorkflowMetricStrip : WorkflowCard
                 TextRenderer.MeasureText(e.Graphics, metric.Value, big, Size.Empty, flags).Width,
                 TextRenderer.MeasureText(e.Graphics, metric.Caption, small, Size.Empty, flags).Width);
             if (x + width > limit) break;
-            TextRenderer.DrawText(e.Graphics, metric.Value, big, new Rectangle(x, top - S(2), width, S(26)), metric.Color ?? theme.Text, flags);
-            TextRenderer.DrawText(e.Graphics, metric.Caption, small, new Rectangle(x, top + S(22), width, S(18)), theme.TextSecondary, flags);
-            x += width + S(32);
+            TextRenderer.DrawText(e.Graphics, metric.Value, big, new Rectangle(x, valueTop, width, big.Height), metric.Color ?? theme.Text, flags);
+            TextRenderer.DrawText(e.Graphics, metric.Caption, small, new Rectangle(x, valueTop + big.Height, width, small.Height), theme.TextSecondary, flags);
+            x += width + S(28);
         }
         if (noteWidth > 0)
             TextRenderer.DrawText(e.Graphics, _note, small, new Rectangle(right - noteWidth, 0, noteWidth, Height), theme.TextSecondary,

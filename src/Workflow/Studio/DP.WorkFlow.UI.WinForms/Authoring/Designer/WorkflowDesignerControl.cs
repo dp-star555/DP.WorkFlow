@@ -869,18 +869,9 @@ public sealed partial class WorkflowDesignerControl : Control
         if (_session is null) return;
         var session = _session;
         var semantic = WorkflowPorts.GetDisplayName(connection.FromPort);
-        using var dialog = new Form
-        {
-            Text = "编辑连线备注", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent,
-            MinimizeBox = false, MaximizeBox = false, ShowInTaskbar = false, ClientSize = new Size(380, 128), Font = Font
-        };
-        var hint = new Label { Text = $"固定语义：{semantic}（不可修改）。备注只用于显示，留空恢复默认。", AutoSize = false, Bounds = new Rectangle(12, 10, 356, 34) };
-        var input = new TextBox { Text = connection.Note ?? "", MaxLength = 64, Bounds = new Rectangle(12, 48, 356, 24) };
-        var ok = new Button { Text = "确定", DialogResult = DialogResult.OK, Bounds = new Rectangle(206, 88, 76, 28) };
-        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Bounds = new Rectangle(292, 88, 76, 28) };
-        dialog.Controls.AddRange(new Control[] { hint, input, ok, cancel });
-        dialog.AcceptButton = ok; dialog.CancelButton = cancel;
-        if (dialog.ShowDialog(FindForm()) == DialogResult.OK) Guard(() => session.SetConnectionNote(connection, input.Text));
+        if (WorkflowInputDialog.Ask(FindForm(), "编辑连线备注", $"固定语义：{semantic}（不可修改）。备注只用于显示，留空恢复默认。",
+                connection.Note ?? string.Empty, 64, allowEmpty: true) is { } note)
+            Guard(() => session.SetConnectionNote(connection, note));
     }
 
     private void Guard(Action action)

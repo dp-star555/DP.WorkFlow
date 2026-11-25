@@ -23,7 +23,7 @@ partial class WorkflowBindingSelectorDialog
     {
         components = new System.ComponentModel.Container();
         searchTextBox = new ModernUI.WinForms.ModernInput();
-        bindingTreeView = new TreeView();
+        bindingTreeView = new ModernUI.WinForms.ModernTreeView();
         statusLabel = new Label();
         commandPanel = new FlowLayoutPanel();
         cancelButton = new ModernUI.WinForms.ModernButton();
@@ -106,7 +106,7 @@ partial class WorkflowBindingSelectorDialog
     #endregion
 
     private ModernUI.WinForms.ModernInput searchTextBox = null!;
-    private TreeView bindingTreeView = null!;
+    private ModernUI.WinForms.ModernTreeView bindingTreeView = null!;
     private Label statusLabel = null!;
     private FlowLayoutPanel commandPanel = null!;
     private ModernUI.WinForms.ModernButton okButton = null!;

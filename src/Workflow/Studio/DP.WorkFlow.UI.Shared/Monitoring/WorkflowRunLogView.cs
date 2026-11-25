@@ -304,39 +304,45 @@ public static class WorkflowRunLogText
         return ((int)span.TotalHours).ToString(CultureInfo.InvariantCulture) + ":" + span.Minutes.ToString("00", CultureInfo.InvariantCulture) + ":" + span.Seconds.ToString("00", CultureInfo.InvariantCulture);
     }
 
-    /// <summary>详情面板文字：位置、节点、结果、时间、令牌、消息和数据。</summary>
+    /// <summary>选中记录的详情，一行一个“名称：值”；名称为空的行是“数据”下的一项（值是“键 = 值”）。</summary>
     /// <param name="flowName">流程名。</param>
-    /// <param name="line">行。</param>
-    public static string Details(string flowName, WorkflowRunLogLine line)
+    /// <param name="line">记录。</param>
+    public static IReadOnlyList<(string Label, string Value)> DetailRows(string flowName, WorkflowRunLogLine line)
     {
         Guard.NotNull(line);
-        var text = new System.Text.StringBuilder();
-        text.Append("位置：").Append(flowName);
-        if (line.Path.Length > 0) text.Append(" / ").Append(line.Path);
-        text.AppendLine();
-        if (line.NodeId is not null)
-            text.Append("节点：").Append(line.Title).Append("（").Append(line.NodeType ?? line.NodeId).Append("，ID ").Append(line.NodeId).AppendLine("）");
-        if (KindTag(line.Kind) is { } tag) text.Append("种类：").AppendLine(tag);
-        if (line.State != WorkflowRunLogState.None) text.Append("结果：").AppendLine(State(line.State));
-        text.Append("开始：").AppendLine(Time(line.Started));
-        if (line.Ended is { } ended) text.Append("结束：").AppendLine(Time(ended));
-        if (line.Elapsed is { } elapsed) text.Append("耗时：").AppendLine(Duration(elapsed));
+        var rows = new List<(string, string)> { ("位置", line.Path.Length > 0 ? flowName + " / " + line.Path : flowName) };
+        if (line.NodeId is not null) rows.Add(("节点", $"{line.Title}（{line.NodeType ?? line.NodeId}，ID {line.NodeId}）"));
+        if (KindTag(line.Kind) is { } tag) rows.Add(("种类", tag));
+        if (line.State != WorkflowRunLogState.None) rows.Add(("结果", State(line.State)));
+        rows.Add(("开始", Time(line.Started)));
+        if (line.Ended is { } ended) rows.Add(("结束", Time(ended)));
+        if (line.Elapsed is { } elapsed) rows.Add(("耗时", Duration(elapsed)));
         if (line.TokenId != 0)
-        {
-            text.Append("令牌：T-").Append(line.TokenId.ToString(CultureInfo.InvariantCulture));
-            if (line.ParentTokenId != 0) text.Append(" · 父 T-").Append(line.ParentTokenId.ToString(CultureInfo.InvariantCulture));
-            text.AppendLine();
-        }
-        if (line.CanvasPath != "$") text.Append("画布：").AppendLine(line.CanvasPath);
-        if (!string.IsNullOrWhiteSpace(line.Detail)) text.Append("消息：").AppendLine(line.Detail);
+            rows.Add(("令牌", "T-" + line.TokenId.ToString(CultureInfo.InvariantCulture)
+                              + (line.ParentTokenId != 0 ? " · 父 T-" + line.ParentTokenId.ToString(CultureInfo.InvariantCulture) : string.Empty)));
+        if (line.CanvasPath != "$") rows.Add(("画布", line.CanvasPath));
+        if (!string.IsNullOrWhiteSpace(line.Detail)) rows.Add(("消息", line.Detail!));
         if (line.Data is { Count: > 0 } data)
+            foreach (var pair in data.Where(pair => pair.Key != "Message"))
+                rows.Add((string.Empty, pair.Key + " = " + (pair.Value?.Text ?? Convert.ToString(pair.Value?.Scalar, CultureInfo.InvariantCulture))));
+        return rows;
+    }
+
+    /// <summary>选中记录的详情文字（复制用）。</summary>
+    /// <param name="flowName">流程名。</param>
+    /// <param name="line">记录。</param>
+    public static string Details(string flowName, WorkflowRunLogLine line)
+    {
+        var text = new System.Text.StringBuilder();
+        var data = false;
+        foreach (var (label, value) in DetailRows(flowName, line))
         {
-            var values = data.Where(pair => pair.Key != "Message").ToArray();
-            if (values.Length > 0)
+            if (label.Length > 0) text.Append(label).Append('：').AppendLine(value);
+            else
             {
-                text.AppendLine("数据：");
-                foreach (var pair in values)
-                    text.Append("  ").Append(pair.Key).Append(" = ").AppendLine(pair.Value?.Text ?? Convert.ToString(pair.Value?.Scalar, CultureInfo.InvariantCulture));
+                if (!data) text.AppendLine("数据：");
+                data = true;
+                text.Append("  ").AppendLine(value);
             }
         }
         return text.ToString();

@@ -10,7 +10,7 @@ namespace DP.WorkFlow.UI.WinForms;
 /// <remarks>修改经过设计器会话，可以撤销。清单登记在根文档上，子画布共用。</remarks>
 public sealed class WorkflowPublicDataPage : UserControl
 {
-    private readonly ListView _list = new()
+    private readonly ModernListView _list = new()
     {
         Dock = DockStyle.Fill,
         View = View.Details,
@@ -20,7 +20,7 @@ public sealed class WorkflowPublicDataPage : UserControl
         BorderStyle = BorderStyle.None,
         ShowItemToolTips = true
     };
-    private readonly ListView _uses = new()
+    private readonly ModernListView _uses = new()
     {
         Dock = DockStyle.Fill,
         View = View.Details,
@@ -29,10 +29,10 @@ public sealed class WorkflowPublicDataPage : UserControl
         BorderStyle = BorderStyle.None
     };
     private readonly Label _summary = new() { AutoSize = true, Margin = new Padding(0, 8, 12, 0) };
-    private readonly ModernButton _add = new() { Text = "新增", AutoSize = true };
-    private readonly ModernButton _edit = new() { Text = "修改", AutoSize = true };
-    private readonly ModernButton _remove = new() { Text = "删除", AutoSize = true };
-    private readonly ModernButton _declareMissing = new() { Text = "补齐未登记的", AutoSize = true, ButtonType = ModernButtonType.Primary };
+    private readonly ModernButton _add = WorkflowSizing.Fit(new ModernButton { Text = "新增" });
+    private readonly ModernButton _edit = WorkflowSizing.Fit(new ModernButton { Text = "修改" });
+    private readonly ModernButton _remove = WorkflowSizing.Fit(new ModernButton { Text = "删除" });
+    private readonly ModernButton _declareMissing = WorkflowSizing.Fit(new ModernButton { Text = "补齐未登记的", ButtonType = ModernButtonType.Primary });
     private readonly Label _usesTitle = new() { AutoSize = true, Dock = DockStyle.Top, Padding = new Padding(0, 6, 0, 4) };
     private WorkflowPublicDataManifestModel? _model;
 
@@ -234,13 +234,13 @@ internal sealed class WorkflowPublicDataDialog : Form
 {
     private readonly WorkflowPublicDataManifestModel _model;
     private readonly string? _originalKey;
-    private readonly TextBox _key = new() { Width = 260 };
-    private readonly TextBox _displayName = new() { Width = 260 };
-    private readonly ComboBox _kind = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
-    private readonly ComboBox _valueType = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
-    private readonly TextBox _default = new() { Width = 260 };
-    private readonly CheckBox _persistent = new() { Text = "保持（断电保存）", AutoSize = true };
-    private readonly CheckBox _resetOnRecovery = new() { Text = "故障恢复放行时复位为默认值（交接握手信号用）", AutoSize = true };
+    private readonly ModernInput _key = new() { Width = 300 };
+    private readonly ModernInput _displayName = new() { Width = 300 };
+    private readonly ModernSelect _kind = new() { Width = 300 };
+    private readonly ModernSelect _valueType = new() { Width = 300 };
+    private readonly ModernInput _default = new() { Width = 300 };
+    private readonly ModernCheckbox _persistent = new() { Text = "保持（断电保存）", Width = 300 };
+    private readonly ModernCheckbox _resetOnRecovery = new() { Text = "故障恢复放行时复位为默认值（交接握手信号用）", Width = 340 };
     private readonly Label _error = new() { AutoSize = true, MaximumSize = new Size(380, 0) };
 
     public WorkflowPublicDataDialog(WorkflowPublicDataManifestModel model, WorkflowPublicDataDeclaration? initial, string? originalKey)
@@ -275,7 +275,7 @@ internal sealed class WorkflowPublicDataDialog : Form
         var grid = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Dock = DockStyle.Fill };
         void Row(string label, Control control)
         {
-            grid.Controls.Add(new Label { Text = label, AutoSize = true, Margin = new Padding(0, 7, 12, 0) });
+            grid.Controls.Add(new Label { Text = label, AutoSize = true, Margin = new Padding(0, 10, 12, 0) });
             grid.Controls.Add(control);
         }
         Row("键", _key);
@@ -290,8 +290,8 @@ internal sealed class WorkflowPublicDataDialog : Form
         grid.Controls.Add(new Label());
         grid.Controls.Add(_error);
 
-        var ok = new ModernButton { Text = "确定", ButtonType = ModernButtonType.Primary, AutoSize = true };
-        var cancel = new ModernButton { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
+        var ok = WorkflowSizing.Fit(new ModernButton { Text = "确定", ButtonType = ModernButtonType.Primary });
+        var cancel = WorkflowSizing.Fit(new ModernButton { Text = "取消", DialogResult = DialogResult.Cancel });
         ok.Click += (_, _) => Accept();
         var buttons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Bottom, Padding = new Padding(0, 12, 0, 0) };
         buttons.Controls.Add(cancel);

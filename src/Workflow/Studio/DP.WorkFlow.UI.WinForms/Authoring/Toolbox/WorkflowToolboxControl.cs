@@ -18,12 +18,30 @@ public sealed partial class WorkflowToolboxControl : UserControl
         ModernUI.WinForms.ModernUiSettings.ApplyTheme(this, WorkflowWinFormsTheme.Modern);
         searchInput.TextChanged += (_, _) => RebuildTree();
         toolboxTreeView.NodeMouseDoubleClick += (_, e) => Activate(e.Node);
-        toolboxTreeView.ItemDrag += (_, e) =>
+        // ModernTreeView 自己处理按下（不交给原生树），原生的 ItemDrag 不会触发，所以拖动在这里自己判断：
+        // 按下记住节点和位置，按住移动超过系统拖动阈值就开始拖放。
+        toolboxTreeView.MouseDown += (_, e) =>
         {
-            if (e.Item is TreeNode { Tag: WorkflowToolboxItem item })
-                toolboxTreeView.DoDragDrop(item, DragDropEffects.Copy);
+            _dragItem = e.Button == MouseButtons.Left && toolboxTreeView.SelectedNode?.Tag is WorkflowToolboxItem item ? item : null;
+            _dragStart = e.Location;
         };
+        toolboxTreeView.MouseMove += (_, e) =>
+        {
+            if (_dragItem is not { } item || (MouseButtons & MouseButtons.Left) == 0)
+            {
+                _dragItem = null;
+                return;
+            }
+            var size = SystemInformation.DragSize;
+            if (Math.Abs(e.X - _dragStart.X) < size.Width && Math.Abs(e.Y - _dragStart.Y) < size.Height) return;
+            _dragItem = null;
+            toolboxTreeView.DoDragDrop(item, DragDropEffects.Copy);
+        };
+        toolboxTreeView.MouseUp += (_, _) => _dragItem = null;
     }
+
+    private WorkflowToolboxItem? _dragItem;
+    private Point _dragStart;
 
     /// <summary>获取或设置设计会话。</summary>
     public WorkflowDesignerSession? Session

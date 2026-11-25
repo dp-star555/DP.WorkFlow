@@ -10,7 +10,7 @@ namespace DP.WorkFlow.UI.WinForms;
 /// <remarks>按统一刷新时钟检查提示板版本，变了才重建列表；页面不可见时不刷新。</remarks>
 public sealed class WorkflowNoticesControl : UserControl
 {
-    private readonly ListView _list = new()
+    private readonly ModernListView _list = new()
     {
         Dock = DockStyle.Fill,
         View = View.Details,
@@ -20,8 +20,8 @@ public sealed class WorkflowNoticesControl : UserControl
         BorderStyle = BorderStyle.None
     };
     private readonly Label _summary = new() { AutoSize = true, Margin = new Padding(0, 8, 12, 0) };
-    private readonly ModernButton _acknowledgeSelected = new() { Text = "确认选中位置", AutoSize = true };
-    private readonly ModernButton _acknowledgeAll = new() { Text = "全部清除", AutoSize = true };
+    private readonly ModernButton _acknowledgeSelected = WorkflowSizing.Fit(new ModernButton { Text = "确认选中位置" });
+    private readonly ModernButton _acknowledgeAll = WorkflowSizing.Fit(new ModernButton { Text = "全部清除" });
     private WorkflowNoticeBoard? _board;
     private long _shownVersion = long.MinValue;
 

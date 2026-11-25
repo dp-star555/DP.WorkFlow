@@ -6,7 +6,7 @@ namespace DP.WorkFlow.UI.WinForms;
 /// <summary>
 /// 画布工作区（设计页的主体，按设计稿排成卡片）：
 /// 上面一条命令卡（宿主的“文件”等条目、撤销、重做、路径和“已修改”标记；右边适合画布、自动布局、对齐、校验、调试运行），
-/// 中间左边工具箱卡、中间画布卡、右边可选的检查器卡（<see cref="Inspector"/>），
+/// 中间左边工具箱卡、中间画布卡、右边可选的检查器卡（<see cref="Inspector"/>，默认隐藏，可浮出或固定，见 <see cref="InspectorPinned"/>），
 /// 下面页签卡“诊断 | 节点提示 | 运行监视 | 公共数据”，最下面一行状态（节点数、连线数、选中节点、宿主消息）。
 /// 工作台主画布和节点窗口的子画布共用这一个控件；两者的差别只在运行命令（<see cref="RunCommands"/>）、
 /// 监视来源（<see cref="WorkflowRuntimeMonitorControl.Source"/>）、检查器和宿主加入的条目。
@@ -27,6 +27,10 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         WrapContents = false,
         FlowDirection = FlowDirection.RightToLeft
   };
+    private readonly ModernButton _inspectorButton = new() { Name = "inspectorButton", Text = "节点属性", ButtonType = ModernButtonType.Text, Icon = ModernIconKind.Columns, Visible = false };
+    private readonly ModernButton _pinButton = new() { Name = "pinButton", Text = "固定", ButtonType = ModernButtonType.Text, Icon = ModernIconKind.Pin };
+    private readonly System.Windows.Forms.Timer _autoHide = new() { Interval = 300 };
+    private int _outsideTicks;
     private readonly ModernButton _fitButton = new() { Name = "fitButton", Text = "适合画布", ButtonType = ModernButtonType.Text};
     private readonly ModernButton _autoLayoutButton = new() { Name = "autoLayoutButton", Text = "自动布局", ButtonType = ModernButtonType.Text};
     private readonly ModernButton _alignButton = new() { Name = "alignButton", Text = "对齐 ▾", ButtonType = ModernButtonType.Text};
@@ -49,8 +53,9 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     private readonly TabPage _noticesPage = new() { Name = "noticesPage", Text = "节点提示", Padding = new Padding(6) };
     private readonly TabPage _runtimePage = new() { Name = "runtimePage", Text = "运行监视", Padding = new Padding(6) };
     private readonly TabPage _publicDataPage = new() { Name = "publicDataPage", Text = "公共数据", Padding = new Padding(6) };
-    private readonly Label _statusLabel = new() { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
-    private readonly Label _messageLabel = new() { Dock = DockStyle.Right , TextAlign = ContentAlignment.MiddleRight };
+    private readonly WorkflowStatusLine _status = new();
+    private readonly WorkflowCardHeader _inspectorHeader = new("节点属性", "选中节点后在这里改参数");
+    private Panel _middle = null!;
     private WorkflowPublicDataManifestModel? _publicDataModel;
     private WorkflowDesignerSession? _session;
     private IWorkflowCanvasRunCommands? _runCommands;
@@ -95,9 +100,9 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         Diagnostics.SummaryChanged += (_, _) => UpdateDiagnosticsCount();
 
         // 命令卡：左边工具条（宿主条目、撤销重做、路径），右边一组按钮。
-        _commands.Controls.AddRange(new Control[] { _stopButton, _resumeButton, _pauseButton, _runButton, _validateButton, Separator(), _alignButton, _autoLayoutButton, _fitButton });
+        _commands.Controls.AddRange(new Control[] { _stopButton, _resumeButton, _pauseButton, _runButton, _validateButton, Separator(), _alignButton, _autoLayoutButton, _fitButton, _inspectorButton });
         foreach (Control command in _commands.Controls)
-            if (command is ModernButton button) WorkflowCommandSizing.Fit(button);
+            if (command is ModernButton button) WorkflowSizing.Fit(button);
         _commandCard.LogicalExtent = 46;
         _commandCard.Controls.Add(_toolbar);
         _commandCard.Controls.Add(_commands);
@@ -108,7 +113,9 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _toolboxCard.Controls.Add(new WorkflowCardHeader("工具箱", "拖到画布"));
         _canvasCard.Controls.Add(Designer);
         _inspectorCard.LogicalExtent = 300;
-        var middle = new Panel { Dock = DockStyle.Fill };
+        _inspectorHeader.AddAction(_pinButton);
+        _inspectorCard.Controls.Add(_inspectorHeader);
+        var middle = _middle = new Panel { Dock = DockStyle.Fill };
         middle.Controls.Add(_canvasCard);
         middle.Controls.Add(new WorkflowBlock { Dock = DockStyle.Left, LogicalExtent = 10 });
         middle.Controls.Add(_toolboxCard);
@@ -127,14 +134,10 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _canvasAndBottom.Panel1.Controls.Add(middle);
         _canvasAndBottom.Panel2.Controls.Add(_bottomCard);
 
-        var status = new WorkflowBlock { Dock = DockStyle.Bottom, LogicalExtent = 30, LogicalPadding = new Padding(4, 4, 4, 0) };
-        status.Controls.Add(_statusLabel);
-        status.Controls.Add(_messageLabel);
-
         Controls.Add(_canvasAndBottom);
         Controls.Add(new WorkflowBlock { Dock = DockStyle.Top, LogicalExtent = 10 });
         Controls.Add(_commandCard);
-        Controls.Add(status);
+        Controls.Add(_status);
         Size = new Size(1180, 720);
         ResumeLayout(false);
 
@@ -158,6 +161,10 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             _bottomTabs.SelectedTab = _diagnosticsPage;
       };
         _runButton.Click += async (_, _) => await RunAsync();
+        _inspectorButton.Click += (_, _) => ToggleInspector();
+        _pinButton.Click += (_, _) => InspectorPinned = !InspectorPinned;
+        _autoHide.Tick += (_, _) => AutoHideInspector();
+        middle.Resize += (_, _) => PlaceInspector();
         _pauseButton.Click += (_, _) => RunCommands?.Pause();
         _resumeButton.Click += (_, _) => RunCommands?.Resume();
         _stopButton.Click += (_, _) => RunCommands?.Cancel();
@@ -183,11 +190,99 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             {
                 value.Dock = DockStyle.Fill;
                 _inspectorCard.Controls.Add(value);
+                value.BringToFront();
                 WorkflowWinFormsTheme.Apply(_inspectorCard);
             }
-            _inspectorCard.Visible = value is not null;
-            _inspectorGap.Visible = value is not null;
+            _inspectorButton.Visible = value is not null;
+            _inspectorShown = value is not null && _inspectorPinned;
+            PlaceInspector();
         }
+    }
+
+    /// <summary>
+    /// 检查器是否固定在画布右边。默认不固定：检查器隐藏，点命令卡上的“节点属性”浮在画布右侧，
+    /// 鼠标移开且焦点不在里面时自动收起；固定后像普通卡片一样占一栏，直到取消固定。
+    /// </summary>
+    public bool InspectorPinned
+    {
+        get => _inspectorPinned;
+        set
+        {
+            if (_inspectorPinned == value) return;
+            _inspectorPinned = value;
+            _inspectorShown = value && _inspector is not null;
+            PlaceInspector();
+        }
+    }
+
+    private bool _inspectorPinned;
+    private bool _inspectorShown;
+
+    /// <summary>检查器当前是否可见（固定或浮出）。</summary>
+    public bool InspectorVisible => _inspectorCard.Visible;
+
+    /// <summary>浮出检查器（不固定时鼠标移开会自动收起）。</summary>
+    public void ShowInspector()
+    {
+        if (_inspector is null) return;
+        _inspectorShown = true;
+        _outsideTicks = 0;
+        PlaceInspector();
+    }
+
+    private void ToggleInspector()
+    {
+        if (_inspectorCard.Visible)
+        {
+            _inspectorPinned = false;
+            _inspectorShown = false;
+            PlaceInspector();
+        }
+        else ShowInspector();
+    }
+
+    // 固定：停靠在右边占一栏；浮出：盖在画布卡右侧，高度和中间一栏相同。
+    private void PlaceInspector()
+    {
+        if (_middle is null) return;
+        var visible = _inspector is not null && _inspectorShown;
+        _middle.SuspendLayout();
+        if (visible && _inspectorPinned)
+        {
+            // 停靠按子控件倒序排：检查器和间隔放回最后，才会排在画布卡右边。
+            _inspectorCard.Dock = DockStyle.Right;
+            _middle.Controls.SetChildIndex(_inspectorGap, _middle.Controls.Count - 1);
+            _middle.Controls.SetChildIndex(_inspectorCard, _middle.Controls.Count - 1);
+            _inspectorCard.ApplyMetrics();
+        }
+        else if (visible)
+        {
+            _inspectorCard.Dock = DockStyle.None;
+            var width = LogicalToDeviceUnits(_inspectorCard.LogicalExtent);
+            _inspectorCard.Bounds = new Rectangle(Math.Max(0, _middle.ClientSize.Width - width), 0, Math.Min(width, _middle.ClientSize.Width), _middle.ClientSize.Height);
+            _inspectorCard.BringToFront();
+        }
+        _inspectorCard.Visible = visible;
+        _inspectorGap.Visible = visible && _inspectorPinned;
+        _middle.ResumeLayout(true);
+        _pinButton.Text = _inspectorPinned ? "取消固定" : "固定";
+        _inspectorButton.ButtonType = visible ? ModernButtonType.Default : ModernButtonType.Text;
+        _autoHide.Enabled = visible && !_inspectorPinned;
+        _outsideTicks = 0;
+    }
+
+    private void AutoHideInspector()
+    {
+        if (!_inspectorCard.Visible || _inspectorPinned) { _autoHide.Enabled = false; return; }
+        var cursor = Cursor.Position;
+        var inside = _inspectorCard.ContainsFocus
+                     || _inspectorCard.RectangleToScreen(_inspectorCard.ClientRectangle).Contains(cursor)
+                     || _inspectorButton.RectangleToScreen(_inspectorButton.ClientRectangle).Contains(cursor)
+                     || MouseButtons != MouseButtons.None;
+        _outsideTicks = inside ? 0 : _outsideTicks + 1;
+        if (_outsideTicks < 2) return;
+        _inspectorShown = false;
+        PlaceInspector();
     }
 
     /// <summary>路径后面的文档状态标记（例如“已修改”）；为空时不显示。</summary>
@@ -204,8 +299,8 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     /// <summary>状态行右边的消息（宿主的保存、发布结果等）；为空时清除。</summary>
     public string? StatusMessage
     {
-        get => _messageLabel.Text;
-        set => _messageLabel.Text = value ?? string.Empty;
+        get => _status.Message;
+        set => _status.Message = value ?? string.Empty;
     }
 
     /// <summary>在命令卡右边、“校验”左边加一个宿主按钮（例如“发布”）。</summary>
@@ -213,7 +308,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     public void AddCommand(Control command)
     {
         Guard.NotNull(command);
-        if (command is ModernButton button) WorkflowCommandSizing.Fit(button);
+        if (command is ModernButton button) WorkflowSizing.Fit(button);
         _hostCommands.Add(command);
         _commands.Controls.Add(command);
         _commands.Controls.SetChildIndex(command, _commands.Controls.GetChildIndex(_validateButton) + 1);
@@ -354,6 +449,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         if (disposing)
         {
             Toolbox.NodeTypeActivated -= OnNodeTypeActivated;
+            _autoHide.Dispose();
             if (_session is not null) _session.Changed -= OnSessionChanged;
             if (_runCommands is not null) _runCommands.Changed -= OnRunCommandsChanged;
             _publicDataModel?.Dispose();
@@ -396,8 +492,6 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _breadcrumbLabel.ForeColor = theme.Text;
         _stateLabel.ForeColor = theme.TextSecondary;
         _stateLabel.BackColor = theme.Control;
-        _statusLabel.ForeColor = theme.TextSecondary;
-        _messageLabel.ForeColor = theme.TextSecondary;
         foreach (Control control in _commands.Controls)
             if (Equals(control.Tag, "separator")) control.BackColor = theme.BorderSecondary;
         _alignMenu.Theme = theme;
@@ -455,7 +549,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     {
         if (_session is not { } session)
         {
-            _statusLabel.Text = string.Empty;
+            _status.Summary = string.Empty;
             return;
         }
         var text = $"节点 {session.Document.Nodes.Count} · 连线 {session.Document.Connections.Count}";
@@ -464,7 +558,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             text += " · 选中：" + node.Node.Title;
         else if (selected > 1)
             text += $" · 选中 {selected} 个节点";
-        _statusLabel.Text = text;
+        _status.Summary = text;
     }
 
     private void UpdateDiagnosticsCount()

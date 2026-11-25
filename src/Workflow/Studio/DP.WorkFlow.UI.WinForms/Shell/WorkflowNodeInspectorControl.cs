@@ -19,15 +19,7 @@ public sealed class WorkflowNodeInspectorControl : UserControl
     private readonly TabPage _parametersPage = new() { Text = "参数" };
     private readonly TabPage _resultsPage = new() { Text = "结果" };
     private readonly TabPage _noticesPage = new() { Text = "提示" };
-    private readonly ListView _notices = new()
-    {
-        Dock = DockStyle.Fill,
-        View = View.Details,
-        FullRowSelect = true,
-        HeaderStyle = ColumnHeaderStyle.Nonclickable,
-        ShowItemToolTips = true,
-        BorderStyle = BorderStyle.None
-    };
+    private readonly ModernDataGridView _notices = WorkflowPage.Table("类别", "说明", "次数");
     private readonly ModernButton _clearNotices = new() { Text = "确认并清除", ButtonType = ModernButtonType.Text };
     private readonly ModernButton _openEditor = new() { Text = "打开节点编辑", Dock = DockStyle.Fill };
     private readonly Label _empty = new()
@@ -50,9 +42,9 @@ public sealed class WorkflowNodeInspectorControl : UserControl
         Properties = properties ?? throw new ArgumentNullException(nameof(properties));
         Properties.Dock = DockStyle.Fill;
         _parametersPage.Controls.Add(Properties);
-        _notices.Columns.Add("类别", 70);
-        _notices.Columns.Add("说明", 150);
-        _notices.Columns.Add("次数", 44, HorizontalAlignment.Right);
+        _notices.Columns[0].FillWeight = 24;
+        _notices.Columns[1].FillWeight = 60;
+        _notices.Columns[2].FillWeight = 16;
         var noticeBar = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 4, 0, 0) };
         noticeBar.Controls.Add(_clearNotices);
         _noticesPage.Controls.Add(_notices);
@@ -61,7 +53,7 @@ public sealed class WorkflowNodeInspectorControl : UserControl
         _tabs.TabPages.Add(_resultsPage);
         _tabs.TabPages.Add(_noticesPage);
 
-        WorkflowCommandSizing.Fit(_clearNotices);
+        WorkflowSizing.Fit(_clearNotices);
         var footer = new WorkflowBlock { Dock = DockStyle.Bottom, LogicalExtent = 52, LogicalPadding = new Padding(14, 10, 14, 10) };
         footer.Controls.Add(_openEditor);
         footer.Paint += (_, e) =>
@@ -193,16 +185,14 @@ public sealed class WorkflowNodeInspectorControl : UserControl
         if (!force && version == _noticeVersion) return;
         _noticeVersion = version;
         var notices = _session is not null && _nodeId is not null ? _session.GetNodeNotices(_nodeId) : Array.Empty<WorkflowNotice>();
-        _notices.BeginUpdate();
-        _notices.Items.Clear();
+        _notices.Rows.Clear();
         foreach (var notice in notices.Reverse())
         {
-            var item = new ListViewItem(notice.Category) { ToolTipText = notice.Timestamp.ToLocalTime().ToString("MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "  " + notice.Message };
-            item.SubItems.Add(notice.Message);
-            item.SubItems.Add(notice.Count.ToString(CultureInfo.InvariantCulture));
-            _notices.Items.Add(item);
+            var index = _notices.Rows.Add(notice.Category, notice.Message, notice.Count.ToString(CultureInfo.InvariantCulture));
+            _notices.Rows[index].Cells[1].ToolTipText = notice.Timestamp.ToLocalTime().ToString("MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "  " + notice.Message;
+            _notices.Rows[index].Cells[0].Style.ForeColor = WorkflowWinFormsTheme.Modern.Warning;
         }
-        _notices.EndUpdate();
+        _notices.ClearSelection();
         _noticesPage.Text = notices.Count == 0 ? "提示" : $"提示 ({notices.Count})";
         _clearNotices.Enabled = notices.Count > 0;
         _header.Invalidate();

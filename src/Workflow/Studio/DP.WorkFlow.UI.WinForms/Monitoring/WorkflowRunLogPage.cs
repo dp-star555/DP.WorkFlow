@@ -17,18 +17,21 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     private const int Indent = 18;
     private readonly WorkflowRunLogBook _book;
     private readonly WorkflowRunLogView _view = new() { ControlOnly = true };
-    private readonly ComboBox _flowPicker = Combo(200);
-    private readonly ComboBox _runPicker = Combo(260);
-    private readonly ComboBox _filter = Combo(150);
-    private readonly CheckBox _controlOnly = Check("只看控制步骤", true);
-    private readonly CheckBox _follow = Check("跟随最新", true);
-    private readonly TextBox _search = new() { Width = 180, Margin = new Padding(0, 3, 10, 0) };
-    private readonly ModernButton _expandAll = new() { Text = "全部展开", AutoSize = true };
-    private readonly ModernButton _autoFold = new() { Text = "自动折叠", AutoSize = true };
-    private readonly ModernButton _copy = new() { Text = "复制", AutoSize = true };
+    private readonly ModernSelect _flowPicker = new() { PlaceholderText = "流程" };
+    private readonly ModernSelect _runPicker = new() { PlaceholderText = "运行" };
+    private readonly ModernSelect _filter = new();
+    private readonly ModernCheckbox _controlOnly = new() { Text = "只看控制步骤", Checked = true };
+    private readonly ModernSwitch _follow = new() { Checked = true };
+    private readonly ModernInput _search = new() { PlaceholderText = "搜索节点、消息或数据" };
+    private readonly ModernButton _expandAll = new() { Text = "全部展开", ButtonType = ModernButtonType.Text };
+    private readonly ModernButton _autoFold = new() { Text = "自动折叠", ButtonType = ModernButtonType.Text };
+    private readonly ModernButton _copy = new() { Text = "复制", ButtonType = ModernButtonType.Text };
     private readonly ModernDataGridView _table = Table("位置 · 节点 · 消息", "时间", "结果", "耗时");
-    private readonly TextBox _details = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.None, WordWrap = true };
-    private readonly Label _status = Label();
+    private readonly WorkflowFactList _details = new();
+    private readonly WorkflowCard _tableCard;
+    private readonly WorkflowCard _detailsCard;
+    private readonly WorkflowStatusLine _status = new();
+    private string _detailsText = string.Empty;
     private IReadOnlyList<WorkflowRunLogLine> _lines = Array.Empty<WorkflowRunLogLine>();
     private IReadOnlyList<WorkflowRunLogSummary> _runs = Array.Empty<WorkflowRunLogSummary>();
     private string _flowsSignature = string.Empty;
@@ -45,18 +48,15 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         _filter.Items.AddRange(new object[] { "全部", "失败与故障", "提示" });
         _filter.SelectedIndex = 0;
 
-        var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Padding = new Padding(6, 6, 6, 0) };
-        top.Controls.Add(Caption("流程"));
-        top.Controls.Add(_flowPicker);
-        top.Controls.Add(Caption("运行"));
-        top.Controls.Add(_runPicker);
-        top.Controls.Add(_filter);
-        top.Controls.Add(_controlOnly);
-        top.Controls.Add(Caption("搜索"));
-        top.Controls.Add(_search);
-        top.Controls.Add(_expandAll);
-        top.Controls.Add(_autoFold);
-        top.Controls.Add(_follow);
+        // 工具条卡：流程、运行、结果、只看控制步骤、搜索；右边“跟随最新”。
+        var bar = new WorkflowToolbar();
+        bar.Add(_flowPicker, 160);
+        bar.Add(_runPicker, 280);
+        bar.Add(_filter, 140);
+        bar.Add(_controlOnly);
+        bar.Add(_search, 220);
+        bar.AddRight(new Label { Text = "跟随最新" });
+        bar.AddRight(_follow);
 
         _table.VirtualMode = true;
         _table.Columns[0].FillWeight = 62;
@@ -73,25 +73,20 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         _table.SelectionChanged += (_, _) => { if (!_updating) ShowDetails(); };
         _table.MouseWheel += (_, _) => StopFollowingWhenScrolledUp();
 
-        var detailsBar = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true };
-        detailsBar.Controls.Add(_copy);
-        var detailsBody = new Panel { Dock = DockStyle.Fill };
-        _details.Dock = DockStyle.Fill;
-        detailsBody.Controls.Add(_details);
-        detailsBody.Controls.Add(detailsBar);
+        _tableCard = Section("运行记录", null, _table);
+        HeaderOf(_tableCard).AddAction(_autoFold);
+        HeaderOf(_tableCard).AddAction(_expandAll);
+        _detailsCard = Section("选中的记录", null, _details, DockStyle.Right, 380);
+        HeaderOf(_detailsCard).AddAction(_copy);
+        _expandAll.AccessibleDescription = "展开全部层级；手动展开或收起后不再自动改动，点“自动折叠”恢复。";
+        var middle = new Panel { Dock = DockStyle.Fill };
+        middle.Controls.Add(_tableCard);
+        middle.Controls.Add(Gap(DockStyle.Right));
+        middle.Controls.Add(_detailsCard);
 
-        var split = new ModernSplitter { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, InitialPanel2Size = 340 };
-        split.Panel1.Controls.Add(Card("运行记录", _table));
-        split.Panel2.Controls.Add(Card("选中的记录", detailsBody));
-
-        var legend = Label("自动折叠：成功结束的子流程、循环圈、并行分支收起，连续成功的圈合并；有失败、故障、提示的层和正在运行的那一圈展开。手动展开或收起后不再自动改动，点“自动折叠”恢复。");
-        legend.Dock = DockStyle.Bottom;
-        legend.Height = 22;
-        _status.Dock = DockStyle.Bottom;
-        _status.Height = 24;
-        Controls.Add(split);
-        Controls.Add(top);
-        Controls.Add(legend);
+        Controls.Add(middle);
+        Controls.Add(Gap(DockStyle.Top));
+        Controls.Add(bar);
         Controls.Add(_status);
 
         _flowPicker.SelectedIndexChanged += (_, _) => { if (!_updating) SelectFlow(_flowPicker.SelectedItem as string); };
@@ -113,7 +108,12 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         _expandAll.Click += (_, _) => { _view.Overrides.Clear(); _view.ExpandAll = true; Rebuild(true); };
         _autoFold.Click += (_, _) => { _view.ResetFolding(); Rebuild(true); };
         _follow.CheckedChanged += (_, _) => { if (_follow.Checked) { _runIndex = -1; Rebuild(true); } };
-        _copy.Click += (_, _) => { if (!string.IsNullOrEmpty(_details.Text)) Clipboard.SetText(_details.Text); };
+        _copy.Click += (_, _) =>
+        {
+            if (_detailsText.Length == 0) return;
+            Clipboard.SetText(_detailsText);
+            ShowMessage("已复制选中记录的详情");
+        };
     }
 
     /// <summary>运行日志本。</summary>
@@ -142,7 +142,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     {
         if (IsDisposed) return;
         if (InvokeRequired) { BeginInvoke(new Action(() => ShowMessage(message))); return; }
-        _status.Text = message;
+        _status.Message = message;
     }
 
     /// <inheritdoc />
@@ -162,10 +162,8 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         _updating = true;
         try
         {
-            _flowPicker.BeginUpdate();
             _flowPicker.Items.Clear();
             foreach (var name in names) _flowPicker.Items.Add(name);
-            _flowPicker.EndUpdate();
             var index = selected is null ? -1 : _flowPicker.Items.IndexOf(selected);
             if (index < 0 && names.Count > 0) index = 0;
             _flowPicker.SelectedIndex = index;
@@ -213,7 +211,6 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         _updating = true;
         try
         {
-            _runPicker.BeginUpdate();
             var texts = _runs.Select(Describe).ToArray();
             if (_runPicker.Items.Count != texts.Length || !texts.Select((text, index) => Equals(_runPicker.Items[index], text)).All(same => same))
             {
@@ -221,7 +218,6 @@ public sealed class WorkflowRunLogPage : WorkflowPage
                 foreach (var text in texts) _runPicker.Items.Add(text);
             }
             _runPicker.SelectedIndex = _runIndex >= 0 && _runIndex < _runPicker.Items.Count ? _runIndex : -1;
-            _runPicker.EndUpdate();
             var failures = _runIndex >= 0 && _runIndex < _runs.Count ? _runs[_runIndex].Failures : 0;
             var notices = _runIndex >= 0 && _runIndex < _runs.Count ? _runs[_runIndex].Notices : 0;
             var selected = _filter.SelectedIndex;
@@ -277,12 +273,16 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         if (snapshot is { } info)
         {
             var failures = _runIndex >= 0 && _runIndex < _runs.Count ? _runs[_runIndex].Failures : 0;
-            var text = $"本次运行 {info.EventCount.ToString("N0", CultureInfo.InvariantCulture)} 条 · 显示 {lines.Count.ToString("N0", CultureInfo.InvariantCulture)} 行 · 失败 {failures} · 故障会话 {info.FaultSessions}";
+            HeaderOf(_tableCard).Subtitle = $"{lines.Count.ToString("N0", CultureInfo.InvariantCulture)} 行 · 失败 {failures}";
+            var text = $"本次运行 {info.EventCount.ToString("N0", CultureInfo.InvariantCulture)} 条 · 故障会话 {info.FaultSessions}";
             if (info.Truncated) text += $" · 超过 {_book.MaxRowsPerRun.ToString("N0", CultureInfo.InvariantCulture)} 行，后面的不再记";
-            _status.Text = text + $" · 保留最近 {_book.MaxRuns} 次运行";
+            _status.Summary = text + $" · 保留最近 {_book.MaxRuns} 次运行 · 成功的子流程、循环、并行分支自动收起";
         }
         else
-            _status.Text = _flow is null ? "还没有流程运行过。" : "这个流程还没有运行记录。";
+        {
+            HeaderOf(_tableCard).Subtitle = null;
+            _status.Summary = _flow is null ? "还没有流程运行过。" : "这个流程还没有运行记录。";
+        }
     }
 
     private int IndexOf(string key)
@@ -301,7 +301,31 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     private void ShowDetails()
     {
         var line = SelectedLine();
-        _details.Text = line is null || _flow is null ? string.Empty : WorkflowRunLogText.Details(_flow, line).Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
+        if (line is null || _flow is null)
+        {
+            _detailsText = string.Empty;
+            HeaderOf(_detailsCard).Subtitle = null;
+            _details.Show(new[] { new WorkflowFact("在左边选一条记录查看详情") });
+            return;
+        }
+        _detailsText = WorkflowRunLogText.Details(_flow, line).Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
+        HeaderOf(_detailsCard).Subtitle = line.Title;
+        var facts = new List<WorkflowFact>();
+        var data = false;
+        foreach (var (label, value) in WorkflowRunLogText.DetailRows(_flow, line))
+        {
+            if (label.Length == 0)
+            {
+                if (!data) facts.Add(WorkflowFact.Group("数据"));
+                data = true;
+                var split = value.IndexOf(" = ", StringComparison.Ordinal);
+                facts.Add(split < 0 ? new WorkflowFact(value) : new WorkflowFact(value.Substring(0, split), value.Substring(split + 3)));
+                continue;
+            }
+            var color = label == "结果" ? StateColor(line.State, WorkflowWinFormsTheme.Palette.Colors) : (Color?)null;
+            facts.Add(new WorkflowFact(label, value, ValueColor: color));
+        }
+        _details.Show(facts);
     }
 
     private void Toggle(int index)
@@ -425,10 +449,4 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         _ when line.IsGroup => colors.TextMuted,
         _ => colors.Accent
     });
-
-    private static ComboBox Combo(int width) => new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = width, Margin = new Padding(0, 2, 10, 0) };
-
-    private static CheckBox Check(string text, bool value) => new() { Text = text, Checked = value, AutoSize = true, Margin = new Padding(0, 5, 10, 0) };
-
-    private static Label Caption(string text) => new() { Text = text, AutoSize = true, Margin = new Padding(0, 6, 6, 0) };
 }

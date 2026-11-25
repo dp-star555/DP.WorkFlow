@@ -17,27 +17,28 @@ namespace DP.WorkFlow.UI.WinForms;
 public sealed class WorkflowFlowLibraryPage : WorkflowPage
 {
     private readonly WorkflowFlowLibrary _library;
-    private readonly ModernInput _search = new() { PlaceholderText = "搜索名称、流程名或修改人", Width = 260 };
-    private readonly CheckBox _showDeleted = new() { Text = "显示已删除" };
+    private readonly ModernInput _search = new() { PlaceholderText = "搜索名称、流程名或修改人" };
+    private readonly ModernCheckbox _showDeleted = new() { Text = "显示已删除" };
     private readonly ModernSegmentedControl _filter = new();
-    private readonly Label _directory = new() { AutoSize = true, UseMnemonic = false };
     private readonly ModernDataGridView _table = Table("名称", "状态", "草稿", "版本", "最近修改", "修改人", "节点 / 连线");
     private readonly WorkflowFactList _detail = new();
     private readonly WorkflowCard _tableCard;
     private readonly WorkflowCard _detailCard;
     private readonly WorkflowStatusLine _status = new();
     private readonly ModernButton _open = new() { Text = "打开设计", ButtonType = ModernButtonType.Primary };
-    private readonly ModernButton _new = new() { Text = "新建" };
-    private readonly ModernButton _copy = new() { Text = "复制" };
-    private readonly ModernButton _rename = new() { Text = "改名" };
-    private readonly ModernButton _delete = new() { Text = "删除", ButtonType = ModernButtonType.Danger };
+    private readonly ModernButton _new = new() { Text = "新建流程", ButtonType = ModernButtonType.Primary, Icon = ModernIconKind.Plus };
     private readonly ModernButton _import = new() { Text = "导入…" };
-    private readonly ModernButton _export = new() { Text = "导出…" };
-    private readonly ModernButton _history = new() { Text = "历史版本…" };
-    private readonly ModernButton _changes = new() { Text = "查看修改" };
-    private readonly ModernButton _publish = new() { Text = "发布…", ButtonType = ModernButtonType.Primary };
-    private readonly ModernButton _discard = new() { Text = "放弃草稿" };
-    private readonly ModernButton _refresh = new() { Text = "刷新" };
+    private readonly ModernButton _publish = new() { Text = "发布…" };
+    private readonly ModernButton _more = new() { Text = "更多", ButtonType = ModernButtonType.Text, Icon = ModernIconKind.ChevronDown };
+    private readonly ModernButton _refresh = new() { Text = "刷新", ButtonType = ModernButtonType.Text, Icon = ModernIconKind.Refresh };
+    private readonly ModernContextMenu _moreMenu = new();
+    private readonly ToolStripMenuItem _changes = new("查看修改");
+    private readonly ToolStripMenuItem _discard = new("放弃草稿…");
+    private readonly ToolStripMenuItem _history = new("历史版本…");
+    private readonly ToolStripMenuItem _copy = new("复制为新流程");
+    private readonly ToolStripMenuItem _rename = new("改名…");
+    private readonly ToolStripMenuItem _export = new("导出…");
+    private readonly ToolStripMenuItem _delete = new("删除…");
     private IReadOnlyList<WorkflowLibraryEntry> _entries = Array.Empty<WorkflowLibraryEntry>();
     private string _statusSignature = string.Empty;
     private bool _canEdit = true;
@@ -56,46 +57,36 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         _table.Columns[5].FillWeight = 70;
         _table.Columns[6].FillWeight = 70;
 
-        // 顶部工具条：新建、导入、搜索、筛选；右边是流程目录和刷新。
-        int S(int value) => LogicalToDeviceUnits(value);
+        // 工具条卡：新建、导入 | 搜索、分段筛选、显示已删除；右边刷新。
         foreach (var item in new[] { "全部", "已发布", "草稿", "有诊断" })
             _filter.Items.Add(new ModernSegmentedItem(item));
-        _filter.Width = S(320);
-        var tools = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Color.Transparent };
-        foreach (var button in new[] { _new, _import })
-        {
-            WorkflowCommandSizing.Fit(button);
-            tools.Controls.Add(button);
-        }
-        foreach (var control in new Control[] { _search, _filter, _showDeleted })
-        {
-            control.Margin = new Padding(S(10), S(9), 0, 0);
-            tools.Controls.Add(control);
-        }
-        _showDeleted.Margin = new Padding(S(10), S(13), 0, 0);
-        var right = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.RightToLeft, BackColor = Color.Transparent };
-        WorkflowCommandSizing.Fit(_refresh);
-        _refresh.ButtonType = ModernButtonType.Text;
-        right.Controls.Add(_refresh);
-        _directory.Margin = new Padding(0, S(14), S(4), 0);
-        right.Controls.Add(_directory);
-        var bar = new WorkflowCard { Dock = DockStyle.Top, LogicalExtent = 52 };
-        bar.Controls.Add(tools);
-        bar.Controls.Add(right);
-        tools.Padding = new Padding(S(6), S(3), 0, 0);
+        _filter.SelectedIndex = 0;
+        var bar = new WorkflowToolbar();
+        bar.Add(_new);
+        bar.Add(_import);
+        bar.AddSeparator();
+        bar.Add(_search, 220);
+        bar.Add(_filter);
+        bar.Add(_showDeleted);
+        bar.AddRight(_refresh);
 
-        // 右边详情：概况、版本，下面两排操作按钮。
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = true, BackColor = Color.Transparent, Padding = new Padding(S(10), S(4), S(10), S(8)) };
-        foreach (var button in new[] { _open, _changes, _publish, _discard, _copy, _rename, _export, _history, _delete })
+        // 右边详情：标题行是流程名和状态，下面一排主要操作（打开设计、发布），其余收进“更多”。
+        _moreMenu.Items.AddRange(new ToolStripItem[] { _changes, _discard, _history, new ToolStripSeparator(), _copy, _rename, _export, new ToolStripSeparator(), _delete });
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Color.Transparent };
+        foreach (var button in new[] { _open, _publish, _more })
+            actions.Controls.Add(WorkflowSizing.Fit(button));
+        var actionRow = new WorkflowBlock { Dock = DockStyle.Top, LogicalExtent = 50, LogicalPadding = new Padding(10, 6, 10, 6) };
+        actionRow.Controls.Add(actions);
+        actionRow.Paint += (_, e) =>
         {
-            WorkflowCommandSizing.Fit(button);
-            actions.Controls.Add(button);
-        }
+            using var pen = new Pen(WorkflowWinFormsTheme.Modern.BorderSecondary);
+            e.Graphics.DrawLine(pen, 0, actionRow.Height - 1, actionRow.Width, actionRow.Height - 1);
+        };
         var detailBody = new Panel { Dock = DockStyle.Fill };
         detailBody.Controls.Add(_detail);
-        detailBody.Controls.Add(actions);
+        detailBody.Controls.Add(actionRow);
         _tableCard = Section("流程", null, _table);
-        _detailCard = Section("详情", null, detailBody, DockStyle.Right, 360);
+        _detailCard = Section("详情", null, detailBody, DockStyle.Right, 380);
         var middle = new Panel { Dock = DockStyle.Fill };
         middle.Controls.Add(_tableCard);
         middle.Controls.Add(Gap(DockStyle.Right));
@@ -105,6 +96,8 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         Controls.Add(Gap(DockStyle.Top));
         Controls.Add(bar);
         Controls.Add(_status);
+        _more.Click += (_, _) => _moreMenu.Show(_more, new Point(0, _more.Height));
+        WorkflowWinFormsTheme.Follow(this, () => _moreMenu.Theme = WorkflowWinFormsTheme.Modern);
         _filter.SelectedIndexChanged += (_, _) => ShowRows();
 
         _search.TextChanged += (_, _) => ShowRows();
@@ -261,11 +254,10 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         SetFilterText(1, $"已发布 {published}");
         SetFilterText(2, $"草稿 {drafts}");
         SetFilterText(3, $"有诊断 {issues}");
-        _directory.Text = _library.Directory;
         HeaderOf(_tableCard).Subtitle = $"{shown.Length} 个";
-        _status.Summary = keyword.Length == 0
+        _status.Summary = (keyword.Length == 0
             ? $"流程 {live} 个" + (drafts > 0 ? $" · {drafts} 个有没发布的修改" : string.Empty)
-            : $"找到 {shown.Length} 个（共 {_entries.Count} 个）";
+            : $"找到 {shown.Length} 个（共 {_entries.Count} 个）") + " · 目录 " + _library.Directory;
         UpdateCommands();
     }
 
@@ -447,23 +439,7 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
             Done($"{entry.Name} 的草稿已恢复成 v{version}，发布后生效", entry.Name);
     }
 
-    private string? Ask(string title, string prompt, string value)
-    {
-        using var dialog = new Form
-        {
-            Text = title, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent,
-            MinimizeBox = false, MaximizeBox = false, ShowInTaskbar = false, ClientSize = new Size(380, 112), Font = Font
-        };
-        var hint = new Label { Text = prompt, AutoSize = false, Bounds = new Rectangle(12, 10, 356, 22) };
-        var input = new TextBox { Text = value, MaxLength = 100, Bounds = new Rectangle(12, 36, 356, 24) };
-        var ok = new Button { Text = "确定", DialogResult = DialogResult.OK, Bounds = new Rectangle(206, 74, 76, 28) };
-        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Bounds = new Rectangle(292, 74, 76, 28) };
-        dialog.Controls.AddRange(new Control[] { hint, input, ok, cancel });
-        dialog.AcceptButton = ok;
-        dialog.CancelButton = cancel;
-        WorkflowWinFormsTheme.Follow(dialog);
-        return dialog.ShowDialog(FindForm()) == DialogResult.OK && input.Text.Trim().Length > 0 ? input.Text.Trim() : null;
-    }
+    private string? Ask(string title, string prompt, string value) => WorkflowInputDialog.Ask(FindForm(), title, prompt, value, 100);
 }
 
 /// <summary>历史版本（每次发布一版）：列出版本，和已发布的（或上一版）比较，把所选版本恢复成草稿。</summary>
@@ -472,7 +448,7 @@ internal sealed class WorkflowFlowHistoryDialog : Form
     private readonly WorkflowFlowLibrary _library;
     private readonly WorkflowLibraryEntry _entry;
     private readonly ModernDataGridView _versions = WorkflowPage.Table("版本", "时间", "发布人", "说明");
-    private readonly TextBox _diff = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.None };
+    private readonly ModernTextArea _diff = new() { Dock = DockStyle.Fill, ReadOnly = true, ScrollBars = ScrollBars.Vertical };
     private readonly ModernButton _compare = new() { Text = "和已发布的比较" };
     private readonly ModernButton _comparePrevious = new() { Text = "和上一版比较" };
     private readonly ModernButton _restore = new() { Text = "恢复成草稿" , ButtonType = ModernButtonType.Primary };
@@ -489,8 +465,9 @@ internal sealed class WorkflowFlowHistoryDialog : Form
         ShowIcon = false;
         MinimizeBox = false;
 
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Top , WrapContents = false, Padding = new Padding(0, 6, 0, 6) };
-        buttons.Controls.AddRange(new Control[] { _compare, _comparePrevious, _restore });
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false, Padding = new Padding(0, 6, 0, 6) };
+        foreach (var button in new[] { _restore, _compare, _comparePrevious })
+            buttons.Controls.Add(WorkflowSizing.Fit(button));
         var split = new ModernSplitter { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, InitialPanel2Size = 220 };
         split.Panel1.Controls.Add(_versions);
         var lower = new Panel { Dock = DockStyle.Fill };

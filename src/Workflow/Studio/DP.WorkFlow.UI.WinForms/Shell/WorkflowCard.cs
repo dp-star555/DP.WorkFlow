@@ -131,6 +131,14 @@ public class WorkflowCard : WorkflowBlock
 /// <summary>卡片标题行：粗体标题、灰色副标题，下面一条分隔线（设计稿 42 px 高）。</summary>
 public sealed class WorkflowCardHeader : WorkflowBlock
 {
+    private readonly FlowLayoutPanel _actions = new()
+    {
+        Dock = DockStyle.Right,
+        AutoSize = true,
+        WrapContents = false,
+        FlowDirection = FlowDirection.RightToLeft,
+        BackColor = Color.Transparent
+    };
     private string? _subtitle;
 
     /// <summary>创建标题行。</summary>
@@ -143,6 +151,22 @@ public sealed class WorkflowCardHeader : WorkflowBlock
         _subtitle = subtitle;
         Dock = DockStyle.Top;
         LogicalExtent = 42;
+        Controls.Add(_actions);
+    }
+
+    /// <summary>在标题行右边加一个操作（先加的在最右），按 <see cref="WorkflowSizing"/> 定尺寸。</summary>
+    /// <param name="control">控件。</param>
+    public T AddAction<T>(T control) where T : Control
+    {
+        _actions.Controls.Add(WorkflowSizing.Fit(control));
+        return control;
+    }
+
+    /// <inheritdoc />
+    protected internal override void ApplyMetrics()
+    {
+        base.ApplyMetrics();
+        _actions.Padding = new Padding(0, Math.Max(0, (Height - 1 - LogicalToDeviceUnits(38)) / 2), LogicalToDeviceUnits(6), 0);
     }
 
     /// <summary>副标题。</summary>
@@ -160,54 +184,15 @@ public sealed class WorkflowCardHeader : WorkflowBlock
         var x = LogicalToDeviceUnits(14);
         using var bold = new Font(Font, FontStyle.Bold);
         var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
-        var titleWidth = TextRenderer.MeasureText(e.Graphics, Text, bold, new Size(int.MaxValue, Height), TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width;
-        TextRenderer.DrawText(e.Graphics, Text, bold, new Rectangle(x, 0, Width - x, Height - 1), theme.Text, flags);
+        var right = (_actions.Controls.Count > 0 ? _actions.Left : Width) - LogicalToDeviceUnits(8);
+        var titleWidth = Math.Min(Math.Max(0, right - x), TextRenderer.MeasureText(e.Graphics, Text, bold, new Size(int.MaxValue, Height), TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width);
+        TextRenderer.DrawText(e.Graphics, Text, bold, new Rectangle(x, 0, titleWidth, Height - 1), theme.Text, flags);
         if (!string.IsNullOrEmpty(_subtitle))
         {
             var left = x + titleWidth + LogicalToDeviceUnits(8);
-            TextRenderer.DrawText(e.Graphics, _subtitle, Font, new Rectangle(left, 0, Math.Max(0, Width - left), Height - 1), theme.TextSecondary, flags);
+            TextRenderer.DrawText(e.Graphics, _subtitle, Font, new Rectangle(left, 0, Math.Max(0, right - left), Height - 1), theme.TextSecondary, flags);
         }
         using var pen = new Pen(theme.BorderSecondary);
         e.Graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
-    }
-}
-
-/// <summary>
-/// 命令按钮按文字定宽。<see cref="ModernButton"/> 是 UserControl，AutoSize 会按子控件算出 0 宽，
-/// 所以由这里按字体和 DPI 量出尺寸，文字变了再量一次。
-/// </summary>
-internal static class WorkflowCommandSizing
-{
-    /// <summary>让按钮跟着文字定宽，并立即量一次。</summary>
-    public static void Fit(ModernButton button)
-    {
-        button.AutoSize = false;
-        button.TextChanged -= OnChanged;
-        button.TextChanged += OnChanged;
-        button.FontChanged -= OnChanged;
-        button.FontChanged += OnChanged;
-        // 宿主按字体自动缩放、换 DPI 时会改按钮尺寸和外边距，改完再按文字量回来。
-        button.SizeChanged -= OnChanged;
-        button.SizeChanged += OnChanged;
-        button.DpiChangedAfterParent -= OnChanged;
-        button.DpiChangedAfterParent += OnChanged;
-        Measure(button);
-    }
-
-    /// <summary>按当前文字、字体和 DPI 量尺寸。</summary>
-    public static void Measure(ModernButton button)
-    {
-        int S(int value) => button.LogicalToDeviceUnits(value);
-        var text = TextRenderer.MeasureText(button.Text ?? "", button.Font, Size.Empty, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width;
-        var icon = button.Icon == ModernIconKind.None ? 0 : S(button.IconSize + 6);
-        var size = new Size(text + icon + S(button.ButtonType == ModernButtonType.Text ? 22 : 30), S(30));
-        if (button.Size != size) button.Size = size;
-        var margin = new Padding(S(3), S(4), S(3), S(4));
-        if (button.Margin != margin) button.Margin = margin;
-    }
-
-    private static void OnChanged(object? sender, EventArgs e)
-    {
-        if (sender is ModernButton button) Measure(button);
     }
 }
