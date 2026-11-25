@@ -4,7 +4,7 @@ using DP.WorkFlow.Persistence.Json;
 namespace DP.WorkFlow.Tests.Replay;
 
 /// <summary>
-/// R5-c 回放基准：打开 Flows/ 各格式目录中的流程文件，用模拟设备运行，规整后的事件序列必须与
+/// R5-c 回放基准：打开 Flows/ 中的流程文件，用模拟设备运行，规整后的事件序列必须与
 /// Baselines/ 中的基准一致。基准由改造前的引擎生成，改造后对比，确保除刻意修改外行为不变。
 /// </summary>
 /// <remarks>
@@ -13,7 +13,7 @@ namespace DP.WorkFlow.Tests.Replay;
 /// </remarks>
 public sealed class ReplayBaselineTests
 {
-    /// <summary>当前流程文件格式版本；格式升级时新增目录，旧目录保留，作为旧文件兼容样本。</summary>
+    /// <summary>流程文件所在目录（当前格式版本）。</summary>
     internal const string FlowFormatFolder = "v5";
 
     public static TheoryData<string> FlowNames()
@@ -38,8 +38,7 @@ public sealed class ReplayBaselineTests
     [MemberData(nameof(FlowFiles))]
     public async Task Replay_MatchesBaseline(string formatFolder, string flowName)
     {
-        // 每个格式版本的流程文件都要能打开，并且运行结果与同一份基准一致：
-        // 旧格式文件（以后格式升级后保留下来的目录）由此证明"旧文件打开并自动升级"后行为不变。
+        // 流程文件打开后运行，结果与基准一致。
         var store = new WorkflowDocumentJsonStore(ReplayFlows.CreateCatalog());
         var loaded = store.Deserialize(File.ReadAllText(ReplayPaths.Flow(formatFolder, flowName)));
 
@@ -57,7 +56,7 @@ public sealed class ReplayBaselineTests
     public void CurrentFormat_FlowFileMatchesSavedDocument(string flowName)
     {
         // R5-b：用当前代码保存同一流程，必须与版本库中的当前格式文件逐字相同；打开再保存也不变。
-        // 格式刻意变化时：新建 Flows/v{新版本}，并把 FlowFormatFolder 指过去；旧目录保留不动。
+        // 格式刻意变化时：设置 DP_WORKFLOW_UPDATE_BASELINES=1 重写文件。
         var store = new WorkflowDocumentJsonStore(ReplayFlows.CreateCatalog());
         var path = ReplayPaths.Flow(FlowFormatFolder, flowName);
         var saved = store.Serialize(ReplayFlows.All[flowName]()).Replace("\r\n", "\n");
@@ -68,7 +67,7 @@ public sealed class ReplayBaselineTests
         var reloaded = store.Deserialize(committed);
 
         Assert.Equal(committed, saved);
-        Assert.Empty(reloaded.Migration.Warnings);
+        Assert.Empty(reloaded.Warnings);
         Assert.Equal(committed, store.Serialize(reloaded.Document).Replace("\r\n", "\n"));
     }
 

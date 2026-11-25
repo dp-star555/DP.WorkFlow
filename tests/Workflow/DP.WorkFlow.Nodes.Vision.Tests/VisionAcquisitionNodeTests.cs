@@ -295,17 +295,15 @@ public sealed class VisionAcquisitionNodeTests
     }
 
     [Fact]
-    public void 旧采集节点类型未注册时按未知节点保真保留配置()
+    public void 未注册的节点类型按未知节点保留配置()
     {
-        // V2 用面阵/线扫两个强类型节点取代了旧的 Vision.CaptureFrame，不再提供兼容迁移器。
-        // 旧文档必须仍然能打开：节点降级为 Unknown 并逐字保留原始配置，
-        // 由用户自行改成新节点，而不是在持久化层猜测"它应该是面阵还是线扫"。
+        // 节点类型没注册（例如插件没装）时文档仍能打开：节点作为 Unknown 逐字保留原始配置。
         var catalog = new WorkflowNodeCatalog().RegisterImageNodes();
         var store = new DP.WorkFlow.Persistence.Json.WorkflowDocumentJsonStore(catalog);
         const string json = """
         {
-          "SchemaVersion": 4,
-          "Name": "旧采集流程",
+          "SchemaVersion": 5,
+          "Name": "采集流程",
           "EntryNodeId": "capture",
           "Nodes": [
             {
@@ -325,12 +323,11 @@ public sealed class VisionAcquisitionNodeTests
         var unknown = Assert.IsType<DP.WorkFlow.Persistence.Json.UnknownWorkflowNodeModel>(node);
 
         Assert.Equal("Vision.CaptureFrame", unknown.NodeType);
-        // 原始字段一个都不能丢：不迁移、不解释、不猜测。
         Assert.Equal("GigEVision2|cam-top", unknown.RawConfig.GetProperty("CameraId").GetString());
         Assert.Equal(1200, unknown.RawConfig.GetProperty("Exposure").GetDouble());
         Assert.Equal(0, unknown.RawConfig.GetProperty("Gain").GetDouble());
         Assert.True(unknown.RawConfig.GetProperty("Triggered").GetBoolean());
-        Assert.Contains(loaded.Migration.Warnings, warning => warning.Contains("Vision.CaptureFrame"));
+        Assert.Contains(loaded.Warnings, warning => warning.Contains("Vision.CaptureFrame"));
     }
 
     private sealed class Rig : IDisposable

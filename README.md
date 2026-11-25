@@ -95,7 +95,7 @@ powershell -ExecutionPolicy Bypass -File tools/Test-DPWorkFlow.ps1 -Configuratio
 - 编译期子画布、隔离子 Context、父子 Pause/Hold/取消传播及嵌套快照；
 - Block 子文档默认变量隔离，仅通过显式输入/输出映射交换数据；
 - InvariantCulture 数值比较、Ordinal 字符串比较及安全 Like；
-- Schema 4 JSON、旧 Schema 1/2/3 显式迁移和未知节点保留；
+- Schema 5 JSON（只读写当前版本）和未知节点保留；
 - 覆盖 Core、Runtime、节点、持久化、视觉与双 UI 的 xUnit 回归测试。
 
 后续改造顺序和已冻结范围见 [渐进重构路线](docs/refactoring-roadmap.md)。

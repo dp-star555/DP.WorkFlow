@@ -29,9 +29,6 @@ public sealed class WorkflowDocumentWorkspace : IDisposable
     /// <summary>获取当前文档是否包含尚未保存的修改。</summary>
     public bool IsDirty { get; private set; }
 
-    /// <summary>获取最近一次打开旧格式文档时生成的迁移报告。</summary>
-    public WorkflowMigrationReport? LastMigrationReport { get; private set; }
-
     /// <summary>获取按最近使用时间倒序排列的文件路径快照。</summary>
     public IReadOnlyList<string> RecentFiles => _recentFiles.ToArray();
 
@@ -55,11 +52,11 @@ public sealed class WorkflowDocumentWorkspace : IDisposable
         start.Title = descriptor.DisplayName ?? "Start";
         var document = new WorkflowDocument { Name = name, EntryNodeId = start.Id };
         document.Nodes.Add(new WorkflowCanvasNode { Node = start, X = 80, Y = 80 });
-        SetDocument(new WorkflowDesignerNavigator(document, _catalog), null, null, true);
+        SetDocument(new WorkflowDesignerNavigator(document, _catalog), null, true);
         return _navigator!;
     }
 
-    /// <summary>打开当前或旧版 JSON 文档。</summary>
+    /// <summary>打开 JSON 流程文档。</summary>
     /// <param name="filePath">工作流文档文件路径。</param>
     /// <param name="startNodeId">工作流开始节点标识。</param>
     public WorkflowDesignerNavigator Open(string filePath, string? startNodeId = null)
@@ -74,7 +71,6 @@ public sealed class WorkflowDocumentWorkspace : IDisposable
         SetDocument(
             new WorkflowDesignerNavigator(loaded.Document, _catalog),
             fullPath,
-            loaded.Migration,
             false);
         AddRecentFile(fullPath);
         return _navigator!;
@@ -120,18 +116,15 @@ public sealed class WorkflowDocumentWorkspace : IDisposable
     /// <summary>替换当前文档、导航器及文件元数据。</summary>
     /// <param name="navigator">要绑定的设计器导航器。</param>
     /// <param name="filePath">工作流文档文件路径。</param>
-    /// <param name="migrationReport">文档反序列化时生成的迁移报告。</param>
     /// <param name="dirty">新的文档未保存状态。</param>
     private void SetDocument(
         WorkflowDesignerNavigator navigator,
         string? filePath,
-        WorkflowMigrationReport? migrationReport,
         bool dirty)
     {
         DetachNavigator();
         _navigator = navigator;
         CurrentFilePath = filePath;
-        LastMigrationReport = migrationReport;
         _navigator.CurrentChanged += OnNavigatorChanged;
         AttachSession(_navigator.CurrentSession);
         SetDirty(dirty);

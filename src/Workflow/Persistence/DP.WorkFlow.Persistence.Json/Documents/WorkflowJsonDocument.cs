@@ -11,7 +11,7 @@ internal sealed class WorkflowJsonDocument
 
     public string EntryNodeId { get; set; } = string.Empty;
 
-    // Schema 5 起根文档写出公共数据清单（子画布不写）；旧文件没有该字段，打开时按节点推断。
+    // 根文档写出公共数据清单（子画布不写）。
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<WorkflowJsonPublicData>? PublicData { get; set; }
 
@@ -70,9 +70,6 @@ internal sealed class WorkflowJsonNode
     public JsonElement Config { get; set; }
 
     public WorkflowJsonDocument? SubDocument { get; set; }
-
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public WorkflowJsonDocument? SubCanvas { get; set; }
 }
 
 internal sealed class WorkflowJsonConnection
@@ -94,7 +91,7 @@ internal sealed class WorkflowJsonConnection
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Note { get; set; }
 
-    // 旧文件没有该字段，按启用读入；只在停用时写出，保持旧文件格式不变。
+    // 只在停用时写出。
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool? Disabled { get; set; }
 

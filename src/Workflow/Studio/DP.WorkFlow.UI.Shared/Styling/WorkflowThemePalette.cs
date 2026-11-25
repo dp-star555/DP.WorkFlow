@@ -88,13 +88,9 @@ public sealed record WorkflowThemePalette(string Id, string Name, string English
     public static IReadOnlyList<WorkflowThemePalette> BuiltIn { get; } = new[] { Blue, Night, Mint, Warm, Orange };
 
     /// <summary>按标识查找内置主题（不区分大小写）；找不到时返回默认主题。</summary>
-    /// <param name="id">主题标识；兼容旧写法 "Light" / "Dark"。</param>
-    public static WorkflowThemePalette Resolve(string? id)
-    {
-        if (string.Equals(id, "Light", StringComparison.OrdinalIgnoreCase)) id = Blue.Id;
-        if (string.Equals(id, "Dark", StringComparison.OrdinalIgnoreCase)) id = Night.Id;
-        return BuiltIn.FirstOrDefault(theme => string.Equals(theme.Id, id, StringComparison.OrdinalIgnoreCase)) ?? Blue;
-    }
+    /// <param name="id">主题标识。</param>
+    public static WorkflowThemePalette Resolve(string? id) =>
+        BuiltIn.FirstOrDefault(theme => string.Equals(theme.Id, id, StringComparison.OrdinalIgnoreCase)) ?? Blue;
 
     /// <summary>显示顺序中的下一个主题（循环）。</summary>
     /// <param name="current">当前主题。</param>

@@ -20,7 +20,7 @@
 | `DP.WorkFlow.Nodes.Standard` | Start、Action、Decision、并行等标准节点 | 否 |
 | `DP.WorkFlow.Nodes.Composite` | Block 子流程节点 | 否 |
 | `DP.WorkFlow.Nodes.Process` | 产品流、工站、机器人和异常恢复节点 | 否 |
-| `DP.WorkFlow.Persistence.Json` | Schema 4 Document JSON 和旧版迁移 | 否 |
+| `DP.WorkFlow.Persistence.Json` | Schema 5 Document JSON | 否 |
 | `DP.WorkFlow.UI.Shared` | 设计会话、导航、诊断、文档工作区和监视模型 | 否 |
 | `DP.WorkFlow.UI.WinForms` | 原生 WinForms 工作台 | WinForms |
 | `DP.WorkFlow.UI.Wpf` | 原生 WPF 工作台 | WPF |
@@ -403,7 +403,7 @@ store.SaveToFile(document, @"D:\Workflows\Clamp.json");
 var loaded = store.LoadFromFile(@"D:\Workflows\Clamp.json");
 
 WorkflowDocument restored = loaded.Document;
-WorkflowMigrationReport migration = loaded.Migration;
+IReadOnlyList<string> warnings = loaded.Warnings; // 例如未注册的节点类型
 ```
 
 也可使用字符串：
@@ -413,15 +413,7 @@ string json = store.Serialize(document);
 WorkflowLoadResult loaded = store.Deserialize(json);
 ```
 
-保存采用临时文件加原子替换。当前 Schema 为 4，显式保存根入口和子文档；Schema 1/2/3 会迁移，高于当前版本的文档会被拒绝。
-
-迁移后应：
-
-1. 展示 `WorkflowMigrationReport`；
-2. 检查迁移警告；
-3. 执行编译诊断；
-4. 由用户确认后另存为 Schema 4；
-5. 在迁移验证完成前保留旧文件以便回退。
+保存采用临时文件加原子替换。只读写当前 Schema（5），其他版本直接拒绝；不做旧文档迁移。未注册的节点类型作为 Unknown 节点原样保留，并写进 `Warnings`。
 
 ### 9.2 使用文档工作区
 
@@ -433,7 +425,6 @@ workspace.SaveAs(@"D:\Workflows\NewWorkflow.json");
 
 navigator = workspace.Open(@"D:\Workflows\Clamp.json");
 Console.WriteLine(workspace.IsDirty);
-Console.WriteLine(workspace.LastMigrationReport);
 ```
 
 工作区提供：

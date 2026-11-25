@@ -1,13 +1,9 @@
-using System.ComponentModel;
-using System.Globalization;
-using System.Reflection;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 
 namespace DP.WorkFlow.Persistence.Json;
 
 /// <summary>
-/// 提供 Schema 5 工作流文档持久化以及 Schema 1～4 的显式迁移。
+/// 提供 Schema 5 工作流文档持久化；只读写当前版本。
 /// </summary>
 public sealed class WorkflowDocumentJsonStore
 {
@@ -34,10 +30,7 @@ public sealed class WorkflowDocumentJsonStore
     {
         Guard.NotNull(document);
         ValidateEntry(document);
-        var root = CreateDocument(
-            document,
-            new HashSet<WorkflowDocument>(ReferenceEqualityComparer.Instance),
-            allowEntryInference: false);
+        var root = CreateDocument(document, new HashSet<WorkflowDocument>(ReferenceEqualityComparer.Instance));
         root.PublicData = document.PublicData
             .Select(item => new WorkflowJsonPublicData
             {
@@ -53,7 +46,7 @@ public sealed class WorkflowDocumentJsonStore
         return JsonSerializer.Serialize(root, _options);
     }
 
-    /// <summary>加载当前或旧版流程 JSON，并返回迁移报告。</summary>
+    /// <summary>加载当前版本流程 JSON，并返回加载报告（例如插件未加载的节点）。</summary>
     public WorkflowLoadResult Deserialize(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -62,11 +55,16 @@ public sealed class WorkflowDocumentJsonStore
         using var parsed = JsonDocument.Parse(json);
         var schemaVersion = parsed.RootElement.TryGetProperty("SchemaVersion", out var versionElement)
             ? versionElement.GetInt32()
-            : 1;
+            : 0;
+        if (schemaVersion != CurrentSchemaVersion)
+            throw new NotSupportedException($"流程文档版本 {schemaVersion} 不受支持，只支持版本 {CurrentSchemaVersion}。");
 
-        return schemaVersion >= 3
-            ? ReadCurrent(json, schemaVersion)
-            : ReadLegacy(json, schemaVersion);
+        var document = JsonSerializer.Deserialize<WorkflowJsonDocument>(json, _options)
+            ?? throw new InvalidOperationException("流程 JSON 反序列化失败。");
+        var warnings = new List<string>();
+        var workflowDocument = ReadDocument(document, warnings);
+        ReadPublicData(document, workflowDocument);
+        return new WorkflowLoadResult(workflowDocument, warnings);
     }
 
     /// <summary>以原子替换方式保存正式工作流文档。</summary>
@@ -83,7 +81,7 @@ public sealed class WorkflowDocumentJsonStore
         Polyfill.MoveFile(temporaryPath, fullPath, true);
     }
 
-    /// <summary>从文件加载流程，并保留迁移报告。</summary>
+    /// <summary>从文件加载流程，并保留加载报告。</summary>
     public WorkflowLoadResult LoadFromFile(string filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath))
@@ -91,29 +89,8 @@ public sealed class WorkflowDocumentJsonStore
         return Deserialize(File.ReadAllText(filePath));
     }
 
-    private WorkflowLoadResult ReadCurrent(string json, int schemaVersion)
-    {
-        if (schemaVersion > CurrentSchemaVersion)
-            throw new NotSupportedException($"流程文档版本 {schemaVersion} 高于当前支持版本 {CurrentSchemaVersion}。");
-
-        var document = JsonSerializer.Deserialize<WorkflowJsonDocument>(json, _options)
-            ?? throw new InvalidOperationException("流程 JSON 反序列化失败。");
-        var report = CreateReport(schemaVersion);
-        var workflowDocument = ReadDocument(document, report, schemaVersion);
-        ReadPublicData(document, workflowDocument, report, schemaVersion);
-        if (schemaVersion < CurrentSchemaVersion)
-            report.AddWarning(schemaVersion < 4
-                ? $"Schema {schemaVersion} 已迁移到 Schema {CurrentSchemaVersion}，根入口已写入正式文档语义。"
-                : $"Schema {schemaVersion} 已迁移到 Schema {CurrentSchemaVersion}。");
-        return new WorkflowLoadResult(workflowDocument, report);
-    }
-
-    /// <summary>读入根文档的公共数据清单；Schema 5 之前的文件没有清单，按节点的使用推断。</summary>
-    private static void ReadPublicData(
-        WorkflowJsonDocument source,
-        WorkflowDocument target,
-        WorkflowMigrationReport report,
-        int schemaVersion)
+    /// <summary>读入根文档的公共数据清单。</summary>
+    private static void ReadPublicData(WorkflowJsonDocument source, WorkflowDocument target)
     {
         foreach (var item in source.PublicData ?? new List<WorkflowJsonPublicData>())
         {
@@ -126,128 +103,9 @@ public sealed class WorkflowDocumentJsonStore
                 item.DisplayName,
                 item.ResetOnRecovery));
         }
-        if (schemaVersion >= 5)
-            return;
-        var added = WorkflowPublicDataManifest.AddMissing(target);
-        if (added.Count > 0)
-            report.AddWarning($"已按节点的使用生成公共数据清单：{string.Join("、", added.Select(item => $"{item.Key}（{item.Describe()}）"))}。");
     }
 
-    private WorkflowLoadResult ReadLegacy(string json, int schemaVersion)
-    {
-        var legacy = JsonSerializer.Deserialize<LegacyWorkflowDocument>(json, _options)
-            ?? throw new InvalidOperationException("旧版流程 JSON 反序列化失败。");
-        var report = CreateReport(schemaVersion);
-        var workflowDocument = new WorkflowDocument { Name = legacy.Name ?? string.Empty };
-        var canvas = workflowDocument;
-
-        foreach (var source in legacy.Nodes)
-        {
-            var nodeType = source.NodeKey?.Trim();
-            if (string.IsNullOrWhiteSpace(nodeType))
-                throw new InvalidOperationException($"旧版节点 {source.Id} 缺少 NodeKey。");
-            var originalNodeType = nodeType;
-            nodeType = NormalizeLegacyNodeType(nodeType);
-            if (!string.Equals(originalNodeType, nodeType, StringComparison.Ordinal))
-                report.AddWarning($"节点 {source.Id} 的旧类型 {originalNodeType} 已迁移为 {nodeType}。");
-            if (!_catalog.TryGet(nodeType, out var descriptor))
-                throw new NotSupportedException($"旧版节点 {source.Id} 的类型 {nodeType} 尚未注册，无法解释字符串属性。");
-
-            var node = descriptor!.Factory();
-            ApplyLegacyProperties(node, source.Properties, report);
-            node.Id = source.Id ?? node.Id;
-            if (string.IsNullOrWhiteSpace(node.Title))
-                node.Title = node.Id;
-
-            canvas.Nodes.Add(new WorkflowCanvasNode
-            {
-                Node = node,
-                X = ReadLegacyDouble(source.Properties, "X"),
-                Y = ReadLegacyDouble(source.Properties, "Y"),
-                Width = ReadLegacyDouble(source.Properties, "Width", 180),
-                Height = ReadLegacyDouble(source.Properties, "Height", 60)
-            });
-        }
-
-        foreach (var source in legacy.Connections)
-        {
-            var connection = new WorkflowConnectionModel
-            {
-                FromNodeId = source.FromNodeId ?? string.Empty,
-                FromPort = ConvertLegacyLabelToPort(source.Label),
-                ToNodeId = source.ToNodeId ?? string.Empty,
-                ToPort = WorkflowPorts.Input
-            };
-            foreach (var point in source.Waypoints)
-                connection.Waypoints.Add(new WorkflowPoint(point.X, point.Y));
-            canvas.Connections.Add(connection);
-        }
-
-        workflowDocument.EntryNodeId = ResolveCompatibilityEntry(workflowDocument);
-        ReadPublicData(new WorkflowJsonDocument(), workflowDocument, report, schemaVersion);
-        report.AddWarning($"旧版 Schema {schemaVersion} 已迁移到 Schema {CurrentSchemaVersion}；保存前请检查分支端口和节点配置。");
-        return new WorkflowLoadResult(workflowDocument, report);
-    }
-
-    private void ApplyLegacyProperties(
-        IWorkflowNodeModel node,
-        IReadOnlyDictionary<string, string?> properties,
-        WorkflowMigrationReport report)
-    {
-        var modelType = node.GetType();
-        foreach (var pair in properties)
-        {
-            var property = modelType.GetProperty(pair.Key, BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
-            if (property is null && pair.Key.EndsWith("BindingKey", StringComparison.OrdinalIgnoreCase))
-            {
-                var migratedName = pair.Key[..^3];
-                property = modelType.GetProperty(migratedName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
-            }
-            if (property is null || !property.CanWrite || property.GetIndexParameters().Length != 0)
-            {
-                if (pair.Key is not ("X" or "Y" or "Width" or "Height" or "NodeType"))
-                    report.AddWarning($"节点 {node.Id}/{node.NodeType} 的旧属性 {pair.Key} 无法映射，已忽略。");
-                continue;
-            }
-
-            try
-            {
-                property.SetValue(node, ConvertLegacyValue(pair.Value, property.PropertyType));
-            }
-            catch (Exception exception) when (exception is FormatException or JsonException or NotSupportedException or ArgumentException)
-            {
-                report.AddWarning($"节点 {node.Id}/{node.NodeType} 的属性 {pair.Key} 迁移失败：{exception.Message}");
-            }
-        }
-    }
-
-    private object? ConvertLegacyValue(string? raw, Type targetType)
-    {
-        var nullableType = Nullable.GetUnderlyingType(targetType);
-        var coreType = nullableType ?? targetType;
-        if (raw is null)
-            return nullableType is not null || !coreType.IsValueType ? null : Activator.CreateInstance(coreType);
-        if (coreType == typeof(string))
-            return raw;
-        if (coreType.IsGenericType && coreType.GetGenericTypeDefinition() == typeof(WorkflowInput<>))
-        {
-            if (!WorkflowBindingKey.TryParse(raw, out var binding))
-                throw new FormatException($"旧绑定键 '{raw}' 不是 nodeId|memberPath 格式。");
-            return coreType.GetMethod("FromBinding", BindingFlags.Public | BindingFlags.Static)!.Invoke(null, new object[] { binding });
-        }
-        if (coreType.IsEnum)
-            return Enum.Parse(coreType, raw, true);
-
-        var converter = TypeDescriptor.GetConverter(coreType);
-        if (converter.CanConvertFrom(typeof(string)))
-            return converter.ConvertFrom(null, CultureInfo.InvariantCulture, raw);
-        return JsonSerializer.Deserialize(raw, targetType, _options);
-    }
-
-    private WorkflowJsonDocument CreateDocument(
-        WorkflowDocument workflowDocument,
-        HashSet<WorkflowDocument> ancestors,
-        bool allowEntryInference)
+    private WorkflowJsonDocument CreateDocument(WorkflowDocument workflowDocument, HashSet<WorkflowDocument> ancestors)
     {
         if (!ancestors.Add(workflowDocument))
             throw new InvalidOperationException("检测到子文档循环引用，无法序列化复合流程。");
@@ -279,10 +137,7 @@ public sealed class WorkflowDocumentJsonStore
                     ? unknownNode.RawConfig.Clone()
                     : JsonSerializer.SerializeToElement(node, descriptor!.ModelType, _options),
                 SubDocument = node is IWorkflowSubDocumentNode composite
-                    ? CreateChildDocument(
-                        composite,
-                        new HashSet<WorkflowDocument>(ancestors, ReferenceEqualityComparer.Instance),
-                        allowEntryInference)
+                    ? CreateChildDocument(composite, new HashSet<WorkflowDocument>(ancestors, ReferenceEqualityComparer.Instance))
                     : null
             });
         }
@@ -307,48 +162,36 @@ public sealed class WorkflowDocumentJsonStore
         return document;
     }
 
-    private WorkflowDocument ReadDocument(
-        WorkflowJsonDocument document,
-        WorkflowMigrationReport report,
-        int sourceSchemaVersion)
+    private WorkflowDocument ReadDocument(WorkflowJsonDocument document, List<string> warnings)
     {
         var workflowDocument = new WorkflowDocument { Name = document.Name };
         var canvas = workflowDocument;
         foreach (var source in document.Nodes)
         {
             IWorkflowNodeModel node;
-            var nodeType = NormalizeLegacyNodeType(source.NodeType);
-            if (!string.Equals(nodeType, source.NodeType, StringComparison.Ordinal))
-                report.AddWarning($"节点 {source.Id} 的旧类型 {source.NodeType} 已迁移为 {nodeType}。");
+            var nodeType = source.NodeType;
             if (_catalog.TryGet(nodeType, out var descriptor))
             {
                 var knownDescriptor = descriptor!;
-                if (sourceSchemaVersion >= CurrentSchemaVersion && source.NodeVersion != knownDescriptor.NodeVersion)
+                if (source.NodeVersion != knownDescriptor.NodeVersion)
                     throw new NotSupportedException($"节点 {source.Id}/{source.NodeType} 的版本必须为 {knownDescriptor.NodeVersion}，实际为 {source.NodeVersion}。");
-                if (sourceSchemaVersion < CurrentSchemaVersion && source.NodeVersion > knownDescriptor.NodeVersion)
-                    throw new NotSupportedException($"节点 {source.Id}/{source.NodeType} 的版本 {source.NodeVersion} 高于当前版本 {knownDescriptor.NodeVersion}。");
-                var normalizedConfig = NormalizeLegacyBindingInputs(source.Config, knownDescriptor.ModelType, source.Id, nodeType, report);
-                node = (IWorkflowNodeModel?)JsonSerializer.Deserialize(normalizedConfig, knownDescriptor.ModelType, _options)
+                node = (IWorkflowNodeModel?)JsonSerializer.Deserialize(source.Config, knownDescriptor.ModelType, _options)
                     ?? throw new InvalidOperationException($"节点配置反序列化失败：{source.Id}/{source.NodeType}。");
             }
             else
             {
                 node = new UnknownWorkflowNodeModel(nodeType, source.NodeVersion, source.Config);
-                report.AddWarning($"节点 {source.Id} 的类型 {nodeType} 未注册，已作为 Unknown 节点保留。");
+                warnings.Add($"节点 {source.Id} 的类型 {nodeType} 未注册，已作为 Unknown 节点保留。");
             }
 
             node.Id = source.Id;
             node.Title = source.Title;
-            var serializedChildDocument = source.SubDocument ?? source.SubCanvas;
-            if (serializedChildDocument is not null)
+            if (source.SubDocument is not null)
             {
                 if (node is IWorkflowSubDocumentNode composite)
-                {
-                    var childDocument = ReadDocument(serializedChildDocument, report, sourceSchemaVersion);
-                    composite.SubDocument = childDocument;
-                }
+                    composite.SubDocument = ReadDocument(source.SubDocument, warnings);
                 else
-                    report.AddWarning($"节点 {source.Id}/{source.NodeType} 带有子画布，但节点类型不支持子画布，已忽略。");
+                    warnings.Add($"节点 {source.Id}/{source.NodeType} 带有子画布，但节点类型不支持子画布，已忽略。");
             }
             var canvasNode = new WorkflowCanvasNode
             {
@@ -367,23 +210,14 @@ public sealed class WorkflowDocumentJsonStore
             canvas.Nodes.Add(canvasNode);
         }
         AppendConnections(canvas, document.Connections);
-        workflowDocument.EntryNodeId = ResolveEntryNodeId(document.EntryNodeId, canvas, sourceSchemaVersion, report);
+        workflowDocument.EntryNodeId = ResolveEntryNodeId(document.EntryNodeId, canvas);
         return workflowDocument;
     }
 
-    private WorkflowJsonDocument CreateChildDocument(
-        IWorkflowSubDocumentNode composite,
-        HashSet<WorkflowDocument> ancestors,
-        bool allowEntryInference)
+    private WorkflowJsonDocument CreateChildDocument(IWorkflowSubDocumentNode composite, HashSet<WorkflowDocument> ancestors)
     {
-        var childDocument = composite.SubDocument;
-        if (!allowEntryInference)
-            ValidateEntry(childDocument);
-        var serialized = CreateDocument(childDocument, ancestors, allowEntryInference);
-        serialized.EntryNodeId = !string.IsNullOrWhiteSpace(childDocument.EntryNodeId)
-            ? childDocument.EntryNodeId
-            : ResolveCompatibilityEntry(childDocument);
-        return serialized;
+        ValidateEntry(composite.SubDocument);
+        return CreateDocument(composite.SubDocument, ancestors);
     }
 
     private static void ValidateEntry(WorkflowDocument document)
@@ -394,148 +228,14 @@ public sealed class WorkflowDocumentJsonStore
             throw new InvalidOperationException($"工作流入口节点不存在：{document.EntryNodeId}。");
     }
 
-    private static string ResolveCompatibilityEntry(WorkflowDocument document)
+    private static string ResolveEntryNodeId(string persistedEntryNodeId, WorkflowDocument canvas)
     {
-        if (!string.IsNullOrWhiteSpace(document.EntryNodeId)
-            && document.Graph.Nodes.Any(node => string.Equals(node.Id, document.EntryNodeId, StringComparison.Ordinal)))
-        {
-            return document.EntryNodeId;
-        }
-        var starts = document.Graph.Nodes
-            .Where(node => string.Equals(node.NodeType, "Start", StringComparison.Ordinal))
-            .Select(node => node.Id)
-            .ToArray();
-        if (starts.Length == 1)
-            return starts[0];
-        return document.Graph.Nodes.FirstOrDefault()?.Id
-            ?? throw new InvalidOperationException("空工作流文档无法推断入口节点。");
+        if (string.IsNullOrWhiteSpace(persistedEntryNodeId))
+            throw new InvalidOperationException("工作流文档缺少 EntryNodeId。");
+        if (!canvas.Nodes.Any(item => string.Equals(item.Node.Id, persistedEntryNodeId, StringComparison.Ordinal)))
+            throw new InvalidOperationException($"工作流入口节点不存在：{persistedEntryNodeId}。");
+        return persistedEntryNodeId;
     }
-
-    private static string ResolveEntryNodeId(
-        string persistedEntryNodeId,
-        WorkflowDocument canvas,
-        int sourceSchemaVersion,
-        WorkflowMigrationReport report)
-    {
-        var nodeIds = canvas.Nodes.Select(item => item.Node.Id).ToHashSet(StringComparer.Ordinal);
-        if (!string.IsNullOrWhiteSpace(persistedEntryNodeId))
-        {
-            if (!nodeIds.Contains(persistedEntryNodeId))
-                throw new InvalidOperationException($"工作流入口节点不存在：{persistedEntryNodeId}。");
-            return persistedEntryNodeId;
-        }
-        if (sourceSchemaVersion >= CurrentSchemaVersion)
-            throw new InvalidOperationException("Schema 4 工作流文档缺少 EntryNodeId。");
-
-        var starts = canvas.Nodes
-            .Where(item => string.Equals(item.Node.NodeType, "Start", StringComparison.Ordinal))
-            .Select(item => item.Node.Id)
-            .ToArray();
-        var inferred = starts.Length == 1
-            ? starts[0]
-            : canvas.Nodes.FirstOrDefault()?.Node.Id
-              ?? throw new InvalidOperationException("空工作流文档无法推断入口节点。");
-        report.AddWarning($"旧文档缺少 EntryNodeId，已推断为 {inferred}。");
-        return inferred;
-    }
-
-    private static JsonElement NormalizeLegacyBindingInputs(JsonElement config, Type modelType, string nodeId, string nodeType, WorkflowMigrationReport report)
-    {
-        if (config.ValueKind != JsonValueKind.Object) return config;
-        var root = JsonNode.Parse(config.GetRawText())?.AsObject();
-        if (root is null) return config;
-        var changed = false;
-        changed |= MergeLegacyValueInputs(root, modelType, nodeId, nodeType, report);
-        foreach (var pair in root.ToArray())
-        {
-            if (!pair.Key.EndsWith("BindingKey", StringComparison.OrdinalIgnoreCase) || pair.Value is null) continue;
-            var targetName = pair.Key[..^3];
-            var target = modelType.GetProperty(targetName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
-            if (target is null || !target.PropertyType.IsGenericType || target.PropertyType.GetGenericTypeDefinition() != typeof(WorkflowInput<>)) continue;
-            var raw = pair.Value.GetValue<string?>();
-            if (string.IsNullOrWhiteSpace(raw) || !WorkflowBindingKey.TryParse(raw, out _)) continue;
-            root[target.Name] = new JsonObject
-            {
-                [nameof(WorkflowInput<object>.Source)] = nameof(WorkflowValueSource.Binding),
-                [nameof(WorkflowInput<object>.Binding)] = raw
-            };
-            root.Remove(pair.Key);
-            changed = true;
-            report.AddWarning($"节点 {nodeId}/{nodeType} 的旧属性 {pair.Key} 已迁移为 {target.Name}。");
-        }
-        return changed ? JsonSerializer.SerializeToElement(root) : config;
-    }
-
-    /// <summary>
-    /// R2-d：队列、数值、类型转换节点旧的"三件套"输入（来源 + 固定值文本 + 绑定值）合并为一个 <c>WorkflowInput&lt;string&gt;</c>。
-    /// 按属性名识别，与文件版本无关：来源为绑定且有绑定键时转为绑定，否则转为固定文本。
-    /// </summary>
-    private static bool MergeLegacyValueInputs(JsonObject root, Type modelType, string nodeId, string nodeType, WorkflowMigrationReport report)
-    {
-        var changed = false;
-        foreach (var (source, literal, binding, target) in new[]
-                 {
-                     ("ValueSource", "LiteralValue", "BindingValue", "Value"),
-                     ("CompareValueSource", "CompareLiteralValue", "CompareBinding", "CompareValue")
-                 })
-        {
-            if (!root.ContainsKey(source) && !root.ContainsKey(literal) && !root.ContainsKey(binding))
-                continue;
-            var property = modelType.GetProperty(target, BindingFlags.Instance | BindingFlags.Public);
-            if (property?.PropertyType != typeof(WorkflowInput<string>) || root.ContainsKey(target))
-                continue;
-            var useBinding = root[source] is JsonValue sourceValue
-                && (sourceValue.TryGetValue<int>(out var number) ? number == 1
-                    : sourceValue.TryGetValue<string>(out var name) && string.Equals(name, "Binding", StringComparison.OrdinalIgnoreCase));
-            var bindingKey = root[binding] is JsonObject bindingObject
-                && bindingObject[nameof(WorkflowInput<object>.Binding)] is JsonValue keyValue
-                && keyValue.TryGetValue<string>(out var key) && !string.IsNullOrWhiteSpace(key)
-                    ? key
-                    : null;
-            root[target] = useBinding && bindingKey is not null
-                ? new JsonObject
-                {
-                    [nameof(WorkflowInput<object>.Source)] = (int)WorkflowValueSource.Binding,
-                    [nameof(WorkflowInput<object>.Binding)] = bindingKey
-                }
-                : new JsonObject
-                {
-                    [nameof(WorkflowInput<object>.Source)] = (int)WorkflowValueSource.Literal,
-                    [nameof(WorkflowInput<object>.LiteralValue)] = root[literal] is JsonValue text && text.TryGetValue<string>(out var literalText) ? literalText : string.Empty
-                };
-            root.Remove(source);
-            root.Remove(literal);
-            root.Remove(binding);
-            changed = true;
-            report.AddWarning($"节点 {nodeId}/{nodeType} 的 {source} / {literal} / {binding} 已合并为 {target}。");
-        }
-        return changed;
-    }
-
-    private static string NormalizeLegacyNodeType(string nodeType) => nodeType switch
-    {
-        // 继续原操作和重做本节点合并为就地恢复（PENG 2026-11-25）。
-        "RetryCurrentNode" or "WarnRetryCurrentNode" or "WarnContinueOperation" => "WarnRecoverInPlace",
-        _ => nodeType
-    };
-
-    private WorkflowMigrationReport CreateReport(int sourceVersion) => new()
-    {
-        SourceSchemaVersion = sourceVersion,
-        TargetSchemaVersion = CurrentSchemaVersion
-    };
-
-    private static string ConvertLegacyLabelToPort(string? label) =>
-        string.IsNullOrWhiteSpace(label) ? WorkflowPorts.Success : label.Trim();
-
-    private static double ReadLegacyDouble(
-        IReadOnlyDictionary<string, string?> properties,
-        string key,
-        double defaultValue = 0) =>
-        properties.TryGetValue(key, out var raw)
-        && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : defaultValue;
 
     private static void AppendConnections(WorkflowDocument canvas, IEnumerable<WorkflowJsonConnection> sources)
     {
