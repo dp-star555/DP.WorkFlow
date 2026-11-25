@@ -13,7 +13,12 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PackageId>DP.WorkFlow.ScriptEngine.WinForms</PackageId>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- 作为包被间接引用时补上 Scintilla 原生库的复制（见文件内说明）。 -->
+    <None Include="buildTransitive\DP.WorkFlow.ScriptEngine.WinForms.targets" Pack="true" PackagePath="buildTransitive\" />
+  </ItemGroup>
   <PropertyGroup Condition="'$(TargetFramework)' == 'net48'">
     <ScintillaPackageVersion>$([System.IO.Path]::GetFileName('$(PkgScintilla_NET)'))</ScintillaPackageVersion>
   </PropertyGroup>

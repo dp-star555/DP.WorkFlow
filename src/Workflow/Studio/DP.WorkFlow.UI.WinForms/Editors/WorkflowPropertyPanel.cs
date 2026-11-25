@@ -14,6 +14,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
 {
     private WorkflowDesignerSession? _session;
     private WorkflowPropertyChoiceProvider? _choiceProvider;
+    private IServiceProvider? _services;
     private Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>>? _additionalProperties;
 
     /// <summary>领域描述生成的附加属性；与普通属性共用提交及撤销。</summary>
@@ -49,7 +50,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         _modernGrid = new ModernPropertyGrid.WinForms.ModernPropertyGrid
         {
             Dock = DockStyle.Fill,
-            Theme = ModernTheme.Dark
+            Theme = WorkflowWinFormsTheme.Modern
         };
         _modernActions = new FlowLayoutPanel
         {
@@ -151,6 +152,18 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         }
     }
 
+    /// <summary>宿主交给流程的服务表；节点通过 <see cref="IWorkflowPropertyChoices"/> 用它提供下拉候选。</summary>
+    public IServiceProvider? Services
+    {
+        get => _services;
+        set
+        {
+            if (ReferenceEquals(_services, value)) return;
+            _services = value;
+            if (_model is not null) _model.Services = value;
+        }
+    }
+
     /// <summary>在专用脚本页面存在时隐藏参数表中的脚本正文。</summary>
     public bool HideScriptProperty
     {
@@ -174,7 +187,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         _modernSchemaKey = null;
         if (_session is not null && !string.IsNullOrWhiteSpace(_startNodeId))
         {
-            _model = new WorkflowPropertyInspectorModel(_session, _startNodeId, _choiceProvider, _additionalProperties);
+            _model = new WorkflowPropertyInspectorModel(_session, _startNodeId, _choiceProvider, _additionalProperties) { Services = _services };
             _model.Changed += OnModelChanged;
         }
         Rebuild();
@@ -574,8 +587,8 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             AllowUserToAddRows = true,
             AllowUserToDeleteRows = true,
             RowHeadersVisible = true,
-            BackgroundColor = Color.FromArgb(15, 23, 42),
-            ForeColor = Color.FromArgb(226, 232, 240)
+            BackgroundColor = WorkflowWinFormsTheme.Modern.Container,
+            ForeColor = WorkflowWinFormsTheme.Modern.Text
         };
         foreach (var column in table.Columns)
             grid.Columns.Add(column, column);
@@ -633,7 +646,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             ButtonType = bound ? ModernButtonType.Primary : ModernButtonType.Default,
             Dock = DockStyle.Fill,
             MinimumSize = new Size(0, 24),
-            Theme = ModernTheme.Dark,
+            Theme = WorkflowWinFormsTheme.Modern,
             Margin = new Padding(0, 0, 3, 0),
             AccessibleName = bound ? "来源：绑定" : "来源：固定值"
         };
@@ -736,7 +749,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         Text = text,
         Dock = DockStyle.Fill,
         MinimumSize = new Size(0, 24),
-        Theme = ModernTheme.Dark,
+        Theme = WorkflowWinFormsTheme.Modern,
         LocalizationContext = LocalizationContext,
         Margin = Padding.Empty
     };
@@ -747,7 +760,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         Dock = DockStyle.Fill,
         // ModernSelect 默认最小宽 120：单元格更窄时会伸进相邻单元格并盖住右侧控件；宽度交给所在单元格决定。
         MinimumSize = new Size(0, 24),
-        Theme = ModernTheme.Dark,
+        Theme = WorkflowWinFormsTheme.Modern,
         DropDownAnimationDuration = 0
     };
 
@@ -756,7 +769,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     {
         Text = text,
         Dock = DockStyle.Fill,
-        Theme = ModernTheme.Dark,
+        Theme = WorkflowWinFormsTheme.Modern,
         Margin = Padding.Empty
     };
 

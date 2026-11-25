@@ -14,7 +14,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     private readonly ToolStripButton _undoButton = new() { Name = "_undoButton", Text = "撤销" };
     private readonly ToolStripButton _redoButton = new() { Name = "_redoButton", Text = "重做" };
     private readonly ToolStripSeparator _editSeparator = new();
-    private readonly ToolStripLabel _breadcrumbLabel = new() { Name = "_breadcrumbLabel", ForeColor = Color.FromArgb(148, 163, 184) };
+    private readonly ToolStripLabel _breadcrumbLabel = new() { Name = "_breadcrumbLabel" };
     private readonly ToolStripSeparator _navigationSeparator = new();
     private readonly ToolStripButton _fitButton = new() { Name = "fitButton", Text = "适合画布" };
     private readonly ToolStripDropDownButton _layoutMenu = new() { Name = "layoutMenu", Text = "布局" };
@@ -23,12 +23,16 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     private readonly ToolStripButton _pauseButton = new() { Name = "_pauseButton", Text = "暂停" };
     private readonly ToolStripButton _resumeButton = new() { Name = "_resumeButton", Text = "继续" };
     private readonly ToolStripButton _stopButton = new() { Name = "_stopButton", Text = "停止" };
-    private readonly ToolStripLabel _runtimeLabel = new() { Name = "_runtimeLabel", ForeColor = Color.FromArgb(148, 163, 184), Text = "Idle" };
+    private readonly ToolStripLabel _runtimeLabel = new() { Name = "_runtimeLabel", Text = "Idle" };
+    private readonly List<(ToolStripItem Item, ModernIconKind Icon, Func<ModernTheme, Color> Color)> _icons = new();
     private readonly ModernSplitter _toolboxAndEditor = new();
     private readonly ModernSplitter _canvasAndBottom = new();
     private readonly ModernTabControl _bottomTabs = new();
     private readonly TabPage _diagnosticsPage = new() { Name = "diagnosticsPage", Text = "诊断", Padding = new Padding(6) };
     private readonly TabPage _runtimePage = new() { Name = "runtimePage", Text = "运行监视", Padding = new Padding(6) };
+    private readonly TabPage _noticesPage = new() { Name = "noticesPage", Text = "提示", Padding = new Padding(6) };
+    private readonly TabPage _publicDataPage = new() { Name = "publicDataPage", Text = "公共数据", Padding = new Padding(6) };
+    private WorkflowPublicDataManifestModel? _publicDataModel;
     private WorkflowDesignerSession? _session;
     private IWorkflowCanvasRunCommands? _runCommands;
     private bool _autoFitPending;
@@ -38,9 +42,6 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     public WorkflowCanvasWorkspaceControl()
     {
         SuspendLayout();
-        BackColor = Color.FromArgb(15, 23, 42);
-        _toolbar.BackColor = Color.FromArgb(22, 32, 49);
-        _toolbar.ForeColor = Color.FromArgb(226, 232, 240);
         _toolbar.GripStyle = ToolStripGripStyle.Hidden;
         _toolbar.Dock = DockStyle.Top;
         _toolbar.Items.AddRange(new ToolStripItem[]
@@ -53,17 +54,26 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         Designer = new WorkflowDesignerControl
         {
             AllowDrop = true,
-            BackColor = Color.FromArgb(30, 30, 30),
-            ForeColor = Color.FromArgb(226, 232, 240),
             Dock = DockStyle.Fill
         };
         Toolbox = new WorkflowToolboxControl { Dock = DockStyle.Fill };
         Diagnostics = new WorkflowDiagnosticsControl { Dock = DockStyle.Fill };
         RuntimeMonitor = new WorkflowRuntimeMonitorControl { Dock = DockStyle.Fill };
+        Notices = new WorkflowNoticesControl { Dock = DockStyle.Fill };
         _diagnosticsPage.Controls.Add(Diagnostics);
         _runtimePage.Controls.Add(RuntimeMonitor);
+        _noticesPage.Controls.Add(Notices);
+        PublicData = new WorkflowPublicDataPage { Dock = DockStyle.Fill };
+        _publicDataPage.Controls.Add(PublicData);
+        PublicData.UseActivated += (_, use) => RevealNode(use.PlanPath, use.NodeId, $"节点 {use.NodeId}");
+        PublicData.EditError += (_, message) => InteractionError?.Invoke(this, message);
         _bottomTabs.TabPages.Add(_diagnosticsPage);
         _bottomTabs.TabPages.Add(_runtimePage);
+        _bottomTabs.TabPages.Add(_noticesPage);
+        _bottomTabs.TabPages.Add(_publicDataPage);
+        Notices.CountChanged += (_, _) => _noticesPage.Text = Notices.NoticeCount == 0 ? "提示" : $"提示 ({Notices.NoticeCount})";
+        Notices.NoticeActivated += (_, notice) => RevealNotice(notice);
+        Designer.NoticesPageRequested += (_, _) => ShowNotices();
         _bottomTabs.Dock = DockStyle.Fill;
 
         // 先给出足够尺寸，避免默认 150px 宽度下设置最小尺寸、分隔位置越界。
@@ -95,14 +105,13 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         AddMenuItem(_layoutMenu, "底端对齐", ModernIconKind.AlignBottom, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Bottom));
         AddMenuItem(_layoutMenu, "水平分布", ModernIconKind.DistributeHorizontal, () => Session?.DistributeSelectedNodes(WorkflowNodeDistribution.Horizontal));
         AddMenuItem(_layoutMenu, "垂直分布", ModernIconKind.DistributeVertical, () => Session?.DistributeSelectedNodes(WorkflowNodeDistribution.Vertical));
-        var theme = ModernTheme.Dark;
-        SetIconOnly(_undoButton, ModernIconKind.Undo, theme.Text, "撤销 (Ctrl+Z)");
-        SetIconOnly(_redoButton, ModernIconKind.Redo, theme.Text, "重做 (Ctrl+Y)");
-        SetIconOnly(_fitButton, ModernIconKind.FitWindow, theme.Text, "适合画布");
-        SetIconOnly(_runButton, ModernIconKind.Play, theme.Success, "运行");
-        SetIconOnly(_pauseButton, ModernIconKind.Pause, theme.Warning, "暂停");
-        SetIconOnly(_resumeButton, ModernIconKind.Resume, theme.Success, "继续");
-        SetIconOnly(_stopButton, ModernIconKind.Stop, theme.Error, "停止");
+        SetIconOnly(_undoButton, ModernIconKind.Undo, theme => theme.Text, "撤销 (Ctrl+Z)");
+        SetIconOnly(_redoButton, ModernIconKind.Redo, theme => theme.Text, "重做 (Ctrl+Y)");
+        SetIconOnly(_fitButton, ModernIconKind.FitWindow, theme => theme.Text, "适合画布");
+        SetIconOnly(_runButton, ModernIconKind.Play, theme => theme.Success, "运行");
+        SetIconOnly(_pauseButton, ModernIconKind.Pause, theme => theme.Warning, "暂停");
+        SetIconOnly(_resumeButton, ModernIconKind.Resume, theme => theme.Success, "继续");
+        SetIconOnly(_stopButton, ModernIconKind.Stop, theme => theme.Error, "停止");
 
         _undoButton.Click += (_, _) => Session?.Undo();
         _redoButton.Click += (_, _) => Session?.Redo();
@@ -121,7 +130,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             QueueAutoFit();
         };
         UpdateCommands();
-        WorkflowWinFormsStyle.Apply(this);
+        WorkflowWinFormsTheme.Follow(this, ApplyThemeImages);
     }
 
     /// <summary>画布。</summary>
@@ -135,6 +144,22 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
 
     /// <summary>运行监视。</summary>
     public WorkflowRuntimeMonitorControl RuntimeMonitor { get; }
+
+    /// <summary>提示页：全部节点提示与画布级提示，提示板取自画布会话（运行绑定设置）。</summary>
+    public WorkflowNoticesControl Notices { get; }
+
+    /// <summary>公共数据清单页（随画布会话切换）。</summary>
+    public WorkflowPublicDataPage PublicData { get; }
+
+    /// <summary>切到公共数据页。</summary>
+    public void ShowPublicData() => _bottomTabs.SelectedTab = _publicDataPage;
+
+    /// <summary>切到提示页。</summary>
+    public void ShowNotices()
+    {
+        Notices.RefreshNotices();
+        _bottomTabs.SelectedTab = _noticesPage;
+    }
 
     /// <summary>工具栏；宿主可在最前面插入自己的条目（例如“文件”菜单）。</summary>
     public ModernToolStrip Toolbar => _toolbar;
@@ -165,6 +190,10 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             Designer.Session = value;
             Toolbox.Session = value;
             Diagnostics.Session = value;
+            Notices.Board = value?.Notices;
+            _publicDataModel?.Dispose();
+            _publicDataModel = value is null ? null : new WorkflowPublicDataManifestModel(value);
+            PublicData.Model = _publicDataModel;
             _autoFitPending = value is not null;
             QueueAutoFit();
             UpdateCommands();
@@ -239,17 +268,49 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             Toolbox.NodeTypeActivated -= OnNodeTypeActivated;
             if (_session is not null) _session.Changed -= OnSessionChanged;
             if (_runCommands is not null) _runCommands.Changed -= OnRunCommandsChanged;
+            _publicDataModel?.Dispose();
         }
         base.Dispose(disposing);
     }
 
-    private void AddMenuItem(ToolStripDropDownItem menu, string text, ModernIconKind icon, Action action) =>
-        menu.DropDownItems.Add(new ToolStripMenuItem(text, CreateIcon(icon, ModernTheme.Dark.Text), (_, _) => action()));
+    private void AddMenuItem(ToolStripDropDownItem menu, string text, ModernIconKind icon, Action action)
+    {
+        var item = new ToolStripMenuItem(text, null, (_, _) => action());
+        _icons.Add((item, icon, theme => theme.Text));
+        menu.DropDownItems.Add(item);
+    }
+
+    /// <summary>
+    /// 登记一个随主题重画图标的工具栏条目（宿主加入的“文件”菜单等也可以用）；立即按当前主题画一次。
+    /// </summary>
+    /// <param name="item">条目。</param>
+    /// <param name="icon">图标。</param>
+    /// <param name="color">从主题取图标颜色；为空时用正文色。</param>
+    public void RegisterThemedIcon(ToolStripItem item, ModernIconKind icon, Func<ModernTheme, Color>? color = null)
+    {
+        Guard.NotNull(item);
+        var pick = color ?? (theme => theme.Text);
+        _icons.Add((item, icon, pick));
+        item.Image = CreateIcon(icon, pick(WorkflowWinFormsTheme.Modern));
+    }
+
+    private void ApplyThemeImages()
+    {
+        var theme = WorkflowWinFormsTheme.Modern;
+        foreach (var (item, icon, color) in _icons)
+        {
+            var old = item.Image;
+            item.Image = CreateIcon(icon, color(theme));
+            old?.Dispose();
+        }
+        _breadcrumbLabel.ForeColor = theme.TextSecondary;
+        _runtimeLabel.ForeColor = theme.TextSecondary;
+    }
 
     /// <summary>工具栏按钮只显示图标，文字保留为提示与无障碍名称。</summary>
-    private void SetIconOnly(ToolStripItem item, ModernIconKind icon, Color color, string toolTip)
+    private void SetIconOnly(ToolStripItem item, ModernIconKind icon, Func<ModernTheme, Color> color, string toolTip)
     {
-        item.Image = CreateIcon(icon, color);
+        _icons.Add((item, icon, color));
         item.DisplayStyle = ToolStripItemDisplayStyle.Image;
         item.AccessibleName = item.Text;
         item.ToolTipText = toolTip;
@@ -285,7 +346,35 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         Session.AddNode(item.NodeType, center.X - 90, center.Y - 30);
     }
 
-    private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e) => UpdateCommands();
+    private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
+    {
+        // 提示板由运行绑定在应用快照时交给会话，所以随运行类变化同步一次。
+        if (e.Kind == WorkflowDesignerChangeKind.Runtime) Notices.Board = _session?.Notices;
+        UpdateCommands();
+    }
+
+    /// <summary>
+    /// 定位提示：本画布上的节点直接选中；子画布里的提示选中本画布上包含它的最外层复合节点（子画布以节点窗口打开）。
+    /// </summary>
+    private void RevealNotice(WorkflowNotice notice) =>
+        RevealNode(notice.PlanPath, notice.NodeId, "提示位于 " + WorkflowNoticeLocation.Describe(notice));
+
+    /// <summary>定位到画布路径下的节点；子画布里的节点选中本画布上包含它的最外层复合节点。</summary>
+    private void RevealNode(string planPath, string? nodeId, string what)
+    {
+        if (_session is not { } session) return;
+        var here = WorkflowNoticeLocation.Split(session.NoticePlanPath);
+        var there = WorkflowNoticeLocation.Split(planPath);
+        if (there.Count < here.Count || !there.Take(here.Count).SequenceEqual(here, StringComparer.Ordinal))
+        {
+            InteractionError?.Invoke(this, $"{what}，不在当前画布中。");
+            return;
+        }
+        var target = there.Count > here.Count ? there[here.Count] : nodeId;
+        if (target is null || !session.Document.Nodes.Any(node => node.Node.Id == target)) return;
+        session.SelectedNodeId = target;
+        Designer.Focus();
+    }
 
     private void OnRunCommandsChanged(object? sender, EventArgs e)
     {

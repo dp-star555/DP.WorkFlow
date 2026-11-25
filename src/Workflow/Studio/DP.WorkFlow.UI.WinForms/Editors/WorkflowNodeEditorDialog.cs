@@ -234,7 +234,7 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             panels[0].Content.Dock = DockStyle.Fill;
             return panels[0].Content;
         }
-        var tabs = new ModernUI.WinForms.ModernTabControl { Dock = DockStyle.Fill, Theme = ModernUI.WinForms.ModernTheme.Dark };
+        var tabs = new ModernUI.WinForms.ModernTabControl { Dock = DockStyle.Fill, Theme = WorkflowWinFormsTheme.Modern };
         foreach (var panel in panels)
         {
             panel.Content.Dock = DockStyle.Fill;
@@ -300,6 +300,7 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         var panel = new WorkflowPropertyPanel
         {
             ChoiceProvider = page.ChoiceProvider,
+            Services = page.Services,
             AdditionalProperties = WorkflowNodeEditorPropertyContributors.Compose(page.AdditionalProperties, Model.Pages),
             Session = page.Session,
             EntryNodeId = page.EntryNodeId,

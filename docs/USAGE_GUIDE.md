@@ -19,7 +19,6 @@
 | `DP.WorkFlow.Runtime` | Context、执行引擎、快照和 RuntimeHost | 否 |
 | `DP.WorkFlow.Nodes.Standard` | Start、Action、Decision、并行等标准节点 | 否 |
 | `DP.WorkFlow.Nodes.Composite` | Block 子流程节点 | 否 |
-| `DP.WorkFlow.Nodes.Motion` | IO、轴、气动和扫码设备节点 | 否 |
 | `DP.WorkFlow.Nodes.Process` | 产品流、工站、机器人和异常恢复节点 | 否 |
 | `DP.WorkFlow.Persistence.Json` | Schema 4 Document JSON 和旧版迁移 | 否 |
 | `DP.WorkFlow.UI.Shared` | 设计会话、导航、诊断、文档工作区和监视模型 | 否 |

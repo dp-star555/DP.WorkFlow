@@ -62,6 +62,36 @@ public sealed class WorkflowDesignerSessionTests
     }
 
     [Fact]
+    public void SessionConstruction_SizesNodesWithoutSavedSizeAndKeepsTopLeft()
+    {
+        // 文档模型不再自带默认尺寸：代码生成的节点尺寸为 0，由设计器打开时按内容决定。
+        var canvasDocument = new WorkflowDocument();
+        var node = new DelayNodeModel { Id = "Delay", Title = "等待" };
+        canvasDocument.Nodes.Add(new WorkflowCanvasNode { Node = node, X = 240, Y = 48 });
+        Assert.Equal(0, canvasDocument.Nodes[0].Width);
+
+        _ = new WorkflowDesignerSession(canvasDocument, new WorkflowNodeCatalog().RegisterStandardNodes());
+
+        var fitted = canvasDocument.Nodes[0];
+        Assert.True(fitted.Width >= WorkflowDesignerGeometry.DefaultNodeWidth);
+        Assert.Equal(WorkflowDesignerGeometry.HeaderHeight, fitted.Height);
+        Assert.Equal(240, fitted.X);
+        Assert.Equal(48, fitted.Y);
+    }
+
+    [Fact]
+    public void SessionConstruction_GivesDefaultSizeToUnknownNodesWithoutSavedSize()
+    {
+        var canvasDocument = new WorkflowDocument();
+        canvasDocument.Nodes.Add(new WorkflowCanvasNode { Node = new DelayNodeModel { Id = "Delay" } });
+
+        _ = new WorkflowDesignerSession(canvasDocument, new WorkflowNodeCatalog());
+
+        Assert.Equal(WorkflowDesignerGeometry.DefaultNodeWidth, canvasDocument.Nodes[0].Width);
+        Assert.Equal(WorkflowDesignerGeometry.DefaultNodeHeight, canvasDocument.Nodes[0].Height);
+    }
+
+    [Fact]
     public void LongNodeTitle_ExpandsNodeInsteadOfEllipsisLayout()
     {
         var model = new ActionNodeModel { Id = "Action", Title = "这是一个很长很长的节点名称" };

@@ -29,6 +29,14 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
         // 双击诊断行定位到对应节点。
         diagnosticsListView.DoubleClick += (_, _) => NavigateSelected();
         LocalizationContext = _defaultLocalizationManager.Context;
+        // 错误 / 警告行的文字颜色取自当前主题，切换主题后重建列表。
+        WorkflowWinFormsTheme.Changed += OnThemeChanged;
+        Disposed += (_, _) => WorkflowWinFormsTheme.Changed -= OnThemeChanged;
+    }
+
+    private void OnThemeChanged(object? sender, EventArgs e)
+    {
+        if (!IsDisposed) RefreshItems();
     }
 
     /// <summary>获取或设置页面使用的本地化上下文；切换不会丢失当前诊断选择。</summary>
@@ -164,8 +172,8 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
                 Tag = diagnostic,
                 ToolTipText = diagnostic.Detail ?? diagnostic.Message,
                 ForeColor = diagnostic.Severity == WorkflowValidationSeverity.Error
-                    ? Color.FromArgb(248, 113, 113)
-                    : Color.FromArgb(251, 191, 36)
+                    ? WorkflowWinFormsTheme.Modern.Error
+                    : WorkflowWinFormsTheme.Modern.Warning
             };
             item.SubItems.Add(diagnostic.Code);
             item.SubItems.Add(diagnostic.NodeId ?? string.Empty);

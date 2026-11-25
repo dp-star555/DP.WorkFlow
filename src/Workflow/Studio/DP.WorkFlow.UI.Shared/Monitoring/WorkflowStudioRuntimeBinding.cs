@@ -23,12 +23,14 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
     private readonly SynchronizationContext? _dispatchContext;
     private readonly object _snapshotSync = new();
     private readonly Timer _frameTimer;
-    private int _frameIntervalMilliseconds = DefaultFrameIntervalMilliseconds;
+    private int _frameIntervalMilliseconds = WorkflowUiRefresh.FrameIntervalMilliseconds;
+    // 没有单独设置间隔时跟随全局刷新节拍（WorkflowUiRefresh）。
+    private bool _followsUiRefresh = true;
     // 已排队但尚未在界面线程执行的一帧；同一时刻最多一帧，界面线程忙时不会越积越多。
     private bool _frameQueued;
     private long _lastPulledVersion = long.MinValue;
-    /// <summary>默认刷新间隔（毫秒），约每秒 10 帧。</summary>
-    public const int DefaultFrameIntervalMilliseconds = 100;
+    /// <summary>默认刷新间隔（毫秒），约每秒 10 帧；实际默认值跟随 <see cref="WorkflowUiRefresh.FramesPerSecond"/>。</summary>
+    public const int DefaultFrameIntervalMilliseconds = 1000 / WorkflowUiRefresh.DefaultFramesPerSecond;
     private Guid _lastAppliedRunId;
     private long _lastAppliedSequence = -1;
     private bool _disposed;
@@ -49,21 +51,36 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
         _navigator.SetRuntimeSnapshot(_host.GetSnapshot());
         _frameTimer = new Timer(static state => ((WorkflowStudioRuntimeBinding)state!).OnFrameTick(), this,
             _frameIntervalMilliseconds, _frameIntervalMilliseconds);
+        WorkflowUiRefresh.Changed += OnUiRefreshChanged;
     }
 
-    /// <summary>获取或设置检查运行状态变化的间隔（毫秒，至少 16）。</summary>
+    private void OnUiRefreshChanged(object? sender, EventArgs e)
+    {
+        if (_followsUiRefresh) SetFrameInterval(WorkflowUiRefresh.FrameIntervalMilliseconds);
+    }
+
+    /// <summary>
+    /// 获取或设置检查运行状态变化的间隔（毫秒，至少 16）。不设置时跟随 <see cref="WorkflowUiRefresh.FramesPerSecond"/>；
+    /// 设置后本绑定固定用这个间隔。
+    /// </summary>
     public int FrameIntervalMilliseconds
     {
         get => _frameIntervalMilliseconds;
         set
         {
-            var interval = Math.Max(16, value);
-            lock (_snapshotSync)
-            {
-                _frameIntervalMilliseconds = interval;
-                if (!_disposed)
-                    _frameTimer.Change(interval, interval);
-            }
+            _followsUiRefresh = false;
+            SetFrameInterval(value);
+        }
+    }
+
+    private void SetFrameInterval(int value)
+    {
+        var interval = Math.Max(16, value);
+        lock (_snapshotSync)
+        {
+            _frameIntervalMilliseconds = interval;
+            if (!_disposed)
+                _frameTimer.Change(interval, interval);
         }
     }
 
@@ -107,9 +124,13 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
     public async Task<WorkflowRunResult> RunAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        if (_host.State is not (E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused))
+        var starting = _host.State is not (E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused);
+        string? diagnosticPath = null;
+        if (starting)
         {
-            var diagnosticPath = RunTarget == WorkflowStudioRunTarget.CurrentCanvas
+            if (RunBlockedReason?.Invoke() is { Length: > 0 } blocked)
+                throw new InvalidOperationException(blocked);
+            diagnosticPath = RunTarget == WorkflowStudioRunTarget.CurrentCanvas
                 ? "$" + string.Concat(_navigator.Breadcrumbs.Skip(1).Select(b => "/" + Uri.EscapeDataString(b.ParentNodeId!))) : "$";
             RunConfiguring?.Invoke(diagnosticPath);
             if (AutoConfigureBeforeRun)
@@ -127,7 +148,10 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
             else
                 ConfigureBeforeRun?.Invoke();
         }
-        var result = await _host.RunAsync(cancellationToken);
+        var result = starting
+            ? await ThroughGate(WorkflowOperationKind.TrialRun, diagnosticPath == "$" ? null : "子画布 " + diagnosticPath,
+                () => _host.RunAsync(cancellationToken))
+            : await _host.RunAsync(cancellationToken);
         ApplySnapshot(_host.GetSnapshot());
         StateChanged?.Invoke(this, EventArgs.Empty);
         return result;
@@ -154,9 +178,13 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
     public async Task<WorkflowRunResult> RunNodeAsync(WorkflowDocument document, string nodeId, CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        var running = _host.RunNodeAsync(document, nodeId, cancellationToken);
-        StateChanged?.Invoke(this, EventArgs.Empty);
-        var result = await running;
+        if (RunBlockedReason?.Invoke() is { Length: > 0 } blocked)
+            throw new InvalidOperationException(blocked);
+        Task<WorkflowRunResult>? running = null;
+        var started = ThroughGate(WorkflowOperationKind.TrialRun, "节点 " + nodeId, () => running = _host.RunNodeAsync(document, nodeId, cancellationToken));
+        if (running is not null)
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        var result = await started;
         ApplySnapshot(_host.GetSnapshot());
         StateChanged?.Invoke(this, EventArgs.Empty);
         return result;
@@ -180,7 +208,57 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
     public void Cancel()
     {
         ThrowIfDisposed();
-        _host.Cancel();
+        if (Gate is null)
+        {
+            _host.Cancel();
+            return;
+        }
+        _ = CancelThroughGateAsync();
+    }
+
+    /// <summary>
+    /// 操作准入（宿主的鉴权和审计）：开始运行（含当前子流程、单节点）和停止都先经过它；为空时直接执行。
+    /// 暂停、继续不经过它。
+    /// </summary>
+    public IWorkflowOperationGate? Gate { get; set; }
+
+    /// <summary>经过准入时写的对象，例如流程文件名。</summary>
+    public string GateTarget { get; set; } = "设计页";
+
+    /// <summary>不能开始运行的原因（例如整线在运行、没有权限）；返回空表示可以。开始运行前调用，必须快速、无 I/O。</summary>
+    public Func<string?>? RunBlockedReason { get; set; }
+
+    /// <summary>经过准入的停止被拒绝或出错时发生，参数是消息。</summary>
+    public event EventHandler<string>? OperationFailed;
+
+    private async Task<WorkflowRunResult> ThroughGate(WorkflowOperationKind kind, string? detail, Func<Task<WorkflowRunResult>> start)
+    {
+        if (Gate is not { } gate)
+            return await start();
+        Task<WorkflowRunResult>? running = null;
+        // 准入只包住“发出运行”，不等运行结束：审计记的是谁在什么时候开始了试运行。
+        await gate.RunAsync(new WorkflowOperation(kind, GateTarget, detail), () =>
+        {
+            running = start();
+            return Task.CompletedTask;
+        });
+        return await (running ?? throw new InvalidOperationException("操作没有执行。"));
+    }
+
+    private async Task CancelThroughGateAsync()
+    {
+        try
+        {
+            await Gate!.RunAsync(new WorkflowOperation(WorkflowOperationKind.StopTrialRun, GateTarget), () =>
+            {
+                _host.Cancel();
+                return Task.CompletedTask;
+            });
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            OperationFailed?.Invoke(this, exception.Message);
+        }
     }
 
     /// <summary>
@@ -196,6 +274,8 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
         _navigator.CurrentSession.RunNodeOutputProvider = FindLatestRunOutput;
         _navigator.RootSession.Runtime = this;
         _navigator.CurrentSession.Runtime = this;
+        _navigator.RootSession.Notices = _host.Notices;
+        _navigator.CurrentSession.Notices = _host.Notices;
         _navigator.RootSession.RuntimePath = Array.Empty<string>();
         // 运行当前子画布时它就是运行的根画布；否则它位于根运行的子运行中。
         if (_navigator.Depth > 0)
@@ -227,6 +307,7 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
             _frameTimer.Dispose();
         }
         _host.StateChanged -= OnHostStateChanged;
+        WorkflowUiRefresh.Changed -= OnUiRefreshChanged;
     }
 
     /// <summary>帧计时器：状态有变化才排队一帧，没变化什么都不做。</summary>

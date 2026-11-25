@@ -239,7 +239,8 @@ public static class ReplayFlows
         var x = 0;
         foreach (var node in nodes)
         {
-            document.Nodes.Add(new WorkflowCanvasNode { Node = node, X = x, Y = 0 });
+            // 文档模型不再自带默认尺寸；样例按设计器画出的流程写明尺寸，保存出的文件与版本库中的一致。
+            document.Nodes.Add(new WorkflowCanvasNode { Node = node, X = x, Y = 0, Width = 180, Height = 60 });
             x += 220;
         }
     }

@@ -110,7 +110,7 @@ public sealed class WorkflowPropertyEditorPageProvider : IWorkflowNodeEditorPage
         yield return new WorkflowNodeEditorPageDescriptor(
             "Properties", "参数", WorkflowNodeEditorPageKind.Properties, 100,
             new WorkflowPropertyEditorPageModel(context.Session, context.EntryNodeId)
-            { ChoiceProvider = context.ChoiceProvider, AdditionalProperties = context.AdditionalProperties }, "Properties");
+            { ChoiceProvider = context.ChoiceProvider, Services = context.Services, AdditionalProperties = context.AdditionalProperties }, "Properties");
     }
 }
 

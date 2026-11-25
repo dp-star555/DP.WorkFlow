@@ -137,6 +137,51 @@ public sealed class WorkflowPluginLoaderTests
     }
 
     [Fact]
+    public void LoadModules_FindsStudioModulesInDllDroppedWithoutManifest()
+    {
+        // 节点工程的 dll 直接放进插件目录（没有 plugin.json）：设计器的专用编辑器和运行节点一样按类型自动发现。
+        var root = Path.Combine(Path.GetTempPath(), "workflow-dropped-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var sourceAssembly = typeof(WorkflowPluginLoaderTests).Assembly.Location;
+            File.Copy(sourceAssembly, Path.Combine(root, Path.GetFileName(sourceAssembly)));
+
+            // 测试程序集本身在程序目录里；这里把程序目录指到别处，模拟一个基座没有的节点 dll。
+            var loader = new WorkflowPluginLoader { HostDirectory = Path.Combine(root, "no-host") };
+            var modules = loader.LoadModules<ITestWorkflowPluginModule>(root, WorkflowPluginModuleGroups.WinForms);
+
+            Assert.Equal("demo.module", Assert.Single(modules).ModuleId);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadModules_UsesProgramCopyOfDllAlsoInPluginDirectory()
+    {
+        // 节点工程把基座的 dll 一起带进了插件目录：用程序目录那份，副本不加载、也不当成插件再登记一次。
+        var root = Path.Combine(Path.GetTempPath(), "workflow-host-copy-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var hostAssembly = typeof(WorkflowPluginLoaderTests).Assembly.Location;
+            File.Copy(hostAssembly, Path.Combine(root, Path.GetFileName(hostAssembly)));
+            var loader = new WorkflowPluginLoader();
+
+            Assert.Empty(loader.LoadModules<ITestWorkflowPluginModule>(root, WorkflowPluginModuleGroups.WinForms));
+            Assert.Empty(loader.LoadModules<IWorkflowRuntimePluginModule>(root, WorkflowPluginModuleGroups.Runtime));
+            Assert.Empty(loader.DiscoveryFailures);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void LoadModules_DoesNotLoadAssemblyFromUnrequestedPlatformGroup()
     {
         var root = CreatePluginRoot("wpf.only", WorkflowPluginModuleGroups.Wpf);

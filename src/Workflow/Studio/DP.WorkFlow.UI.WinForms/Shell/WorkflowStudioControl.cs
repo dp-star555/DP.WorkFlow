@@ -32,13 +32,14 @@ public sealed partial class WorkflowStudioControl : UserControl
         Properties.EditError += (_, message) => InteractionError?.Invoke(this, message);
         Properties.PropertyActionRequested += OnPropertyActionRequested;
         UpdateNavigation();
-        WorkflowWinFormsStyle.Apply(this);
+        WorkflowWinFormsTheme.Follow(this);
     }
 
     /// <summary>向下拉菜单添加带图标的命令项。</summary>
     private void AddMenuItem(ToolStripDropDownItem menu, string text, ModernIconKind icon, Action action)
     {
-        var item = new ToolStripMenuItem(text, canvasWorkspace.CreateIcon(icon, ModernTheme.Dark.Text), (_, _) => action());
+        var item = new ToolStripMenuItem(text, null, (_, _) => action());
+        canvasWorkspace.RegisterThemedIcon(item, icon);
         menu.DropDownItems.Add(item);
     }
 
@@ -88,7 +89,7 @@ public sealed partial class WorkflowStudioControl : UserControl
                 };
                 content.Dock = DockStyle.Fill;
                 window.Controls.Add(content);
-                WorkflowWinFormsStyle.Apply(window);
+                WorkflowWinFormsTheme.Follow(window);
                 window.FormClosing += (_, e) =>
                 {
                     if (e.CloseReason != CloseReason.UserClosing) return;
@@ -144,7 +145,9 @@ public sealed partial class WorkflowStudioControl : UserControl
                 return;
             _runCommands?.Dispose();
             _runCommands = null;
+            if (_runtimeBinding is not null) _runtimeBinding.OperationFailed -= OnBindingOperationFailed;
             _runtimeBinding = value;
+            if (_runtimeBinding is not null) _runtimeBinding.OperationFailed += OnBindingOperationFailed;
             RuntimeMonitor.RuntimeBinding = value;
             if (_runtimeBinding is not null)
             {
@@ -326,7 +329,7 @@ public sealed partial class WorkflowStudioControl : UserControl
         try
         {
             model = new WorkflowNodeEditorModel(Session, EntryNodeId, request.NodeId, NodeEditorExtensions.GetPageProviders(),
-                Properties.ChoiceProvider, Properties.AdditionalProperties, request.EditorKey);
+                Properties.ChoiceProvider, Properties.AdditionalProperties, request.EditorKey, Properties.Services);
             using var dialog = new WorkflowNodeEditorDialog(model, NodeEditorExtensions.GetRenderers());
             dialog.ShowDialog(this);
         }
@@ -344,7 +347,7 @@ public sealed partial class WorkflowStudioControl : UserControl
         {
             var model = new WorkflowNodeEditorModel(
                 Session, EntryNodeId, node.Id, NodeEditorExtensions.GetPageProviders(),
-                Properties.ChoiceProvider, Properties.AdditionalProperties);
+                Properties.ChoiceProvider, Properties.AdditionalProperties, services: Properties.Services);
             using var dialog = new WorkflowNodeEditorDialog(model, NodeEditorExtensions.GetRenderers());
             _ = dialog.ShowDialog(this);
             NodeEditRequested?.Invoke(this, node);
@@ -353,6 +356,20 @@ public sealed partial class WorkflowStudioControl : UserControl
         {
             InteractionError?.Invoke(this, $"无法打开节点工作台：{exception.Message}");
         }
+    }
+
+    private void OnBindingOperationFailed(object? sender, string message)
+    {
+        if (IsDisposed) return;
+        if (InvokeRequired) BeginInvoke(new Action(() => InteractionError?.Invoke(this, message)));
+        else InteractionError?.Invoke(this, message);
+    }
+
+    /// <summary>重新读取运行按钮的可用性和提示（例如整线状态、权限变化后）。</summary>
+    public void RefreshRunCommands()
+    {
+        _runCommands?.Refresh();
+        canvasWorkspace.RefreshRunCommands();
     }
 
     /// <summary>应用Navigator。</summary>

@@ -25,7 +25,7 @@ internal sealed class VisionTemplateEditorControl : UserControl
         var toggle = new ModernUI.WinForms.ModernButton
         {
             Text = "▶ 模板制作", Dock = DockStyle.Top, Height = 32,
-            TextAlign = ContentAlignment.MiddleLeft, Theme = ModernUI.WinForms.ModernTheme.Dark
+            TextAlign = ContentAlignment.MiddleLeft, Theme = DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern
         };
         _fields.Visible = false;
         toggle.Click += (_, _) => { _fields.Visible = !_fields.Visible; Height = _fields.Visible ? 320 : 38; toggle.Text = _fields.Visible ? "▼ 模板制作" : "▶ 模板制作"; if (_fields.Visible) _show(4); };
@@ -65,7 +65,7 @@ internal sealed class VisionTemplateEditorControl : UserControl
         {
             var button = new ModernUI.WinForms.ModernButton
             {
-                Text = caption, Theme = ModernUI.WinForms.ModernTheme.Dark,
+                Text = caption, Theme = DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern,
                 Size = new Size(TextRenderer.MeasureText(caption, Font).Width + 28, 30)
             };
             button.Click += async (_, _) => await Run(action); actions.Controls.Add(button);
@@ -104,7 +104,7 @@ internal sealed class VisionTemplateEditorControl : UserControl
             var row = new FlowLayoutPanel { AutoSize = true }; var label = new Label { Text = caption, Width = 210, AutoSize = false, Height = 26 };
             var text = new ModernUI.WinForms.ModernInput
             {
-                Text = value, Size = new Size(300, 30), AccessibleDescription = description, Theme = ModernUI.WinForms.ModernTheme.Dark
+                Text = value, Size = new Size(300, 30), AccessibleDescription = description, Theme = DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern
             };
             var accepted = value;
             text.InnerTextBox.Validated += (_, _) => { if (generation != _generation || IsDisposed || _model.IsDisposed) return;
@@ -123,7 +123,7 @@ internal sealed class VisionTemplateEditorControl : UserControl
     }
     private static ModernUI.WinForms.ModernSelect TemplateSelect() => new()
     {
-        Size = new Size(520, 30), Theme = ModernUI.WinForms.ModernTheme.Dark, DropDownAnimationDuration = 0
+        Size = new Size(520, 30), Theme = DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern, DropDownAnimationDuration = 0
     };
     private sealed record Choice(string Id, string Label);
 }

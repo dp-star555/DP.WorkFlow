@@ -20,14 +20,13 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
 {
     private readonly VisionTemplateAuthoringPageModel _model;
     private readonly VisionFrameEditorControl _frame;
-    private readonly ModernPropertyGrid.WinForms.ModernPropertyGrid _properties = new() { Dock = DockStyle.Fill, Theme = ModernUI.WinForms.ModernTheme.Dark, ShowSearchBar = false };
+    private readonly ModernPropertyGrid.WinForms.ModernPropertyGrid _properties = new() { Dock = DockStyle.Fill, Theme = DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern, ShowSearchBar = false };
     private readonly Label _buildState = State("TemplateBuildState");
     private readonly Label _buildVerification = State("TemplateBuildVerification");
     private readonly Label _testState = State("TemplateTestState");
     private readonly Label _issue = State("TemplateFailure");
     private readonly List<(WorkflowPropertyEntry Entry, ModernUI.WinForms.ModernButton Button)> _actions = new();
     private readonly List<(WorkflowPropertyEntry Entry, Label Label)> _readOnly = new();
-    private readonly System.Windows.Forms.Timer _timer = new() { Interval = 150 };
     private readonly ToolTip _tips = new();
     private bool _running;
     private string _operation = "";
@@ -60,7 +59,7 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         _properties.PropertyValueChanged += (_, e) => { RefreshProperties(e.Property.Name); RefreshState(); };
         bool opened = false;
         Load += async (_, _) => { if (opened) return; opened = true; await Run(model.OpenAsync, "读取模板"); };
-        _timer.Tick += (_, _) => { if (!IsDisposed) { RefreshPropertiesIfChanged(); RefreshState(); } }; _timer.Start();
+        DP.WorkFlow.UI.WinForms.WorkflowRefreshClock.Subscribe(this, () => { if (!IsDisposed) { RefreshPropertiesIfChanged(); RefreshState(); } });
         RefreshProperties(); RefreshState(); model.Frame.RegisterViewLifetime(Dispose);
     }
     private async Task Run(Func<Task> action, string operation, bool pageOwnsOperation = false)
@@ -151,7 +150,7 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         _tips.SetToolTip(_issue, _issue.Text);
     }
     private static Label State(string name) => new() { Name = name, Dock = DockStyle.Fill, AutoEllipsis = true, Padding = new Padding(2), Margin = new Padding(2), TextAlign = ContentAlignment.MiddleLeft };
-    protected override void Dispose(bool disposing) { if (disposing) { _timer.Stop(); _timer.Dispose(); _tips.Dispose(); } base.Dispose(disposing); }
+    protected override void Dispose(bool disposing) { if (disposing) _tips.Dispose(); base.Dispose(disposing); }
 
     private sealed class ActionEditor(VisionTemplateWorkspaceControl owner) : IPropertyEditorProvider
     {
@@ -160,7 +159,7 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         public Control CreateEditor(PropertyEditorContext context)
         {
             var entry = ((EntryProperty)context.Property).Entry;
-            var button = new ModernUI.WinForms.ModernButton { Text = Convert.ToString(entry.Value), Theme = ModernUI.WinForms.ModernTheme.Dark, Dock = DockStyle.Fill };
+            var button = new ModernUI.WinForms.ModernButton { Text = Convert.ToString(entry.Value), Theme = DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern, Dock = DockStyle.Fill };
             owner._actions.Add((entry, button));
             button.Click += async (_, _) =>
             {
@@ -193,7 +192,7 @@ internal sealed class VisionTemplateWorkspaceControl : UserControl
         public Control CreateEditor(PropertyEditorContext context)
         {
             var entry = ((EntryProperty)context.Property).Entry;
-            var combo = new ModernUI.WinForms.ModernSelect { Dock = DockStyle.Fill, Theme = ModernUI.WinForms.ModernTheme.Dark, DropDownAnimationDuration = 0 };
+            var combo = new ModernUI.WinForms.ModernSelect { Dock = DockStyle.Fill, Theme = DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern, DropDownAnimationDuration = 0 };
             combo.Items.AddRange(entry.Choices.Cast<object>().ToArray()); combo.SelectedItem = entry.Choices.FirstOrDefault(c => Equals(c.Value, entry.Value));
             combo.SelectedIndexChanged += (_, _) => { if (combo.SelectedItem is WorkflowPropertyChoice choice) context.CommitValue(choice.Value); };
             return combo;

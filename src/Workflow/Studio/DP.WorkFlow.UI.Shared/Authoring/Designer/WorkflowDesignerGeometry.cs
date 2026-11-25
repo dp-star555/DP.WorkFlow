@@ -113,6 +113,10 @@ public static class WorkflowDesignerGeometry
     public const double RowHeight = GridSize;
     /// <summary>节点允许的最小设计高度：只有标题行。</summary>
     public const double MinimumNodeHeight = HeaderHeight;
+    /// <summary>节点最小宽度，也是目录中找不到节点类型（插件未加载）且文档没写尺寸时的显示宽度。</summary>
+    public const double DefaultNodeWidth = 180;
+    /// <summary>目录中找不到节点类型且文档没写尺寸时的显示高度。</summary>
+    public const double DefaultNodeHeight = 60;
     /// <summary>端口命中使用的基础半径。</summary>
     public const double PortRadius = 5;
 
@@ -232,6 +236,46 @@ public static class WorkflowDesignerGeometry
             node.Y * session.Zoom + session.PanY,
             node.Width * session.Zoom,
             node.Height * session.Zoom);
+
+    /// <summary>
+    /// 节点提示角标的屏幕矩形：圆心在节点右上角外沿（跨在边框上），不占标题行空间，和执行序号、耗时不重叠。
+    /// 数字超过一位时横向拉长为胶囊。
+    /// </summary>
+    /// <param name="nodeRect">节点屏幕矩形。</param>
+    /// <param name="zoom">当前缩放。</param>
+    /// <param name="count">显示的条数。</param>
+    public static WorkflowDesignerRect NoticeBadgeBounds(WorkflowDesignerRect nodeRect, double zoom, int count)
+    {
+        var height = Math.Max(14, 18 * zoom);
+        var digits = Math.Max(1, NoticeBadgeText(count).Length);
+        var width = Math.Max(height, height * (0.55 + 0.38 * digits));
+        return new WorkflowDesignerRect(nodeRect.X + nodeRect.Width - width / 2 - 2 * zoom, nodeRect.Y - height / 2, width, height);
+    }
+
+    /// <summary>角标文字：1～99 显示数字，更多显示 99+。</summary>
+    /// <param name="count">条数。</param>
+    public static string NoticeBadgeText(int count) => count > 99 ? "99+" : count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>查找屏幕坐标下的节点提示角标；角标画在节点之上，所以优先于节点本身命中。</summary>
+    /// <param name="session">设计器会话。</param>
+    /// <param name="x">屏幕 X。</param>
+    /// <param name="y">屏幕 Y。</param>
+    /// <returns>角标所属节点；没有命中时为空。</returns>
+    public static WorkflowCanvasNode? HitNoticeBadge(WorkflowDesignerSession session, double x, double y)
+    {
+        Guard.NotNull(session);
+        if (session.Notices is null) return null;
+        for (var i = session.Document.Nodes.Count - 1; i >= 0; i--)
+        {
+            var node = session.Document.Nodes[i];
+            var count = session.GetNodeNotices(node.Node.Id).Count;
+            if (count == 0) continue;
+            var bounds = NoticeBadgeBounds(GetNodeScreenRect(session, node), session.Zoom, count);
+            if (x >= bounds.X - 2 && x <= bounds.X + bounds.Width + 2 && y >= bounds.Y - 2 && y <= bounds.Y + bounds.Height + 2)
+                return node;
+        }
+        return null;
+    }
 
     /// <summary>计算端口在节点指定边上的屏幕坐标。</summary>
     /// <param name="session">设计器会话。</param>

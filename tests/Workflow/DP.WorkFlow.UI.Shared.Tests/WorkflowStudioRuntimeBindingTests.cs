@@ -101,6 +101,52 @@ public sealed class WorkflowStudioRuntimeBindingTests
         Assert.True(result.Success, result.Message);
     }
 
+    [Fact]
+    public void FrameInterval_FollowsUiRefreshUntilSetExplicitly()
+    {
+        // R4-b：绑定的拉取间隔默认跟随统一刷新节拍；单独设置后不再跟随。
+        var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
+        var start = new StartNodeModel { Id = "Start", Title = "开始" };
+        var document = new WorkflowDocument { EntryNodeId = start.Id };
+        document.Nodes.Add(new WorkflowCanvasNode { Node = start });
+        var navigator = new WorkflowDesignerNavigator(document, catalog);
+        using var host = new WorkflowRuntimeHost(catalog, new WorkflowNodeHandlerCatalog());
+        var original = WorkflowUiRefresh.FramesPerSecond;
+        try
+        {
+            using var following = new WorkflowStudioRuntimeBinding(host, navigator);
+            using var fixedRate = new WorkflowStudioRuntimeBinding(host, navigator) { FrameIntervalMilliseconds = 40 };
+            Assert.Equal(WorkflowUiRefresh.FrameIntervalMilliseconds, following.FrameIntervalMilliseconds);
+
+            WorkflowUiRefresh.FramesPerSecond = 4;
+
+            Assert.Equal(250, following.FrameIntervalMilliseconds);
+            Assert.Equal(40, fixedRate.FrameIntervalMilliseconds);
+        }
+        finally
+        {
+            WorkflowUiRefresh.FramesPerSecond = original;
+        }
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(10, 10)]
+    [InlineData(500, 60)]
+    public void UiRefresh_ClampsFramesPerSecond(int requested, int expected)
+    {
+        var original = WorkflowUiRefresh.FramesPerSecond;
+        try
+        {
+            WorkflowUiRefresh.FramesPerSecond = requested;
+            Assert.Equal(expected, WorkflowUiRefresh.FramesPerSecond);
+        }
+        finally
+        {
+            WorkflowUiRefresh.FramesPerSecond = original;
+        }
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));

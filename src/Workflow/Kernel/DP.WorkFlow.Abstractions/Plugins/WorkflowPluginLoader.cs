@@ -60,6 +60,13 @@ public sealed class WorkflowPluginLoader
     private readonly Dictionary<string, LoadedPackage> _packages = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _sync = new();
 
+    /// <summary>
+    /// 程序目录（默认 <see cref="AppContext.BaseDirectory"/>）。规则只有一条：插件目录里和程序目录同名的 dll 一律用程序目录那份，
+    /// 插件目录里的副本不加载；插件目录只补程序目录没有的 dll。这样节点工程不用关心基座装没装某个功能包，编译输出整个放进来即可。
+    /// 节点编译时用的版本和程序里的不一致时，加载节点报错并写明是哪个程序集。为空时不做这项处理。
+    /// </summary>
+    public string? HostDirectory { get; set; } = AppContext.BaseDirectory;
+
     /// <summary>最近一次无 Manifest Runtime 扫描的失败；宿主应在启动诊断中报告。</summary>
     public IReadOnlyList<PluginLoadFailure> DiscoveryFailures { get; private set; } = Array.Empty<PluginLoadFailure>();
 
@@ -81,6 +88,7 @@ public sealed class WorkflowPluginLoader
 
         lock (_sync)
         {
+            var hostCopies = ShareHostCopies(root);
             var manifests = OrderByDependencies(DiscoverManifests(root));
             var modules = new List<(int PackageOrder, string AssemblyPath, string TypeName, TModule Module)>();
             for (var packageOrder = 0; packageOrder < manifests.Count; packageOrder++)
@@ -112,16 +120,48 @@ public sealed class WorkflowPluginLoader
                 .ThenBy(item => item.TypeName, StringComparer.Ordinal)
                 .Select(item => item.Module)
                 .ToArray();
-            // Manifest 包仍严格按分组加载；直接投放的 Runtime DLL 可自动发现。
-            // 不扫描已有 Manifest 包，避免把未请求的桌面分组误当作 Runtime。
-            if (typeof(TModule) != typeof(IWorkflowRuntimePluginModule)
-                || !string.Equals(moduleGroup, WorkflowPluginModuleGroups.Runtime, StringComparison.OrdinalIgnoreCase))
-                return ordered;
+            // Manifest 包仍严格按分组加载；直接投放（没有 Manifest）的 DLL 按类型自动发现：
+            // 运行节点找 Runtime Module，设计器的专用编辑器找对应平台的 Studio Module。
+            // 不扫描已有 Manifest 包，避免把未请求的分组误当作当前分组。
             var manifestRoots = manifests.Select(m => Path.GetDirectoryName(m.ManifestPath)! + Path.DirectorySeparatorChar).ToArray();
-            var discovered = _session.Discover<TModule>(root, path => !manifestRoots.Any(package => path.StartsWith(package, StringComparison.OrdinalIgnoreCase)));
-            DiscoveryFailures = discovered.Failures;
+            var discovered = _session.Discover<TModule>(root, path => !hostCopies.Copies.Contains(path)
+                && !manifestRoots.Any(package => path.StartsWith(package, StringComparison.OrdinalIgnoreCase)));
+            if (typeof(TModule) == typeof(IWorkflowRuntimePluginModule))
+                DiscoveryFailures = hostCopies.Failures.Concat(discovered.Failures).ToArray();
             return ordered.Concat(discovered.Modules).Distinct().ToArray();
         }
+    }
+
+    /// <summary>
+    /// 插件目录里和程序目录同名的 dll：登记程序里那份为共用（插件里的类型都指向它），返回这些副本的路径。
+    /// 副本不再扫描：程序目录里的 dll 是基座的，里面的模块由基座自己登记，不会登记两次。
+    /// </summary>
+    private (HashSet<string> Copies, List<PluginLoadFailure> Failures) ShareHostCopies(string root)
+    {
+        var copies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var failures = new List<PluginLoadFailure>();
+        if (string.IsNullOrWhiteSpace(HostDirectory)) return (copies, failures);
+        var host = Path.GetFullPath(HostDirectory).TrimEnd(Path.DirectorySeparatorChar);
+        if (string.Equals(host, root.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)) return (copies, failures);
+        foreach (var path in Directory.EnumerateFiles(root, "*.dll", SearchOption.AllDirectories))
+        {
+            var hostPath = Path.Combine(host, Path.GetFileName(path));
+            if (!File.Exists(hostPath)) continue;
+            copies.Add(path);
+            try
+            {
+                _session.RegisterSharedAssemblyPath(hostPath);
+            }
+            catch (BadImageFormatException)
+            {
+                // 原生 dll：不是程序集，由系统按程序目录找。
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or IOException or UnauthorizedAccessException)
+            {
+                failures.Add(new PluginLoadFailure(path, $"程序目录里的 {Path.GetFileName(path)} 不能共用：{exception.Message}"));
+            }
+        }
+        return (copies, failures);
     }
 
     private LoadedPackage GetOrLoadPackage(ManifestEntry entry)

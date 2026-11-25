@@ -27,7 +27,6 @@
     <ProjectReference Include="..\..\src\Workflow\Kernel\DP.WorkFlow.Abstractions\DP.WorkFlow.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Kernel\DP.WorkFlow.Core\DP.WorkFlow.Core.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Composite\DP.WorkFlow.Nodes.Composite.csproj" />
-    <ProjectReference Include="..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Motion\DP.WorkFlow.Nodes.Motion.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Process\DP.WorkFlow.Nodes.Process.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Standard\DP.WorkFlow.Nodes.Standard.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Vision\DP.WorkFlow.Nodes.Vision.csproj" />

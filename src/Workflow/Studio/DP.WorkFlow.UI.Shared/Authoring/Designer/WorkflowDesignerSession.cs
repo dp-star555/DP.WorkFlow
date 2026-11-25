@@ -101,7 +101,19 @@ public sealed partial class WorkflowDesignerSession
     {
         foreach (var node in Document.Nodes)
         {
-            if (!Catalog.TryGet(node.Node.NodeType, out _)) continue;
+            if (!Catalog.TryGet(node.Node.NodeType, out _))
+            {
+                // 插件未加载：保持原尺寸；文档没写尺寸时给一个能看见、能选中的默认大小。
+                if (node.Width <= 0) node.Width = WorkflowDesignerGeometry.DefaultNodeWidth;
+                if (node.Height <= 0) node.Height = WorkflowDesignerGeometry.DefaultNodeHeight;
+                continue;
+            }
+            if (node.Width <= 0 || node.Height <= 0)
+            {
+                // 未设定尺寸的节点（代码生成、旧数据）按左上角定位，不按中心。
+                EnsureNodeDisplaySize(node);
+                continue;
+            }
             var (centerX, top) = (node.X + node.Width / 2, node.Y);
             EnsureNodeDisplaySize(node);
             node.X = centerX - node.Width / 2;
@@ -1526,7 +1538,7 @@ public sealed partial class WorkflowDesignerSession
             ? 0
             : exposed.Select(member => TextWidth(member.DisplayName)).DefaultIfEmpty(0).Max() + 40;
         // 标题行：左右内边距、状态点、图标与间距约 60，右侧执行序号徽标与耗时约 90。
-        var requiredWidth = Math.Max(Math.Max(180, dataLabelWidth + sideLabelWidth + 24),
+        var requiredWidth = Math.Max(Math.Max(WorkflowDesignerGeometry.DefaultNodeWidth, dataLabelWidth + sideLabelWidth + 24),
             Math.Max(titleWidth + 150, Math.Max(horizontalPortWidth + 20, titleWidth + sideLabelWidth * 2 + 72)));
         var rows = WorkflowDesignerGeometry.GetNodeRows(ports.Select(port => (port, node.GetPortSide(port))), exposed.Count);
         var requiredHeight = rows.NodeHeight;
@@ -1535,8 +1547,9 @@ public sealed partial class WorkflowDesignerSession
         requiredHeight = WorkflowDesignerGeometry.QuantizeNodeHeight(requiredHeight);
         if (Math.Abs(node.Width - requiredWidth) < 0.01 && Math.Abs(node.Height - requiredHeight) < 0.01)
             return;
-        var centerX = node.X + node.Width / 2;
-        var centerY = node.Y + node.Height / 2;
+        // 已有尺寸时保持中心不动；未设定尺寸（0）时保持左上角不动。
+        var centerX = node.X + (node.Width > 0 ? node.Width / 2 : requiredWidth / 2);
+        var centerY = node.Y + (node.Height > 0 ? node.Height / 2 : requiredHeight / 2);
         node.Width = requiredWidth;
         node.Height = requiredHeight;
         var position = SnapNodePosition(node, new WorkflowPoint(centerX - node.Width / 2, centerY - node.Height / 2));

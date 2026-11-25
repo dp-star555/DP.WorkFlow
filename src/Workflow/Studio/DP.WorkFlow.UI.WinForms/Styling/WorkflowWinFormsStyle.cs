@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace DP.WorkFlow.UI.WinForms;
 
-/// <summary>提供当前固定的 WinForms 控件配色和原生控件样式。</summary>
+/// <summary>按当前工作台主题（<see cref="WorkflowWinFormsTheme"/>）给 WinForms 控件着色，并让原生控件的样子与 ModernUI 一致。</summary>
 internal static class WorkflowWinFormsStyle
 {
     /// <summary>保存 WinForms 工作流界面的颜色调色板。</summary>
@@ -20,10 +20,10 @@ internal static class WorkflowWinFormsStyle
         Color SelectionText,
         Color Grid);
 
-    /// <summary>调色板取自 ModernUI 深色主题，使原生宿主控件与 Modern 控件颜色一致。</summary>
+    /// <summary>调色板取自当前工作台主题，使原生宿主控件与 Modern 控件颜色一致。</summary>
     internal static Palette Get()
     {
-        var theme = ModernUI.WinForms.ModernTheme.Dark;
+        var theme = WorkflowWinFormsTheme.Modern;
         return new(theme.Background, theme.Container, theme.Control, theme.Border, theme.Text, theme.TextSecondary,
             theme.Primary, theme.Primary, Color.White, theme.BorderSecondary);
     }
@@ -31,6 +31,7 @@ internal static class WorkflowWinFormsStyle
     // 已挂接过自绘事件的原生控件，避免重复订阅；Following 记录已跟随动态子控件的容器。
     private static readonly ConditionalWeakTable<Control, object> Hooked = new();
     private static readonly ConditionalWeakTable<Control, object> Following = new();
+    private static readonly ConditionalWeakTable<Control, object> WindowThemed = new();
 
     /// <summary>应用。</summary>
     /// <param name="root">根控件。</param>
@@ -53,13 +54,13 @@ internal static class WorkflowWinFormsStyle
         // 特别是 ModernPropertyGrid 的圆角行背景依赖 Background/Container 精确一致。
         if (control is ModernPropertyGrid.WinForms.ModernPropertyGrid propertyGrid)
         {
-            propertyGrid.Theme = ModernUI.WinForms.ModernTheme.Dark;
+            propertyGrid.Theme = WorkflowWinFormsTheme.Modern;
             return;
         }
         // 标签页外壳自绘，只设置主题；各页内容仍按普通宿主控件继续着色。
         if (control is ModernUI.WinForms.ModernTabControl tabs)
         {
-            tabs.Theme = ModernUI.WinForms.ModernTheme.Dark;
+            tabs.Theme = WorkflowWinFormsTheme.Modern;
             foreach (TabPage page in tabs.TabPages)
                 foreach (Control child in page.Controls)
                     ApplyControl(child, palette, follow);
@@ -68,7 +69,7 @@ internal static class WorkflowWinFormsStyle
         // 分栏只是宿主容器：分隔条使用 Modern 主题，两侧内容继续按宿主规则着色。
         if (control is ModernUI.WinForms.ModernSplitter splitter)
         {
-            splitter.Theme = ModernUI.WinForms.ModernTheme.Dark;
+            splitter.Theme = WorkflowWinFormsTheme.Modern;
             foreach (var panel in new[] { splitter.Panel1, splitter.Panel2 })
             {
                 panel.BackColor = palette.Window;
@@ -80,7 +81,7 @@ internal static class WorkflowWinFormsStyle
         // 其余 Modern 控件（树、列表、输入框、工具栏等）自带完整主题树。
         if (control.GetType().Namespace == typeof(ModernUI.WinForms.ModernTheme).Namespace)
         {
-            ModernUI.WinForms.ModernUiSettings.ApplyTheme(control, ModernUI.WinForms.ModernTheme.Dark);
+            ModernUI.WinForms.ModernUiSettings.ApplyTheme(control, WorkflowWinFormsTheme.Modern);
             return;
         }
 
@@ -101,7 +102,7 @@ internal static class WorkflowWinFormsStyle
             nativeGrid.CommandsBackColor = palette.Surface;
             nativeGrid.CommandsForeColor = palette.Text;
             nativeGrid.DisabledItemForeColor = palette.MutedText;
-            nativeGrid.SelectedItemWithFocusBackColor = Color.FromArgb(0, 120, 215);
+            nativeGrid.SelectedItemWithFocusBackColor = WorkflowWinFormsTheme.Modern.Primary;
             nativeGrid.SelectedItemWithFocusForeColor = Color.White;
             return;
         }
@@ -139,17 +140,14 @@ internal static class WorkflowWinFormsStyle
                 combo.BackColor = palette.Control;
                 combo.ForeColor = palette.Text;
                 combo.FlatStyle = FlatStyle.Flat;
-                if (first) DarkWindowTheme(combo, "DarkMode_CFD");
+                DarkWindowTheme(combo, "DarkMode_CFD");
                 break;
             case Button button:
                 button.BackColor = palette.Control;
                 button.ForeColor = palette.Text;
                 button.FlatStyle = FlatStyle.Flat;
                 button.FlatAppearance.BorderColor = palette.Border;
-                button.FlatAppearance.MouseOverBackColor = Color.FromArgb(
-                    palette.Control.R == 255 ? 229 : 62,
-                    palette.Control.R == 255 ? 241 : 62,
-                    palette.Control.R == 255 ? 251 : 66);
+                button.FlatAppearance.MouseOverBackColor = WorkflowWinFormsTheme.Modern.ControlHover;
                 // 原生按钮按 ModernButton 的样子自绘：圆角、悬停/按下高亮、禁用灰字。
                 if (first) button.Paint += (_, e) => PaintButton(button, e.Graphics);
                 break;
@@ -157,9 +155,9 @@ internal static class WorkflowWinFormsStyle
                 list.BackColor = palette.Control;
                 list.ForeColor = palette.Text;
                 list.BorderStyle = BorderStyle.FixedSingle;
+                DarkWindowTheme(list, "DarkMode_Explorer", headerTheme: "DarkMode_ItemsView");
                 if (first)
                 {
-                    DarkWindowTheme(list, "DarkMode_Explorer", headerTheme: "DarkMode_ItemsView");
                     // 详细视图表头自绘为深色；行和子项仍用系统绘制。
                     if (!list.OwnerDraw)
                     {
@@ -172,7 +170,7 @@ internal static class WorkflowWinFormsStyle
                 break;
             case ListBox listBox:
                 listBox.BorderStyle = BorderStyle.FixedSingle;
-                if (first) DarkWindowTheme(listBox, "DarkMode_Explorer");
+                DarkWindowTheme(listBox, "DarkMode_Explorer");
                 break;
             case TabControl tabControl:
                 // 原生标签页头自绘为深色；ModernTabControl 已在前面单独处理。
@@ -196,7 +194,7 @@ internal static class WorkflowWinFormsStyle
                 upDown.ForeColor = palette.Text;
                 upDown.BorderStyle = BorderStyle.FixedSingle;
                 break;
-            case ScrollableControl { AutoScroll: true } scrollable when first:
+            case ScrollableControl { AutoScroll: true } scrollable:
                 DarkWindowTheme(scrollable, "DarkMode_Explorer");
                 break;
             case ToolStrip strip:
@@ -213,7 +211,7 @@ internal static class WorkflowWinFormsStyle
 
     private static void PaintButton(Button button, Graphics graphics)
     {
-        var theme = ModernUI.WinForms.ModernTheme.Dark;
+        var theme = WorkflowWinFormsTheme.Modern;
         var bounds = new Rectangle(0, 0, button.Width - 1, button.Height - 1);
         var hot = button.Enabled && button.ClientRectangle.Contains(button.PointToClient(Cursor.Position));
         var pressed = hot && (Control.MouseButtons & MouseButtons.Left) != 0;
@@ -230,7 +228,7 @@ internal static class WorkflowWinFormsStyle
 
     private static void PaintHeader(DrawListViewColumnHeaderEventArgs e)
     {
-        var theme = ModernUI.WinForms.ModernTheme.Dark;
+        var theme = WorkflowWinFormsTheme.Modern;
         using var fill = new SolidBrush(theme.Container);
         using var line = new Pen(theme.Border);
         e.Graphics.FillRectangle(fill, e.Bounds);
@@ -243,7 +241,7 @@ internal static class WorkflowWinFormsStyle
 
     private static void PaintTab(TabControl tabs, DrawItemEventArgs e)
     {
-        var theme = ModernUI.WinForms.ModernTheme.Dark;
+        var theme = WorkflowWinFormsTheme.Modern;
         var selected = e.Index == tabs.SelectedIndex;
         using var fill = new SolidBrush(selected ? theme.Control : theme.Container);
         e.Graphics.FillRectangle(fill, e.Bounds);
@@ -269,11 +267,15 @@ internal static class WorkflowWinFormsStyle
         return path;
     }
 
-    // Windows 10 1809+ 的系统深色主题：用于原生滚动条、下拉列表和列表表头背景；旧系统或调用失败时保持原样。
+    // Windows 10 1809+ 的系统深色主题：用于原生滚动条、下拉列表和列表表头背景；浅色主题用系统默认外观；旧系统或调用失败时保持原样。
+    // 每次创建句柄时按当时的主题明暗选择，切换主题后重新着色也会再设置一次。
     private static void DarkWindowTheme(Control control, string theme, string? headerTheme = null)
     {
         void Apply()
         {
+            var dark = WorkflowWinFormsTheme.IsDark;
+            var window = dark ? theme : "Explorer";
+            var header = dark ? headerTheme : headerTheme is null ? null : "ItemsView";
 #if NETFRAMEWORK
             // 4.8 未声明兼容 Windows 10 时 Environment.OSVersion 报 6.2，用 RtlGetVersion 取真实版本。
             if (!IsWindows10October2018OrLater()) return;
@@ -282,14 +284,18 @@ internal static class WorkflowWinFormsStyle
 #endif
             try
             {
-                _ = SetWindowTheme(control.Handle, theme, null);
-                if (headerTheme is not null && SendMessage(control.Handle, 0x101F /* LVM_GETHEADER */, IntPtr.Zero, IntPtr.Zero) is var header && header != IntPtr.Zero)
-                    _ = SetWindowTheme(header, headerTheme, null);
+                _ = SetWindowTheme(control.Handle, window, null);
+                if (header is not null && SendMessage(control.Handle, 0x101F /* LVM_GETHEADER */, IntPtr.Zero, IntPtr.Zero) is var handle && handle != IntPtr.Zero)
+                    _ = SetWindowTheme(handle, header, null);
             }
             catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException) { }
         }
         if (control.IsHandleCreated) Apply();
-        control.HandleCreated += (_, _) => Apply();
+        if (!WindowThemed.TryGetValue(control, out _))
+        {
+            WindowThemed.Add(control, new object());
+            control.HandleCreated += (_, _) => Apply();
+        }
     }
 
 #if NETFRAMEWORK

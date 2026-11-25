@@ -15,7 +15,7 @@ public sealed partial class WorkflowToolboxControl : UserControl
     public WorkflowToolboxControl()
     {
         InitializeComponent();
-        ModernUI.WinForms.ModernUiSettings.ApplyTheme(this, ModernUI.WinForms.ModernTheme.Dark);
+        ModernUI.WinForms.ModernUiSettings.ApplyTheme(this, WorkflowWinFormsTheme.Modern);
         searchInput.TextChanged += (_, _) => RebuildTree();
         toolboxTreeView.NodeMouseDoubleClick += (_, e) => Activate(e.Node);
         toolboxTreeView.ItemDrag += (_, e) =>

@@ -31,12 +31,14 @@ public sealed partial class WorkflowDesignerControl : Control
     private WorkflowPortSide? _portDropSide;
     private Point _pointer;
     private string? _hoverNodeId;
+    // 提示：上次重画时的提示板版本，以及画布级提示胶囊的位置（没有时为空）。
+    private long _shownNoticeVersion = -1;
+    private RectangleF? _canvasNoticeBounds;
     private (WorkflowCanvasNode Node, WorkflowOutputMember Member, WorkflowPoint Point)? _dataLinkStart;
     private InteractionMode _mode;
     private WorkflowDesignerRect? _overviewAnchorViewport;
     private double _overviewAnchorZoom;
     private Size _overviewAnchorClientSize;
-    private readonly System.Windows.Forms.Timer _runtimeTimer;
 
     /// <summary>初始化控件。</summary>
     public WorkflowDesignerControl()
@@ -44,13 +46,31 @@ public sealed partial class WorkflowDesignerControl : Control
         InitializeComponent();
         SetStyle(ControlStyles.Selectable | ControlStyles.OptimizedDoubleBuffer
             | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true);
-        _runtimeTimer = new System.Windows.Forms.Timer { Interval = 100 };
-        _runtimeTimer.Tick += (_, _) =>
+        // 运行中的节点有外发光和耗时，按统一刷新时钟重画；画布不可见时时钟不会叫它。
+        // 提示板变化（运行中或运行结束后都会有）也在下一帧重画角标。
+        WorkflowRefreshClock.Subscribe(this, () =>
         {
-            if (_session?.RuntimeSnapshot?.ExecutionState is E_WorkflowExecutionState.Running)
+            if (_session?.RuntimeSnapshot?.ExecutionState is E_WorkflowExecutionState.Running
+                || (_session is not null && _session.NoticeVersion != _shownNoticeVersion))
                 Invalidate();
-        };
-        _runtimeTimer.Start();
+        });
+        ApplyThemeColors();
+        WorkflowWinFormsTheme.Changed += OnThemeChanged;
+    }
+
+    /// <summary>当前画布配色，随工作台主题切换。</summary>
+    private static WorkflowCanvasPalette Colors => WorkflowWinFormsTheme.Canvas;
+
+    private void OnThemeChanged(object? sender, EventArgs e)
+    {
+        ApplyThemeColors();
+        Invalidate();
+    }
+
+    private void ApplyThemeColors()
+    {
+        BackColor = ToColor(Colors.Canvas);
+        ForeColor = ToColor(Colors.Title);
     }
 
     /// <summary>获取或设置共享设计会话。</summary>
@@ -72,6 +92,13 @@ public sealed partial class WorkflowDesignerControl : Control
         }
     }
 
+    /// <summary>
+    /// 只读：只能平移、缩放、选中和看提示，不能拖动、连线、删除、粘贴、拖入节点，双击也不打开节点编辑。
+    /// 运行监视页的画布用它。
+    /// </summary>
+    [System.ComponentModel.DefaultValue(false)]
+    public bool ReadOnly { get; set; }
+
     /// <summary>获取当前是否因节点超出可视区域而显示右上角概览窗口。</summary>
     public bool IsOverviewMapVisible => TryCreateOverviewMapLayout(out _);
 
@@ -81,6 +108,9 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>交互产生无法创建的连接时发生。</summary>
     public event EventHandler<string>? InteractionError;
 
+    /// <summary>在提示弹层中点“查看全部提示”时发生，由宿主切到提示页。</summary>
+    public event EventHandler? NoticesPageRequested;
+
     /// <inheritdoc />
     protected override void Dispose(bool disposing)
     {
@@ -88,7 +118,7 @@ public sealed partial class WorkflowDesignerControl : Control
         {
             if (_session is not null)
                 _session.Changed -= OnSessionChanged;
-            _runtimeTimer.Dispose();
+            WorkflowWinFormsTheme.Changed -= OnThemeChanged;
         }
         base.Dispose(disposing);
     }
@@ -106,10 +136,13 @@ public sealed partial class WorkflowDesignerControl : Control
         DrawDataLinks(e.Graphics);
         foreach (var node in _session.Document.Nodes)
             DrawNode(e.Graphics, node);
+        _shownNoticeVersion = _session.NoticeVersion;
+        DrawNoticeBadges(e.Graphics);
         DrawPendingConnection(e.Graphics);
         DrawPendingDataLink(e.Graphics);
         DrawMarquee(e.Graphics);
         DrawOverviewMap(e.Graphics);
+        DrawCanvasNotices(e.Graphics);
     }
 
     /// <inheritdoc />
@@ -126,14 +159,14 @@ public sealed partial class WorkflowDesignerControl : Control
         drgevent.Effect = ToolboxDragEffect(drgevent);
     }
 
-    private static DragDropEffects ToolboxDragEffect(DragEventArgs e) =>
-        e.Data?.GetDataPresent(typeof(WorkflowToolboxItem)) == true ? DragDropEffects.Copy : DragDropEffects.None;
+    private DragDropEffects ToolboxDragEffect(DragEventArgs e) =>
+        !ReadOnly && e.Data?.GetDataPresent(typeof(WorkflowToolboxItem)) == true ? DragDropEffects.Copy : DragDropEffects.None;
 
     /// <inheritdoc />
     protected override void OnDragDrop(DragEventArgs drgevent)
     {
         base.OnDragDrop(drgevent);
-        if (_session is null || drgevent.Data?.GetData(typeof(WorkflowToolboxItem)) is not WorkflowToolboxItem item)
+        if (ReadOnly || _session is null || drgevent.Data?.GetData(typeof(WorkflowToolboxItem)) is not WorkflowToolboxItem item)
             return;
         var client = PointToClient(new Point(drgevent.X, drgevent.Y));
         var canvas = WorkflowDesignerGeometry.ScreenToCanvas(_session, client.X, client.Y);
@@ -159,7 +192,7 @@ public sealed partial class WorkflowDesignerControl : Control
         if (_session is null)
             return;
         _pointer = e.Location;
-        if (e.Button == MouseButtons.Right)
+        if (e.Button == MouseButtons.Right && !ReadOnly)
         {
             var contextConnection = HitConnectionLabel(e.X, e.Y) ?? WorkflowDesignerInteraction.HitConnection(_session, e.X, e.Y);
             if (contextConnection is not null)
@@ -179,11 +212,30 @@ public sealed partial class WorkflowDesignerControl : Control
         }
         if (e.Button != MouseButtons.Left)
             return;
+        // 提示角标和画布级提示画在最上层，先于节点命中。
+        if (_canvasNoticeBounds is { } canvasNotice && canvasNotice.Contains(e.Location))
+        {
+            ShowNoticePopup(null, new Point((int)canvasNotice.Left, (int)canvasNotice.Bottom + 4));
+            return;
+        }
+        if (WorkflowDesignerGeometry.HitNoticeBadge(_session, e.X, e.Y) is { } noticeNode)
+        {
+            _session.SelectNode(noticeNode.Node.Id);
+            var badge = WorkflowDesignerGeometry.NoticeBadgeBounds(
+                WorkflowDesignerGeometry.GetNodeScreenRect(_session, noticeNode), _session.Zoom, _session.GetNodeNotices(noticeNode.Node.Id).Count);
+            ShowNoticePopup(noticeNode, new Point((int)badge.X, (int)(badge.Y + badge.Height) + 4));
+            return;
+        }
         if (TryNavigateOverview(e.Location))
         {
             _mode = InteractionMode.NavigateOverview;
             Capture = true;
             Cursor = Cursors.Hand;
+            return;
+        }
+        if (ReadOnly)
+        {
+            SelectReadOnly(e.X, e.Y);
             return;
         }
         var waypoint = WorkflowDesignerInteraction.HitWaypoint(_session, e.X, e.Y);
@@ -459,11 +511,23 @@ public sealed partial class WorkflowDesignerControl : Control
         _session.SetViewport(zoom, e.X - canvasPoint.X * zoom, e.Y - canvasPoint.Y * zoom);
     }
 
+    // 只读时左键只选中：节点、连线，点空白取消选中。
+    private void SelectReadOnly(int x, int y)
+    {
+        if (_session is null) return;
+        if (WorkflowDesignerInteraction.HitNode(_session, x, y) is { } node)
+            _session.SelectNode(node.Node.Id);
+        else if (WorkflowDesignerInteraction.HitConnection(_session, x, y) is { } connection)
+            _session.SelectConnection(connection);
+        else
+            _session.SelectNodes(Array.Empty<string>());
+    }
+
     /// <inheritdoc />
     protected override void OnMouseDoubleClick(MouseEventArgs e)
     {
         base.OnMouseDoubleClick(e);
-        if (_session is null)
+        if (_session is null || ReadOnly)
             return;
         var node = WorkflowDesignerInteraction.HitNode(_session, e.X, e.Y);
         if (node is not null)
@@ -499,6 +563,8 @@ public sealed partial class WorkflowDesignerControl : Control
             }
             if (keyData == (Keys.Control | Keys.C))
                 return _session.CopySelection();
+            if (ReadOnly)
+                return base.ProcessCmdKey(ref msg, keyData);
             if (keyData == (Keys.Control | Keys.V))
                 return _session.PasteSelection().Count > 0;
             if (keyData == Keys.Delete && _session.SelectedNodeIds.Count > 0)
@@ -517,15 +583,15 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="graphics">GDI+ 绘图表面。</param>
     private void DrawGrid(Graphics graphics)
     {
-        graphics.Clear(ToColor(WorkflowDesignerPalette.Canvas));
+        graphics.Clear(ToColor(Colors.Canvas));
         if (_session is null)
             return;
         var (minor, major) = WorkflowDesignerGeometry.GridLineSpacing(_session.Zoom);
         var smoothing = graphics.SmoothingMode;
         graphics.SmoothingMode = SmoothingMode.None;
         if (minor > 0)
-            DrawGridLines(graphics, WorkflowDesignerPalette.GridMinor, minor);
-        DrawGridLines(graphics, WorkflowDesignerPalette.GridMajor, major);
+            DrawGridLines(graphics, Colors.GridMinor, minor);
+        DrawGridLines(graphics, Colors.GridMajor, major);
         graphics.SmoothingMode = smoothing;
     }
 
@@ -558,8 +624,8 @@ public sealed partial class WorkflowDesignerControl : Control
             var selected = ReferenceEquals(_session.SelectedConnection, connection);
             // 停用的并行分支：暗灰虚线，线和下游节点保留，随时可以重新启用。
             using var pen = new Pen(
-                ToColor(selected ? WorkflowDesignerPalette.Selected
-                    : connection.Enabled ? WorkflowDesignerPalette.Connection : WorkflowDesignerPalette.DisabledConnection),
+                ToColor(selected ? Colors.Selected
+                    : connection.Enabled ? Colors.Connection : Colors.DisabledConnection),
                 selected ? 2.5f : 1.5f) { DashStyle = connection.Enabled ? DashStyle.Solid : DashStyle.Dash };
             DrawConnectionPath(graphics, pen, connection, source.Value, target.Value);
             DrawConnectionLabel(graphics, connection, source.Value);
@@ -582,7 +648,7 @@ public sealed partial class WorkflowDesignerControl : Control
         var rect = WorkflowDesignerGeometry.GetNodeScreenRect(_session, item);
         var bounds = ToRectangle(rect);
         var selected = _session.SelectedNodeIds.Contains(item.Node.Id);
-        var style = WorkflowDesignerPalette.GetNodeStyle(_session.GetNodeVisualState(item.Node.Id), selected);
+        var style = Colors.GetNodeStyle(_session.GetNodeVisualState(item.Node.Id), selected);
         var radius = (float)WorkflowDesignerGeometry.NodeCornerRadius(zoom);
         using var path = RoundedRectangle(bounds, radius);
         if (style.Glow.A > 0)
@@ -592,13 +658,13 @@ public sealed partial class WorkflowDesignerControl : Control
             using var glowPen = new Pen(ToColor(style.Glow), glow);
             graphics.DrawPath(glowPen, glowPath);
         }
-        using (var body = new SolidBrush(ToColor(WorkflowDesignerPalette.NodeBody)))
+        using (var body = new SolidBrush(ToColor(Colors.NodeBody)))
             graphics.FillPath(body, path);
         var rows = WorkflowDesignerGeometry.GetNodeRows(_session, item);
         var headerHeight = (float)Math.Min(rect.Height, WorkflowDesignerGeometry.HeaderHeight * zoom);
         var clip = graphics.Save();
         graphics.SetClip(path, CombineMode.Intersect);
-        using (var header = new SolidBrush(ToColor(WorkflowDesignerPalette.NodeHeader)))
+        using (var header = new SolidBrush(ToColor(Colors.NodeHeader)))
             graphics.FillRectangle(header, bounds.X, bounds.Y, bounds.Width, headerHeight);
         graphics.Restore(clip);
         DrawRowSeparators(graphics, rect, rows, zoom);
@@ -612,9 +678,9 @@ public sealed partial class WorkflowDesignerControl : Control
             rect, zoom, MeasureText(graphics, orderText, detailFont), MeasureText(graphics, durationText, detailFont));
         using (var indicator = new SolidBrush(ToColor(style.Indicator)))
             graphics.FillEllipse(indicator, ToRectangle(layout.IndicatorBounds));
-        DrawIcon(graphics, _session.GetNodeIcon(item.Node), ToRectangle(layout.IconBounds), WorkflowDesignerPalette.Icon);
+        DrawIcon(graphics, _session.GetNodeIcon(item.Node), ToRectangle(layout.IconBounds), Colors.Icon);
         using (var titleFont = CanvasFont(layout.TitleFontSize))
-        using (var titleBrush = new SolidBrush(ToColor(WorkflowDesignerPalette.Title)))
+        using (var titleBrush = new SolidBrush(ToColor(Colors.Title)))
         using (var titleFormat = TextFormat(StringAlignment.Near))
             graphics.DrawString(item.Node.Title, titleFont, titleBrush, ToRectangle(layout.TitleBounds), titleFormat);
         DrawRuntimeInfo(graphics, layout, style, orderText, durationText, detailFont);
@@ -633,7 +699,7 @@ public sealed partial class WorkflowDesignerControl : Control
     private static void DrawRowSeparators(Graphics graphics, WorkflowDesignerRect rect, WorkflowNodeRows rows, double zoom)
     {
         if (rows.Count == 0) return;
-        using var pen = new Pen(ToColor(WorkflowDesignerPalette.RowSeparator), 1);
+        using var pen = new Pen(ToColor(Colors.RowSeparator), 1);
         var headerBottom = (float)(rect.Y + WorkflowDesignerGeometry.HeaderHeight * zoom);
         graphics.DrawLine(pen, (float)rect.X + 1, headerBottom, (float)(rect.X + rect.Width) - 1, headerBottom);
         if (rows.DataRows > 0 && rows.TopLabelRows + rows.SideRows > 0)
@@ -695,9 +761,9 @@ public sealed partial class WorkflowDesignerControl : Control
         if (ports.Count == 0) return;
         var zoom = (float)_session.Zoom;
         using var font = CanvasFont(WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
-        using var text = new SolidBrush(ToColor(WorkflowDesignerPalette.DataLabel));
-        using var fill = new SolidBrush(ToColor(WorkflowDesignerPalette.NodeBody));
-        using var border = new Pen(ToColor(WorkflowDesignerPalette.DataPort), Math.Max(1f, 1.5f * Math.Min(1f, zoom)));
+        using var text = new SolidBrush(ToColor(Colors.DataLabel));
+        using var fill = new SolidBrush(ToColor(Colors.NodeBody));
+        using var border = new Pen(ToColor(Colors.DataPort), Math.Max(1f, 1.5f * Math.Min(1f, zoom)));
         using var format = TextFormat(StringAlignment.Far);
         var size = Math.Max(2.5f, 4.5f * zoom);
         var rowHeight = (float)(WorkflowDesignerGeometry.RowHeight * _session.Zoom);
@@ -721,7 +787,7 @@ public sealed partial class WorkflowDesignerControl : Control
         var links = _session.GetDataLinks();
         if (links.Count == 0) return;
         var nodes = _session.Document.Nodes.ToDictionary(node => node.Node.Id, StringComparer.Ordinal);
-        var color = ToColor(WorkflowDesignerPalette.DataPort);
+        var color = ToColor(Colors.DataPort);
         using var pen = new Pen(Color.FromArgb(170, color), 1.5f) { DashStyle = DashStyle.Dash };
         using var end = new SolidBrush(color);
         foreach (var link in links.DistinctBy(link => (link.SourceNodeId, link.Member, link.ConsumerNodeId)))
@@ -741,7 +807,7 @@ public sealed partial class WorkflowDesignerControl : Control
     private void DrawPendingDataLink(Graphics graphics)
     {
         if (_mode != InteractionMode.DataLink || _dataLinkStart is not { } start) return;
-        using var pen = new Pen(ToColor(WorkflowDesignerPalette.DataPort), 2) { DashStyle = DashStyle.Dash };
+        using var pen = new Pen(ToColor(Colors.DataPort), 2) { DashStyle = DashStyle.Dash };
         DrawDataCurve(graphics, pen, start.Point, new WorkflowPoint(_pointer.X, _pointer.Y));
     }
 
@@ -783,7 +849,7 @@ public sealed partial class WorkflowDesignerControl : Control
             Bind(targets[0]);
             return;
         }
-        var menu = new ModernUI.WinForms.ModernContextMenu { Theme = ModernUI.WinForms.ModernTheme.Dark };
+        var menu = new ModernUI.WinForms.ModernContextMenu { Theme = WorkflowWinFormsTheme.Modern };
         menu.Items.Add(new ToolStripLabel($"将“{member.DisplayName}”绑定到：") { Enabled = false });
         foreach (var item in targets)
             menu.Items.Add(item.DisplayName, null, (_, _) => Bind(item));
@@ -796,7 +862,7 @@ public sealed partial class WorkflowDesignerControl : Control
     {
         if (_session is null) return;
         var session = _session;
-        var menu = new ModernUI.WinForms.ModernContextMenu { Theme = ModernUI.WinForms.ModernTheme.Dark };
+        var menu = new ModernUI.WinForms.ModernContextMenu { Theme = WorkflowWinFormsTheme.Modern };
         menu.Items.Add(new ToolStripLabel(WorkflowDesignerInteraction.GetConnectionLabel(session, connection)) { Enabled = false });
         menu.Items.Add("编辑备注…", null, (_, _) => EditConnectionNote(connection));
         if (WorkflowDesignerInteraction.CanDisableConnection(session, connection))
@@ -833,6 +899,84 @@ public sealed partial class WorkflowDesignerControl : Control
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException) { InteractionError?.Invoke(this, exception.Message); }
     }
 
+    /// <summary>
+    /// 节点提示角标：警告色圆点（多位数时为胶囊），跨在节点右上角外沿，显示条数；和异常的红色、执行序号区分开。
+    /// </summary>
+    private void DrawNoticeBadges(Graphics graphics)
+    {
+        if (_session?.Notices is null) return;
+        foreach (var node in _session.Document.Nodes)
+        {
+            var count = _session.GetNodeNotices(node.Node.Id).Count;
+            if (count == 0) continue;
+            var bounds = ToRectangle(WorkflowDesignerGeometry.NoticeBadgeBounds(
+                WorkflowDesignerGeometry.GetNodeScreenRect(_session, node), _session.Zoom, count));
+            using var path = RoundedRectangle(bounds, bounds.Height / 2);
+            using (var fill = new SolidBrush(ToColor(Colors.Notice)))
+                graphics.FillPath(fill, path);
+            // 一圈画布色描边，让角标从节点边框上"浮"出来。
+            using (var ring = new Pen(ToColor(Colors.Canvas), Math.Max(1.5f, (float)(2 * _session.Zoom))))
+                graphics.DrawPath(ring, path);
+            using var font = CanvasFont(Math.Max(9, 11 * _session.Zoom), FontStyle.Bold);
+            using var text = new SolidBrush(ToColor(Colors.NoticeText));
+            using var format = TextFormat(StringAlignment.Center);
+            graphics.DrawString(WorkflowDesignerGeometry.NoticeBadgeText(count), font, text, bounds, format);
+        }
+    }
+
+    /// <summary>
+    /// 画布级提示（无法归属到节点，例如记录丢失）：右上角一个浮层胶囊，概览图出现时排在它下面。
+    /// </summary>
+    private void DrawCanvasNotices(Graphics graphics)
+    {
+        _canvasNoticeBounds = null;
+        if (_session?.Notices is null) return;
+        var notices = _session.GetCanvasNotices();
+        if (notices.Count == 0) return;
+        var text = $"画布提示 {WorkflowDesignerGeometry.NoticeBadgeText(notices.Count)}";
+        using var font = new Font(Font.FontFamily, 12f, FontStyle.Regular, GraphicsUnit.Pixel);
+        var size = graphics.MeasureString(text, font);
+        var dot = 8f;
+        var width = size.Width + dot + 28;
+        var height = Math.Max(26f, size.Height + 10);
+        var top = 12f;
+        if (TryCreateOverviewMapLayout(out var overview))
+            top = overview.MapBounds.Bottom + 8;
+        var bounds = new RectangleF(ClientSize.Width - width - 12, top, width, height);
+        using var path = RoundedRectangle(bounds, height / 2);
+        using (var fill = new SolidBrush(ToColor(Colors.Overlay.WithAlpha(240))))
+            graphics.FillPath(fill, path);
+        using (var border = new Pen(ToColor(Colors.Notice), 1.5f))
+            graphics.DrawPath(border, path);
+        using (var dotBrush = new SolidBrush(ToColor(Colors.Notice)))
+            graphics.FillEllipse(dotBrush, bounds.X + 12, bounds.Y + (height - dot) / 2, dot, dot);
+        using var brush = new SolidBrush(ToColor(Colors.OverlayText));
+        using var format = TextFormat(StringAlignment.Near);
+        graphics.DrawString(text, font, brush, new RectangleF(bounds.X + 12 + dot + 6, bounds.Y, width - dot - 18, height), format);
+        _canvasNoticeBounds = bounds;
+    }
+
+    /// <summary>打开节点（为空时为画布级）提示弹层。</summary>
+    private void ShowNoticePopup(WorkflowCanvasNode? node, Point location)
+    {
+        if (_session is not { } session) return;
+        var notices = node is null ? session.GetCanvasNotices() : session.GetNodeNotices(node.Node.Id);
+        if (notices.Count == 0) return;
+        var title = node is null ? "画布" : node.Node.Title;
+        var popup = new WorkflowNoticePopup(
+            title,
+            notices,
+            () =>
+            {
+                if (node is null) session.AcknowledgeCanvasNotices();
+                else session.AcknowledgeNodeNotices(node.Node.Id);
+                Invalidate();
+            },
+            NoticesPageRequested is null ? null : () => NoticesPageRequested?.Invoke(this, EventArgs.Empty));
+        popup.Closed += (_, _) => BeginInvoke(new Action(popup.Dispose));
+        popup.Show(this, location);
+    }
+
     /// <summary>在标题行右侧绘制执行序号徽标（异常时为红底）和中性色耗时。</summary>
     private static void DrawRuntimeInfo(
         Graphics graphics, WorkflowNodeHeaderLayout layout, WorkflowNodeVisualStyle style, string? order, string? duration, Font font)
@@ -849,7 +993,7 @@ public sealed partial class WorkflowDesignerControl : Control
         }
         if (!string.IsNullOrEmpty(duration) && layout.DurationBounds.Width > 0)
         {
-            using var text = new SolidBrush(ToColor(WorkflowDesignerPalette.Duration));
+            using var text = new SolidBrush(ToColor(Colors.Duration));
             using var format = TextFormat(StringAlignment.Far);
             graphics.DrawString(duration, font, text, ToRectangle(layout.DurationBounds), format);
         }
@@ -882,8 +1026,8 @@ public sealed partial class WorkflowDesignerControl : Control
         }
         var ports = _session.GetPorts(node.Node.Id, WorkflowPortDirection.Input);
         if (ports.Count == 0) return;
-        using var fill = new SolidBrush(ToColor(WorkflowDesignerPalette.NodeBody));
-        using var border = new Pen(ToColor(WorkflowDesignerPalette.PortHighlight), 1.5f);
+        using var fill = new SolidBrush(ToColor(Colors.NodeBody));
+        using var border = new Pen(ToColor(Colors.PortHighlight), 1.5f);
         var radius = (float)WorkflowDesignerGeometry.PortScreenRadius(_session.Zoom, true);
         foreach (var port in ports)
         foreach (var side in Polyfill.GetEnumValues<WorkflowPortSide>())
@@ -916,8 +1060,8 @@ public sealed partial class WorkflowDesignerControl : Control
             // 选中节点四边的换边把手：空闲时为节点底色的小空心圈，拖到某一边时放大并以选中色填充。
             var zoom = (float)(_session?.Zoom ?? 1);
             var radius = Math.Max(3f, (highlighted ? 6f : 4.5f) * zoom);
-            using var fill = new SolidBrush(ToColor(highlighted ? WorkflowDesignerPalette.Selected : WorkflowDesignerPalette.NodeBody));
-            using var border = new Pen(ToColor(highlighted ? WorkflowDesignerPalette.Title : WorkflowDesignerPalette.Port), 1.5f);
+            using var fill = new SolidBrush(ToColor(highlighted ? Colors.Selected : Colors.NodeBody));
+            using var border = new Pen(ToColor(highlighted ? Colors.Title : Colors.Port), 1.5f);
             graphics.FillEllipse(fill, center.X - radius, center.Y - radius, radius * 2, radius * 2);
             graphics.DrawEllipse(border, center.X - radius, center.Y - radius, radius * 2, radius * 2);
         }
@@ -945,11 +1089,11 @@ public sealed partial class WorkflowDesignerControl : Control
             var point = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports);
             var failed = direction == WorkflowPortDirection.Output && port.Key == WorkflowPorts.Failed;
             if (labeled)
-                DrawPortLabel(graphics, labelFont, failed ? WorkflowDesignerPalette.FailedPortLabel : WorkflowDesignerPalette.PortLabel,
+                DrawPortLabel(graphics, labelFont, failed ? Colors.FailedPortLabel : Colors.PortLabel,
                     rect, side, point, ports.Count(item => node.GetPortSide(item) == side), WorkflowPorts.GetDisplayName(port.Key));
             var connected = WorkflowDesignerInteraction.IsPortConnectedAtSide(_session, node, port, side);
             if (connected || emphasized)
-                DrawPortDot(graphics, point, failed ? WorkflowDesignerPalette.FailedPort : WorkflowDesignerPalette.Port, connected, emphasized);
+                DrawPortDot(graphics, point, failed ? Colors.FailedPort : Colors.Port, connected, emphasized);
         }
     }
 
@@ -958,9 +1102,9 @@ public sealed partial class WorkflowDesignerControl : Control
     {
         var radius = (float)WorkflowDesignerGeometry.PortScreenRadius(_session?.Zoom ?? 1, emphasized);
         var circle = new RectangleF((float)point.X - radius, (float)point.Y - radius, radius * 2, radius * 2);
-        using var fill = new SolidBrush(ToColor(filled ? color : WorkflowDesignerPalette.NodeBody));
+        using var fill = new SolidBrush(ToColor(filled ? color : Colors.NodeBody));
         graphics.FillEllipse(fill, circle);
-        using var ring = new Pen(ToColor(filled ? WorkflowDesignerPalette.Canvas : color), filled ? 1f : 1.5f);
+        using var ring = new Pen(ToColor(filled ? Colors.Canvas : color), filled ? 1f : 1.5f);
         graphics.DrawEllipse(ring, circle);
     }
 
@@ -971,8 +1115,8 @@ public sealed partial class WorkflowDesignerControl : Control
         if (_mode != InteractionMode.Marquee)
             return;
         var rect = NormalizeRectangle(_marqueeStart, _marqueeCurrent);
-        using var fill = new SolidBrush(Color.FromArgb(35, 56, 189, 248));
-        using var border = new Pen(Color.FromArgb(56, 189, 248), 1) { DashStyle = DashStyle.Dash };
+        using var fill = new SolidBrush(ToColor(Colors.Selected.WithAlpha(35)));
+        using var border = new Pen(ToColor(Colors.Selected), 1) { DashStyle = DashStyle.Dash };
         graphics.FillRectangle(fill, rect);
         graphics.DrawRectangle(border, rect);
     }
@@ -987,14 +1131,14 @@ public sealed partial class WorkflowDesignerControl : Control
         if (!TryCreateOverviewMapLayout(out var layout) || _session is null)
             return;
 
-        using var background = new SolidBrush(Color.FromArgb(235, 24, 24, 27));
-        using var border = new Pen(Color.FromArgb(82, 82, 91), 1);
-        using var connectionPen = new Pen(Color.FromArgb(113, 113, 122), 1);
-        using var nodeBrush = new SolidBrush(Color.FromArgb(82, 82, 91));
-        using var selectedNodeBrush = new SolidBrush(Color.FromArgb(37, 99, 235));
-        using var viewportBrush = new SolidBrush(Color.FromArgb(30, 59, 130, 246));
-        using var viewportPen = new Pen(Color.FromArgb(96, 165, 250), 1.5f);
-        using var titleBrush = new SolidBrush(Color.FromArgb(212, 212, 216));
+        using var background = new SolidBrush(ToColor(Colors.Overlay.WithAlpha(235)));
+        using var border = new Pen(ToColor(Colors.OverlayBorder), 1);
+        using var connectionPen = new Pen(ToColor(Colors.Connection), 1);
+        using var nodeBrush = new SolidBrush(ToColor(Colors.NodeBorder));
+        using var selectedNodeBrush = new SolidBrush(ToColor(Colors.Selected));
+        using var viewportBrush = new SolidBrush(ToColor(Colors.Selected.WithAlpha(30)));
+        using var viewportPen = new Pen(ToColor(Colors.Selected), 1.5f);
+        using var titleBrush = new SolidBrush(ToColor(Colors.OverlayText));
         using var titleFont = CanvasFont(WorkflowDesignerGeometry.DetailFontPixels);
 
         graphics.FillRectangle(background, layout.MapBounds);
@@ -1171,7 +1315,7 @@ public sealed partial class WorkflowDesignerControl : Control
     {
         if (!_connectionStart.HasValue)
             return;
-        using var pen = new Pen(Color.FromArgb(56, 189, 248), 2) { DashStyle = DashStyle.Dash };
+        using var pen = new Pen(ToColor(Colors.Selected), 2) { DashStyle = DashStyle.Dash };
         var points = WorkflowDesignerInteraction.BuildOrthogonalPath(
             _connectionStart.Value.Point,
             new WorkflowPoint(_pointer.X, _pointer.Y),
@@ -1352,7 +1496,7 @@ public sealed partial class WorkflowDesignerControl : Control
             // 换边端点只画圆点：端口语义由线上的标签表达。
             var target = WorkflowDesignerGeometry.GetPortScreenPoint(_session, node, port, ports, side);
             var failed = direction == WorkflowPortDirection.Output && port.Key == WorkflowPorts.Failed;
-            DrawPortDot(graphics, target, failed ? WorkflowDesignerPalette.FailedPort : WorkflowDesignerPalette.Port, true, false);
+            DrawPortDot(graphics, target, failed ? Colors.FailedPort : Colors.Port, true, false);
         }
     }
 
@@ -1370,11 +1514,11 @@ public sealed partial class WorkflowDesignerControl : Control
         var rect = GetConnectionLabelBounds(graphics, font, connection);
         // 线上的小胶囊：深底细描边，可沿线拖动。
         using var path = RoundedRectangle(rect, rect.Height / 2);
-        using var background = new SolidBrush(ToColor(WorkflowDesignerPalette.LabelBackground));
+        using var background = new SolidBrush(ToColor(Colors.LabelBackground));
         graphics.FillPath(background, path);
-        using var labelBorder = new Pen(ToColor(WorkflowDesignerPalette.LabelBorder));
+        using var labelBorder = new Pen(ToColor(Colors.LabelBorder));
         graphics.DrawPath(labelBorder, path);
-        using var foreground = new SolidBrush(ToColor(connection.Enabled ? WorkflowDesignerPalette.LabelText : WorkflowDesignerPalette.DisabledLabelText));
+        using var foreground = new SolidBrush(ToColor(connection.Enabled ? Colors.LabelText : Colors.DisabledLabelText));
         using var format = TextFormat(StringAlignment.Center);
         graphics.DrawString(WorkflowDesignerInteraction.GetConnectionLabelDisplay(_session, connection), font, foreground, rect, format);
     }
@@ -1418,8 +1562,8 @@ public sealed partial class WorkflowDesignerControl : Control
     {
         if (_session is null)
             return;
-        using var fill = new SolidBrush(Color.FromArgb(15, 23, 42));
-        using var border = new Pen(Color.FromArgb(56, 189, 248), 2);
+        using var fill = new SolidBrush(ToColor(Colors.NodeBody));
+        using var border = new Pen(ToColor(Colors.Selected), 2);
         foreach (var waypoint in connection.Waypoints)
         {
             var point = WorkflowDesignerGeometry.CanvasToScreen(_session, waypoint.X, waypoint.Y);

@@ -27,7 +27,7 @@ public sealed class VisionFrameEditorRenderer : IWorkflowWinFormsNodeEditorPageR
 
 internal sealed class VisionFrameEditorControl : UserControl
 {
-    private static readonly ModernUI.WinForms.ModernTheme Theme = ModernUI.WinForms.ModernTheme.Dark;
+    private static ModernUI.WinForms.ModernTheme Theme => DP.WorkFlow.UI.WinForms.WorkflowWinFormsTheme.Modern;
     private readonly VisionFrameEditorPageModel _model;
     private readonly DP.Vision.Winform.VisionCanvasControl _canvas = new() { Dock = DockStyle.Fill };
     private readonly ModernUI.WinForms.ModernToolStrip _toolbar = new() { Dock = DockStyle.Top, Theme = Theme };
@@ -51,7 +51,6 @@ internal sealed class VisionFrameEditorControl : UserControl
     private bool? _toolsForTemplate;
     private bool _syncing;
     private readonly Label _status = new() { Dock = DockStyle.Bottom, Height = 52, AutoEllipsis = true };
-    private readonly System.Windows.Forms.Timer _timer = new() { Interval = 100 };
     private readonly VisionTemplateEditorControl? _template;
 
     private readonly Action<PointD>? _pick;
@@ -173,13 +172,12 @@ internal sealed class VisionFrameEditorControl : UserControl
         };
         if (model.Caliper is not null || model.MeasureGroup is not null) AttachCaliper();
         _source.SelectedIndexChanged += (_, _) => RefreshPreview();
-        _timer.Tick += (_, _) => RefreshPreview();
-        VisibleChanged += (_, _) => { if (Visible) _timer.Start(); else _timer.Stop(); };
+        // 预览按统一刷新时钟更新；窗口隐藏或最小化时时钟不会叫它。
+        DP.WorkFlow.UI.WinForms.WorkflowRefreshClock.Subscribe(this, RefreshPreview);
         model.RegisterViewLifetime(Dispose);
         SyncToolbar();
         HandleCreated += (_, _) => FitToolbar();
         FontChanged += (_, _) => FitToolbar();
-        _timer.Start();
 
         // 异步命令：期间禁用运行按钮，失败写状态栏，结束后刷新画面和工具栏。
         async void Command(Func<Task> action)
@@ -420,7 +418,7 @@ internal sealed class VisionFrameEditorControl : UserControl
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { _timer.Stop(); _timer.Dispose(); _toolIcons.Dispose(); }
+        if (disposing) _toolIcons.Dispose();
         base.Dispose(disposing);
     }
 }

@@ -51,13 +51,15 @@ public sealed class WorkflowStudioRunCommands : IWorkflowCanvasRunCommands, IDis
     public E_WorkflowExecutionState State => _binding.State;
 
     /// <inheritdoc />
-    public bool CanRun => State is not (E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused);
+    public bool CanRun => State is not (E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused) && BlockedReason is null;
 
     /// <inheritdoc />
     public string RunText => _runToolTip();
 
     /// <inheritdoc />
-    public string RunToolTip => _runToolTip();
+    public string RunToolTip => BlockedReason is { } reason ? _runToolTip() + "：" + reason : _runToolTip();
+
+    private string? BlockedReason => _binding.RunBlockedReason?.Invoke() is { Length: > 0 } reason ? reason : null;
 
     /// <inheritdoc />
     public event EventHandler? Changed;

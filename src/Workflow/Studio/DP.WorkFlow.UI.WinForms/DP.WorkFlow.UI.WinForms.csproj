@@ -1,9 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <ProjectReference Include="..\..\..\Platform\Localization\ModernUI.Localization\ModernUI.Localization.csproj" />
-    <ProjectReference Include="..\..\..\Platform\Desktop\ModernUI.WinForms\ModernUI.WinForms.csproj" />
+    <!-- 与 DP.Foundation 操作台同一份 ModernUI（同名程序集一个进程只能有一份）。 -->
+    <PackageReference Include="ModernUI.WinForms" />
     <ProjectReference Include="..\DP.WorkFlow.UI.Shared\DP.WorkFlow.UI.Shared.csproj" />
-    <ProjectReference Include="..\..\..\Platform\Scripting\ScriptEngine.WinForms\ScriptEngine.WinForms.csproj" />
+    <!-- 打包后让脚本编辑器的 buildTransitive（复制 Scintilla 原生库）传到最终应用。 -->
+    <ProjectReference Include="..\..\..\Platform\Scripting\ScriptEngine.WinForms\ScriptEngine.WinForms.csproj" PrivateAssets="contentfiles;analyzers" />
   </ItemGroup>
   <!--
     显式声明 WinForms 设计器文件关系，确保 SDK-style 项目在 Visual Studio 中
