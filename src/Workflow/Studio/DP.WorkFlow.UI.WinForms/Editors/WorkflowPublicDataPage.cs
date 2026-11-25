@@ -10,53 +10,31 @@ namespace DP.WorkFlow.UI.WinForms;
 /// <remarks>修改经过设计器会话，可以撤销。清单登记在根文档上，子画布共用。</remarks>
 public sealed class WorkflowPublicDataPage : UserControl
 {
-    private readonly ModernListView _list = new()
-    {
-        Dock = DockStyle.Fill,
-        View = View.Details,
-        FullRowSelect = true,
-        HideSelection = false,
-        MultiSelect = false,
-        BorderStyle = BorderStyle.None,
-        ShowItemToolTips = true
-    };
-    private readonly ModernListView _uses = new()
-    {
-        Dock = DockStyle.Fill,
-        View = View.Details,
-        FullRowSelect = true,
-        MultiSelect = false,
-        BorderStyle = BorderStyle.None
-    };
-    private readonly Label _summary = new() { AutoSize = true, Margin = new Padding(0, 8, 12, 0) };
-    private readonly ModernButton _add = WorkflowSizing.Fit(new ModernButton { Text = "新增" });
-    private readonly ModernButton _edit = WorkflowSizing.Fit(new ModernButton { Text = "修改" });
-    private readonly ModernButton _remove = WorkflowSizing.Fit(new ModernButton { Text = "删除" });
-    private readonly ModernButton _declareMissing = WorkflowSizing.Fit(new ModernButton { Text = "补齐未登记的", ButtonType = ModernButtonType.Primary });
-    private readonly Label _usesTitle = new() { AutoSize = true, Dock = DockStyle.Top, Padding = new Padding(0, 6, 0, 4) };
+    private readonly ModernDataGridView _list = WorkflowPage.Table("键", "显示名", "形态", "值类型", "默认值", "保持", "恢复时复位", "使用", "状态");
+    private readonly ModernDataGridView _uses = WorkflowPage.Table("节点", "所在画布", "用作");
+    private readonly Label _summary = WorkflowPage.Label();
+    private readonly ModernButton _add = new() { Text = "新增", Icon = ModernIconKind.Plus };
+    private readonly ModernButton _edit = new() { Text = "修改" };
+    private readonly ModernButton _remove = new() { Text = "删除" };
+    private readonly ModernButton _declareMissing = new() { Text = "补齐未登记的", ButtonType = ModernButtonType.Primary };
+    private readonly WorkflowCardHeader _usesHeader = new("使用它的节点", "选中左边一项");
     private WorkflowPublicDataManifestModel? _model;
 
     /// <summary>初始化页面。</summary>
     public WorkflowPublicDataPage()
     {
-        _list.Columns.Add("键", 160);
-        _list.Columns.Add("显示名", 120);
-        _list.Columns.Add("形态", 90);
-        _list.Columns.Add("值类型", 80);
-        _list.Columns.Add("默认值", 90);
-        _list.Columns.Add("保持", 50);
-        _list.Columns.Add("恢复时复位", 80);
-        _list.Columns.Add("使用", 50, HorizontalAlignment.Right);
-        _list.Columns.Add("状态", 200);
-        _uses.Columns.Add("节点", 160);
-        _uses.Columns.Add("所在画布", 200);
-        _uses.Columns.Add("用作", 160);
+        float[] weights = { 18, 14, 10, 10, 10, 6, 9, 6, 17 };
+        for (var i = 0; i < weights.Length; i++) _list.Columns[i].FillWeight = weights[i];
+        _list.Columns[7].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+        _uses.Columns[0].FillWeight = 30;
+        _uses.Columns[1].FillWeight = 35;
+        _uses.Columns[2].FillWeight = 35;
 
-        _list.SelectedIndexChanged += (_, _) => { ShowUses(); UpdateCommands(); };
-        _list.DoubleClick += (_, _) => EditSelected();
-        _uses.DoubleClick += (_, _) =>
+        _list.SelectionChanged += (_, _) => { ShowUses(); UpdateCommands(); };
+        _list.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) EditSelected(); };
+        _uses.CellDoubleClick += (_, e) =>
         {
-            if (_uses.SelectedItems.Count == 1 && _uses.SelectedItems[0].Tag is WorkflowPublicDataUse use)
+            if (e.RowIndex >= 0 && _uses.Rows[e.RowIndex].Tag is WorkflowPublicDataUse use)
                 UseActivated?.Invoke(this, use);
         };
         _add.Click += (_, _) => AddNew();
@@ -64,13 +42,19 @@ public sealed class WorkflowPublicDataPage : UserControl
         _remove.Click += (_, _) => RemoveSelected();
         _declareMissing.Click += (_, _) => Guarded(() => _model?.DeclareMissing());
 
-        var bar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false, Padding = new Padding(0, 0, 0, 6) };
-        bar.Controls.AddRange(new Control[] { _summary, _add, _edit, _remove, _declareMissing });
-        var split = new ModernSplitter { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, InitialPanel2Size = 120 };
-        split.Panel1.Controls.Add(_list);
-        split.Panel2.Controls.Add(_uses);
-        split.Panel2.Controls.Add(_usesTitle);
-        Controls.Add(split);
+        // 一行操作（左概况，右按钮），下面左清单、右“使用它的节点”：底部页签矮，所以左右排而不是上下排。
+        var bar = new WorkflowBlock { Dock = DockStyle.Top, LogicalExtent = 40, LogicalPadding = new Padding(4, 0, 0, 6) };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.RightToLeft, BackColor = Color.Transparent };
+        foreach (var button in new[] { _declareMissing, _remove, _edit, _add })
+            buttons.Controls.Add(WorkflowSizing.Fit(button));
+        bar.Controls.Add(_summary);
+        bar.Controls.Add(buttons);
+        var uses = new WorkflowBlock { Dock = DockStyle.Right, LogicalExtent = 380 };
+        uses.Controls.Add(_uses);
+        uses.Controls.Add(_usesHeader);
+        Controls.Add(_list);
+        Controls.Add(WorkflowPage.Gap(DockStyle.Right));
+        Controls.Add(uses);
         Controls.Add(bar);
         WorkflowWinFormsTheme.Follow(this, Rebuild);
         Rebuild();
@@ -108,34 +92,24 @@ public sealed class WorkflowPublicDataPage : UserControl
         var theme = WorkflowWinFormsTheme.Modern;
         var selectedKey = SelectedRow?.Key;
         var rows = _model?.Rows ?? Array.Empty<WorkflowPublicDataRow>();
-        _list.BeginUpdate();
-        try
+        _list.Rows.Clear();
+        foreach (var row in rows)
         {
-            _list.Items.Clear();
-            foreach (var row in rows)
-            {
-                var d = row.Declaration;
-                var item = new ListViewItem(d.Key) { Tag = row, ToolTipText = string.Join(Environment.NewLine, row.Diagnostics.Select(x => x.Message)) };
-                item.SubItems.Add(d.DisplayName ?? string.Empty);
-                item.SubItems.Add(KindText(d.Kind));
-                item.SubItems.Add(d.Kind == WorkflowPublicDataKind.Signal ? string.Empty : d.ValueType.ToString());
-                item.SubItems.Add(d.DefaultValueText ?? string.Empty);
-                item.SubItems.Add(d.Persistent ? "是" : string.Empty);
-                item.SubItems.Add(d.ResetOnRecovery ? "是" : string.Empty);
-                item.SubItems.Add(row.Uses.Count.ToString(CultureInfo.InvariantCulture));
-                item.SubItems.Add(row.Diagnostics.Count > 0 ? row.StatusText + "：" + row.Diagnostics[0].Message : row.StatusText);
-                item.ForeColor = row.HasError ? theme.Error
-                    : !row.Declared || row.Diagnostics.Count > 0 ? theme.Warning
-                    : row.Unused ? theme.TextSecondary
-                    : theme.Text;
-                _list.Items.Add(item);
-                if (string.Equals(row.Key, selectedKey, StringComparison.Ordinal)) item.Selected = true;
-            }
+            var d = row.Declaration;
+            var index = _list.Rows.Add(d.Key, d.DisplayName ?? string.Empty, KindText(d.Kind),
+                d.Kind == WorkflowPublicDataKind.Signal ? string.Empty : d.ValueType.ToString(),
+                d.DefaultValueText ?? string.Empty, d.Persistent ? "是" : string.Empty, d.ResetOnRecovery ? "是" : string.Empty,
+                row.Uses.Count.ToString(CultureInfo.InvariantCulture),
+                row.Diagnostics.Count > 0 ? row.StatusText + "：" + row.Diagnostics[0].Message : row.StatusText);
+            var line = _list.Rows[index];
+            line.Tag = row;
+            line.Cells[8].ToolTipText = string.Join(Environment.NewLine, row.Diagnostics.Select(x => x.Message));
+            line.DefaultCellStyle.ForeColor = row.HasError ? theme.Error
+                : !row.Declared || row.Diagnostics.Count > 0 ? theme.Warning
+                : row.Unused ? theme.TextSecondary
+                : theme.Text;
         }
-        finally
-        {
-            _list.EndUpdate();
-        }
+        WorkflowPage.RestoreSelection(_list, selectedKey, line => (line.Tag as WorkflowPublicDataRow)?.Key);
         var declared = rows.Count(row => row.Declared);
         var undeclared = rows.Count - declared;
         _summary.Text = _model is null ? "未打开流程"
@@ -145,29 +119,20 @@ public sealed class WorkflowPublicDataPage : UserControl
         UpdateCommands();
     }
 
-    private WorkflowPublicDataRow? SelectedRow => _list.SelectedItems.Count == 1 ? _list.SelectedItems[0].Tag as WorkflowPublicDataRow : null;
+    private WorkflowPublicDataRow? SelectedRow => _list.SelectedRows.Count == 1 ? _list.SelectedRows[0].Tag as WorkflowPublicDataRow : null;
 
     private void ShowUses()
     {
         var row = SelectedRow;
-        _usesTitle.Text = row is null ? "选中一项查看使用它的节点" : $"使用 {row.Key} 的节点（{row.Uses.Count}）";
-        _uses.BeginUpdate();
-        try
+        _usesHeader.Subtitle = row is null ? "选中左边一项" : $"{row.Key} · {row.Uses.Count} 处";
+        _uses.Rows.Clear();
+        foreach (var use in row?.Uses ?? Array.Empty<WorkflowPublicDataUse>())
         {
-            _uses.Items.Clear();
-            foreach (var use in row?.Uses ?? Array.Empty<WorkflowPublicDataUse>())
-            {
-                var parts = WorkflowNoticeLocation.Split(use.PlanPath);
-                var item = new ListViewItem(use.NodeId) { Tag = use };
-                item.SubItems.Add(parts.Count == 0 ? "主流程" : string.Join(" / ", parts));
-                item.SubItems.Add(use.Declaration.Describe());
-                _uses.Items.Add(item);
-            }
+            var parts = WorkflowNoticeLocation.Split(use.PlanPath);
+            var index = _uses.Rows.Add(use.NodeId, parts.Count == 0 ? "主流程" : string.Join(" / ", parts), use.Declaration.Describe());
+            _uses.Rows[index].Tag = use;
         }
-        finally
-        {
-            _uses.EndUpdate();
-        }
+        _uses.ClearSelection();
     }
 
     private void UpdateCommands()

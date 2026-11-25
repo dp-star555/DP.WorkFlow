@@ -1,0 +1,125 @@
+using DP.WorkFlow.Persistence.Json;
+
+namespace DP.WorkFlow.Samples.Pages;
+
+/// <summary>
+/// 示例的流程管理（相当于 Foundation 里的 WorkflowService 的精简版）：登记节点，读 flows\*.json 建流程管理，
+/// 发布后重新加载；设计页的试运行用单独的运行宿主。
+/// </summary>
+internal sealed class SampleWorkflowHost : IDisposable
+{
+    private readonly WorkflowRuntimePluginCatalog _plugins;
+    private readonly Dictionary<string, string> _sources = new(StringComparer.Ordinal);
+    private readonly HashSet<WorkflowRuntimeHost> _trials = new();
+
+    public SampleWorkflowHost(string root)
+    {
+        FlowDirectory = Path.Combine(root, "flows");
+        Directory.CreateDirectory(FlowDirectory);
+        _plugins = new WorkflowRuntimePluginCatalog(new WorkflowNodeCatalog(), new WorkflowNodeHandlerCatalog())
+            .Register(new WorkflowStandardRuntimePluginModule())
+            .Register(new WorkflowCompositeRuntimePluginModule())
+            .Register(new WorkflowProcessRuntimePluginModule())
+            .Register(new SampleNodesModule())
+            .Freeze();
+    }
+
+    /// <summary>已发布流程所在目录（流程库）。</summary>
+    public string FlowDirectory { get; }
+
+    public WorkflowNodeCatalog Nodes => _plugins.Nodes;
+
+    public WorkflowRunCenterOptions Options { get; } = new() { FlowOutlet = WorkflowRunLogBook.OutletOptions() };
+
+    public WorkflowRunLogBook RunLog { get; } = new();
+
+    public IServiceProvider Services { get; } = new WorkflowServiceProvider();
+
+    public WorkflowRunCenter? Center { get; private set; }
+
+    /// <summary>读不出的流程文件（文件名：原因）。</summary>
+    public IReadOnlyList<string> LoadIssues { get; private set; } = Array.Empty<string>();
+
+    /// <summary>流程管理重建后发生（界面线程）。</summary>
+    public event EventHandler? CenterChanged;
+
+    public bool IsRunning => Center?.Flows.Any(flow => flow.IsRunning) ?? false;
+
+    public bool IsTrialRunning => _trials.Any(host => host.State is E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused);
+
+    /// <summary>读全部已发布流程，换掉原来的流程管理。</summary>
+    public void Load()
+    {
+        if (IsRunning) throw new InvalidOperationException("有流程在运行，先停止再重新加载。");
+        var center = new WorkflowRunCenter(_plugins.Nodes, _plugins.Handlers, Options, Services);
+        var store = new WorkflowDocumentJsonStore(_plugins.Nodes);
+        var issues = new List<string>();
+        _sources.Clear();
+        foreach (var file in Directory.GetFiles(FlowDirectory, "*.json").OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var json = File.ReadAllText(file);
+                var flow = center.AddFlow(store.Deserialize(json).Document);
+                _sources[flow.Name] = json;
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                issues.Add(Path.GetFileName(file) + "：" + exception.Message);
+            }
+        }
+        RunLog.Attach(center);
+        var old = Center;
+        Center = center;
+        LoadIssues = issues;
+        old?.Dispose();
+        CenterChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>流程管理加载时的文档（运行页按它画画布）。</summary>
+    public WorkflowDocument? LoadedDocumentOf(string name) =>
+        _sources.TryGetValue(name, out var json) ? new WorkflowDocumentJsonStore(_plugins.Nodes).Deserialize(json).Document : null;
+
+    /// <summary>发布前检查草稿：能读、能编译。</summary>
+    public IReadOnlyList<string> CheckDraft(string name, string json)
+    {
+        try
+        {
+            new WorkflowCompiler(_plugins.Nodes).Compile(new WorkflowDocumentJsonStore(_plugins.Nodes).Deserialize(json).Document);
+            return Array.Empty<string>();
+        }
+        catch (WorkflowCompilationException exception)
+        {
+            return exception.Errors.Where(error => error.Severity == WorkflowValidationSeverity.Error).Select(error => error.Message).ToArray();
+        }
+        catch (Exception exception) when (exception is System.Text.Json.JsonException or InvalidDataException or InvalidOperationException or NotSupportedException or ArgumentException)
+        {
+            return new[] { $"{name} 读不出：{exception.Message}" };
+        }
+    }
+
+    public void StartAll()
+    {
+        if (IsTrialRunning) throw new InvalidOperationException("设计页在试运行，先停止试运行。");
+        _ = Center?.StartAll();
+    }
+
+    public Task StopAllAsync() => Center?.StopAllAsync() ?? Task.CompletedTask;
+
+    public WorkflowRuntimeHost CreateTrialHost()
+    {
+        var host = new WorkflowRuntimeHost(_plugins.Nodes, _plugins.Handlers);
+        _trials.Add(host);
+        return host;
+    }
+
+    public void Dispose()
+    {
+        foreach (var trial in _trials)
+        {
+            trial.Cancel();
+            trial.Dispose();
+        }
+        Center?.Dispose();
+    }
+}

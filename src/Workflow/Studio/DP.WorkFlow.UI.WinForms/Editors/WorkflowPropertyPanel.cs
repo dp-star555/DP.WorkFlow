@@ -39,6 +39,15 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     // 输入来源图标按钮的悬停说明。
     private readonly ToolTip _sourceTips = new() { InitialDelay = 400 };
 
+    /// <summary>
+    /// 窄栏（设计页右侧检查器）用：属性表放在卡片里，说明直接写在每行名称下面，不再占底部说明区。
+    /// </summary>
+    public void UseCompactLayout()
+    {
+        _modernGrid.Surface = ModernPropertyGridSurface.Container;
+        _modernGrid.DescriptionPlacement = ModernPropertyDescriptionPlacement.Inline;
+    }
+
     /// <summary>初始化节点属性编辑面板。</summary>
     public WorkflowPropertyPanel()
     {
