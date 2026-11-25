@@ -126,9 +126,12 @@ public sealed class WorkflowFaultWorkbenchModel : IWorkflowFaultFallback, IDispo
     public WorkflowFaultSessionView Describe(WorkflowFaultSession session) => Describe(session, null);
 
     /// <summary>兜底：按给出的去向放行（流程名 → 去向）。只能在等操作员选择时调用。</summary>
-    /// <param name="directives">各流程的去向；必须给的流程都要有。</param>
+    /// <param name="directives">各流程的去向；必须给的流程都要有。"回退再继续"由统管层先回退再放行。</param>
+    /// <param name="confirmManual">回退时不支持回退的节点交人确认；为空时遇到这类节点即停下，回到这里重新选。</param>
     /// <exception cref="InvalidOperationException">没有等待中的询问，或有流程的去向不被允许、缺去向。</exception>
-    public void Release(IReadOnlyDictionary<string, WorkflowResumeDirective> directives)
+    public void Release(
+        IReadOnlyDictionary<string, WorkflowResumeDirective> directives,
+        Func<WorkflowExecutionRecordEntry, CancellationToken, Task<bool>>? confirmManual = null)
     {
         Guard.NotNull(directives);
         var pending = TakePending(check: view =>
@@ -145,11 +148,12 @@ public sealed class WorkflowFaultWorkbenchModel : IWorkflowFaultFallback, IDispo
             }
         });
         pending.Completion.TrySetResult(new WorkflowFaultFallbackDecision(WorkflowFaultFallbackChoice.UseDirectives,
-            new Dictionary<string, WorkflowResumeDirective>(directives.ToDictionary(pair => pair.Key, pair => pair.Value), StringComparer.Ordinal)));
+            new Dictionary<string, WorkflowResumeDirective>(directives.ToDictionary(pair => pair.Key, pair => pair.Value), StringComparer.Ordinal),
+            confirmManual));
         RaiseChanged();
     }
 
-    /// <summary>兜底：重新运行处理流程（已经撤回过的动作不会再撤回）。</summary>
+    /// <summary>兜底：重新运行处理流程（已经回退过的动作不会再回退）。</summary>
     /// <exception cref="InvalidOperationException">没有等待中的询问，或没有处理流程。</exception>
     public void RerunHandler()
     {
@@ -255,8 +259,7 @@ public sealed class WorkflowFaultWorkbenchModel : IWorkflowFaultFallback, IDispo
     {
         var candidates = new List<WorkflowResumeDirective>
         {
-            WorkflowResumeDirective.Continue("工作台：继续原操作"),
-            WorkflowResumeDirective.Redo("工作台：重做本节点")
+            WorkflowResumeDirective.RecoverInPlace("工作台：就地恢复")
         };
         var faulted = stops.Where(stop => stop.Reason != WorkflowStopReason.Requested).ToArray();
         var target = faulted.Length > 0 ? faulted : stops.Take(1).ToArray();
@@ -266,7 +269,7 @@ public sealed class WorkflowFaultWorkbenchModel : IWorkflowFaultFallback, IDispo
             : target.Select(stop => stop.Entries.Select(entry => entry.Key))
                 .Aggregate((left, right) => left.Intersect(right, StringComparer.Ordinal))
                 .Distinct(StringComparer.Ordinal).ToArray();
-        candidates.AddRange(entries.Select(key => WorkflowResumeDirective.EnterAt(key, $"工作台：回到入口 {key}")));
+        candidates.AddRange(entries.Select(key => WorkflowResumeDirective.RollBack(key, $"工作台：回退到入口 {key} 再继续")));
         candidates.Add(WorkflowResumeDirective.EndLap("工作台：结束本圈"));
         candidates.Add(WorkflowResumeDirective.Stop("工作台：停止流程"));
         return candidates.Select(directive => Evaluate(stops, directive)).ToArray();

@@ -3,7 +3,6 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>点到无限直线或有限线段的距离节点。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.MeasurePointLineDistance", DisplayName = "点到线距离", Category = WorkflowVisionCategories.Measurement, OutputType = typeof(DP.Vision.Algorithms.GeometricDistanceResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class MeasureVisionPointLineDistanceNodeModel : WorkflowVisionGeometryAlgorithmNodeModel
@@ -30,7 +29,7 @@ public sealed class MeasureVisionPointLineDistanceNodeModel : WorkflowVisionGeom
 }
 
 /// <summary>在共同空间测量，并在原图预览实际距离连线。</summary>
-public sealed class MeasureVisionPointLineDistanceNodeHandler : WorkflowNodeHandler<MeasureVisionPointLineDistanceNodeModel>
+public sealed class MeasureVisionPointLineDistanceNodeHandler : WorkflowSideEffectFreeNodeHandler<MeasureVisionPointLineDistanceNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(MeasureVisionPointLineDistanceNodeModel node) =>

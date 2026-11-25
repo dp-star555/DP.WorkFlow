@@ -4,7 +4,6 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>保持尺寸/坐标系的整图显式预处理。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.PreprocessImage", DisplayName = "图像预处理", Category = WorkflowVisionCategories.Processing, OutputType = typeof(DP.Vision.ImageFrame))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class PreprocessVisionImageNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
@@ -45,7 +44,7 @@ public sealed class PreprocessVisionImageNodeModel : AnalyzeVisionFrameNodeModel
 }
 
 /// <summary>新像素产生新FrameId，输出交给有界帧仓。</summary>
-public sealed class PreprocessVisionImageNodeHandler : WorkflowNodeHandler<PreprocessVisionImageNodeModel>
+public sealed class PreprocessVisionImageNodeHandler : WorkflowSideEffectFreeNodeHandler<PreprocessVisionImageNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(PreprocessVisionImageNodeModel node) =>
@@ -69,7 +68,6 @@ public sealed class PreprocessVisionImageNodeHandler : WorkflowNodeHandler<Prepr
 }
 
 /// <summary>灰度闭区间产生可绑定精确Region。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.ThresholdRegion", DisplayName = "阈值分割区域", Category = WorkflowVisionCategories.Region, OutputType = typeof(DP.Vision.Algorithms.RegionAnalysisResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class ThresholdVisionRegionNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
@@ -101,7 +99,7 @@ public sealed class ThresholdVisionRegionNodeModel : AnalyzeVisionFrameNodeModel
 }
 
 /// <summary>显式Region分割处理器。</summary>
-public sealed class ThresholdVisionRegionNodeHandler : WorkflowNodeHandler<ThresholdVisionRegionNodeModel>
+public sealed class ThresholdVisionRegionNodeHandler : WorkflowSideEffectFreeNodeHandler<ThresholdVisionRegionNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(ThresholdVisionRegionNodeModel node) =>
@@ -123,7 +121,6 @@ public sealed class ThresholdVisionRegionNodeHandler : WorkflowNodeHandler<Thres
 }
 
 /// <summary>已分割Region的形态学；输入帧仅用于身份校验和预览。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.MorphRegion", DisplayName = "区域形态学", Category = WorkflowVisionCategories.Region, OutputType = typeof(DP.Vision.Algorithms.RegionAnalysisResult))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class MorphVisionRegionNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
@@ -161,7 +158,7 @@ public sealed class MorphVisionRegionNodeModel : AnalyzeVisionFrameNodeModel, IW
 }
 
 /// <summary>保留FrameId的精确Region处理器。</summary>
-public sealed class MorphVisionRegionNodeHandler : WorkflowNodeHandler<MorphVisionRegionNodeModel>
+public sealed class MorphVisionRegionNodeHandler : WorkflowSideEffectFreeNodeHandler<MorphVisionRegionNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(MorphVisionRegionNodeModel node) =>
@@ -183,7 +180,6 @@ public sealed class MorphVisionRegionNodeHandler : WorkflowNodeHandler<MorphVisi
 }
 
 /// <summary>按明确特征范围筛选连通域，空结果成功。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.SelectBlobs", DisplayName = "筛选连通域", Category = WorkflowVisionCategories.Inspection, OutputType = typeof(DP.Vision.Algorithms.BlobAnalysisResult), Icon = "blobs")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class SelectVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
@@ -231,7 +227,7 @@ public sealed class SelectVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel, IW
 }
 
 /// <summary>只选择事实，不重新分割或生成产品判定。</summary>
-public sealed class SelectVisionBlobsNodeHandler : WorkflowNodeHandler<SelectVisionBlobsNodeModel>
+public sealed class SelectVisionBlobsNodeHandler : WorkflowSideEffectFreeNodeHandler<SelectVisionBlobsNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(SelectVisionBlobsNodeModel node) =>

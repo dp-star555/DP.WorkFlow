@@ -100,13 +100,12 @@ public sealed class WorkflowRunPreparationScopeDeclarationTests
     }
 
     [WorkflowNode("TestScopeFlaky")]
-    [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
     private sealed class FlakyNode : WorkflowNodeModel
     {
         public override string NodeType => "TestScopeFlaky";
     }
 
-    private sealed class FlakyNodeHandler : WorkflowNodeHandler<FlakyNode>
+    private sealed class FlakyNodeHandler : WorkflowSideEffectFreeNodeHandler<FlakyNode>
     {
         public int ExecutionCount;
 
@@ -134,9 +133,9 @@ public sealed class WorkflowRunPreparationScopeDeclarationTests
             TreatNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
             ExecutionCount++;
-            // 处理流程给出去向：重做出故障的节点。
+            // 处理流程给出去向：就地恢复出故障的节点。
             ((WorkflowFaultSession)context.Services.GetService(typeof(WorkflowFaultSession))!)
-                .SetDirective(null, WorkflowResumeDirective.Redo("已处置"));
+                .SetDirective(null, WorkflowResumeDirective.RecoverInPlace("已处置"));
             return ValueTask.FromResult(NodeExecutionResult.Continue());
         }
     }

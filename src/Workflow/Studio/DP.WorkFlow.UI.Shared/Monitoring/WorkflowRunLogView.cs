@@ -283,7 +283,7 @@ public static class WorkflowRunLogText
         WorkflowRunLogState.Interrupted => "中断",
         WorkflowRunLogState.Canceled => "取消",
         WorkflowRunLogState.FaultRouted => "故障出口",
-        WorkflowRunLogState.Undone => "已撤回",
+        WorkflowRunLogState.Undone => "已回退",
         _ => string.Empty
     };
 

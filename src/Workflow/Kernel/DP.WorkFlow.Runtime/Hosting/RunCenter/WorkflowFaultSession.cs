@@ -152,6 +152,7 @@ public sealed class WorkflowFaultSession
     /// 给一个流程的去向。流程名为空时给出故障的流程（没有时为唯一停下的流程）。
     /// "停止流程"作用于该流程所有停点；其他去向作用于故障 / 中断的停点（只有被要求停下的停点时作用于第一个），
     /// 其余被要求停下的停点照常继续。去向不被允许时抛出异常，处理流程因此出错并进入兜底。
+    /// "回退再继续"要先回退，请用 <see cref="RollBackAsync"/>。
     /// </summary>
     /// <param name="flowName">流程名；为空时为出故障的流程。</param>
     /// <param name="directive">去向。</param>
@@ -159,6 +160,8 @@ public sealed class WorkflowFaultSession
     public void SetDirective(string? flowName, WorkflowResumeDirective directive)
     {
         Guard.NotNull(directive);
+        if (directive.Kind == WorkflowResumeKind.RollBack)
+            throw new InvalidOperationException("回退再继续要先把动作回退，请用 RollBackAsync。");
         lock (_sync)
         {
             var name = ResolveFlow(flowName);
@@ -169,6 +172,56 @@ public sealed class WorkflowFaultSession
             }
             _directives[name] = directive;
         }
+    }
+
+    /// <summary>
+    /// 回退再继续：把各目标流程从现在逆序回退到恢复入口（入口本身不回退），全部目标合在一起按真实执行的倒序回退
+    /// （例如先抬起 Z 再松爪）；回退完成后给这些流程"回退到入口再继续"的去向。
+    /// 支持回退的节点自动回退；不支持的节点交人确认处理好（<paramref name="confirmManual"/>），没有人确认时停下并返回原因。
+    /// 已经回退过的动作不会再回退（重新运行处理流程时）。
+    /// </summary>
+    /// <param name="targets">回退目标：流程（为空时为出故障的流程）和恢复入口键。</param>
+    /// <param name="confirmManual">不支持回退的节点交人确认；返回 true 表示已处理好。</param>
+    /// <param name="message">说明，记入运行记录。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <exception cref="InvalidOperationException">流程没有停在本会话里，或入口不在停点可以回去的入口里。</exception>
+    public async Task<WorkflowUndoReport> RollBackAsync(
+        IReadOnlyList<WorkflowRollBackTarget> targets,
+        Func<WorkflowExecutionRecordEntry, CancellationToken, Task<bool>>? confirmManual,
+        string? message,
+        CancellationToken cancellationToken)
+    {
+        Guard.NotNull(targets);
+        if (targets.Count == 0)
+            throw new InvalidOperationException("没有回退目标。");
+        var plan = new List<(string Flow, WorkflowResumeDirective Directive, WorkflowUndoTarget Undo)>();
+        lock (_sync)
+        {
+            foreach (var target in targets)
+            {
+                var name = ResolveFlow(target.FlowName);
+                var directive = WorkflowResumeDirective.RollBack(target.EntryKey, message);
+                var stops = StopsFor(name, directive);
+                foreach (var stop in stops)
+                {
+                    if (!stop.Point.Allows(directive, out var reason))
+                        throw new InvalidOperationException($"流程 {name}：{reason}");
+                }
+                var entry = stops[0].Point.Entries.First(item => string.Equals(item.Key, directive.EntryKey, StringComparison.Ordinal));
+                plan.Add((name, directive, new WorkflowUndoTarget(name, entry.Position.NodeId)));
+            }
+        }
+        var report = await Center.ExecutionRecord.UndoAsync(plan.Select(item => item.Undo).ToArray(), confirmManual, cancellationToken)
+            .ConfigureAwait(false);
+        if (report.Success)
+        {
+            lock (_sync)
+            {
+                foreach (var item in plan)
+                    _directives[item.Flow] = item.Directive;
+            }
+        }
+        return report;
     }
 
     /// <summary>已经给出的去向，按流程名。</summary>
@@ -260,11 +313,11 @@ public sealed class WorkflowFaultSession
                         missing.Add(flow);
                         continue;
                     }
-                    directive = WorkflowResumeDirective.Continue("处理流程没有给去向，照常继续。");
+                    directive = WorkflowResumeDirective.RecoverInPlace("处理流程没有给去向，照常继续。");
                 }
                 var targets = StopsFor(flow, directive);
                 foreach (var stop in flowStops)
-                    assignment.Add((stop, targets.Contains(stop) ? directive : WorkflowResumeDirective.Continue()));
+                    assignment.Add((stop, targets.Contains(stop) ? directive : WorkflowResumeDirective.RecoverInPlace()));
             }
         }
         return missing;
@@ -314,6 +367,11 @@ public sealed class WorkflowFaultSession
     }
 }
 
+/// <summary>回退再继续的一个目标。</summary>
+/// <param name="FlowName">流程名；为空时为出故障的流程。</param>
+/// <param name="EntryKey">回到的恢复入口键。</param>
+public sealed record WorkflowRollBackTarget(string? FlowName, string EntryKey);
+
 /// <summary>路由表的一项：满足条件的故障交给这个处理流程。</summary>
 /// <param name="Name">显示用名称。</param>
 /// <param name="Matches">判断故障会话是否交给本项处理。</param>
@@ -323,7 +381,7 @@ public sealed record WorkflowFaultRoute(string Name, Func<WorkflowFaultSession, 
 /// <summary>兜底界面的选择。</summary>
 public enum WorkflowFaultFallbackChoice
 {
-    /// <summary>重新运行处理流程（已经撤回过的动作不会再撤回一次）。</summary>
+    /// <summary>重新运行处理流程（已经回退过的动作不会再回退一次）。</summary>
     RerunHandler = 0,
 
     /// <summary>直接给出各流程的去向。</summary>
@@ -341,10 +399,12 @@ public sealed record WorkflowFaultFallbackRequest(WorkflowFaultSession Session, 
 
 /// <summary>兜底界面的选择结果。</summary>
 /// <param name="Choice">选择。</param>
-/// <param name="Directives">选"直接给出去向"时各流程的去向（流程名 → 去向）。</param>
+/// <param name="Directives">选"直接给出去向"时各流程的去向（流程名 → 去向）；"回退再继续"由统管层先回退再放行。</param>
+/// <param name="ConfirmManual">回退时不支持回退的节点交人确认；为空时遇到这类节点即停下。</param>
 public sealed record WorkflowFaultFallbackDecision(
     WorkflowFaultFallbackChoice Choice,
-    IReadOnlyDictionary<string, WorkflowResumeDirective>? Directives = null)
+    IReadOnlyDictionary<string, WorkflowResumeDirective>? Directives = null,
+    Func<WorkflowExecutionRecordEntry, CancellationToken, Task<bool>>? ConfirmManual = null)
 {
     /// <summary>重新运行处理流程。</summary>
     public static WorkflowFaultFallbackDecision Rerun { get; } = new(WorkflowFaultFallbackChoice.RerunHandler);

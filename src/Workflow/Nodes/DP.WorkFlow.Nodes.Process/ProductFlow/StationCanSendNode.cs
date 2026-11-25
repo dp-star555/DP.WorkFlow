@@ -1,14 +1,13 @@
 namespace DP.WorkFlow;
 
 /// <summary>判断指定工站是否允许出料。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("StationCanSend", DisplayName = "判断可出料节点", Category = "8.Process/ProductFlow", OutputType = typeof(StationBooleanNodeResult), Icon = "station")]
 [WorkflowOutputPorts(WorkflowPorts.True, WorkflowPorts.False, WorkflowPorts.Failed)]
 public sealed class StationCanSendNodeModel : ProductFlowStationSlotNodeModel { /// <inheritdoc />
     public override string NodeType => "StationCanSend"; }
 
 /// <summary>执行工站可出料判断。</summary>
-public sealed class StationCanSendNodeHandler : WorkflowNodeHandler<StationCanSendNodeModel>
+public sealed class StationCanSendNodeHandler : WorkflowSideEffectFreeNodeHandler<StationCanSendNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(StationCanSendNodeModel node) =>

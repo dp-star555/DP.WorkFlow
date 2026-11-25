@@ -199,7 +199,7 @@ public sealed partial class WorkflowRunCenter
                 switch (decision.Choice)
                 {
                     case WorkflowFaultFallbackChoice.RerunHandler when handler is not null:
-                        // 重新运行处理流程：已经撤回过的动作在合并执行记录里有标记，不会再撤回一次。
+                        // 重新运行处理流程：已经回退过的动作在合并执行记录里有标记，不会再回退一次。
                         runHandler = true;
                         continue;
                     case WorkflowFaultFallbackChoice.UseDirectives:
@@ -207,9 +207,16 @@ public sealed partial class WorkflowRunCenter
                         session.ClearDirectives();
                         try
                         {
-                            foreach (var pair in decision.Directives ?? new Dictionary<string, WorkflowResumeDirective>())
+                            var directives = decision.Directives ?? new Dictionary<string, WorkflowResumeDirective>();
+                            foreach (var pair in directives.Where(pair => pair.Value.Kind != WorkflowResumeKind.RollBack))
                                 session.SetDirective(pair.Key, pair.Value);
-                            failure = TryRelease(session);
+                            var rollBacks = directives.Where(pair => pair.Value.Kind == WorkflowResumeKind.RollBack)
+                                .Select(pair => new WorkflowRollBackTarget(pair.Key, pair.Value.EntryKey!)).ToArray();
+                            failure = rollBacks.Length == 0
+                                ? null
+                                : (await session.RollBackAsync(rollBacks, decision.ConfirmManual, "兜底：回退再继续", _lifetime.Token)
+                                    .ConfigureAwait(false)).Failure;
+                            failure ??= TryRelease(session);
                         }
                         catch (InvalidOperationException exception)
                         {

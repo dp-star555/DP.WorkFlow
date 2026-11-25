@@ -514,7 +514,8 @@ public sealed class WorkflowDocumentJsonStore
 
     private static string NormalizeLegacyNodeType(string nodeType) => nodeType switch
     {
-        "RetryCurrentNode" => "WarnRetryCurrentNode",
+        // 继续原操作和重做本节点合并为就地恢复（PENG 2026-11-25）。
+        "RetryCurrentNode" or "WarnRetryCurrentNode" or "WarnContinueOperation" => "WarnRecoverInPlace",
         _ => nodeType
     };
 

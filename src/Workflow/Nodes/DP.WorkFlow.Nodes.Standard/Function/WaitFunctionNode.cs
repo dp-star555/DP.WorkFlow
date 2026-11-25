@@ -9,7 +9,6 @@ public sealed record WaitFunctionNodeResult([property: DisplayName("条件满足
 /// <summary>
 /// 周期调用宿主条件，满足时走 Success，超时时走 Timeout。
 /// </summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("WaitFunction", DisplayName = "函数等待节点", Category = "2.Function/等待", OutputType = typeof(WaitFunctionNodeResult), Icon = "hourglass")]
 [WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class WaitFunctionNodeModel : WorkflowNodeModel
@@ -31,7 +30,7 @@ public sealed class WaitFunctionNodeModel : WorkflowNodeModel
 }
 
 /// <summary>执行函数等待节点。</summary>
-public sealed class WaitFunctionNodeHandler : WorkflowNodeHandler<WaitFunctionNodeModel>
+public sealed class WaitFunctionNodeHandler : WorkflowSideEffectFreeNodeHandler<WaitFunctionNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(WaitFunctionNodeModel node) =>

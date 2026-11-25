@@ -98,21 +98,20 @@ public sealed class WorkflowVisionFrameScopeRecoveryEndToEndTests
         protected override ValueTask<NodeExecutionResult> ExecuteAsync(
             TreatNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
-            // 处置完成：重做出故障的节点。
+            // 处置完成：就地恢复出故障的节点。
             ((WorkflowFaultSession)context.Services.GetService(typeof(WorkflowFaultSession))!)
-                .SetDirective(null, WorkflowResumeDirective.Redo("已处置"));
+                .SetDirective(null, WorkflowResumeDirective.RecoverInPlace("已处置"));
             return ValueTask.FromResult(NodeExecutionResult.Continue());
         }
     }
 
     [WorkflowNode("TestE2eFault")]
-    [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
     private sealed class FaultNode : WorkflowNodeModel
     {
         public override string NodeType => "TestE2eFault";
     }
 
-    private sealed class FaultNodeHandler : WorkflowNodeHandler<FaultNode>
+    private sealed class FaultNodeHandler : WorkflowSideEffectFreeNodeHandler<FaultNode>
     {
         public int ExecutionCount;
 
@@ -127,7 +126,6 @@ public sealed class WorkflowVisionFrameScopeRecoveryEndToEndTests
     }
 
     [WorkflowNode("TestE2eConsume")]
-    [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
     private sealed class ConsumeFrameNode : WorkflowNodeModel
     {
         public override string NodeType => "TestE2eConsume";
@@ -137,7 +135,7 @@ public sealed class WorkflowVisionFrameScopeRecoveryEndToEndTests
     }
 
     /// <summary>真正的"继续消费原图"：从绑定取回父运行的节点输出并使用它。</summary>
-    private sealed class ConsumeFrameHandler : WorkflowNodeHandler<ConsumeFrameNode>
+    private sealed class ConsumeFrameHandler : WorkflowSideEffectFreeNodeHandler<ConsumeFrameNode>
     {
         public int Pixel = -1;
         /// <summary>父运行输出已失效时记录原始异常，避免被二次恢复的安全守卫掩盖。</summary>

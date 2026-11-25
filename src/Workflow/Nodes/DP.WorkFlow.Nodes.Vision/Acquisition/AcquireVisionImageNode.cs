@@ -35,7 +35,6 @@ public enum EWorkflowVisionPixelFormat
 }
 
 /// <summary>统一文件、目录及相机取图入口，输出具有独立租约和帧身份的 ImageFrame。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.AcquireFrame", DisplayName = "图像获取", Category = WorkflowVisionCategories.Acquisition,
     Description = "选择文件、文件夹或相机来源，输出统一图像帧。", OutputType = typeof(DP.Vision.ImageFrame))]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
@@ -170,7 +169,7 @@ public sealed class AcquireVisionImageNodeModel : WorkflowNodeModel, IWorkflowNo
 }
 
 /// <summary>统一调度离线读图与中立采集主干，不在相机回调中直接执行节点。</summary>
-public sealed class AcquireVisionImageNodeHandler : WorkflowNodeHandler<AcquireVisionImageNodeModel>
+public sealed class AcquireVisionImageNodeHandler : WorkflowSideEffectFreeNodeHandler<AcquireVisionImageNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(AcquireVisionImageNodeModel node)

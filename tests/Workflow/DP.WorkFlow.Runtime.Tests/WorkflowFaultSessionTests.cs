@@ -12,7 +12,7 @@ public sealed class WorkflowFaultSessionTests
         var probe = new Probe();
         var flow = new TestFlow(probe);
         flow.Add(new StepNode { Id = "S", FailTimes = 1 });
-        var handler = Handler(probe, new DirectNode { Id = "D", Kind = WorkflowResumeKind.Redo });
+        var handler = Handler(probe, new DirectNode { Id = "D", Kind = WorkflowResumeKind.RecoverInPlace });
         var ended = new TaskCompletionSource<WorkflowFaultSession>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var center = CreateCenter(probe, handler);
         center.FaultSessionEnded += session => ended.TrySetResult(session);
@@ -24,7 +24,7 @@ public sealed class WorkflowFaultSessionTests
         var session = await ended.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal("A", session.OriginFlow);
         Assert.Equal(1, session.Attempt);
-        Assert.Equal(WorkflowResumeKind.Redo, session.Directives["A"].Kind);
+        Assert.Equal(WorkflowResumeKind.RecoverInPlace, session.Directives["A"].Kind);
         Assert.Equal(WorkflowFaultSessionState.Ended, session.State);
         Assert.Null(center.CurrentFaultSession);
     }
@@ -68,8 +68,8 @@ public sealed class WorkflowFaultSessionTests
         var probe = new Probe();
         var flow = new TestFlow(probe);
         flow.Add(new StepNode { Id = "S", FailTimes = 1 });
-        // 处理流程第一次出错，第二次给出重做。
-        var handler = Handler(probe, new StepNode { Id = "H", FailTimes = 1 }, new DirectNode { Id = "D", Kind = WorkflowResumeKind.Redo });
+        // 处理流程第一次出错，第二次给出就地恢复。
+        var handler = Handler(probe, new StepNode { Id = "H", FailTimes = 1 }, new DirectNode { Id = "D", Kind = WorkflowResumeKind.RecoverInPlace });
         var fallback = new RecordingFallback(_ => WorkflowFaultFallbackDecision.Rerun);
         using var center = CreateCenter(probe, handler, fallback);
 
@@ -89,17 +89,43 @@ public sealed class WorkflowFaultSessionTests
         var probe = new Probe();
         var flow = new TestFlow(probe);
         flow.Add(new ActNode { Id = "A1", FailTimes = 1 });
-        // 不可重做的节点给了"重做"：处理流程出错，兜底里改为"继续原操作"。
-        var handler = Handler(probe, new DirectNode { Id = "D", Kind = WorkflowResumeKind.Redo });
+        // 没有先回退就直接给"回退再继续"：处理流程出错，兜底里改为"就地恢复"。
+        var handler = Handler(probe, new DirectNode { Id = "D", Kind = WorkflowResumeKind.RollBack });
         var fallback = new RecordingFallback(_ => new WorkflowFaultFallbackDecision(WorkflowFaultFallbackChoice.UseDirectives,
-            new Dictionary<string, WorkflowResumeDirective> { ["A"] = WorkflowResumeDirective.Continue() }));
+            new Dictionary<string, WorkflowResumeDirective> { ["A"] = WorkflowResumeDirective.RecoverInPlace() }));
         using var center = CreateCenter(probe, handler, fallback);
 
         var result = await center.AddFlow(flow.Document, "A").RunAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.True(result.Success, result.Message);
-        Assert.Contains("不能直接重做", Assert.Single(fallback.Requests).Failure);
+        Assert.Contains("RollBackAsync", Assert.Single(fallback.Requests).Failure);
         Assert.Equal(1, probe.Count("A1:verify"));
+    }
+
+    [Fact]
+    public async Task FallbackRollBack_UndoesAfterEntryThenReentersAtEntry()
+    {
+        var probe = new Probe();
+        var flow = new TestFlow(probe);
+        flow.Add(new EntryNode { Id = "E", EntryKey = "Op" });
+        flow.Add(new StepNode { Id = "S1" });
+        flow.Add(new PlainNode { Id = "P", FailTimes = 1 });
+        flow.Connect("E", "S1");
+        flow.Connect("S1", "P");
+        // 不支持就地恢复的节点：处理流程给"就地恢复"被拒，兜底里选"回退到入口 Op 再继续"。
+        var handler = Handler(probe, new DirectNode { Id = "D", Kind = WorkflowResumeKind.RecoverInPlace });
+        var fallback = new RecordingFallback(_ => new WorkflowFaultFallbackDecision(WorkflowFaultFallbackChoice.UseDirectives,
+            new Dictionary<string, WorkflowResumeDirective> { ["A"] = WorkflowResumeDirective.RollBack("Op") }));
+        using var center = CreateCenter(probe, handler, fallback);
+
+        var result = await center.AddFlow(flow.Document, "A").RunAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.True(result.Success, result.Message);
+        Assert.Contains("不支持就地恢复", Assert.Single(fallback.Requests).Failure);
+        Assert.Equal(2, probe.Count("E"));
+        Assert.Equal(2, probe.Count("S1"));
+        Assert.Equal(2, probe.Count("P"));
+        Assert.Contains(center.ExecutionRecord.EntriesOf("A"), entry => entry.NodeId == "S1" && entry.Round == 0 && entry.Undone);
     }
 
     [Fact]
@@ -122,7 +148,7 @@ public sealed class WorkflowFaultSessionTests
         var probe = new Probe();
         var flow = new TestFlow(probe);
         flow.Add(new StepNode { Id = "S", FailTimes = 1 });
-        var routed = Handler(probe, new DirectNode { Id = "Routed", Kind = WorkflowResumeKind.Redo });
+        var routed = Handler(probe, new DirectNode { Id = "Routed", Kind = WorkflowResumeKind.RecoverInPlace });
         var fallbackHandler = Handler(probe, new DirectNode { Id = "Default", Kind = WorkflowResumeKind.Stop });
         var options = new WorkflowRunCenterOptions { DefaultFaultHandler = fallbackHandler, FaultSettleMilliseconds = 0 };
         options.FaultRoutes.Add(new WorkflowFaultRoute("报警 0", session => session.PrimaryFault.AlarmCode == 0, routed));

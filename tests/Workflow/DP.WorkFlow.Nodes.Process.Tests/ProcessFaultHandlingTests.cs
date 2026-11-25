@@ -27,8 +27,8 @@ public sealed class ProcessFaultHandlingTests
         var (document, block) = MainFlow();
         AddHandler(block,
             new OperatorChoiceNodeModel { Id = "Choice", OptionsText = "继续=Continue;重做=Restart;停止=Stop" },
-            ("Continue", new ContinueOperationNodeModel { Id = "Continue", Note = "核实后继续" }),
-            ("Restart", new RestartFromEntryNodeModel { Id = "Restart", EntryKey = "Op" }),
+            ("Continue", new RecoverInPlaceNodeModel { Id = "Continue", Note = "核实后继续" }),
+            ("Restart", new RollBackNodeModel { Id = "Restart", TargetsText = "Op" }),
             ("Stop", new StopCurrentStationNodeModel { Id = "Stop", Reason = "操作员停止" }));
         var defaultHandler = new WorkflowDocument { Name = "默认", EntryNodeId = "Never" };
         defaultHandler.Nodes.Add(new WorkflowCanvasNode { Node = new StopCurrentStationNodeModel { Id = "Never" } });
@@ -37,7 +37,7 @@ public sealed class ProcessFaultHandlingTests
 
         var result = await center.AddFlow(document, "工位").RunAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
-        // 默认处理流程会停止流程；继续、回到入口成功说明用的是流程自带的处理块。
+        // 默认处理流程会停止流程；就地恢复、回退再继续成功说明用的是流程自带的处理块。
         Assert.Equal(success, result.Success);
         Assert.Equal(moves, Count("Move"));
         Assert.Equal(verifies, Count("Move:verify"));
@@ -71,8 +71,7 @@ public sealed class ProcessFaultHandlingTests
         Assert.Equal("Move", stopInfo.NodeId);
         Assert.Equal("故障", stopInfo.Reason);
         Assert.Equal("命令已发", stopInfo.Progress);
-        Assert.True(stopInfo.CanContinueOperation);
-        Assert.False(stopInfo.CanRedo);
+        Assert.True(stopInfo.CanRecoverInPlace);
         Assert.False(stopInfo.CanEndLap);
         Assert.Equal(new[] { "Op" }, stopInfo.Entries);
         Assert.Contains("没有可以结束本圈的循环", info.LastFailure);
@@ -83,7 +82,7 @@ public sealed class ProcessFaultHandlingTests
     {
         var (document, block) = MainFlow();
         AddChain(block, new EndLapNodeModel { Id = "EndLap" });
-        var operators = new ScriptedOperator("Continue");
+        var operators = new ScriptedOperator("RecoverInPlace");
         using var center = Center(operators, new WorkflowRunCenterOptions
         {
             FaultSettleMilliseconds = 0,
@@ -92,7 +91,7 @@ public sealed class ProcessFaultHandlingTests
 
         var result = await center.AddFlow(document, "工位").RunAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
-        // 处理流程给"结束本圈"不被允许，兜底问操作员；选"全部继续原操作"后移动节点核实并补完。
+        // 处理流程给"结束本圈"不被允许，兜底问操作员；选"全部就地恢复"后移动节点就地恢复。
         Assert.True(result.Success, result.Message);
         Assert.Equal(1, Count("Move:verify"));
         var prompt = Assert.Single(operators.Prompts);
@@ -101,12 +100,10 @@ public sealed class ProcessFaultHandlingTests
     }
 
     [Fact]
-    public async Task JointUndo_ConfirmsNodesWithoutUndoThenRestartsFromEntry()
+    public async Task RollBack_ConfirmsNodesWithoutUndoThenReentersAtEntry()
     {
         var (document, block) = MainFlow(withGrab: true);
-        AddChain(block,
-            new JointUndoNodeModel { Id = "Undo", TargetsText = "Entry" },
-            new RestartFromEntryNodeModel { Id = "Restart", EntryKey = "Op" });
+        AddChain(block, new RollBackNodeModel { Id = "RollBack", TargetsText = "Op" });
         var operators = new ScriptedOperator("Continue");
         using var center = Center(operators, new WorkflowRunCenterOptions { FaultSettleMilliseconds = 0 });
 
@@ -115,28 +112,28 @@ public sealed class ProcessFaultHandlingTests
         Assert.True(result.Success, result.Message);
         Assert.Equal(2, Count("Move"));
         Assert.Equal(2, Count("Grab"));
-        // 抓取没有撤回动作：撤回到它时交人确认。
+        // 抓取不支持回退：回退到它时交人确认。
         var confirm = Assert.Single(operators.Confirms);
         Assert.Contains("抓取", confirm.Message);
         Assert.Equal(1, center.GetFlow("工位")!.RecoveryRound);
     }
 
     [Fact]
-    public void JointUndo_ParsesTargets()
+    public void RollBack_ParsesTargets()
     {
-        var node = new JointUndoNodeModel { TargetsText = "Entry\nB=Pick；C=" };
+        var node = new RollBackNodeModel { TargetsText = "Op\nB=Pick；=Load" };
 
-        var targets = node.ParseTargets("A");
-
-        Assert.Equal(new[] { new WorkflowUndoTarget("A", "Entry"), new WorkflowUndoTarget("B", "Pick"), new WorkflowUndoTarget("C", null) }, targets);
-        Assert.Equal(new[] { new WorkflowUndoTarget("A", null) }, new JointUndoNodeModel().ParseTargets("A"));
+        Assert.Equal(new[] { new WorkflowRollBackTarget(null, "Op"), new WorkflowRollBackTarget("B", "Pick"), new WorkflowRollBackTarget(null, "Load") },
+            node.ParseTargets());
+        Assert.Empty(new RollBackNodeModel().ParseTargets());
+        Assert.Throws<InvalidOperationException>(() => new RollBackNodeModel { TargetsText = "B=" }.ParseTargets());
     }
 
     [Fact]
     public async Task DirectiveNodeOutsideFaultHandler_Fails()
     {
         var document = new WorkflowDocument { Name = "普通流程", EntryNodeId = "Continue" };
-        document.Nodes.Add(new WorkflowCanvasNode { Node = new ContinueOperationNodeModel { Id = "Continue" } });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new RecoverInPlaceNodeModel { Id = "Continue" } });
         var catalog = new WorkflowNodeCatalog().RegisterProcessNodes();
 
         var result = await new WorkflowEngine(new WorkflowCompiler(catalog).Compile(document),
@@ -150,7 +147,7 @@ public sealed class ProcessFaultHandlingTests
 
     private int Count(string key) => _counts.TryGetValue(key, out var value) ? value : 0;
 
-    /// <summary>主流程：恢复入口 Op → 模拟移动（第一次失败，可核实并补完）；另有不连线的处理块。</summary>
+    /// <summary>主流程：恢复入口 Op → 模拟移动（第一次失败，可就地恢复）；另有不连线的处理块。</summary>
     private static (WorkflowDocument Document, WarningHandlerBlockNodeModel Block) MainFlow(bool withGrab = false)
     {
         var document = new WorkflowDocument { Name = "主流程", EntryNodeId = "Entry" };
@@ -219,7 +216,7 @@ public sealed class ProcessFaultHandlingTests
         public override string NodeType => "Test.Move";
     }
 
-    private sealed class MoveHandler(ConcurrentDictionary<string, int> counts) : WorkflowNodeHandler<MoveNode>, IWorkflowContinuableNodeHandler
+    private sealed class MoveHandler(ConcurrentDictionary<string, int> counts) : WorkflowNodeHandler<MoveNode>, IWorkflowInPlaceRecoveryNodeHandler
     {
         protected override ValueTask<NodeExecutionResult> ExecuteAsync(MoveNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
@@ -228,7 +225,7 @@ public sealed class ProcessFaultHandlingTests
             return ValueTask.FromResult(count == 1 ? NodeExecutionResult.Fail("到位信号丢失") : NodeExecutionResult.Continue());
         }
 
-        public ValueTask<NodeExecutionResult> VerifyAndCompleteAsync(IWorkflowNodeModel node, IWorkflowNodeExecutionContext context,
+        public ValueTask<NodeExecutionResult> RecoverInPlaceAsync(IWorkflowNodeModel node, IWorkflowNodeExecutionContext context,
             WorkflowNodeInterruption interruption, CancellationToken cancellationToken)
         {
             counts.AddOrUpdate("Move:verify", 1, (_, value) => value + 1);
@@ -236,7 +233,7 @@ public sealed class ProcessFaultHandlingTests
         }
     }
 
-    /// <summary>不可重做、没有撤回动作的动作。</summary>
+    /// <summary>没有恢复能力的动作。</summary>
     [WorkflowNode("Test.Grab")]
     private sealed class GrabNode : WorkflowNodeModel
     {

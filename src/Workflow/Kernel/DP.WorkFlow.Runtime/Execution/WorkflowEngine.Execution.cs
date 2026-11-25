@@ -15,8 +15,8 @@ public sealed partial class WorkflowEngine
     /// <param name="token">携带祖先 Token 和并行 Scope 路径的执行身份。</param>
     /// <param name="cancellationToken">路径执行和暂停门等待的取消令牌。</param>
     /// <remarks>
-    /// 节点故障、被中断或被要求停下时，路径停在停点上等待去向（第 8 类）：继续原操作 / 重做在原地进行；
-    /// 回到入口、结束本圈的目标在本层时在本层执行，在外层时沿调用路径向外传递。
+    /// 节点故障、被中断或被要求停下时，路径停在停点上等待去向（第 8 类）：就地恢复在原地进行；
+    /// 回退再继续、结束本圈的目标在本层时在本层执行，在外层时沿调用路径向外传递。
     /// </remarks>
     private async Task ExecutePathAsync(
         string startNodeId,
@@ -25,7 +25,7 @@ public sealed partial class WorkflowEngine
         CancellationToken cancellationToken)
     {
         string? currentNodeId = startNodeId;
-        // 继续原操作：下一次执行该节点时调用核实并补完，而不是重新执行。
+        // 就地恢复：下一次执行该节点时调用节点的就地恢复，而不是重新执行。
         WorkflowNodeInterruption? verify = null;
         while (!string.IsNullOrWhiteSpace(currentNodeId))
         {
@@ -128,8 +128,8 @@ public sealed partial class WorkflowEngine
     }
 
     /// <summary>
-    /// 按去向决定接着执行哪个节点：继续原操作 / 重做返回本节点（继续原操作时给出核实信息）；
-    /// 回到入口、结束本圈在本层时返回目标节点，在外层时向外传递；停止流程终止本次运行。
+    /// 按去向决定接着执行哪个节点：就地恢复返回本节点（并给出停下时的情况）；
+    /// 回退再继续、结束本圈在本层时返回目标节点，在外层时向外传递；停止流程终止本次运行。
     /// </summary>
     /// <returns>接着执行的节点 ID。</returns>
     private string FollowDirective(
@@ -142,13 +142,11 @@ public sealed partial class WorkflowEngine
         verify = null;
         switch (resolved.Directive.Kind)
         {
-            case WorkflowResumeKind.Continue:
-                // 被要求停下的节点还没开始：照常执行。故障 / 中断的节点：调用核实并补完。
+            case WorkflowResumeKind.RecoverInPlace:
+                // 被要求停下的节点还没开始：照常执行。故障 / 中断的节点：调用就地恢复。
                 verify = interruption;
                 return node.Id;
-            case WorkflowResumeKind.Redo:
-                return node.Id;
-            case WorkflowResumeKind.EnterAt:
+            case WorkflowResumeKind.RollBack:
             case WorkflowResumeKind.EndLap:
                 var target = resolved.Target!;
                 if (target.Token == token && target.LapScope is null)
@@ -164,7 +162,7 @@ public sealed partial class WorkflowEngine
     /// <param name="node">本次执行的节点配置。</param>
     /// <param name="token">节点所属的执行路径 Token。</param>
     /// <param name="cancellationToken">传递给节点处理器的取消令牌。</param>
-    /// <param name="verify">继续原操作时节点停下的情况：调用核实并补完而不是重新执行。</param>
+    /// <param name="verify">就地恢复时节点停下的情况：调用就地恢复而不是重新执行。</param>
     /// <returns>处理器选择的后继端口、输出及路径控制信息。</returns>
     private async Task<NodeExecutionResult> ExecuteNodeAsync(
         IWorkflowNodeModel node,
@@ -186,8 +184,8 @@ public sealed partial class WorkflowEngine
         MarkNodeStarted(node, identity);
         Notify(NodeStarted, node);
         RecordRunEvent(WorkflowRunEventDraft.Node("NodeStarted", node, identity,
-            verify is null ? "节点开始执行。" : "节点核实并补完原操作。",
-            verify is null ? null : new Dictionary<string, object?> { ["Mode"] = "VerifyAndComplete", ["Progress"] = verify.Progress }));
+            verify is null ? "节点开始执行。" : "节点就地恢复。",
+            verify is null ? null : new Dictionary<string, object?> { ["Mode"] = "RecoverInPlace", ["Progress"] = verify.Progress }));
         BeginNodeTiming(node.Id);
         var interruptible = BeginInterruptible(node, token, cancellationToken);
         var nodeCancellation = interruptible.Token;
@@ -218,9 +216,9 @@ public sealed partial class WorkflowEngine
             NodeExecutionResult result;
             if (verify is not null)
             {
-                var continuable = handler as IWorkflowContinuableNodeHandler
-                    ?? throw new InvalidOperationException($"节点 {node.Id} 没有实现核实并补完。");
-                result = await continuable.VerifyAndCompleteAsync(node, executionContext, verify, nodeCancellation).ConfigureAwait(false);
+                var recoverable = handler as IWorkflowInPlaceRecoveryNodeHandler
+                    ?? throw new InvalidOperationException($"节点 {node.Id} 不支持就地恢复。");
+                result = await recoverable.RecoverInPlaceAsync(node, executionContext, verify, nodeCancellation).ConfigureAwait(false);
             }
             else
                 result = await handler.ExecuteAsync(node, executionContext, nodeCancellation).ConfigureAwait(false);
@@ -313,7 +311,7 @@ public sealed partial class WorkflowEngine
                 ["ExceptionType"] = fault.ExceptionType,
                 ["InterruptAlarmCode"] = fault.InterruptAlarmCode
             };
-            // 节点报告过"做到哪一步"时随故障记下，交给处理流程和核实并补完。
+            // 节点报告过"做到哪一步"时随故障记下，交给处理流程和就地恢复。
             if (pathException.Progress is not null)
                 faultData["Progress"] = pathException.Progress;
             TryRecordRunEvent(WorkflowRunEventDraft.Fault(
@@ -331,7 +329,7 @@ public sealed partial class WorkflowEngine
     }
 
     /// <summary>
-    /// 节点成功执行后记入合并执行记录（第 8 类）。节点声明了撤回动作时，记下用本次执行上下文撤回的方法。
+    /// 节点成功执行后记入合并执行记录（第 8 类）。节点支持回退时，记下用本次执行上下文回退的方法。
     /// 复合节点（运行子画布）本身不记：子画布里的节点各自记录。
     /// </summary>
     private void JournalNodeCompleted(
@@ -348,9 +346,9 @@ public sealed partial class WorkflowEngine
         {
             undo = async cancellationToken =>
             {
-                TryRecordRunEvent(WorkflowRunEventDraft.Node("NodeUndoStarted", node, identity, "撤回节点动作。"));
+                TryRecordRunEvent(WorkflowRunEventDraft.Node("NodeUndoStarted", node, identity, "回退节点动作。"));
                 await undoable.UndoAsync(node, executionContext, cancellationToken).ConfigureAwait(false);
-                TryRecordRunEvent(WorkflowRunEventDraft.Node("NodeUndone", node, identity, "节点动作已撤回。"));
+                TryRecordRunEvent(WorkflowRunEventDraft.Node("NodeUndone", node, identity, "节点动作已回退。"));
             };
         }
         try
@@ -360,13 +358,12 @@ public sealed partial class WorkflowEngine
                 string.IsNullOrWhiteSpace(node.Title) ? node.Id : node.Title,
                 node.NodeType,
                 PositionOf(node.Id, token).ToString(),
-                WorkflowRecoveryCategories.Of(node),
                 node is IWorkflowCheckpointNode,
                 undo));
         }
         catch (Exception exception)
         {
-            // 记录失败不影响运行，只降级提示：之后的撤回可能缺这一步。
+            // 记录失败不影响运行，只降级提示：之后的回退可能缺这一步。
             ReportRecordingDegraded($"写入执行记录失败：{exception.Message}", node.Id);
         }
     }

@@ -25,20 +25,20 @@ public sealed class WorkflowFaultWorkbenchModelTests
         var stop = Assert.Single(flow.StopPoints);
         Assert.Equal(WorkflowStopReason.Fault, stop.Reason);
         Assert.Equal("S", stop.Position.NodeId);
-        // 可直接重做、没有核实并补完、不在循环里：能重做和停止，不能继续原操作和结束本圈。
-        Assert.True(Option(flow, WorkflowResumeKind.Redo).Allowed);
+        // 无副作用节点、没有恢复入口、不在循环里：能就地恢复和停止，不能结束本圈。
+        Assert.True(Option(flow, WorkflowResumeKind.RecoverInPlace).Allowed);
         Assert.True(Option(flow, WorkflowResumeKind.Stop).Allowed);
-        Assert.False(Option(flow, WorkflowResumeKind.Continue).Allowed);
         Assert.False(Option(flow, WorkflowResumeKind.EndLap).Allowed);
-        Assert.NotNull(Option(flow, WorkflowResumeKind.Continue).Reason);
+        Assert.NotNull(Option(flow, WorkflowResumeKind.EndLap).Reason);
+        Assert.DoesNotContain(flow.Options, option => option.Directive.Kind == WorkflowResumeKind.RollBack);
 
         // 不允许的去向、缺去向都不放行，询问保留。
-        Assert.Throws<InvalidOperationException>(() => model.Release(new Dictionary<string, WorkflowResumeDirective> { ["A"] = WorkflowResumeDirective.Continue() }));
+        Assert.Throws<InvalidOperationException>(() => model.Release(new Dictionary<string, WorkflowResumeDirective> { ["A"] = WorkflowResumeDirective.EndLap() }));
         Assert.Throws<InvalidOperationException>(() => model.Release(new Dictionary<string, WorkflowResumeDirective>()));
         Assert.Throws<InvalidOperationException>(() => model.RerunHandler());
         Assert.True(model.IsAwaitingDecision);
 
-        model.Release(new Dictionary<string, WorkflowResumeDirective> { ["A"] = WorkflowResumeDirective.Redo() });
+        model.Release(new Dictionary<string, WorkflowResumeDirective> { ["A"] = WorkflowResumeDirective.RecoverInPlace() });
 
         var result = await run.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.True(result.Success, result.Message);
@@ -106,7 +106,7 @@ public sealed class WorkflowFaultWorkbenchModelTests
         var run = overview.Start("A");
         await WaitUntilAsync(() => model.IsAwaitingDecision);
         Assert.Equal("故障处理中", Assert.Single(overview.GetRows()).StateText);
-        model.Release(new Dictionary<string, WorkflowResumeDirective> { ["A"] = WorkflowResumeDirective.Redo() });
+        model.Release(new Dictionary<string, WorkflowResumeDirective> { ["A"] = WorkflowResumeDirective.RecoverInPlace() });
         Assert.True((await run.WaitAsync(TimeSpan.FromSeconds(10))).Success);
 
         var done = Assert.Single(overview.GetRows());
@@ -137,15 +137,14 @@ public sealed class WorkflowFaultWorkbenchModelTests
             await Task.Delay(5, timeout.Token);
     }
 
-    /// <summary>可直接重做的步骤：第一次执行失败，之后成功。</summary>
+    /// <summary>无副作用的步骤：第一次执行失败，之后成功。</summary>
     [WorkflowNode("UiTest.Flaky")]
-    [WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
     private sealed class FlakyNode : WorkflowNodeModel
     {
         public override string NodeType => "UiTest.Flaky";
     }
 
-    private sealed class FlakyHandler : WorkflowNodeHandler<FlakyNode>
+    private sealed class FlakyHandler : WorkflowSideEffectFreeNodeHandler<FlakyNode>
     {
         private int _count;
 

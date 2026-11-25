@@ -26,7 +26,6 @@ public enum E_ValueCompareOperator
 }
 
 /// <summary>比较两个固定值或上游绑定值，并选择 True/False 端口。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("ValueCompare", DisplayName = "数据比较节点", Category = "2.Function/判断", OutputType = typeof(CompareNodeResult), Icon = "compare")]
 [WorkflowOutputPorts(WorkflowPorts.True, WorkflowPorts.False)]
 public sealed class ValueCompareNodeModel : WorkflowNodeModel
@@ -45,7 +44,7 @@ public sealed class ValueCompareNodeModel : WorkflowNodeModel
 }
 
 /// <summary>执行强类型值比较。</summary>
-public sealed class ValueCompareNodeHandler : WorkflowNodeHandler<ValueCompareNodeModel>
+public sealed class ValueCompareNodeHandler : WorkflowSideEffectFreeNodeHandler<ValueCompareNodeModel>
 {
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(
         ValueCompareNodeModel node,

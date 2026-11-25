@@ -152,7 +152,6 @@ public abstract class AnalyzeVisionFrameNodeModel : WorkflowNodeModel, IWorkflow
 }
 
 /// <summary>新版Blob节点，输出中立BlobAnalysisResult。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.AnalyzeBlobs", DisplayName = "分析连通域", Category = WorkflowVisionCategories.Inspection, OutputType = typeof(DP.Vision.Algorithms.BlobAnalysisResult), Icon = "blobs")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class AnalyzeVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
@@ -191,7 +190,7 @@ public sealed class AnalyzeVisionBlobsNodeModel : AnalyzeVisionFrameNodeModel, I
 }
 
 /// <summary>通过声明的Blob能力产生标准输出。</summary>
-public sealed class AnalyzeVisionBlobsNodeHandler : WorkflowNodeHandler<AnalyzeVisionBlobsNodeModel>
+public sealed class AnalyzeVisionBlobsNodeHandler : WorkflowSideEffectFreeNodeHandler<AnalyzeVisionBlobsNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(AnalyzeVisionBlobsNodeModel node) =>
@@ -213,7 +212,6 @@ public sealed class AnalyzeVisionBlobsNodeHandler : WorkflowNodeHandler<AnalyzeV
 }
 
 /// <summary>新版颜色统计节点，输出中立ColorAnalysisResult，不输出产品OK/NG。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Vision.AnalyzeColor", DisplayName = "统计RGB颜色", Category = WorkflowVisionCategories.Inspection, OutputType = typeof(DP.Vision.Algorithms.ColorAnalysisResult), Icon = "color")]
 [WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class AnalyzeVisionColorNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
@@ -232,7 +230,7 @@ public sealed class AnalyzeVisionColorNodeModel : AnalyzeVisionFrameNodeModel, I
 }
 
 /// <summary>通过声明的颜色能力产生标准输出。</summary>
-public sealed class AnalyzeVisionColorNodeHandler : WorkflowNodeHandler<AnalyzeVisionColorNodeModel>
+public sealed class AnalyzeVisionColorNodeHandler : WorkflowSideEffectFreeNodeHandler<AnalyzeVisionColorNodeModel>
 {
     /// <inheritdoc />
     protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(AnalyzeVisionColorNodeModel node) =>

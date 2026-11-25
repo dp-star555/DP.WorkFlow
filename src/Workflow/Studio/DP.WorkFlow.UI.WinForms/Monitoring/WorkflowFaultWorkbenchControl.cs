@@ -5,7 +5,7 @@ namespace DP.WorkFlow.UI.WinForms;
 
 /// <summary>
 /// 故障工作台（第 8 类）：当前故障会话的上报、受影响的流程、每个流程停在哪里（画布 / 节点 @ 圈次 [分支]）、
-/// 节点恢复类别和最后一步；处理流程没处理完时在这里逐个流程选去向放行、重新运行处理流程或全部停止。
+/// 能否就地恢复和最后一步；处理流程没处理完时在这里逐个流程选去向放行、重新运行处理流程或全部停止。
 /// 也可以查看最近结束的会话。
 /// </summary>
 /// <remarks>
@@ -47,7 +47,7 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
         _stops.Columns.Add("位置", 260);
         _stops.Columns.Add("节点", 140);
         _stops.Columns.Add("原因", 70);
-        _stops.Columns.Add("恢复类别", 100);
+        _stops.Columns.Add("可就地恢复", 80);
         _stops.Columns.Add("最后一步", 160);
         _stops.Columns.Add("说明", 300);
         _stops.SelectedIndexChanged += (_, _) => ShowOptions();
@@ -59,11 +59,11 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
         {
             var choices = new Dictionary<string, WorkflowResumeDirective>(_choices, StringComparer.Ordinal);
             var detail = string.Join("；", choices.Select(pair => pair.Key + "：" + pair.Value.DisplayName));
-            Gated(new WorkflowOperation(WorkflowOperationKind.ReleaseFault, "*", detail), () => _model?.Release(choices));
+            Gated(new WorkflowOperation(WorkflowOperationKind.ReleaseFault, "*", detail), () => _model?.Release(choices, ConfirmManualAsync));
         };
         _rerun.Click += (_, _) =>
         {
-            if (MessageBox.Show(FindForm(), "处理流程会从头再跑一遍。已经撤回过的动作不会再撤回；请确认现场可以重新处理。",
+            if (MessageBox.Show(FindForm(), "处理流程会从头再跑一遍。已经回退过的动作不会再回退；请确认现场可以重新处理。",
                     "重新运行处理流程", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) == DialogResult.OK)
                 Gated(new WorkflowOperation(WorkflowOperationKind.RerunFaultHandler, "*"), () => _model?.RerunHandler());
         };
@@ -243,7 +243,7 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
                 item.SubItems.Add(stop.Position.ToString());
                 item.SubItems.Add(stop.NodeTitle);
                 item.SubItems.Add(ReasonText(stop.Reason));
-                item.SubItems.Add(WorkflowRecoveryCategories.DisplayName(stop.Category));
+                item.SubItems.Add(stop.CanRecoverInPlace ? "是" : "否");
                 item.SubItems.Add(stop.Progress ?? string.Empty);
                 item.SubItems.Add(stop.Rejection is null ? stop.Message ?? string.Empty : $"{stop.Message}（上次去向被拒：{stop.Rejection}）");
                 item.ForeColor = stop.Reason == WorkflowStopReason.Requested ? theme.TextSecondary : theme.Text;
@@ -391,6 +391,20 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
         }
         _signature = string.Empty;
         RefreshView();
+    }
+
+    /// <summary>回退到不支持回退的节点时，在界面线程上问操作员是否已人工处理好。</summary>
+    private Task<bool> ConfirmManualAsync(WorkflowExecutionRecordEntry entry, CancellationToken cancellationToken)
+    {
+        if (IsDisposed)
+            return Task.FromResult(false);
+        var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var registration = cancellationToken.Register(() => answer.TrySetCanceled());
+        _ = answer.Task.ContinueWith(_ => registration.Dispose(), TaskScheduler.Default);
+        BeginInvoke(new Action(() => answer.TrySetResult(MessageBox.Show(FindForm(),
+            $"[{entry.FlowName}] “{entry.NodeTitle}”（{entry.Position}）不支持回退。\n请人工处理好后点“确定”；点“取消”则停止回退，回到工作台重新选。",
+            "回退再继续", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) == DialogResult.OK)));
+        return answer.Task;
     }
 
     private static bool SameDirective(WorkflowResumeDirective left, WorkflowResumeDirective right) =>

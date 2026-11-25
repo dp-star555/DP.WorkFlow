@@ -3,6 +3,7 @@ namespace DP.WorkFlow;
 /// <summary>
 /// 用人工交互服务实现的兜底界面（第 8 类）：处理流程出错、没有给出去向或去向不被允许时，
 /// 把原因和各流程停点告诉操作员，让他选重新运行处理流程（需再确认）、对全部停下的流程直接给同一个去向，或停止全部流程。
+/// 回退再继续要逐个流程选入口，请用故障工作台。
 /// WinForms / WPF 宿主把自己的人工交互服务传进来即可，不用另写窗口。
 /// </summary>
 public sealed class WorkflowOperatorFaultFallback : IWorkflowFaultFallback
@@ -26,8 +27,7 @@ public sealed class WorkflowOperatorFaultFallback : IWorkflowFaultFallback
         var targets = faulted.Length > 0 ? faulted : stops;
         var directives = new List<(string Key, string Text, WorkflowResumeDirective Directive)>
         {
-            ("Continue", "全部继续原操作", WorkflowResumeDirective.Continue("兜底：继续原操作")),
-            ("Redo", "全部重做本节点", WorkflowResumeDirective.Redo("兜底：重做本节点")),
+            ("RecoverInPlace", "全部就地恢复", WorkflowResumeDirective.RecoverInPlace("兜底：就地恢复")),
             ("EndLap", "全部结束本圈", WorkflowResumeDirective.EndLap("兜底：结束本圈"))
         };
         var options = new List<OperatorChoiceOption>();
@@ -44,7 +44,7 @@ public sealed class WorkflowOperatorFaultFallback : IWorkflowFaultFallback
             if (choice == Rerun)
             {
                 var confirm = await _operators.AskChoiceAsync("重新运行处理流程",
-                    "处理流程会从头再跑一遍。已经撤回过的动作不会再撤回；请确认现场可以重新处理。",
+                    "处理流程会从头再跑一遍。已经回退过的动作不会再回退；请确认现场可以重新处理。",
                     new[] { new OperatorChoiceOption("Yes", "确定重新运行"), new OperatorChoiceOption("No", "返回") },
                     cancellationToken).ConfigureAwait(false);
                 if (confirm == "Yes")

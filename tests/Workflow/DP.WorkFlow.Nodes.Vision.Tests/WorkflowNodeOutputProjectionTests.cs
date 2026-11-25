@@ -314,6 +314,6 @@ public sealed class WorkflowNodeOutputProjectionTests
     private sealed class RestartHandler : IWorkflowStopPointHandler
     {
         public Task<WorkflowResumeDirective> OnStoppedAsync(WorkflowEngine engine, WorkflowStopPoint stopPoint, CancellationToken cancellationToken) =>
-            Task.FromResult(WorkflowResumeDirective.EnterAt("station"));
+            Task.FromResult(WorkflowResumeDirective.RollBack("station"));
     }
 }

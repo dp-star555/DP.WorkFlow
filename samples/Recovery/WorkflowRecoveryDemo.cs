@@ -47,17 +47,17 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule
         Add(document, new OperatorChoiceNodeModel
         {
             Id = "Choice", Title = "模拟轴异常：选择处理方案",
-            Message = "这是软件模拟，不操作真实设备。\n模拟轴从100移动到110，但首次完成响应丢失。\n\n继续原操作：核实已到110，不再发送位移。\n回初始点重做：人工确认后把模拟位置置0，再从操作入口重新执行。",
-            OptionsText = "继续原操作=Continue;回初始点重做=Restart;停止=Stop"
+            Message = "这是软件模拟，不操作真实设备。\n模拟轴从100移动到110，但首次完成响应丢失。\n\n就地恢复：核实已到110，不再发送位移。\n回初始点重做：人工确认后把模拟位置置0，再回退到操作入口重新执行。",
+            OptionsText = "就地恢复=Continue;回初始点重做=Restart;停止=Stop"
         }, 300, 160);
-        Add(document, new ContinueOperationNodeModel { Id = "Continue", Title = "继续原操作" }, 570, 20);
+        Add(document, new RecoverInPlaceNodeModel { Id = "Continue", Title = "就地恢复" }, 570, 20);
         Add(document, new OperatorStepConfirmNodeModel
         {
             Id = "Confirm", Title = "确认模拟回初始点",
             StepText = "点击处理完成后，会把软件模拟位置设为0，并重新运行本次操作段。\n不会重复进料；不会向真实设备发送任何命令。"
         }, 570, 160);
         Add(document, new ActionNodeModel { Id = "Reset", Title = "模拟位置置0", FunctionKey = "RecoveryDemo.Reset" }, 800, 160);
-        Add(document, new RestartFromEntryNodeModel { Id = "Restart", Title = "从操作入口重执行", EntryKey = "OperationStart" }, 1030, 160);
+        Add(document, new RollBackNodeModel { Id = "Restart", Title = "回退到操作入口再继续", TargetsText = "OperationStart" }, 1030, 160);
         Add(document, new StopCurrentStationNodeModel { Id = "Stop", Title = "停止演示", Reason = "操作员选择停止模拟流程。" }, 570, 320);
         document.EntryNodeId = "HandlerStart";
         Connect(document, "HandlerStart", "Choice");
@@ -118,7 +118,6 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule
 
     [WorkflowNode("Sample.RecoveryFeed", DisplayName = "模拟进料", Category = "9.Samples/恢复演示")]
     private sealed class FeedNode : WorkflowNodeModel { public override string NodeType => "Sample.RecoveryFeed"; }
-    [WorkflowRecovery(WorkflowRecoveryCategory.VerifyThenContinue)]
     [WorkflowNode("Sample.RecoveryMove", DisplayName = "模拟轴运动（首次丢响应）", Category = "9.Samples/恢复演示")]
     private sealed class MoveNode : WorkflowNodeModel { public override string NodeType => "Sample.RecoveryMove"; }
 
@@ -135,7 +134,7 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule
         }
     }
 
-    private sealed class MoveHandler(WorkflowRecoveryDemo demo) : WorkflowNodeHandler<MoveNode>, IWorkflowContinuableNodeHandler
+    private sealed class MoveHandler(WorkflowRecoveryDemo demo) : WorkflowNodeHandler<MoveNode>, IWorkflowInPlaceRecoveryNodeHandler
     {
         protected override ValueTask<NodeExecutionResult> ExecuteAsync(MoveNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
@@ -152,8 +151,8 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule
             return new ValueTask<NodeExecutionResult>(Completed(context));
         }
 
-        // 核实并补完：模拟位置已经在目标上就按完成往下走，不再发位移。
-        public ValueTask<NodeExecutionResult> VerifyAndCompleteAsync(IWorkflowNodeModel node, IWorkflowNodeExecutionContext context,
+        // 就地恢复：模拟位置已经在目标上就按完成往下走，不再发位移。
+        public ValueTask<NodeExecutionResult> RecoverInPlaceAsync(IWorkflowNodeModel node, IWorkflowNodeExecutionContext context,
             WorkflowNodeInterruption interruption, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();

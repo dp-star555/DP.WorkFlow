@@ -178,8 +178,8 @@ public sealed class WorkflowDocumentJsonStoreTests
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes().RegisterProcessNodes();
         var loaded = new WorkflowDocumentJsonStore(catalog).Deserialize(json);
 
-        var node = Assert.IsType<RetryCurrentNodeModel>(loaded.Document.Nodes[0].Node);
-        Assert.Equal("WarnRetryCurrentNode", node.NodeType);
+        var node = Assert.IsType<RecoverInPlaceNodeModel>(loaded.Document.Nodes[0].Node);
+        Assert.Equal("WarnRecoverInPlace", node.NodeType);
         Assert.Equal("再来一次", node.Note);
         Assert.Contains(loaded.Migration.Warnings, warning => warning.Contains("RetryCurrentNode", StringComparison.Ordinal));
     }

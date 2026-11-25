@@ -7,7 +7,6 @@ namespace DP.WorkFlow;
 /// 表示工作流的标准启动节点。位于子画布中时，所在复合节点声明的输入作为它的输出成员，
 /// 子画布中的节点绑定“启动节点.名称”读取。
 /// </summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Start", DisplayName = "启动节点", Category = "1.Base/流程边界", OutputType = typeof(WorkflowSubflowValues), HasInput = false, Icon = "play")]
 public sealed class StartNodeModel : WorkflowNodeModel, IWorkflowSubflowEntryNode, IWorkflowDynamicOutputNode
 {
@@ -27,7 +26,7 @@ public sealed class StartNodeModel : WorkflowNodeModel, IWorkflowSubflowEntryNod
 }
 
 /// <summary>执行标准启动节点。</summary>
-public sealed class StartNodeHandler : WorkflowNodeHandler<StartNodeModel>
+public sealed class StartNodeHandler : WorkflowSideEffectFreeNodeHandler<StartNodeModel>
 {
     /// <inheritdoc />
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(

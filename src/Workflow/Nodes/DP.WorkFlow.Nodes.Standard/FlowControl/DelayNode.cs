@@ -8,7 +8,6 @@ public sealed record DelayNodeResult([property: DisplayName("设定延时")] Tim
 /// <summary>
 /// 使用可取消的异步等待暂停当前执行路径。
 /// </summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
 [WorkflowNode("Delay", DisplayName = "延时节点", Category = "3.Control/流程控制", OutputType = typeof(DelayNodeResult), Icon = "clock")]
 public sealed class DelayNodeModel : WorkflowNodeModel
 {
@@ -21,7 +20,7 @@ public sealed class DelayNodeModel : WorkflowNodeModel
 }
 
 /// <summary>执行延时节点。</summary>
-public sealed class DelayNodeHandler : WorkflowNodeHandler<DelayNodeModel>
+public sealed class DelayNodeHandler : WorkflowSideEffectFreeNodeHandler<DelayNodeModel>
 {
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(

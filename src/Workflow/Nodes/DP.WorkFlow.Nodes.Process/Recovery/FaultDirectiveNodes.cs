@@ -1,7 +1,6 @@
 namespace DP.WorkFlow;
 
-/// <summary>工艺设计者标出的恢复入口（锚点）：处理流程的"回到入口"只能指向这些节点。不是设备位置快照。</summary>
-[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+/// <summary>工艺设计者标出的恢复入口（锚点）："回退再继续"只能回到这些节点。不是设备位置快照。</summary>
 [WorkflowNode("RecoveryEntry", DisplayName = "恢复入口", Category = "8.Process/异常恢复", OutputType = typeof(string))]
 public sealed class RecoveryEntryNodeModel : WorkflowNodeModel, IWorkflowRecoveryEntryNode, IWorkflowNodeConfigurationValidator
 {
@@ -18,7 +17,7 @@ public sealed class RecoveryEntryNodeModel : WorkflowNodeModel, IWorkflowRecover
 }
 
 /// <summary>经过入口时由引擎记下位置；节点本身只输出入口键。</summary>
-public sealed class RecoveryEntryNodeHandler : WorkflowNodeHandler<RecoveryEntryNodeModel>
+public sealed class RecoveryEntryNodeHandler : WorkflowSideEffectFreeNodeHandler<RecoveryEntryNodeModel>
 {
     /// <inheritdoc />
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(RecoveryEntryNodeModel node,
@@ -71,60 +70,20 @@ public abstract class FaultDirectiveNodeHandler<TModel> : WorkflowNodeHandler<TM
     }
 }
 
-/// <summary>去向：继续原操作（故障 / 中断的节点调用核实并补完；被要求停下的节点照常执行）。</summary>
-[WorkflowNode("WarnContinueOperation", DisplayName = "继续原操作", Category = "8.Process/异常恢复", OutputType = typeof(string))]
-public sealed class ContinueOperationNodeModel : FaultDirectiveNodeModel
+/// <summary>去向：就地恢复（故障 / 中断的节点调用自己的就地恢复，由节点判断补完还是重做；被要求停下的节点照常执行）。</summary>
+[WorkflowNode("WarnRecoverInPlace", DisplayName = "就地恢复", Category = "8.Process/异常恢复", OutputType = typeof(string))]
+public sealed class RecoverInPlaceNodeModel : FaultDirectiveNodeModel
 {
     /// <inheritdoc />
-    public override string NodeType => "WarnContinueOperation";
+    public override string NodeType => "WarnRecoverInPlace";
 }
 
-/// <summary>执行"继续原操作"。</summary>
-public sealed class ContinueOperationNodeHandler : FaultDirectiveNodeHandler<ContinueOperationNodeModel>
+/// <summary>执行"就地恢复"。</summary>
+public sealed class RecoverInPlaceNodeHandler : FaultDirectiveNodeHandler<RecoverInPlaceNodeModel>
 {
     /// <inheritdoc />
-    protected override WorkflowResumeDirective CreateDirective(ContinueOperationNodeModel node, string? note) =>
-        WorkflowResumeDirective.Continue(note);
-}
-
-/// <summary>去向：重做本节点（仅"可直接重做"的节点）。</summary>
-[WorkflowNode("WarnRetryCurrentNode", DisplayName = "重做本节点", Category = "8.Process/异常恢复", OutputType = typeof(string))]
-public sealed class RetryCurrentNodeModel : FaultDirectiveNodeModel
-{
-    /// <inheritdoc />
-    public override string NodeType => "WarnRetryCurrentNode";
-}
-
-/// <summary>执行"重做本节点"。</summary>
-public sealed class RetryCurrentNodeHandler : FaultDirectiveNodeHandler<RetryCurrentNodeModel>
-{
-    /// <inheritdoc />
-    protected override WorkflowResumeDirective CreateDirective(RetryCurrentNodeModel node, string? note) =>
-        WorkflowResumeDirective.Redo(note);
-}
-
-/// <summary>去向：回到入口（本圈、当前路径上已经经过的恢复入口），之后的结果作废。</summary>
-[WorkflowNode("WarnRestartFromEntry", DisplayName = "回到入口", Category = "8.Process/异常恢复", OutputType = typeof(string))]
-public sealed class RestartFromEntryNodeModel : FaultDirectiveNodeModel, IWorkflowNodeConfigurationValidator
-{
-    /// <inheritdoc />
-    public override string NodeType => "WarnRestartFromEntry";
-    /// <summary>恢复入口键。</summary>
-    [WorkflowProperty("入口键", "主流程里恢复入口节点的入口键。", Category = "故障处理")]
-    public string EntryKey { get; set; } = string.Empty;
-    /// <inheritdoc />
-    public IReadOnlyList<string> ValidateConfiguration() => string.IsNullOrWhiteSpace(EntryKey)
-        ? new[] { "恢复入口键不能为空。" } : Array.Empty<string>();
-}
-
-/// <summary>执行"回到入口"。</summary>
-public sealed class RestartFromEntryNodeHandler : FaultDirectiveNodeHandler<RestartFromEntryNodeModel>
-{
-    /// <inheritdoc />
-    protected override WorkflowResumeDirective CreateDirective(RestartFromEntryNodeModel node, string? note) =>
-        string.IsNullOrWhiteSpace(node.EntryKey)
-            ? throw new InvalidOperationException("恢复入口键不能为空。")
-            : WorkflowResumeDirective.EnterAt(node.EntryKey, note);
+    protected override WorkflowResumeDirective CreateDirective(RecoverInPlaceNodeModel node, string? note) =>
+        WorkflowResumeDirective.RecoverInPlace(note);
 }
 
 /// <summary>去向：结束本圈（放弃当前这一圈，最内层循环进入下一圈）。</summary>

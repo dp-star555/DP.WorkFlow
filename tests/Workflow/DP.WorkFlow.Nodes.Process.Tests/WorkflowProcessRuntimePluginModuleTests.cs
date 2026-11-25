@@ -12,10 +12,10 @@ public sealed class WorkflowProcessRuntimePluginModuleTests
             .Freeze();
 
         Assert.True(composition.IsFrozen);
-        Assert.Equal(31, nodes.Snapshot().Count);
+        Assert.Equal(29, nodes.Snapshot().Count);
         // 去向节点只在故障处理流程里使用，故障会话由统管层提供，不声明宿主能力。
-        Assert.Empty(handlers.ResolveWithRequirements(new RestartFromEntryNodeModel()).RequiredCapabilities);
-        Assert.Empty(handlers.ResolveWithRequirements(new ContinueOperationNodeModel()).RequiredCapabilities);
+        Assert.Empty(handlers.ResolveWithRequirements(new RollBackNodeModel()).RequiredCapabilities);
+        Assert.Empty(handlers.ResolveWithRequirements(new RecoverInPlaceNodeModel()).RequiredCapabilities);
         Assert.All(nodes.Snapshot().Values, descriptor =>
             Assert.NotNull(handlers.Resolve(descriptor.Factory())));
         var robot = handlers.ResolveWithRequirements(new WaferRobotHomeNodeModel());
