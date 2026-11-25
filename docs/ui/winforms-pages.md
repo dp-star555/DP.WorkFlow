@@ -11,7 +11,7 @@
 ## 打包给 DP.Foundation
 
 - DP.Foundation 的 Workflow 功能包引用本仓库的包，不引用源码：内核、持久化、标准 / 复合 / 工艺 / 运动节点、脚本、UI.Shared、UI.WinForms，加上 DP.Vision 的 DP.Plugins.Runtime，共 13 个。
-- 版本在根目录 `Directory.Build.props` 的 `<Version>`（现在 1.0.0-preview.9）。改了这些库：版本加一，运行 `tools/Pack-ForFoundation.ps1`（打包并复制到同级 DP.Foundation\vendor\packages），再在 Foundation 改引用版本、vendor\README.md 的哈希，`dotnet restore --force-evaluate`。
+- 版本在根目录 `Directory.Build.props` 的 `<Version>`（现在 1.0.0-preview.10）。改了这些库：版本加一，运行 `tools/Pack-ForFoundation.ps1`（打包并复制到同级 DP.Foundation\vendor\packages），再在 Foundation 改引用版本、vendor\README.md 的哈希，`dotnet restore --force-evaluate`。
 - 脚本库的包 ID 改成 `DP.WorkFlow.ScriptEngine` / `DP.WorkFlow.ScriptEngine.WinForms`（程序集名不变）。后者带一个 buildTransitive 目标，间接引用时也把 Scintilla 原生库复制到程序目录。
 
 ## 主题
@@ -33,6 +33,19 @@
 - `WorkflowNodeInspectorControl`：选中节点的图标、标题、类型 · 标识、上次运行状态；“参数 | 结果 | 提示”三页；底部“打开节点编辑”进完整的节点窗口。参数改了立即写进流程（可撤销），不另设“应用”。
 - `WorkflowStudioControl` 把检查器挂上；`FileMenu` / `AddFileMenuItem` / `Save` 给宿主换成自己的文件命令（操作台换成流程库的新建、打开、放弃草稿、重新加载）。
 - 节点窗口里的子画布也用同一个工作区，但不挂检查器。
+
+## 尺寸与缩放（排版规则）
+
+- 卡片、间隔、标题行、状态行都是 `WorkflowBlock`：`LogicalExtent`（宽或高）和 `LogicalPadding` 按当前 DPI 换算，宿主按字体自动缩放时不再缩它们，否则会和 DPI 换算叠加（曾把工具箱 220 放大成约 700 像素）。
+- `ModernButton` 是 UserControl，`AutoSize` 会算出 0 宽；命令按钮一律用 `WorkflowCommandSizing.Fit` 按文字定宽（30 高），文字、字体、DPI 变了自动重量。
+- 页面用 `WorkflowPage.Section`（42 px 标题行的卡片）、`Gap`（10 px 间隔）、`WorkflowMetricStrip`（顶部指标条）、`WorkflowFactList`（侧栏“名称 …… 值”）、`WorkflowStatusLine`（最下面一行状态）拼。
+
+## 其他页面（按设计稿画板）
+
+- 运行监视页：指标条（流程、状态、运行次数、平均节拍、最近一圈、圈数、成功、出错，右边选流程和统计清零）| 只读画布卡 + 右栏“本次节点耗时 / 界面同步”（300）| 下面运行数据卡（轨迹在第一页）| 状态行。设计稿里的 OK / NG / 良率不做（流程只管自己的东西）。
+- 节点提示页（`WorkflowNoticeCenterPage`，新）：筛选条（类别、流程、搜索、全部确认）| 按节点（260）| 提示表 | 详情（320，确认此位置）| 状态行。汇总流程管理里所有流程的提示板。
+- 流程库页：工具条（新建、导入、搜索、全部 / 已发布 / 草稿 / 有诊断、显示已删除，右边流程目录和刷新）| 流程表 | 详情（360：文件、草稿、修改人、版本列表，下面打开设计、查看修改、发布、放弃草稿、复制、改名、导出、历史、删除）| 状态行。
+- 节点编辑窗口：顶部节点标题卡（图标、标题、类型 · 标识、上次运行状态）| 左边页签卡（参数、输入输出、ROI 等列表页）| 中间主体卡（子画布、脚本、图像）| 右栏运行结果和本节点提示 | 底部取消 / 应用 / 确定。仍是弹出窗口，没做成页内页面。
 
 ## 统一刷新节拍（R4-b）
 

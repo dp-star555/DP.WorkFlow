@@ -4,8 +4,8 @@ using ModernUI.WinForms;
 namespace DP.WorkFlow.UI.WinForms;
 
 /// <summary>
-/// 运行监视页（只看不改）：选一个流程，上面一排是状态、运行次数、圈数、节拍和界面同步情况，
-/// 中间是只读画布（节点状态、令牌位置、提示角标），下面是令牌、并行域、子流程、事件（可筛选）、输出和节点耗时。
+/// 运行监视页（只看不改，按设计稿“运行监视”画板）：顶部指标条（流程、状态、运行次数、节拍、圈数），
+/// 中间左边只读画布（节点状态、令牌位置、提示角标），右边本次节点耗时和界面同步，下面是轨迹、令牌、并行域、子流程、输出和节点耗时。
 /// </summary>
 /// <remarks>
 /// 画布和下方表格都挂在流程自己的运行宿主上，按界面节拍拉快照（<see cref="WorkflowStudioRuntimeBinding"/>），不拖慢执行线程。
@@ -17,14 +17,12 @@ public sealed class WorkflowRunMonitorPage : WorkflowPage
     private readonly WorkflowRunCenterOverviewModel _overview;
     private readonly WorkflowNodeCatalog _catalog;
     private readonly Func<WorkflowRunCenterFlow, WorkflowDocument?> _documentOf;
-    private readonly ComboBox _flowPicker = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 240, Margin = new Padding(0, 2, 12, 0) };
-    private readonly ModernButton _resetStatistics = new() { Text = "统计清零", AutoSize = true };
-    private readonly Label _state = Label();
-    private readonly Label _runs = Label();
-    private readonly Label _laps = Label();
-    private readonly Label _cycle = Label();
-    private readonly Label _sync = Label();
-    private readonly Label _message = Label();
+    private readonly ComboBox _flowPicker = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
+    private readonly ModernButton _resetStatistics = new() { Text = "统计清零", ButtonType = ModernButtonType.Text };
+    private readonly WorkflowMetricStrip _figures = new();
+    private readonly WorkflowFactList _side = new();
+    private readonly WorkflowCard _canvasCard;
+    private readonly WorkflowStatusLine _status = new();
     private readonly Panel _canvasHost = new() { Dock = DockStyle.Fill };
     private readonly Label _noCanvas = Label("取不到这个流程的文档，只显示下方的运行数据。");
     private readonly WorkflowRunStatistics _statistics = new();
@@ -47,36 +45,30 @@ public sealed class WorkflowRunMonitorPage : WorkflowPage
         Canvas = new WorkflowDesignerControl { Dock = DockStyle.Fill, ReadOnly = true, AllowDrop = false };
         Monitor = new WorkflowRuntimeMonitorControl { Dock = DockStyle.Fill };
 
-        var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false, Padding = new Padding(6, 6, 6, 0) };
-        top.Controls.Add(new Label { Text = "流程", AutoSize = true, Margin = new Padding(0, 6, 6, 0) });
-        top.Controls.Add(_flowPicker);
-        top.Controls.Add(_resetStatistics);
-
-        var figures = Grid(5, new RowStyle(SizeType.Absolute, 96));
-        for (var column = 0; column < 5; column++)
-            figures.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
-        figures.Dock = DockStyle.Top;
-        figures.Height = 96;
-        figures.Controls.Add(Card("状态", _state), 0, 0);
-        figures.Controls.Add(Card("运行次数", _runs), 1, 0);
-        figures.Controls.Add(Card("圈数", _laps), 2, 0);
-        figures.Controls.Add(Card("节拍", _cycle), 3, 0);
-        figures.Controls.Add(Card("界面同步", _sync), 4, 0);
-
+        // 顶部指标条 | 中间（画布卡、右侧耗时与同步卡） | 底部运行数据卡 | 状态行，卡片之间隔 10。
+        _figures.AddTool(_resetStatistics);
+        _figures.AddTool(_flowPicker);
         _noCanvas.TextAlign = ContentAlignment.MiddleCenter;
         _noCanvas.Visible = false;
         _canvasHost.Controls.Add(Canvas);
         _canvasHost.Controls.Add(_noCanvas);
-        var split = new ModernSplitter { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, InitialPanel2Size = 260 };
-        split.Panel1.Controls.Add(Card("流程画布（只读）", _canvasHost));
-        split.Panel2.Controls.Add(Monitor);
+        _canvasCard = Section("流程画布", "只读", _canvasHost);
+        var middle = new Panel { Dock = DockStyle.Fill };
+        middle.Controls.Add(_canvasCard);
+        middle.Controls.Add(Gap(DockStyle.Right));
+        middle.Controls.Add(Section("本次节点耗时", null, _side, DockStyle.Right, 300));
 
-        _message.Dock = DockStyle.Bottom;
-        _message.Height = 24;
+        var split = new ModernSplitter { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, FixedPanel = FixedPanel.Panel2, InitialPanel2Size = 250 };
+        split.SplitterWidth = LogicalToDeviceUnits(10);
+        split.Panel1.Controls.Add(middle);
+        var bottom = new WorkflowCard { Dock = DockStyle.Fill };
+        bottom.Controls.Add(Monitor);
+        split.Panel2.Controls.Add(bottom);
+
         Controls.Add(split);
-        Controls.Add(figures);
-        Controls.Add(top);
-        Controls.Add(_message);
+        Controls.Add(Gap(DockStyle.Top));
+        Controls.Add(_figures);
+        Controls.Add(_status);
 
         _flowPicker.SelectedIndexChanged += (_, _) => Bind(_flowPicker.SelectedItem as string);
         _resetStatistics.Click += (_, _) => { _statistics.Reset(); _observedSequence = -1; ShowFigures(); };
@@ -115,7 +107,7 @@ public sealed class WorkflowRunMonitorPage : WorkflowPage
     {
         if (IsDisposed) return;
         if (InvokeRequired) { BeginInvoke(new Action(() => ShowMessage(message))); return; }
-        _message.Text = message;
+        _status.Message = message;
     }
 
     /// <inheritdoc />
@@ -220,31 +212,56 @@ public sealed class WorkflowRunMonitorPage : WorkflowPage
     private void ShowFigures()
     {
         var theme = WorkflowWinFormsTheme.Modern;
+        var interval = _binding?.FrameIntervalMilliseconds ?? WorkflowUiRefresh.FrameIntervalMilliseconds;
+        var note = $"界面每 {interval} ms 拉取一次快照";
         if (_flow is null)
         {
-            _state.Text = _center.Flows.Count == 0 ? "没有流程" : "未选择流程";
-            _state.ForeColor = theme.TextSecondary;
-            _runs.Text = _laps.Text = _cycle.Text = _sync.Text = "—";
+            _figures.Show(_center.Flows.Count == 0 ? "没有流程" : "未选择流程", "在右边选一个流程", Array.Empty<WorkflowMetric>(), note);
+            _side.Show(Array.Empty<WorkflowFact>());
+            _status.Summary = string.Empty;
             return;
         }
         var row = _overview.GetRows().FirstOrDefault(item => string.Equals(item.Name, _flow.Name, StringComparison.Ordinal));
         var state = _flow.State;
         var inFault = row?.InFault == true;
-        _state.Text = row?.StateText ?? state.ToString();
-        _state.ForeColor = inFault || state == E_WorkflowExecutionState.Faulted ? theme.Error
+        var stateColor = inFault || state == E_WorkflowExecutionState.Faulted ? theme.Error
             : state == E_WorkflowExecutionState.Running ? theme.Success
             : state == E_WorkflowExecutionState.Paused ? theme.Warning
             : theme.TextSecondary;
         var s = _statistics;
-        _runs.Text = s.Runs == 0 ? "0" : $"{s.Runs}（成功 {s.Succeeded} · 出错 {s.Failed} · 取消 {s.Canceled}）";
-        _laps.Text = s.Laps.ToString(CultureInfo.InvariantCulture);
-        _cycle.Text = s.AverageCycle is { } average
-            ? $"近 {s.CycleSamples} 次平均 {Milliseconds(average)} · 最近 {Milliseconds(s.LastCycle!.Value)}"
-            : "还没有完整的一圈";
-        var interval = _binding?.FrameIntervalMilliseconds ?? WorkflowUiRefresh.FrameIntervalMilliseconds;
-        _sync.Text = s.DisplayLatency is { } latency
-            ? $"每 {interval} ms 拉取 · 显示延迟 {Milliseconds(latency)}"
-            : $"每 {interval} ms 拉取";
+        var stateText = row?.StateText ?? state.ToString();
+        _figures.Show(_flow.Name, stateText, new[]
+        {
+            new WorkflowMetric(s.Runs.ToString("N0", CultureInfo.InvariantCulture), "运行次数"),
+            new WorkflowMetric(s.AverageCycle is { } average ? Milliseconds(average) : "—", $"平均节拍（近 {Math.Max(1, s.CycleSamples)} 次）"),
+            new WorkflowMetric(s.LastCycle is { } last ? Milliseconds(last) : "—", "最近一圈"),
+            new WorkflowMetric(s.Laps.ToString("N0", CultureInfo.InvariantCulture), "圈数"),
+            new WorkflowMetric(s.Succeeded.ToString("N0", CultureInfo.InvariantCulture), "成功"),
+            new WorkflowMetric(s.Failed.ToString("N0", CultureInfo.InvariantCulture), "出错", s.Failed > 0 ? theme.Error : null),
+            new WorkflowMetric(stateText, "状态", stateColor)
+        }, note);
+        HeaderOf(_canvasCard).Subtitle = _navigator?.RootSession.RuntimeSnapshot is { } snapshot ? $"只读 · 快照 #{snapshot.Sequence}" : "只读";
+
+        var facts = new List<WorkflowFact>();
+        var timings = Monitor.TimingTrends;
+        var slowest = timings.Count == 0 ? null : timings.OrderByDescending(item => item.Elapsed).First();
+        foreach (var item in timings.Take(8))
+            facts.Add(new WorkflowFact(NodeTitle(item.NodeId), item.ExecutionCount == 0 ? "—" : $"{item.Elapsed.TotalMilliseconds.ToString("0.0", CultureInfo.InvariantCulture)} ms",
+                Strong: ReferenceEquals(item, slowest)));
+        if (timings.Count == 0) facts.Add(new WorkflowFact("还没有节点执行", string.Empty));
+        facts.Add(WorkflowFact.Group("界面同步", s.DisplayLatency is null ? string.Empty : "正常"));
+        facts.Add(new WorkflowFact("拉取周期", $"{interval} ms（{(1000.0 / Math.Max(1, interval)).ToString("0.#", CultureInfo.InvariantCulture)} Hz）"));
+        facts.Add(new WorkflowFact("最新快照", s.LastSequence < 0 ? "—" : "#" + s.LastSequence.ToString(CultureInfo.InvariantCulture)));
+        facts.Add(new WorkflowFact("显示延迟", s.DisplayLatency is { } latency ? Milliseconds(latency) : "—"));
+        facts.Add(new WorkflowFact("执行线程等待界面", "从不", Strong: true));
+        _side.Show(facts);
+        _status.Summary = $"{_flow.Name} · {stateText} · 成功 {s.Succeeded} · 出错 {s.Failed} · 取消 {s.Canceled}";
+    }
+
+    private string NodeTitle(string nodeId)
+    {
+        var node = _navigator?.RootSession.Document.Nodes.FirstOrDefault(item => item.Node.Id == nodeId)?.Node;
+        return node is null || string.IsNullOrWhiteSpace(node.Title) ? nodeId : node.Title;
     }
 
     private static string Milliseconds(TimeSpan value) =>

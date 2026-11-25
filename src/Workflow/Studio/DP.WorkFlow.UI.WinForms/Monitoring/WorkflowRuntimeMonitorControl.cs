@@ -123,6 +123,9 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         }
     }
 
+    /// <summary>按节点汇总的最近执行耗时（运行监视页侧栏用）。</summary>
+    public IReadOnlyList<WorkflowNodeTimingTrendItem> TimingTrends => _model.TimingTrends;
+
     /// <summary>获取或设置 Trace 文本筛选条件。</summary>
     [Browsable(false)]
     public string TraceFilter { get => traceFilterTextBox.Text; set => traceFilterTextBox.Text = value ?? string.Empty; }

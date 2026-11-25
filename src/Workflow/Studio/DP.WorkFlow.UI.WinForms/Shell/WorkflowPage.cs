@@ -80,6 +80,30 @@ public class WorkflowPage : UserControl
         return card;
     }
 
+    /// <summary>设计稿样式的卡片：42 px 标题行（粗体标题、灰色副标题、分隔线），下面是内容。</summary>
+    /// <param name="title">标题。</param>
+    /// <param name="subtitle">副标题；可为空。</param>
+    /// <param name="body">内容。</param>
+    /// <param name="dock">卡片停靠方向。</param>
+    /// <param name="extent">停靠方向上的逻辑尺寸（填满时忽略）。</param>
+    public static WorkflowCard Section(string title, string? subtitle, Control body, DockStyle dock = DockStyle.Fill, int extent = 0)
+    {
+        Guard.NotNull(body);
+        var card = new WorkflowCard { Dock = dock, LogicalExtent = extent };
+        body.Dock = DockStyle.Fill;
+        card.Controls.Add(body);
+        card.Controls.Add(new WorkflowCardHeader(title, subtitle));
+        return card;
+    }
+
+    /// <summary>卡片之间的 10 px 间隔。</summary>
+    /// <param name="dock">停靠方向。</param>
+    public static WorkflowBlock Gap(DockStyle dock) => new() { Dock = dock, LogicalExtent = 10 };
+
+    /// <summary>取卡片的标题行（用来更新副标题）。</summary>
+    /// <param name="card">由 <see cref="Section"/> 创建的卡片。</param>
+    public static WorkflowCardHeader HeaderOf(WorkflowCard card) => card.Controls.OfType<WorkflowCardHeader>().First();
+
     /// <summary>网格布局（列数，行样式）；一列时列宽占满。</summary>
     /// <param name="columns">列数。</param>
     /// <param name="rows">行样式。</param>
