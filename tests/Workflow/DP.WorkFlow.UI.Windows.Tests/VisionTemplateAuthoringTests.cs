@@ -168,7 +168,7 @@ public sealed class VisionTemplateAuthoringTests
         using var fixture = new Fixture();
         var node = new LocateVisionTemplatePoseNodeModel { Id = "locate" };
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new() { Node = node });
+        document.Nodes.Add(new() { Node = node });
         var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterImageNodes());
         await using var parent = new WorkflowNodeEditorModel(session, node.Id, node.Id,
             new[] { new VisionFrameEditorPageProvider(reader: fixture.Reader, templates: fixture.Editing) });
@@ -402,9 +402,9 @@ public sealed class VisionTemplateAuthoringTests
         var oldReference = node.TemplateResourcePath;
         var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
         var document = new WorkflowDocument { EntryNodeId = "source" };
-        document.CanvasProjection.Nodes.Add(new() { Node = new AcquireVisionImageNodeModel { Id = "source", FilePath = fixture.SamplePath } });
-        document.CanvasProjection.Nodes.Add(new() { Node = node });
-        document.CanvasProjection.Connections.Add(new() { FromNodeId = "source", FromPort = WorkflowPorts.Success, ToNodeId = node.Id, ToPort = WorkflowPorts.Input });
+        document.Nodes.Add(new() { Node = new AcquireVisionImageNodeModel { Id = "source", FilePath = fixture.SamplePath } });
+        document.Nodes.Add(new() { Node = node });
+        document.Connections.Add(new() { FromNodeId = "source", FromPort = WorkflowPorts.Success, ToNodeId = node.Id, ToPort = WorkflowPorts.Input });
         var session = new WorkflowDesignerSession(document, nodes) { SelectedNodeId = node.Id };
         using var frames = new WorkflowVisionFrameScope();
         using var bindings = new WorkflowVisionAlgorithmBindings(fixture.Runtime, frames, () => new VisionAlgorithmResourceContext(fixture.Root));
@@ -494,7 +494,7 @@ public sealed class VisionTemplateAuthoringTests
         var originalPath = node.TemplateResourcePath;
 
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new() { Node = node });
+        document.Nodes.Add(new() { Node = node });
         var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterImageNodes()) { SelectedNodeId = node.Id };
         using var inspector = new WorkflowPropertyInspectorModel(session, node.Id);
         inspector.SetValue(inspector.Entries.Single(e => e.Name == nameof(node.MinimumAngleRadians)), 90d);
@@ -619,7 +619,7 @@ public sealed class VisionTemplateAuthoringTests
                 File.WriteAllText(fixture.SamplePath, "P2\n128 96\n255\n" + string.Join(" ", pixels) + "\n");
                 var node = new LocateVisionTemplatePoseNodeModel { Id = "locate", ModelAlgorithm = new() { ImplementationId = implementation } };
                 var document = new WorkflowDocument { EntryNodeId = node.Id };
-                document.CanvasProjection.Nodes.Add(new() { Node = node });
+                document.Nodes.Add(new() { Node = node });
                 var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterImageNodes()) { SelectedNodeId = node.Id };
                 using var host = new System.Windows.Forms.Form { ClientSize = new System.Drawing.Size(500, 700), ShowInTaskbar = false,
                     StartPosition = System.Windows.Forms.FormStartPosition.Manual, Location = new System.Drawing.Point(-3000, -3000) };
@@ -1163,7 +1163,7 @@ public sealed class VisionTemplateAuthoringTests
         var node = new LocateVisionTemplatePoseNodeModel { Id = "locate" };
         node.FullImage = false; node.X = 1; node.Y = 1; node.Width = 2; node.Height = 2;
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new() { Node = node });
+        document.Nodes.Add(new() { Node = node });
         var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterImageNodes());
         var providers = new[] { new VisionFrameEditorPageProvider(reader: fixture.Reader, templates: fixture.Editing) };
         await using var parent = new WorkflowNodeEditorModel(session, node.Id, node.Id, providers);
@@ -1242,7 +1242,7 @@ public sealed class VisionTemplateAuthoringTests
                 using var fixture = new Fixture();
                 var node = new LocateVisionTemplatePoseNodeModel { Id = "locate" };
                 var document = new WorkflowDocument { EntryNodeId = node.Id };
-                document.CanvasProjection.Nodes.Add(new() { Node = node });
+                document.Nodes.Add(new() { Node = node });
                 var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterImageNodes()) { SelectedNodeId = node.Id };
                 WorkflowPropertyActionRequest? requested = null;
                 var editor = new WorkflowNodeEditorModel(session, node.Id, node.Id,
@@ -1334,8 +1334,8 @@ public sealed class VisionTemplateAuthoringTests
         var source = new AcquireVisionImageNodeModel { Id = "source", FilePath = fixture.SamplePath };
         var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
         var document = new WorkflowDocument { EntryNodeId = "source" };
-        foreach (var n in new IWorkflowNodeModel[] { source, node }) document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = n });
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = "source", FromPort = WorkflowPorts.Success, ToNodeId = "locate", ToPort = WorkflowPorts.Input });
+        foreach (var n in new IWorkflowNodeModel[] { source, node }) document.Nodes.Add(new WorkflowCanvasNode { Node = n });
+        document.Connections.Add(new WorkflowConnectionModel { FromNodeId = "source", FromPort = WorkflowPorts.Success, ToNodeId = "locate", ToPort = WorkflowPorts.Input });
         var session = new WorkflowDesignerSession(document, nodes);
         var editor = new WorkflowNodeEditorModel(session, "source", node.Id, new[] { new VisionFrameEditorPageProvider(reader: fixture.Reader, templates: fixture.Editing) }, propertyEditorKey: WorkflowPropertyEditorKeys.VisionTemplateEditor);
         try
@@ -1371,7 +1371,7 @@ public sealed class VisionTemplateAuthoringTests
         using var fixture = new Fixture();
         var node = new LocateVisionTemplatePoseNodeModel { Id = "locate", Frame = Input<ImageFrame>("source") };
         var nodes = new WorkflowNodeCatalog().RegisterImageNodes(); var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node }); var session = new WorkflowDesignerSession(document, nodes);
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node }); var session = new WorkflowDesignerSession(document, nodes);
         var editor = new WorkflowNodeEditorModel(session, node.Id, node.Id, new[] { new VisionFrameEditorPageProvider(reader: fixture.Reader, templates: fixture.Editing) }, propertyEditorKey: WorkflowPropertyEditorKeys.VisionTemplateEditor);
         var page = editor.Pages.Select(p => p.Model).OfType<VisionTemplateAuthoringPageModel>().Single().Frame;
         await page.Template!.ReadSourceAsync(fixture.SamplePath); await page.Template.BuildAsync(); page.Template.OriginX += 1;
@@ -1387,7 +1387,7 @@ public sealed class VisionTemplateAuthoringTests
         var node = new LocateVisionTemplatePoseNodeModel { Id = "locate", TemplateSource = EWorkflowVisionTemplateSource.Resource };
         node.TemplateResourcePath = "Resources/Templates/old/manifest.json";
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterImageNodes()) { SelectedNodeId = node.Id };
         using var inspector = new WorkflowPropertyInspectorModel(session, node.Id, null, WorkflowVisionAlgorithmProperties.CreateProvider(fixture.Catalog));
         var path = Assert.Single(inspector.Entries, e => e.Name == "Algorithm.model.templatePath");
@@ -1556,8 +1556,8 @@ public sealed class VisionTemplateAuthoringTests
         node.TemplateReferenceDefinition.OriginX = double.NaN; // 过时的制作缓存不应作为运行契约。
         var source = new AcquireVisionImageNodeModel { Id = "source", FilePath = fixture.SamplePath };
         var document = new WorkflowDocument { EntryNodeId = "source" };
-        foreach (var n in new IWorkflowNodeModel[] { source, node }) document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = n });
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = "source", FromPort = WorkflowPorts.Success, ToNodeId = node.Id, ToPort = WorkflowPorts.Input });
+        foreach (var n in new IWorkflowNodeModel[] { source, node }) document.Nodes.Add(new WorkflowCanvasNode { Node = n });
+        document.Connections.Add(new WorkflowConnectionModel { FromNodeId = "source", FromPort = WorkflowPorts.Success, ToNodeId = node.Id, ToPort = WorkflowPorts.Input });
         using var frames = new WorkflowVisionFrameScope(); using var bindings = new WorkflowVisionAlgorithmBindings(fixture.Runtime, frames, () => new VisionAlgorithmResourceContext(moved));
         WorkflowVisionAlgorithmPreparationReport? report = null; bindings.PreparationChanged += value => report = value;
         var services = new WorkflowServiceProvider().Add<IWorkflowVisionFrameScope>(frames).Add<IWorkflowVisionAlgorithmBindings>(bindings)

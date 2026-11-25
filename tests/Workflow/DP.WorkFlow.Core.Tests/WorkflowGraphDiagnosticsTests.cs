@@ -6,7 +6,7 @@ public sealed class WorkflowGraphDiagnosticsTests
     public void Compile_PreservesUnreachableNodeAsWarning()
     {
         var canvasDocument = new WorkflowDocument { Name = "不可达节点" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new TestNode { Id = "Start", Title = "Start" } });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = new TestNode { Id = "Unused", Title = "Unused" } });
 

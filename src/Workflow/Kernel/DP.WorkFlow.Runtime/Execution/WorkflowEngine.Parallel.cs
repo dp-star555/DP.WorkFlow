@@ -13,7 +13,7 @@ public sealed partial class WorkflowEngine
         ExecutionToken parentToken,
         CancellationToken cancellationToken)
     {
-        var runtimeScopeId = Interlocked.Increment(ref _parallelScopeSequence);
+        var runtimeScopeId = NextParallelScopeId();
         lock (_stateSync)
         {
             _parallelScopes[runtimeScopeId] = new MutableParallelScopeInfo
@@ -25,6 +25,15 @@ public sealed partial class WorkflowEngine
             };
         }
         Context.RegisterParallelScope(runtimeScopeId, parentToken.TokenId);
+        // 与 ParallelMerged 成对（R4-a）：记下派发了哪些分支、在哪里汇聚。
+        WriteTrace(scopeNode, ScopeIdentity(parentToken), "ParallelStarted",
+            $"派发 {plan.BranchEntryNodeIds.Count} 个分支，汇聚节点 {plan.MergeNodeId}。",
+            new Dictionary<string, object?>
+            {
+                ["BranchCount"] = plan.BranchEntryNodeIds.Count,
+                ["Branches"] = string.Join(",", plan.BranchEntryNodeIds),
+                ["MergeNodeId"] = plan.MergeNodeId
+            });
         PublishSnapshot();
 
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -36,9 +45,13 @@ public sealed partial class WorkflowEngine
                 .Concat(parentToken.AncestorTokenIds)
                 .ToArray();
             var childToken = new ExecutionToken(
-                Interlocked.Increment(ref _tokenSequence),
+                NextTokenId(),
                 Array.AsReadOnly(ancestorTokenIds),
                 Array.AsReadOnly(parentToken.ScopeIds.Concat(new[] { runtimeScopeId }).ToArray()),
+                this,
+                parentToken,
+                isCanvasRoot: false,
+                parentToken.SeenStopEpoch,
                 parentToken.CopyLoopFrames());
             try
             {
@@ -76,54 +89,15 @@ public sealed partial class WorkflowEngine
         Context.CompleteParallelScope(runtimeScopeId, out var superseded);
         // 循环中的并行每轮使用新的分支 Token；作用域汇聚后上一轮的分支输出不会再被读到。
         RetireOutputs(superseded);
-        var parentIdentity = new WorkflowExecutionIdentity(
-            _runId,
-            parentToken.TokenId,
-            parentToken.AncestorTokenIds,
-            parentToken.ScopeIds,
-            0);
+        var parentIdentity = ScopeIdentity(parentToken);
         // 已完成作用域不再留在实时集合；合并事实只进入事件流，避免循环中无限累计。
         WriteTrace(scopeNode, parentIdentity, "ParallelMerged", $"{plan.BranchEntryNodeIds.Count} 个分支全部到达汇聚节点 {plan.MergeNodeId}。", null);
         PublishSnapshot();
     }
 
-    private sealed class ExecutionToken
-    {
-        private readonly Dictionary<string, int> _loopFrames;
-
-        public ExecutionToken(
-            long tokenId,
-            IReadOnlyList<long> ancestorTokenIds,
-            IReadOnlyList<long> scopeIds,
-            IReadOnlyDictionary<string, int>? loopFrames = null)
-        {
-            TokenId = tokenId;
-            AncestorTokenIds = ancestorTokenIds;
-            ScopeIds = scopeIds;
-            _loopFrames = loopFrames is null
-                ? new Dictionary<string, int>(StringComparer.Ordinal)
-                : loopFrames.ToDictionary(StringComparer.Ordinal);
-        }
-
-        public long TokenId { get; }
-
-        public IReadOnlyList<long> AncestorTokenIds { get; }
-
-        public IReadOnlyList<long> ScopeIds { get; }
-
-        public int PrepareLoopIteration(string nodeId) =>
-            _loopFrames.TryGetValue(nodeId, out var completedIterations)
-                ? completedIterations + 1
-                : 1;
-
-        public void CommitLoopIteration(string nodeId, int iteration) =>
-            _loopFrames[nodeId] = iteration;
-
-        public void CompleteLoop(string nodeId) => _loopFrames.Remove(nodeId);
-
-        public IReadOnlyDictionary<string, int> CopyLoopFrames() =>
-            new Dictionary<string, int>(_loopFrames, StringComparer.Ordinal);
-    }
+    /// <summary>并行作用域事件的身份：属于父令牌，执行次数为 0（不是一次节点执行）。</summary>
+    private WorkflowExecutionIdentity ScopeIdentity(ExecutionToken parentToken) =>
+        new(_runId, parentToken.TokenId, parentToken.AncestorTokenIds, parentToken.ScopeIds, 0);
 
     private sealed class MutableParallelScopeInfo
     {

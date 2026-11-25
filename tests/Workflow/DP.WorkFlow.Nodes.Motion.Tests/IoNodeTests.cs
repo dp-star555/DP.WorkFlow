@@ -25,7 +25,7 @@ public sealed class IoNodeTests
             TimeoutMs = 1000
         };
         var canvasDocument = new WorkflowDocument { Name = "IO" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         foreach (var node in new IWorkflowNodeModel[] { read, write, wait })
             canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvas.Connections.Add(new WorkflowConnectionModel

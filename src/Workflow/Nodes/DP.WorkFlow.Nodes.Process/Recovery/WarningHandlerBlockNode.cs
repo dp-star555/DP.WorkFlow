@@ -2,17 +2,18 @@ using System.Text.Json.Serialization;
 
 namespace DP.WorkFlow;
 
-/// <summary>包含宿主告警切入流程的专用不可连线子画布。</summary>
-[WorkflowNode("WarningHandlerBlock", DisplayName = "告警处理块", Category = "8.Process/异常恢复")]
-public sealed class WarningHandlerBlockNodeModel : WorkflowNodeModel, IWorkflowSubDocumentNode
+/// <summary>流程自带的故障处理流程：不连线的子画布。本流程出故障时由统管层优先运行它（其次路由表、默认处理流程）。</summary>
+[WorkflowNode("WarningHandlerBlock", DisplayName = "告警处理块", Category = "8.Process/异常恢复", HasInput = false)]
+[WorkflowOutputPorts]
+public sealed class WarningHandlerBlockNodeModel : WorkflowNodeModel, IWorkflowFaultHandlerNode
 {
     private WorkflowDocument _subDocument = new() { Name = "告警处理" };
-    /// <summary>初始化默认确认/重试告警模板。</summary>
+    /// <summary>初始化默认模板：读取故障后由人工选择。</summary>
     public WarningHandlerBlockNodeModel()
     {
         var start = new WarningHandlerStartNodeModel { Id = "WarningHandlerStart", Title = "告警处理起点" };
         var choice = new OperatorChoiceNodeModel { Id = "WarningOperatorChoice", Title = "人工处理选择" };
-        var canvas = _subDocument.CanvasProjection;
+        var canvas = _subDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = start });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = choice, X = 240 });
         canvas.Connections.Add(new WorkflowConnectionModel { FromNodeId = start.Id, FromPort = WorkflowPorts.Success, ToNodeId = choice.Id });

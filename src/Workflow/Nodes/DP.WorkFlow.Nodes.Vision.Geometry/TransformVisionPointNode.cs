@@ -3,7 +3,9 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>显式变更点的局部表达；没有目标绑定时转为原图表达。</summary>
-[WorkflowNode("Vision.TransformPoint", DisplayName = "点坐标系转换", Category = WorkflowVisionCategories.Geometry)]
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+[WorkflowNode("Vision.TransformPoint", DisplayName = "点坐标系转换", Category = WorkflowVisionCategories.Geometry, OutputType = typeof(DP.Vision.Algorithms.VisionPoint))]
+[WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class TransformVisionPointNodeModel : WorkflowVisionGeometryNodeModel
 {
     /// <inheritdoc/>
@@ -21,6 +23,10 @@ public sealed class TransformVisionPointNodeModel : WorkflowVisionGeometryNodeMo
 /// <summary>经过原图进行同帧转换，不重复补偿定位矩阵。</summary>
 public sealed class TransformVisionPointNodeHandler : WorkflowNodeHandler<TransformVisionPointNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(TransformVisionPointNodeModel node) =>
+        new[] { WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>() };
+
     /// <inheritdoc/>
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(TransformVisionPointNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

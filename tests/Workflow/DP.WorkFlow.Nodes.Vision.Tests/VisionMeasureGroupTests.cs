@@ -102,7 +102,7 @@ public sealed class VisionMeasureGroupTests
         var context = new WorkflowContext();
         // 用编译引擎跑一个产出该结果的节点，再按绑定路径读取。
         var document = new WorkflowDocument { Name = "测量组绑定" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new ProduceNode { Id = "group" } });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new ProduceNode { Id = "group" } });
         document.EntryNodeId = "group";
         var run = await new WorkflowEngine(new WorkflowCompiler(validateBindings: false).Compile(document),
             new WorkflowNodeHandlerCatalog().Register(new ProduceHandler(output.Output!)), context).RunAsync();
@@ -161,10 +161,10 @@ public sealed class VisionMeasureGroupTests
         var catalog = new WorkflowNodeCatalog().RegisterImageNodes();
         var node = Group();
         var document = new WorkflowDocument { Name = "测量组" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         document.EntryNodeId = node.Id;
         var store = new WorkflowDocumentJsonStore(catalog);
-        var loaded = (MeasureVisionGroupNodeModel)store.Deserialize(store.Serialize(document)).Document.CanvasProjection.Nodes.Single().Node;
+        var loaded = (MeasureVisionGroupNodeModel)store.Deserialize(store.Serialize(document)).Document.Nodes.Single().Node;
         Assert.Equal(node.Items.Select(i => (i.Id, i.Name, i.Kind, i.Enabled)), loaded.Items.Select(i => (i.Id, i.Name, i.Kind, i.Enabled)));
         Assert.Equal(24, loaded.Items[0].Rectangle!.SearchLength);
         Assert.Equal(38, loaded.Items[1].Circle!.Regions[0].Width);

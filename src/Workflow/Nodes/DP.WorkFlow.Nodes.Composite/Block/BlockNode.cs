@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace DP.WorkFlow;
 
 /// <summary>将可复用子流程封装为父流程中的单一节点。</summary>
-[WorkflowNode("Block", DisplayName = "子流程块", Category = "Control", Description = "同步运行一个隔离的子流程画布。")]
+[WorkflowNode("Block", DisplayName = "子流程块", Category = "Control", Description = "同步运行一个隔离的子流程画布。", OutputType = typeof(BlockNodeOutput), Icon = "layers")]
 public sealed class BlockNodeModel : WorkflowNodeModel, IWorkflowSubflowNode, IWorkflowDynamicOutputNode, IWorkflowBindingDeclarationProvider
 {
     /// <inheritdoc />

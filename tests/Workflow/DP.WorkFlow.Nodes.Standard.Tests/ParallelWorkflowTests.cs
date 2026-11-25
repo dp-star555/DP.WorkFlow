@@ -6,7 +6,7 @@ public sealed class ParallelWorkflowTests
     public async Task RunAsync_TwoBranches_ExecuteConcurrentlyAndMergeOnce()
     {
         var document = BuildParallelDocument();
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         var bothBranchesEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseBranches = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var activeBranches = 0;
@@ -73,7 +73,7 @@ public sealed class ParallelWorkflowTests
         };
         var end = new EndNodeModel { Id = "End", Title = "结束" };
         var canvasDocument = new WorkflowDocument { Name = "汇聚后可见" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         foreach (var node in new IWorkflowNodeModel[] { parallel, producer, branchB, merge, decision, end })
             canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvas.Connections.Add(Connect("Parallel", WorkflowPorts.Branch, "Producer"));
@@ -107,7 +107,7 @@ public sealed class ParallelWorkflowTests
         };
         var merge = new WaitAllInputsCompletedNodeModel { Id = "Merge", Title = "汇聚" };
         var canvasDocument = new WorkflowDocument { Name = "分支隔离" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         foreach (var node in new IWorkflowNodeModel[] { parallel, producer, waitProducer, decision, merge })
             canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvas.Connections.Add(Connect("Parallel", WorkflowPorts.Branch, "Producer"));
@@ -150,7 +150,7 @@ public sealed class ParallelWorkflowTests
         var outerMerge = new WaitAllInputsCompletedNodeModel { Id = "OuterMerge", Title = "外汇聚" };
         var end = new EndNodeModel { Id = "End", Title = "结束" };
         var canvasDocument = new WorkflowDocument { Name = "嵌套并行" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         foreach (var node in new IWorkflowNodeModel[] { outer, inner, innerA, innerB, outerB, innerMerge, outerMerge, end })
             canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvas.Connections.Add(Connect("Outer", WorkflowPorts.Branch, "Inner"));
@@ -190,7 +190,7 @@ public sealed class ParallelWorkflowTests
     public async Task RunAsync_WhenOneBranchFails_CancelsSiblingAndReturnsOriginalFailure()
     {
         var document = BuildParallelDocument();
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         var siblingCanceled = false;
         var actions = new WorkflowActionRegistry()
             .Register("BranchA", (_, _) => throw new InvalidOperationException("Branch A failed."))
@@ -222,7 +222,7 @@ public sealed class ParallelWorkflowTests
     {
         // 取图 → 并行（A、B）→ 汇聚 → 计数 → 判断：未满 3 次回到取图，满 3 次结束。
         var document = new WorkflowDocument { Name = "首尾回环" };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         var nodes = new IWorkflowNodeModel[]
         {
             new ActionNodeModel { Id = "Acquire", Title = "取图", FunctionKey = "Acquire" },
@@ -264,7 +264,7 @@ public sealed class ParallelWorkflowTests
     public async Task RunAsync_DisabledBranchIsSkippedAndMergeWaitsOnlyForEnabledOnes()
     {
         var document = BuildParallelDocument();
-        document.CanvasProjection.Connections.Single(c => c.ToNodeId == "BranchB").Enabled = false;
+        document.Connections.Single(c => c.ToNodeId == "BranchB").Enabled = false;
         int a = 0, b = 0, after = 0;
         var actions = new WorkflowActionRegistry()
             .Register("BranchA", (_, _) => { Interlocked.Increment(ref a); return ValueTask.FromResult<object?>(null); })
@@ -282,7 +282,7 @@ public sealed class ParallelWorkflowTests
     public async Task RunAsync_SingleBranchParallelIsAllowed()
     {
         var document = BuildParallelDocument();
-        document.CanvasProjection.Connections.Remove(document.CanvasProjection.Connections.Single(c => c.ToNodeId == "BranchB"));
+        document.Connections.Remove(document.Connections.Single(c => c.ToNodeId == "BranchB"));
         int a = 0, after = 0;
         var actions = new WorkflowActionRegistry()
             .Register("BranchA", (_, _) => { Interlocked.Increment(ref a); return ValueTask.FromResult<object?>(null); })
@@ -323,7 +323,7 @@ public sealed class ParallelWorkflowTests
         var after = new ActionNodeModel { Id = "After", Title = "汇聚后", FunctionKey = "AfterMerge" };
         var end = new EndNodeModel { Id = "End", Title = "结束" };
         var canvasDocument = new WorkflowDocument { Name = "并行运行" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         foreach (var node in new IWorkflowNodeModel[] { parallel, branchA, branchB, merge, after, end })
             canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         // 先调度 B，故障测试可确认 A 失败后会取消已经运行的兄弟分支。

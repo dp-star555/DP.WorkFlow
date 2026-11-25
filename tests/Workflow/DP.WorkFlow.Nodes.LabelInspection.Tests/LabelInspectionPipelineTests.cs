@@ -43,9 +43,9 @@ public sealed class LabelInspectionPipelineTests
     {
         await using var rig = new Rig(ink);
         rig.Node.NgToFailedPort = true;
-        var ok = rig.Document.CanvasProjection.Connections.Single(c => c.FromNodeId == "inspect");
-        rig.Document.CanvasProjection.Nodes.Add(new() { Node = new Consumer { Id = "ng", Verdict = WorkflowInput<EInspectionVerdict>.FromBinding(new("inspect", "Verdict")) } });
-        rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = "inspect", FromPort = WorkflowPorts.Failed, ToNodeId = "ng", ToPort = WorkflowPorts.Input });
+        var ok = rig.Document.Connections.Single(c => c.FromNodeId == "inspect");
+        rig.Document.Nodes.Add(new() { Node = new Consumer { Id = "ng", Verdict = WorkflowInput<EInspectionVerdict>.FromBinding(new("inspect", "Verdict")) } });
+        rig.Document.Connections.Add(new() { FromNodeId = "inspect", FromPort = WorkflowPorts.Failed, ToNodeId = "ng", ToPort = WorkflowPorts.Input });
         var result = await rig.RunAsync();
         Assert.True(result.Success, result.Message);
         Assert.Equal(expected, rig.Output().Verdict);
@@ -109,11 +109,11 @@ public sealed class LabelInspectionPipelineTests
         if (ink) for (int y = 12; y < 24; y++) for (int x = 12; x < 24; x++) pixels[(y + 5) * 84 + x + 10] = 0;
         File.WriteAllBytes(Path.Combine(rig.Root, "input.png"), new OpenCvImageCodec().EncodePng(new PixelSnapshot(84, 58, EImagePixelFormat.Gray8, pixels)));
         var locate = new ShiftedCoordinates { Id = "locate", Frame = WorkflowInput<ImageFrame>.FromBinding(new("image", "$")) };
-        rig.Document.CanvasProjection.Nodes.Add(new() { Node = locate });
-        var toInspect = rig.Document.CanvasProjection.Connections.Single(c => c.FromNodeId == "image");
-        rig.Document.CanvasProjection.Connections.Remove(toInspect);
-        rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = "image", FromPort = WorkflowPorts.Success, ToNodeId = "locate", ToPort = WorkflowPorts.Input });
-        rig.Document.CanvasProjection.Connections.Add(new() { FromNodeId = "locate", FromPort = WorkflowPorts.Success, ToNodeId = "inspect", ToPort = WorkflowPorts.Input });
+        rig.Document.Nodes.Add(new() { Node = locate });
+        var toInspect = rig.Document.Connections.Single(c => c.FromNodeId == "image");
+        rig.Document.Connections.Remove(toInspect);
+        rig.Document.Connections.Add(new() { FromNodeId = "image", FromPort = WorkflowPorts.Success, ToNodeId = "locate", ToPort = WorkflowPorts.Input });
+        rig.Document.Connections.Add(new() { FromNodeId = "locate", FromPort = WorkflowPorts.Success, ToNodeId = "inspect", ToPort = WorkflowPorts.Input });
         rig.Node.LabelCoordinates = WorkflowInput<VisionCoordinateSystem>.FromBinding(new("locate", "$"));
 
         var result = await rig.RunAsync();
@@ -267,7 +267,7 @@ public sealed class LabelInspectionPipelineTests
         var store = new WorkflowDocumentJsonStore(rig.Nodes);
         var document = store.Deserialize(store.Serialize(rig.Document)).Document;
         _ = new WorkflowCompiler(rig.Nodes).Compile(document);
-        var node = Assert.IsType<InspectLabelNodeModel>(document.CanvasProjection.Nodes.Single(n => n.Node.Id == "inspect").Node);
+        var node = Assert.IsType<InspectLabelNodeModel>(document.Nodes.Single(n => n.Node.Id == "inspect").Node);
         Assert.Equal(rig.Node.RecipeJson, node.RecipeJson);
         var recipe = new InspectionRecipeSerializer(new OpenCvImageCodec()).Deserialize(node.RecipeJson);
         Assert.Equal("ABC", recipe.Regions[0].Field.Expected);
@@ -327,8 +327,8 @@ public sealed class LabelInspectionPipelineTests
                     EInspectionMode.Free, EAlignmentMode.AssumeAligned, new[] { new InspectionRegion("blank", ERegionKind.Blank, new PixelBounds(4, 4, 56, 40)) }, Options)) };
             IWorkflowNodeModel[] models = [new AcquireVisionImageNodeModel { Id = "image", FilePath = Path.Combine(Root, "input.png") }, Node,
                 new Consumer { Id = "consumer", Verdict = WorkflowInput<EInspectionVerdict>.FromBinding(new("inspect", "Report.Verdict")) }];
-            foreach (var model in models) Document.CanvasProjection.Nodes.Add(new() { Node = model });
-            for (int i = 1; i < models.Length; i++) Document.CanvasProjection.Connections.Add(new() { FromNodeId = models[i - 1].Id,
+            foreach (var model in models) Document.Nodes.Add(new() { Node = model });
+            for (int i = 1; i < models.Length; i++) Document.Connections.Add(new() { FromNodeId = models[i - 1].Id,
                 FromPort = WorkflowPorts.Success, ToNodeId = models[i].Id, ToPort = WorkflowPorts.Input });
             Runtime = new WorkflowLabelInspectionRuntime(() => Root, new CallbackPreparation(this), cacheOptions ?? new(), ocr, anomaly, implementations);
             Host = new WorkflowRuntimeHost(Nodes, Handlers);

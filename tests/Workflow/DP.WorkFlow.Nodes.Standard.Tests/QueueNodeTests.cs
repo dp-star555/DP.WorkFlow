@@ -6,12 +6,15 @@ public sealed class QueueNodeTests
     public async Task QueueService_WakesWaiterAndRemovesValue()
     {
         var queues = new WorkflowQueueService();
-        Assert.True(queues.Enqueue("Jobs", "A", preventDuplicates: true));
-        Assert.False(queues.Enqueue("Jobs", "A", preventDuplicates: true));
+        var waiting = queues.WaitAsync("Jobs", E_SignalValueType.String, snapshot => snapshot.HasFirstValue,
+            TimeSpan.FromSeconds(1), true, CancellationToken.None).AsTask();
+        Assert.True(queues.EnqueueValue("Jobs", "A", E_SignalValueType.String, true, true));
+        Assert.False(queues.EnqueueValue("Jobs", "A", E_SignalValueType.String, true, true));
 
-        var waiting = queues.WaitDequeueAsync("Jobs", TimeSpan.FromSeconds(1), CancellationToken.None).AsTask();
-        Assert.Equal("A", await waiting);
-        Assert.Empty(queues.Snapshot("Jobs"));
+        Assert.Equal("A", (await waiting)?.FirstValue);
+        Assert.True(queues.TryDequeueValue("Jobs", E_SignalValueType.String, false, out var value));
+        Assert.Equal("A", value);
+        Assert.Equal(0, queues.ReadSnapshot("Jobs")!.Count);
     }
 
     [Fact]

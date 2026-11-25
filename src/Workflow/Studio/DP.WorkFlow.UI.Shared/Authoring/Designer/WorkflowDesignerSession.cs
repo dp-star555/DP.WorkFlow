@@ -80,15 +80,15 @@ public sealed partial class WorkflowDesignerSession
     /// <summary>初始化正式工作流文档的设计会话；构造过程只读取文档，不执行布局修复。</summary>
     /// <param name="document">目标工作流文档。</param>
     /// <param name="catalog">用于创建和查询节点的节点目录。</param>
-    /// <param name="publicDataCatalog">宿主可绑定公共数据目录。</param>
+    /// <param name="publicData">根流程的公共数据清单；编辑子画布时传入根文档的清单，为空时使用本文档的清单。</param>
     public WorkflowDesignerSession(
         WorkflowDocument document,
         WorkflowNodeCatalog catalog,
-        WorkflowPublicDataCatalog? publicDataCatalog = null)
+        List<WorkflowPublicDataDeclaration>? publicData = null)
     {
         Document = document ?? throw new ArgumentNullException(nameof(document));
         Catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
-        PublicDataCatalog = publicDataCatalog ?? new WorkflowPublicDataCatalog();
+        PublicData = publicData ?? document.PublicData;
         FitNodeSizesToContent();
     }
 
@@ -99,7 +99,7 @@ public sealed partial class WorkflowDesignerSession
     /// </summary>
     private void FitNodeSizesToContent()
     {
-        foreach (var node in Canvas.Nodes)
+        foreach (var node in Document.Nodes)
         {
             if (!Catalog.TryGet(node.Node.NodeType, out _)) continue;
             var (centerX, top) = (node.X + node.Width / 2, node.Y);
@@ -112,14 +112,58 @@ public sealed partial class WorkflowDesignerSession
     /// <summary>获取当前正式工作流文档。</summary>
     public WorkflowDocument Document { get; }
 
-    /// <summary>获取当前设计器使用的画布投影。</summary>
-    public WorkflowCanvasModel Canvas => Document.CanvasProjection;
-
     /// <summary>获取节点目录。</summary>
     public WorkflowNodeCatalog Catalog { get; }
 
-    /// <summary>获取宿主声明的公共可绑定数据目录。</summary>
-    public WorkflowPublicDataCatalog PublicDataCatalog { get; }
+    /// <summary>获取根流程的公共数据清单（R2-d）；子画布会话与根会话共用同一个清单。</summary>
+    public List<WorkflowPublicDataDeclaration> PublicData { get; }
+
+    /// <summary>登记或替换一项公共数据（按键），可撤销。</summary>
+    /// <param name="declaration">登记项。</param>
+    public void DeclarePublicData(WorkflowPublicDataDeclaration declaration)
+    {
+        Guard.NotNull(declaration);
+        if (string.IsNullOrWhiteSpace(declaration.Key))
+            throw new ArgumentException("公共数据键不能为空。", nameof(declaration));
+        var item = declaration with { Key = declaration.Key.Trim() };
+        var before = PublicData.ToArray();
+        var after = before.ToList();
+        var index = after.FindIndex(existing => string.Equals(existing.Key, item.Key, StringComparison.Ordinal));
+        if (index >= 0) after[index] = item; else after.Add(item);
+        ReplacePublicData(before, after.ToArray());
+    }
+
+    /// <summary>移除一项公共数据登记，可撤销；不存在时返回 <see langword="false"/>。</summary>
+    /// <param name="key">键。</param>
+    public bool RemovePublicData(string key)
+    {
+        var before = PublicData.ToArray();
+        var after = before.Where(item => !string.Equals(item.Key, key, StringComparison.Ordinal)).ToArray();
+        if (after.Length == before.Length) return false;
+        ReplacePublicData(before, after);
+        return true;
+    }
+
+    /// <summary>按节点的使用把尚未登记的公共数据补进清单，可撤销；返回补进的项。</summary>
+    /// <param name="rootDocument">根文档；清单覆盖根画布和全部子画布。为空时使用本会话的文档。</param>
+    public IReadOnlyList<WorkflowPublicDataDeclaration> DeclareMissingPublicData(WorkflowDocument? rootDocument = null)
+    {
+        var known = new HashSet<string>(PublicData.Select(item => item.Key), StringComparer.Ordinal);
+        var added = WorkflowPublicDataManifest.Infer(rootDocument ?? Document).Where(item => known.Add(item.Key)).ToArray();
+        if (added.Length > 0)
+            ReplacePublicData(PublicData.ToArray(), PublicData.Concat(added).ToArray());
+        return added;
+    }
+
+    private void ReplacePublicData(WorkflowPublicDataDeclaration[] before, WorkflowPublicDataDeclaration[] after)
+    {
+        void Apply(WorkflowPublicDataDeclaration[] items)
+        {
+            PublicData.Clear();
+            PublicData.AddRange(items);
+        }
+        Execute(new DesignerOperation(() => Apply(after), () => Apply(before)));
+    }
 
     /// <summary>获取或设置节点与手工路径点是否吸附到设计栅格（<see cref="WorkflowDesignerGeometry.GridSize"/>）。</summary>
     public bool SnapToGrid { get; set; } = true;
@@ -151,7 +195,7 @@ public sealed partial class WorkflowDesignerSession
         get => _selectedNodeId;
         set
         {
-            var normalized = value is not null && Canvas.Nodes.Any(item => item.Node.Id == value) ? value : null;
+            var normalized = value is not null && Document.Nodes.Any(item => item.Node.Id == value) ? value : null;
             if (_selectedNodeId == normalized
                 && ((normalized is null && _selectedNodeIds.Count == 0)
                     || (normalized is not null && _selectedNodeIds.Count == 1 && _selectedNodeIds.Contains(normalized))))
@@ -177,7 +221,7 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="additive">是否保留现有选择并增选。</param>
     public bool SelectNode(string nodeId, bool additive = false)
     {
-        if (!Canvas.Nodes.Any(item => item.Node.Id == nodeId))
+        if (!Document.Nodes.Any(item => item.Node.Id == nodeId))
             return false;
         if (!additive)
             _selectedNodeIds.Clear();
@@ -201,7 +245,7 @@ public sealed partial class WorkflowDesignerSession
         Guard.NotNull(nodeIds);
         if (!additive)
             _selectedNodeIds.Clear();
-        var validIds = Canvas.Nodes.Select(item => item.Node.Id).ToHashSet(StringComparer.Ordinal);
+        var validIds = Document.Nodes.Select(item => item.Node.Id).ToHashSet(StringComparer.Ordinal);
         foreach (var nodeId in nodeIds.Where(validIds.Contains))
             _selectedNodeIds.Add(nodeId);
         _selectedNodeId = _selectedNodeIds.LastOrDefault();
@@ -216,7 +260,7 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="connection">目标连接。</param>
     public bool SelectConnection(WorkflowConnectionModel? connection)
     {
-        if (connection is not null && !Canvas.Connections.Contains(connection))
+        if (connection is not null && !Document.Connections.Contains(connection))
             return false;
         if (ReferenceEquals(_selectedConnection, connection) && _selectedNodeId is null)
             return true;
@@ -295,13 +339,13 @@ public sealed partial class WorkflowDesignerSession
         Execute(new DesignerOperation(
             () =>
             {
-                Canvas.Nodes.Add(canvasNode);
+                Document.Nodes.Add(canvasNode);
                 if (assignAsEntry)
                     Document.EntryNodeId = node.Id;
             },
             () =>
             {
-                Canvas.Nodes.Remove(canvasNode);
+                Document.Nodes.Remove(canvasNode);
                 if (assignAsEntry)
                     Document.EntryNodeId = previousEntryNodeId;
             }));
@@ -328,7 +372,7 @@ public sealed partial class WorkflowDesignerSession
         WorkflowPortSide? outputSide = null)
     {
         Guard.NotNull(connection);
-        if (!Canvas.Connections.Contains(connection))
+        if (!Document.Connections.Contains(connection))
             return null;
         var descriptor = Catalog.GetOrThrow(nodeType);
         var node = descriptor.Factory();
@@ -360,7 +404,7 @@ public sealed partial class WorkflowDesignerSession
             canvasNode.SetPortSide(WorkflowPortDirection.Input, input.Key, inputSide.Value);
         if (outputSide.HasValue)
             canvasNode.SetPortSide(WorkflowPortDirection.Output, output.Key, outputSide.Value);
-        var connectionIndex = Canvas.Connections.IndexOf(connection);
+        var connectionIndex = Document.Connections.IndexOf(connection);
         var incoming = new WorkflowConnectionModel
         {
             FromNodeId = connection.FromNodeId,
@@ -382,17 +426,17 @@ public sealed partial class WorkflowDesignerSession
         Execute(new DesignerOperation(
             () =>
             {
-                Canvas.Connections.Remove(connection);
-                Canvas.Nodes.Add(canvasNode);
-                Canvas.Connections.Insert(Math.Min(connectionIndex, Canvas.Connections.Count), incoming);
-                Canvas.Connections.Insert(Math.Min(connectionIndex + 1, Canvas.Connections.Count), outgoing);
+                Document.Connections.Remove(connection);
+                Document.Nodes.Add(canvasNode);
+                Document.Connections.Insert(Math.Min(connectionIndex, Document.Connections.Count), incoming);
+                Document.Connections.Insert(Math.Min(connectionIndex + 1, Document.Connections.Count), outgoing);
             },
             () =>
             {
-                Canvas.Connections.Remove(incoming);
-                Canvas.Connections.Remove(outgoing);
-                Canvas.Nodes.Remove(canvasNode);
-                Canvas.Connections.Insert(Math.Min(connectionIndex, Canvas.Connections.Count), connection);
+                Document.Connections.Remove(incoming);
+                Document.Connections.Remove(outgoing);
+                Document.Nodes.Remove(canvasNode);
+                Document.Connections.Insert(Math.Min(connectionIndex, Document.Connections.Count), connection);
             }));
         SelectedNodeId = node.Id;
         return canvasNode;
@@ -402,11 +446,11 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="nodeId">节点标识。</param>
     public bool RemoveNode(string nodeId)
     {
-        var canvasNode = Canvas.Nodes.FirstOrDefault(item => item.Node.Id == nodeId);
+        var canvasNode = Document.Nodes.FirstOrDefault(item => item.Node.Id == nodeId);
         if (canvasNode is null)
             return false;
-        var nodeIndex = Canvas.Nodes.IndexOf(canvasNode);
-        var connections = Canvas.Connections
+        var nodeIndex = Document.Nodes.IndexOf(canvasNode);
+        var connections = Document.Connections
             .Select((connection, index) => (Connection: connection, Index: index))
             .Where(item => item.Connection.FromNodeId == nodeId || item.Connection.ToNodeId == nodeId)
             .ToArray();
@@ -416,16 +460,16 @@ public sealed partial class WorkflowDesignerSession
             () =>
             {
                 foreach (var item in connections.OrderByDescending(item => item.Index))
-                    Canvas.Connections.Remove(item.Connection);
-                Canvas.Nodes.Remove(canvasNode);
+                    Document.Connections.Remove(item.Connection);
+                Document.Nodes.Remove(canvasNode);
                 if (removesEntry)
                     Document.EntryNodeId = string.Empty;
             },
             () =>
             {
-                Canvas.Nodes.Insert(Math.Min(nodeIndex, Canvas.Nodes.Count), canvasNode);
+                Document.Nodes.Insert(Math.Min(nodeIndex, Document.Nodes.Count), canvasNode);
                 foreach (var item in connections.OrderBy(item => item.Index))
-                    Canvas.Connections.Insert(Math.Min(item.Index, Canvas.Connections.Count), item.Connection);
+                    Document.Connections.Insert(Math.Min(item.Index, Document.Connections.Count), item.Connection);
                 if (removesEntry)
                     Document.EntryNodeId = previousEntryNodeId;
             }));
@@ -463,7 +507,7 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="y">纵坐标。</param>
     public bool MoveNode(string nodeId, double x, double y)
     {
-        var item = Canvas.Nodes.FirstOrDefault(node => node.Node.Id == nodeId);
+        var item = Document.Nodes.FirstOrDefault(node => node.Node.Id == nodeId);
         if (item is null)
             return false;
         var snapped = SnapNodePosition(item, new WorkflowPoint(x, y));
@@ -484,7 +528,7 @@ public sealed partial class WorkflowDesignerSession
     public bool MoveNodes(IReadOnlyDictionary<string, WorkflowPoint> positions)
     {
         Guard.NotNull(positions);
-        var changes = Canvas.Nodes
+        var changes = Document.Nodes
             .Where(item => positions.ContainsKey(item.Node.Id))
             .Select(item => (Node: item, Old: new WorkflowPoint(item.X, item.Y), New: positions[item.Node.Id]))
             .Where(item => item.Old != item.New)
@@ -495,7 +539,7 @@ public sealed partial class WorkflowDesignerSession
             item => item.Node.Node.Id,
             item => new WorkflowPoint(item.New.X - item.Old.X, item.New.Y - item.Old.Y),
             StringComparer.Ordinal);
-        var waypointChanges = Canvas.Connections
+        var waypointChanges = Document.Connections
             .Where(connection => connection.Waypoints.Count > 0
                 && (deltas.ContainsKey(connection.FromNodeId) || deltas.ContainsKey(connection.ToNodeId)))
             .Select(connection =>
@@ -529,11 +573,11 @@ public sealed partial class WorkflowDesignerSession
         var selected = new HashSet<string>(_selectedNodeIds, StringComparer.Ordinal);
         if (selected.Count == 0)
             return false;
-        var nodes = Canvas.Nodes
+        var nodes = Document.Nodes
             .Select((node, index) => (Node: node, Index: index))
             .Where(item => selected.Contains(item.Node.Node.Id))
             .ToArray();
-        var connections = Canvas.Connections
+        var connections = Document.Connections
             .Select((connection, index) => (Connection: connection, Index: index))
             .Where(item => selected.Contains(item.Connection.FromNodeId) || selected.Contains(item.Connection.ToNodeId))
             .ToArray();
@@ -542,14 +586,14 @@ public sealed partial class WorkflowDesignerSession
         Execute(new DesignerOperation(
             () =>
             {
-                foreach (var item in connections.OrderByDescending(item => item.Index)) Canvas.Connections.Remove(item.Connection);
-                foreach (var item in nodes.OrderByDescending(item => item.Index)) Canvas.Nodes.Remove(item.Node);
+                foreach (var item in connections.OrderByDescending(item => item.Index)) Document.Connections.Remove(item.Connection);
+                foreach (var item in nodes.OrderByDescending(item => item.Index)) Document.Nodes.Remove(item.Node);
                 if (removesEntry) Document.EntryNodeId = string.Empty;
             },
             () =>
             {
-                foreach (var item in nodes.OrderBy(item => item.Index)) Canvas.Nodes.Insert(Math.Min(item.Index, Canvas.Nodes.Count), item.Node);
-                foreach (var item in connections.OrderBy(item => item.Index)) Canvas.Connections.Insert(Math.Min(item.Index, Canvas.Connections.Count), item.Connection);
+                foreach (var item in nodes.OrderBy(item => item.Index)) Document.Nodes.Insert(Math.Min(item.Index, Document.Nodes.Count), item.Node);
+                foreach (var item in connections.OrderBy(item => item.Index)) Document.Connections.Insert(Math.Min(item.Index, Document.Connections.Count), item.Connection);
                 if (removesEntry) Document.EntryNodeId = previousEntryNodeId;
             }));
         _selectedNodeIds.Clear();
@@ -566,10 +610,10 @@ public sealed partial class WorkflowDesignerSession
             selected.Add(_selectedNodeId);
         if (selected.Count == 0) return false;
         var clipboardDocument = new WorkflowDocument { Name = "Clipboard" };
-        var clipboardCanvas = clipboardDocument.CanvasProjection;
-        foreach (var node in Canvas.Nodes.Where(item => selected.Contains(item.Node.Id)))
+        var clipboardCanvas = clipboardDocument;
+        foreach (var node in Document.Nodes.Where(item => selected.Contains(item.Node.Id)))
             clipboardCanvas.Nodes.Add(node);
-        foreach (var connection in Canvas.Connections.Where(item =>
+        foreach (var connection in Document.Connections.Where(item =>
                      selected.Contains(item.FromNodeId) && selected.Contains(item.ToNodeId)))
         {
             clipboardCanvas.Connections.Add(connection);
@@ -595,9 +639,9 @@ public sealed partial class WorkflowDesignerSession
             pasteCount = ++s_clipboardPasteCount;
         }
         if (string.IsNullOrWhiteSpace(json)) return Array.Empty<WorkflowCanvasNode>();
-        var source = new WorkflowDocumentJsonStore(Catalog).Deserialize(json).Canvas;
+        var source = new WorkflowDocumentJsonStore(Catalog).Deserialize(json).Document;
         var offset = 24d * pasteCount;
-        var reserved = new HashSet<string>(Canvas.Nodes.Select(item => item.Node.Id), StringComparer.Ordinal);
+        var reserved = new HashSet<string>(Document.Nodes.Select(item => item.Node.Id), StringComparer.Ordinal);
         var idMap = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var node in source.Nodes)
         {
@@ -627,13 +671,13 @@ public sealed partial class WorkflowDesignerSession
         Execute(new DesignerOperation(
             () =>
             {
-                foreach (var node in nodes) Canvas.Nodes.Add(node);
-                foreach (var connection in connections) Canvas.Connections.Add(connection);
+                foreach (var node in nodes) Document.Nodes.Add(node);
+                foreach (var connection in connections) Document.Connections.Add(connection);
             },
             () =>
             {
-                foreach (var connection in connections) Canvas.Connections.Remove(connection);
-                foreach (var node in nodes) Canvas.Nodes.Remove(node);
+                foreach (var connection in connections) Document.Connections.Remove(connection);
+                foreach (var node in nodes) Document.Nodes.Remove(node);
             }));
         SelectNodes(nodes.Select(item => item.Node.Id));
         return nodes;
@@ -643,7 +687,7 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="alignment">对齐方式。</param>
     public bool AlignSelectedNodes(WorkflowNodeAlignment alignment)
     {
-        var nodes = Canvas.Nodes.Where(item => _selectedNodeIds.Contains(item.Node.Id)).ToArray();
+        var nodes = Document.Nodes.Where(item => _selectedNodeIds.Contains(item.Node.Id)).ToArray();
         if (nodes.Length < 2)
             return false;
         var left = nodes.Min(node => node.X);
@@ -670,7 +714,7 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="distribution">分布方向。</param>
     public bool DistributeSelectedNodes(WorkflowNodeDistribution distribution)
     {
-        var nodes = Canvas.Nodes.Where(item => _selectedNodeIds.Contains(item.Node.Id)).ToArray();
+        var nodes = Document.Nodes.Where(item => _selectedNodeIds.Contains(item.Node.Id)).ToArray();
         if (nodes.Length < 3)
             return false;
         var positions = nodes.ToDictionary(node => node.Node.Id, node => new WorkflowPoint(node.X, node.Y), StringComparer.Ordinal);
@@ -698,12 +742,12 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="nodeSpacing">同层节点间距。</param>
     public bool AutoLayout(double layerSpacing = 260, double nodeSpacing = 110)
     {
-        if (Canvas.Nodes.Count == 0)
+        if (Document.Nodes.Count == 0)
             return false;
-        var nodeIds = Canvas.Nodes.Select(item => item.Node.Id).ToArray();
+        var nodeIds = Document.Nodes.Select(item => item.Node.Id).ToArray();
         var incoming = nodeIds.ToDictionary(
             id => id,
-            id => Canvas.Connections.Count(connection => connection.ToNodeId == id),
+            id => Document.Connections.Count(connection => connection.ToNodeId == id),
             StringComparer.Ordinal);
         var layers = new Dictionary<string, int>(StringComparer.Ordinal);
         var roots = nodeIds.Where(id => incoming[id] == 0).OrderBy(id => id, StringComparer.Ordinal).ToArray();
@@ -714,7 +758,7 @@ public sealed partial class WorkflowDesignerSession
         {
             var current = queue.Dequeue();
             var layer = layers.GetValueOrDefault(current);
-            foreach (var target in Canvas.Connections.Where(connection => connection.FromNodeId == current).Select(connection => connection.ToNodeId).Distinct(StringComparer.Ordinal))
+            foreach (var target in Document.Connections.Where(connection => connection.FromNodeId == current).Select(connection => connection.ToNodeId).Distinct(StringComparer.Ordinal))
             {
                 layers[target] = Math.Max(layers.GetValueOrDefault(target), layer + 1);
                 incoming[target]--;
@@ -725,7 +769,7 @@ public sealed partial class WorkflowDesignerSession
         foreach (var id in nodeIds.Where(id => !layers.ContainsKey(id)).OrderBy(id => id, StringComparer.Ordinal))
             layers[id] = fallbackLayer++;
         var positions = new Dictionary<string, WorkflowPoint>(StringComparer.Ordinal);
-        foreach (var group in Canvas.Nodes.GroupBy(node => layers[node.Node.Id]).OrderBy(group => group.Key))
+        foreach (var group in Document.Nodes.GroupBy(node => layers[node.Node.Id]).OrderBy(group => group.Key))
         {
             var row = 0;
             foreach (var node in group.OrderBy(item => item.Node.Id, StringComparer.Ordinal))
@@ -755,16 +799,16 @@ public sealed partial class WorkflowDesignerSession
         var target = GetCanvasNodeOrThrow(toNodeId);
         var sourcePort = GetPortOrThrow(source.Node, fromPort, WorkflowPortDirection.Output);
         var targetPort = GetPortOrThrow(target.Node, toPort, WorkflowPortDirection.Input);
-        if (Canvas.Connections.Any(connection =>
+        if (Document.Connections.Any(connection =>
                 connection.FromNodeId == fromNodeId && connection.FromPort == fromPort
                 && connection.ToNodeId == toNodeId && connection.ToPort == toPort))
         {
             throw new InvalidOperationException("该连接已经存在。");
         }
-        var sourceCount = Canvas.Connections.Count(connection =>
+        var sourceCount = Document.Connections.Count(connection =>
             connection.State == WorkflowConnectionState.Active
             && connection.FromNodeId == fromNodeId && connection.FromPort == fromPort);
-        var targetCount = Canvas.Connections.Count(connection =>
+        var targetCount = Document.Connections.Count(connection =>
             connection.State == WorkflowConnectionState.Active
             && connection.ToNodeId == toNodeId && connection.ToPort == toPort);
         if (sourceCount >= sourcePort.MaxConnections)
@@ -782,8 +826,8 @@ public sealed partial class WorkflowDesignerSession
             ToSide = toSide
         };
         Execute(new DesignerOperation(
-            () => Canvas.Connections.Add(connection),
-            () => Canvas.Connections.Remove(connection)));
+            () => Document.Connections.Add(connection),
+            () => Document.Connections.Remove(connection)));
         return connection;
     }
 
@@ -889,12 +933,12 @@ public sealed partial class WorkflowDesignerSession
     public bool RemoveConnection(WorkflowConnectionModel connection)
     {
         Guard.NotNull(connection);
-        var index = Canvas.Connections.IndexOf(connection);
+        var index = Document.Connections.IndexOf(connection);
         if (index < 0)
             return false;
         Execute(new DesignerOperation(
-            () => Canvas.Connections.Remove(connection),
-            () => Canvas.Connections.Insert(Math.Min(index, Canvas.Connections.Count), connection)));
+            () => Document.Connections.Remove(connection),
+            () => Document.Connections.Insert(Math.Min(index, Document.Connections.Count), connection)));
         if (ReferenceEquals(_selectedConnection, connection))
             SelectConnection(null);
         return true;
@@ -924,12 +968,12 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="padding">内容与视口边缘的预留距离。</param>
     public void FitToView(double viewportWidth, double viewportHeight, double padding = 48)
     {
-        if (viewportWidth <= 0 || viewportHeight <= 0 || Canvas.Nodes.Count == 0)
+        if (viewportWidth <= 0 || viewportHeight <= 0 || Document.Nodes.Count == 0)
             return;
-        var left = Canvas.Nodes.Min(node => node.X);
-        var top = Canvas.Nodes.Min(node => node.Y);
-        var right = Canvas.Nodes.Max(node => node.X + node.Width);
-        var bottom = Canvas.Nodes.Max(node => node.Y + node.Height);
+        var left = Document.Nodes.Min(node => node.X);
+        var top = Document.Nodes.Min(node => node.Y);
+        var right = Document.Nodes.Max(node => node.X + node.Width);
+        var bottom = Document.Nodes.Max(node => node.Y + node.Height);
         var contentWidth = Math.Max(1, right - left);
         var contentHeight = Math.Max(1, bottom - top);
         var zoom = Polyfill.Clamp(
@@ -1013,7 +1057,7 @@ public sealed partial class WorkflowDesignerSession
     /// </summary>
     public void NotifyNodeConfigurationChanged()
     {
-        foreach (var node in Canvas.Nodes)
+        foreach (var node in Document.Nodes)
             EnsureNodeDisplaySize(node);
         RefreshConnectionStates();
         RaiseChanged(WorkflowDesignerChangeKind.Document);
@@ -1038,7 +1082,7 @@ public sealed partial class WorkflowDesignerSession
         var oldSide = node.GetPortSide(port);
         if (oldSide == side)
             return;
-        var affectedConnections = Canvas.Connections
+        var affectedConnections = Document.Connections
             .Where(connection => direction == WorkflowPortDirection.Output
                 ? connection.FromNodeId == nodeId && connection.FromPort == portKey
                   && (connection.FromSide ?? oldSide) == oldSide
@@ -1152,29 +1196,29 @@ public sealed partial class WorkflowDesignerSession
     /// <returns>至少一个节点尺寸、位置或连接路径发生变化时返回 true。</returns>
     public bool NormalizeLayout()
     {
-        var beforeNodes = Canvas.Nodes.ToDictionary(
+        var beforeNodes = Document.Nodes.ToDictionary(
             item => item.Node.Id,
             item => new NodeLayoutState(item.X, item.Y, item.Width, item.Height),
             StringComparer.Ordinal);
-        var beforeRoutes = Canvas.Connections.ToDictionary(
+        var beforeRoutes = Document.Connections.ToDictionary(
             connection => connection,
             connection => connection.Waypoints.ToArray());
 
-        foreach (var node in Canvas.Nodes)
+        foreach (var node in Document.Nodes)
         {
             EnsureNodeDisplaySize(node);
             var position = SnapNodePosition(node, new WorkflowPoint(node.X, node.Y));
             node.X = position.X;
             node.Y = position.Y;
         }
-        foreach (var connection in Canvas.Connections)
+        foreach (var connection in Document.Connections)
             SetWaypoints(connection, NormalizeWaypoints(connection.Waypoints));
 
-        var afterNodes = Canvas.Nodes.ToDictionary(
+        var afterNodes = Document.Nodes.ToDictionary(
             item => item.Node.Id,
             item => new NodeLayoutState(item.X, item.Y, item.Width, item.Height),
             StringComparer.Ordinal);
-        var afterRoutes = Canvas.Connections.ToDictionary(
+        var afterRoutes = Document.Connections.ToDictionary(
             connection => connection,
             connection => connection.Waypoints.ToArray());
         var changed = beforeNodes.Any(pair => !afterNodes.TryGetValue(pair.Key, out var value) || value != pair.Value)
@@ -1238,7 +1282,7 @@ public sealed partial class WorkflowDesignerSession
     /// </summary>
     /// <param name="node">画布节点。</param><param name="port">输出端口。</param>
     public bool IsOutputPortShown(WorkflowCanvasNode node, WorkflowPortDescriptor port) =>
-        !node.IsOutputPortHidden(port) || port.HiddenByDefault && !node.HiddenOutputPorts.Contains(port.Key) && Canvas.Connections.Any(connection =>
+        !node.IsOutputPortHidden(port) || port.HiddenByDefault && !node.HiddenOutputPorts.Contains(port.Key) && Document.Connections.Any(connection =>
             string.Equals(connection.FromNodeId, node.Node.Id, StringComparison.Ordinal)
             && string.Equals(connection.FromPort, port.Key, StringComparison.Ordinal));
 
@@ -1294,7 +1338,7 @@ public sealed partial class WorkflowDesignerSession
         new NodeLayoutState(node.X, node.Y, node.Width, node.Height),
         node.HiddenOutputPorts.OrderBy(key => key, StringComparer.Ordinal).ToArray(),
         node.ExposedOutputMembers.OrderBy(key => key, StringComparer.Ordinal).ToArray(),
-        Canvas.Connections.ToDictionary(
+        Document.Connections.ToDictionary(
             connection => connection,
             connection => new ConnectionContractState(connection.State, connection.Diagnostic)));
 
@@ -1320,10 +1364,10 @@ public sealed partial class WorkflowDesignerSession
 
     private void RefreshConnectionStates()
     {
-        var nodeMap = Canvas.Nodes
+        var nodeMap = Document.Nodes
             .GroupBy(item => item.Node.Id, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
-        foreach (var connection in Canvas.Connections)
+        foreach (var connection in Document.Connections)
         {
             string? diagnostic = null;
             if (!nodeMap.TryGetValue(connection.FromNodeId, out var source))
@@ -1348,7 +1392,7 @@ public sealed partial class WorkflowDesignerSession
         IReadOnlyDictionary<string, NodeLayoutState> nodes,
         IReadOnlyDictionary<WorkflowConnectionModel, WorkflowPoint[]> routes)
     {
-        foreach (var node in Canvas.Nodes)
+        foreach (var node in Document.Nodes)
         {
             if (!nodes.TryGetValue(node.Node.Id, out var state))
                 continue;
@@ -1364,7 +1408,7 @@ public sealed partial class WorkflowDesignerSession
     /// <summary>查找指定画布节点；不存在时抛出异常。</summary>
     /// <param name="nodeId">节点标识。</param>
     private WorkflowCanvasNode GetCanvasNodeOrThrow(string nodeId) =>
-        Canvas.Nodes.FirstOrDefault(item => item.Node.Id == nodeId)
+        Document.Nodes.FirstOrDefault(item => item.Node.Id == nodeId)
         ?? throw new KeyNotFoundException($"画布中不存在节点 {nodeId}。");
 
     /// <summary>清理连接拐点，移除重复点和不必要的共线点。</summary>
@@ -1438,7 +1482,7 @@ public sealed partial class WorkflowDesignerSession
     private void ValidateConnection(WorkflowConnectionModel connection)
     {
         Guard.NotNull(connection);
-        if (!Canvas.Connections.Contains(connection))
+        if (!Document.Connections.Contains(connection))
             throw new InvalidOperationException("连接不属于当前画布。");
     }
 
@@ -1503,7 +1547,7 @@ public sealed partial class WorkflowDesignerSession
     /// <summary>根据节点类型生成画布内不重复的节点标识。</summary>
     /// <param name="nodeType">节点类型键。</param>
     private string CreateUniqueNodeId(string nodeType) =>
-        CreateUniqueNodeId(nodeType, new HashSet<string>(Canvas.Nodes.Select(item => item.Node.Id), StringComparer.Ordinal));
+        CreateUniqueNodeId(nodeType, new HashSet<string>(Document.Nodes.Select(item => item.Node.Id), StringComparer.Ordinal));
 
     /// <summary>根据节点类型生成画布内不重复的节点标识。</summary>
     /// <param name="nodeType">节点类型键。</param>

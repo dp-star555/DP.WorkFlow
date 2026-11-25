@@ -25,13 +25,13 @@ public sealed class ExistingVisionAlgorithmMigrationTests
         var store = new WorkflowDocumentJsonStore(catalog);
         var json = JsonNode.Parse(store.Serialize(Document(node)))!;
         RemoveSelection(json);
-        var restored = Assert.Single(store.Deserialize(json.ToJsonString()).Document.CanvasProjection.Nodes).Node;
+        var restored = Assert.Single(store.Deserialize(json.ToJsonString()).Document.Nodes).Node;
         var selection = Assert.Single(((IWorkflowVisionAlgorithmNode)restored).GetAlgorithmSlots()).Selection;
         Assert.Equal(expected, selection.ImplementationId);
         selection.ImplementationId = "test.alternative";
         selection.Settings["model"] = "independent-model";
         selection.Dependencies["preprocessor"] = new VisionAlgorithmSelection { ImplementationId = "test.dependency" };
-        restored = Assert.Single(store.Deserialize(store.Serialize(Document(restored))).Document.CanvasProjection.Nodes).Node;
+        restored = Assert.Single(store.Deserialize(store.Serialize(Document(restored))).Document.Nodes).Node;
         selection = Assert.Single(((IWorkflowVisionAlgorithmNode)restored).GetAlgorithmSlots()).Selection;
         Assert.Equal("test.alternative", selection.ImplementationId);
         Assert.Equal("independent-model", selection.Settings["model"]);
@@ -162,8 +162,8 @@ public sealed class ExistingVisionAlgorithmMigrationTests
     private static WorkflowDocument Document(params IWorkflowNodeModel[] nodes)
     {
         var document = new WorkflowDocument { EntryNodeId = nodes[0].Id };
-        foreach (var node in nodes) document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
-        for (int index = 1; index < nodes.Length; index++) document.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        foreach (var node in nodes) document.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        for (int index = 1; index < nodes.Length; index++) document.Connections.Add(new WorkflowConnectionModel
             { FromNodeId = nodes[index - 1].Id, FromPort = WorkflowPorts.Success, ToNodeId = nodes[index].Id, ToPort = WorkflowPorts.Input });
         return document;
     }

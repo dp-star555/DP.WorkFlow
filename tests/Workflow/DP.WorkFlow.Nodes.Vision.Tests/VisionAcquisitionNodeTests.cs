@@ -321,7 +321,7 @@ public sealed class VisionAcquisitionNodeTests
         """;
 
         var loaded = store.Deserialize(json);
-        var node = Assert.Single(loaded.Document.CanvasProjection.Nodes).Node;
+        var node = Assert.Single(loaded.Document.Nodes).Node;
         var unknown = Assert.IsType<DP.WorkFlow.Persistence.Json.UnknownWorkflowNodeModel>(node);
 
         Assert.Equal("Vision.CaptureFrame", unknown.NodeType);
@@ -362,9 +362,9 @@ public sealed class VisionAcquisitionNodeTests
             ApplyPhysicalOverrides(capture, exposureMicroseconds, gainDecibels);
             var sink = new SinkNode { Id = "sink" };
             document.EntryNodeId = capture.Id;
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = capture });
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = sink });
-            document.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+            document.Nodes.Add(new WorkflowCanvasNode { Node = capture });
+            document.Nodes.Add(new WorkflowCanvasNode { Node = sink });
+            document.Connections.Add(new WorkflowConnectionModel
             {
                 FromNodeId = capture.Id, FromPort = WorkflowPorts.Success, ToNodeId = sink.Id, ToPort = WorkflowPorts.Input
             });

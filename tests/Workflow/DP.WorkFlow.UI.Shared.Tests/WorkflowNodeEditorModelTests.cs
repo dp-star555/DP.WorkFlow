@@ -217,8 +217,8 @@ public sealed class WorkflowNodeEditorModelTests
     {
         var work = new ActionNodeModel { Id = "Work", Title = "扫描", FunctionKey = "Work" };
         var child = new WorkflowDocument { Name = "Child" };
-        child.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new StartNodeModel { Id = "ChildStart" } });
-        child.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = work });
+        child.Nodes.Add(new WorkflowCanvasNode { Node = new StartNodeModel { Id = "ChildStart" } });
+        child.Nodes.Add(new WorkflowCanvasNode { Node = work });
         child.EntryNodeId = "ChildStart";
         var loop = new BlockNodeModel { Id = "Loop", Title = "循环", SubDocument = child };
         var session = new WorkflowDesignerSession(Document(loop), new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes());
@@ -277,7 +277,7 @@ public sealed class WorkflowNodeEditorModelTests
     private static WorkflowDocument Document(IWorkflowNodeModel node)
     {
         var canvasDocument = new WorkflowDocument { Name = "Editor" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         return canvasDocument;
     }

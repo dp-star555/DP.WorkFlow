@@ -358,7 +358,7 @@ public sealed class WorkflowBindingAnalyzer
     /// <summary>从一个节点的 WorkflowInput 属性和显式声明接口中提取当前画布绑定。</summary>
     /// <param name="node">待检查的节点配置对象。</param>
     /// <returns>以该节点 ID 为消费者的绑定使用点。</returns>
-    private static IEnumerable<WorkflowBindingUsage> ExtractCurrentCanvasUsages(IWorkflowNodeModel node)
+    internal static IEnumerable<WorkflowBindingUsage> ExtractCurrentCanvasUsages(IWorkflowNodeModel node)
     {
         foreach (var usage in ExtractWorkflowInputs(node, node.GetType().Name, new HashSet<object>(ReferenceEqualityComparer.Instance), 0))
             yield return new WorkflowBindingUsage(node.Id, usage.Binding, usage.ExpectedType, usage.Path);

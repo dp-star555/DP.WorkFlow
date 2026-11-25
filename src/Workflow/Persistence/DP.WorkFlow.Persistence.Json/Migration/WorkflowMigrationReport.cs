@@ -22,8 +22,4 @@ public sealed class WorkflowMigrationReport
 /// <summary>包含加载后的正式工作流文档及迁移报告。</summary>
 /// <param name="Document">包含入口、语义图和布局的工作流文档。</param>
 /// <param name="Migration">读取旧文档时产生的迁移报告。</param>
-public sealed record WorkflowLoadResult(WorkflowDocument Document, WorkflowMigrationReport Migration)
-{
-    /// <summary>获取当前设计器使用的过渡画布投影。</summary>
-    public WorkflowCanvasModel Canvas => Document.CanvasProjection;
-}
+public sealed record WorkflowLoadResult(WorkflowDocument Document, WorkflowMigrationReport Migration);

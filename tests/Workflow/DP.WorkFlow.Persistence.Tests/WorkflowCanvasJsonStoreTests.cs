@@ -17,18 +17,18 @@ public sealed class WorkflowDocumentJsonStoreTests
 
         Assert.Equal(WorkflowDocumentJsonStore.CurrentSchemaVersion, loaded.Migration.SourceSchemaVersion);
         Assert.Empty(loaded.Migration.Warnings);
-        Assert.Equal("持久化测试", loaded.Canvas.Name);
-        Assert.Equal(3, loaded.Canvas.Nodes.Count);
-        var actionItem = Assert.Single(loaded.Canvas.Nodes, item => item.Node.Id == "Action1");
+        Assert.Equal("持久化测试", loaded.Document.Name);
+        Assert.Equal(3, loaded.Document.Nodes.Count);
+        var actionItem = Assert.Single(loaded.Document.Nodes, item => item.Node.Id == "Action1");
         var action = Assert.IsType<ActionNodeModel>(actionItem.Node);
         Assert.Equal("Run", action.FunctionKey);
         Assert.Equal(240, actionItem.X);
         Assert.Equal(WorkflowPortSide.Bottom, actionItem.PortSides["Output:Success"]);
-        Assert.Equal(WorkflowPorts.Success, loaded.Canvas.Connections[0].FromPort);
-        Assert.Equal(WorkflowPortSide.Right, loaded.Canvas.Connections[1].ToSide);
-        Assert.Equal(0.7, loaded.Canvas.Connections[1].LabelPosition);
-        Assert.Contains("LegacyHidden", loaded.Canvas.Nodes[1].HiddenOutputPorts);
-        Assert.Contains("Elapsed", loaded.Canvas.Nodes[1].ExposedOutputMembers);
+        Assert.Equal(WorkflowPorts.Success, loaded.Document.Connections[0].FromPort);
+        Assert.Equal(WorkflowPortSide.Right, loaded.Document.Connections[1].ToSide);
+        Assert.Equal(0.7, loaded.Document.Connections[1].LabelPosition);
+        Assert.Contains("LegacyHidden", loaded.Document.Nodes[1].HiddenOutputPorts);
+        Assert.Contains("Elapsed", loaded.Document.Nodes[1].ExposedOutputMembers);
     }
 
     [Fact]
@@ -40,15 +40,34 @@ public sealed class WorkflowDocumentJsonStoreTests
         Assert.DoesNotContain("\"Note\"", plain);     // 未设置时不写出，旧文件格式不变。
         Assert.DoesNotContain("\"Disabled\"", plain);
 
-        document.CanvasProjection.Connections[0].Note = "左相机";
-        document.CanvasProjection.Connections[1].Enabled = false;
+        document.Connections[0].Note = "左相机";
+        document.Connections[1].Enabled = false;
         var loaded = store.Deserialize(store.Serialize(document));
 
-        Assert.Equal("左相机", loaded.Canvas.Connections[0].Note);
-        Assert.True(loaded.Canvas.Connections[0].Enabled);
-        Assert.Null(loaded.Canvas.Connections[1].Note);
-        Assert.False(loaded.Canvas.Connections[1].Enabled);
-        Assert.True(store.Deserialize(plain).Canvas.Connections.All(c => c.Enabled && c.Note is null));
+        Assert.Equal("左相机", loaded.Document.Connections[0].Note);
+        Assert.True(loaded.Document.Connections[0].Enabled);
+        Assert.Null(loaded.Document.Connections[1].Note);
+        Assert.False(loaded.Document.Connections[1].Enabled);
+        Assert.True(store.Deserialize(plain).Document.Connections.All(c => c.Enabled && c.Note is null));
+    }
+
+    [Fact]
+    public void ConnectionValidationResults_AreNotSavedAndOldValuesAreIgnored()
+    {
+        // R6-c：连线的校验状态和诊断说明每次打开重新计算，不进文件；旧文件里的值读入时忽略。
+        var store = new WorkflowDocumentJsonStore(new WorkflowNodeCatalog().RegisterStandardNodes());
+        var document = BuildDocument();
+        document.Connections[0].State = WorkflowConnectionState.Detached;
+        document.Connections[0].Diagnostic = "旧诊断";
+
+        var json = store.Serialize(document);
+        Assert.DoesNotContain("\"Diagnostic\"", json);
+        Assert.DoesNotContain("\"State\"", json);
+
+        var legacy = json.Replace("\"ToPort\"", "\"State\": 1, \"Diagnostic\": \"旧诊断\", \"ToPort\"");
+        var loaded = store.Deserialize(legacy).Document.Connections[0];
+        Assert.Equal(WorkflowConnectionState.Active, loaded.State);
+        Assert.Null(loaded.Diagnostic);
     }
 
     [Fact]
@@ -64,13 +83,13 @@ public sealed class WorkflowDocumentJsonStoreTests
             ScriptReferencePaths = new List<string> { @"lib\\Customer.Algorithm.dll" }
         };
         var canvasDocument = new WorkflowDocument { Name = "脚本持久化" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = script });
         canvasDocument.EntryNodeId = script.Id;
 
         var loaded = store.Deserialize(store.Serialize(canvasDocument));
 
-        var restored = Assert.IsType<CSharpScriptNodeModel>(loaded.Canvas.Nodes[0].Node);
+        var restored = Assert.IsType<CSharpScriptNodeModel>(loaded.Document.Nodes[0].Node);
         Assert.Equal("stable-script-id", restored.ScriptId);
         Assert.Equal(script.Script, restored.Script);
         Assert.Equal(new[] { @"lib\\Customer.Algorithm.dll" }, restored.ScriptReferencePaths);
@@ -107,10 +126,10 @@ public sealed class WorkflowDocumentJsonStoreTests
 
         Assert.Equal(2, loaded.Migration.SourceSchemaVersion);
         Assert.NotEmpty(loaded.Migration.Warnings);
-        var action = Assert.IsType<ActionNodeModel>(loaded.Canvas.Nodes[1].Node);
+        var action = Assert.IsType<ActionNodeModel>(loaded.Document.Nodes[1].Node);
         Assert.Equal("Run", action.FunctionKey);
-        Assert.Equal(220, loaded.Canvas.Nodes[1].X);
-        Assert.Equal(WorkflowPorts.Success, loaded.Canvas.Connections[0].FromPort);
+        Assert.Equal(220, loaded.Document.Nodes[1].X);
+        Assert.Equal(WorkflowPorts.Success, loaded.Document.Connections[0].FromPort);
     }
 
     [Fact]
@@ -119,7 +138,7 @@ public sealed class WorkflowDocumentJsonStoreTests
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var store = new WorkflowDocumentJsonStore(catalog);
         var canvasDocument = new WorkflowDocument { Name = "绑定持久化" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode
         {
             Node = new DecisionNodeModel
@@ -134,7 +153,7 @@ public sealed class WorkflowDocumentJsonStoreTests
 
         var loaded = store.Deserialize(store.Serialize(canvasDocument));
 
-        var decision = Assert.IsType<DecisionNodeModel>(loaded.Canvas.Nodes[0].Node);
+        var decision = Assert.IsType<DecisionNodeModel>(loaded.Document.Nodes[0].Node);
         Assert.Equal(WorkflowValueSource.Binding, decision.Condition.Source);
         Assert.Equal("Read1|Payload.Value", decision.Condition.Binding!.Value.ToString());
     }
@@ -148,9 +167,9 @@ public sealed class WorkflowDocumentJsonStoreTests
           "Name": "Recovery Alias",
           "Nodes": [
             {
-              "Id": "Jump1", "Title": "返回", "NodeType": "ReturnToSafePoint", "NodeVersion": 1,
+              "Id": "Retry1", "Title": "重做", "NodeType": "RetryCurrentNode", "NodeVersion": 1,
               "X": 0, "Y": 0, "Width": 180, "Height": 60,
-              "Config": { "SafePointKey": "SafeNode", "NodeType": "ReturnToSafePoint" }
+              "Config": { "Note": "再来一次", "NodeType": "RetryCurrentNode" }
             }
           ],
           "Connections": []
@@ -159,10 +178,10 @@ public sealed class WorkflowDocumentJsonStoreTests
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes().RegisterProcessNodes();
         var loaded = new WorkflowDocumentJsonStore(catalog).Deserialize(json);
 
-        var node = Assert.IsType<JumpToNodeNodeModel>(loaded.Canvas.Nodes[0].Node);
-        Assert.Equal("WarnJumpToNode", node.NodeType);
-        Assert.Equal("SafeNode", node.TargetNodeId);
-        Assert.Contains(loaded.Migration.Warnings, warning => warning.Contains("ReturnToSafePoint", StringComparison.Ordinal));
+        var node = Assert.IsType<RetryCurrentNodeModel>(loaded.Document.Nodes[0].Node);
+        Assert.Equal("WarnRetryCurrentNode", node.NodeType);
+        Assert.Equal("再来一次", node.Note);
+        Assert.Contains(loaded.Migration.Warnings, warning => warning.Contains("RetryCurrentNode", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -188,11 +207,11 @@ public sealed class WorkflowDocumentJsonStoreTests
         var store = new WorkflowDocumentJsonStore(new WorkflowNodeCatalog().RegisterProcessNodes());
 
         var loaded = store.Deserialize(json);
-        var node = Assert.IsType<WaferRobotHomeNodeModel>(loaded.Canvas.Nodes[0].Node);
+        var node = Assert.IsType<WaferRobotHomeNodeModel>(loaded.Document.Nodes[0].Node);
         Assert.Equal(expectedAlarmCode, node.Interrupt.AlarmCode);
 
         var roundTrip = store.Deserialize(store.Serialize(loaded.Document));
-        Assert.Equal(expectedAlarmCode, Assert.IsType<WaferRobotHomeNodeModel>(roundTrip.Canvas.Nodes[0].Node).Interrupt.AlarmCode);
+        Assert.Equal(expectedAlarmCode, Assert.IsType<WaferRobotHomeNodeModel>(roundTrip.Document.Nodes[0].Node).Interrupt.AlarmCode);
     }
 
     [Fact]
@@ -221,7 +240,7 @@ public sealed class WorkflowDocumentJsonStoreTests
         var store = new WorkflowDocumentJsonStore(new WorkflowNodeCatalog());
 
         var loaded = store.Deserialize(json);
-        var unknown = Assert.IsType<UnknownWorkflowNodeModel>(loaded.Canvas.Nodes[0].Node);
+        var unknown = Assert.IsType<UnknownWorkflowNodeModel>(loaded.Document.Nodes[0].Node);
         var savedAgain = store.Serialize(loaded.Document);
         using var parsed = JsonDocument.Parse(savedAgain);
 
@@ -232,11 +251,11 @@ public sealed class WorkflowDocumentJsonStoreTests
     }
 
     [Fact]
-    public void Schema4_RoundTripsExplicitDocumentEntry()
+    public void Schema5_RoundTripsExplicitDocumentEntry()
     {
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var document = new WorkflowDocument { Name = "Entry", EntryNodeId = "Start1" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode
+        document.Nodes.Add(new WorkflowCanvasNode
         {
             Node = new StartNodeModel { Id = "Start1", Title = "开始" },
             X = 12,
@@ -247,7 +266,7 @@ public sealed class WorkflowDocumentJsonStoreTests
         var json = store.Serialize(document);
         var loaded = store.Deserialize(json).Document;
 
-        Assert.Contains("\"SchemaVersion\": 4", json, StringComparison.Ordinal);
+        Assert.Contains("\"SchemaVersion\": 5", json, StringComparison.Ordinal);
         Assert.Contains("\"EntryNodeId\": \"Start1\"", json, StringComparison.Ordinal);
         Assert.Equal("Start1", loaded.EntryNodeId);
         Assert.Equal("Start1", Assert.Single(loaded.Graph.Nodes).Id);
@@ -257,7 +276,7 @@ public sealed class WorkflowDocumentJsonStoreTests
     private static WorkflowDocument BuildDocument()
     {
         var canvasDocument = new WorkflowDocument { Name = "持久化测试" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvasDocument.EntryNodeId = "Start1";
         canvas.Nodes.Add(new WorkflowCanvasNode
         {

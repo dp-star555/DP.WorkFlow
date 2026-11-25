@@ -3,10 +3,11 @@ using DP.WorkFlow.UI;
 namespace DP.WorkFlow.Samples;
 
 /// <summary>两个桌面宿主共用的恢复演示。仅模拟位置与命令次数，不连接任何物理设备。</summary>
-public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule, IWorkflowRecoveryEntryGuard
+public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule
 {
     private WarningHandlerBlockNodeModel? _warning;
     private Guid _runId;
+    private int _target;
     private int _position = 100;
     private int _commands;
     private int _feeds;
@@ -40,8 +41,8 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule, IWorkfl
         _warning = (WarningHandlerBlockNodeModel)session.AddNode("WarningHandlerBlock", 270, 300).Node;
         _warning.Title = "工程师预设的模拟处置";
         var document = _warning.SubDocument;
-        document.CanvasProjection.Nodes.Clear();
-        document.CanvasProjection.Connections.Clear();
+        document.Nodes.Clear();
+        document.Connections.Clear();
         Add(document, new WarningHandlerStartNodeModel { Id = "HandlerStart", Title = "处理入口" }, 60, 160);
         Add(document, new OperatorChoiceNodeModel
         {
@@ -67,7 +68,7 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule, IWorkfl
         Connect(document, "Choice", "Stop", "Stop");
     }
 
-    /// <summary>装配模拟动作、处理策略与模拟工位Guard；人工服务仍由桌面宿主提供。</summary>
+    /// <summary>装配模拟动作；人工服务仍由桌面宿主提供。处理流程由统管层在故障时从当前文档的处理块里找。</summary>
     /// <param name="services">宿主能力容器。</param>
     /// <param name="nodes">已注册的节点目录。</param>
     /// <param name="handlers">已注册的处理器目录。</param>
@@ -82,39 +83,32 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule, IWorkfl
             _position = 0;
             return new ValueTask<object?>(0);
         });
-        services.Add<IWorkflowActionRegistry>(actions)
-            .Add<IWorkflowRecoveryEntryGuard>(this)
-            .Add<IWorkflowFaultRecoveryCoordinator>(new WorkflowWarningHandlerCoordinator(_warning, nodes, handlers));
+        services.Add<IWorkflowActionRegistry>(actions);
     }
 
-    /// <summary>在新Run开始前使用当前文档重新编译处理策略，避免编辑后的子流程仍使用旧快照。</summary>
-    /// <param name="document">当前根文档。</param>
-    /// <param name="services">宿主能力。</param>
+    /// <summary>把运行宿主交给统管层：模拟轴故障时由故障会话运行文档里的处理块。</summary>
+    /// <param name="host">已创建的运行宿主。</param>
+    /// <param name="services">宿主能力（处理流程的人工服务从这里取）。</param>
     /// <param name="nodes">节点目录。</param>
     /// <param name="handlers">处理器目录。</param>
-    public void RebindTreatment(WorkflowDocument document, WorkflowServiceProvider services,
+    /// <returns>调用方负责释放的流程管理。</returns>
+    public WorkflowRunCenter AttachFaultHandling(WorkflowRuntimeHost host, IServiceProvider services,
         WorkflowNodeCatalog nodes, WorkflowNodeHandlerCatalog handlers)
     {
-        var blocks = document.Graph.Nodes.OfType<WarningHandlerBlockNodeModel>().ToArray();
-        if (blocks.Length != 1) throw new InvalidOperationException("恢复演示需要且只允许一个异常处理块。");
-        services.Add<IWorkflowFaultRecoveryCoordinator>(new WorkflowWarningHandlerCoordinator(blocks[0], nodes, handlers));
-    }
-
-    /// <inheritdoc />
-    public ValueTask<WorkflowRecoveryEntryValidation> ValidateAsync(WorkflowRecoveryEntryPlan plan,
-        IWorkflowFaultRecoveryContext context, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<WorkflowRecoveryEntryValidation>(new WorkflowRecoveryEntryValidation(
-            plan.EntryKey == "OperationStart" && _position == 0 && _feeds == 1,
-            "模拟检查要求：位置0、进料次数1、恢复入口OperationStart。"));
+        // 处理流程出错时的兜底：用宿主的人工交互服务问操作员（重新运行处理流程 / 直接给去向 / 停止）。
+        var options = new WorkflowRunCenterOptions();
+        if (services.GetService(typeof(IWorkflowOperatorService)) is IWorkflowOperatorService operators)
+            options.FaultFallback = new WorkflowOperatorFaultFallback(operators);
+        var center = new WorkflowRunCenter(nodes, handlers, options, services);
+        center.AttachHost("恢复演示", host);
+        return center;
     }
 
     private static WorkflowPortDescriptor[] Ports() => new[] { WorkflowPortDescriptor.Input(), WorkflowPortDescriptor.Output() };
     private static void Add(WorkflowDocument document, WorkflowNodeModel node, double x, double y) =>
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node, X = x, Y = y });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node, X = x, Y = y });
     private static void Connect(WorkflowDocument document, string from, string to, string port = WorkflowPorts.Success) =>
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = from, FromPort = port, ToNodeId = to });
+        document.Connections.Add(new WorkflowConnectionModel { FromNodeId = from, FromPort = port, ToNodeId = to });
 
     /// <summary>模拟运动标准输出，可在运行监控中查看命令和进料次数。</summary>
     /// <param name="Position">模拟位置。</param>
@@ -124,6 +118,7 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule, IWorkfl
 
     [WorkflowNode("Sample.RecoveryFeed", DisplayName = "模拟进料", Category = "9.Samples/恢复演示")]
     private sealed class FeedNode : WorkflowNodeModel { public override string NodeType => "Sample.RecoveryFeed"; }
+    [WorkflowRecovery(WorkflowRecoveryCategory.VerifyThenContinue)]
     [WorkflowNode("Sample.RecoveryMove", DisplayName = "模拟轴运动（首次丢响应）", Category = "9.Samples/恢复演示")]
     private sealed class MoveNode : WorkflowNodeModel { public override string NodeType => "Sample.RecoveryMove"; }
 
@@ -140,36 +135,38 @@ public sealed class WorkflowRecoveryDemo : IWorkflowRuntimePluginModule, IWorkfl
         }
     }
 
-    private sealed class MoveHandler(WorkflowRecoveryDemo demo) : WorkflowNodeHandler<MoveNode>, IWorkflowNodeOperationFactory
+    private sealed class MoveHandler(WorkflowRecoveryDemo demo) : WorkflowNodeHandler<MoveNode>, IWorkflowContinuableNodeHandler
     {
-        protected override ValueTask<NodeExecutionResult> ExecuteAsync(MoveNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken) =>
-            throw new InvalidOperationException("本节点由操作工厂执行。");
-        public ValueTask<IWorkflowNodeOperation> CreateOperationAsync(Guid operationId, IWorkflowNodeModel node,
-            IWorkflowNodeExecutionContext context, CancellationToken cancellationToken) =>
-            new ValueTask<IWorkflowNodeOperation>(new MoveOperation(demo, demo._position + 10));
-    }
-
-    private sealed class MoveOperation(WorkflowRecoveryDemo demo, int target) : IWorkflowNodeOperation
-    {
-        public bool CanContinue => true;
-        private bool _sent;
-        public ValueTask<NodeExecutionResult> ExecuteAsync(IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+        protected override ValueTask<NodeExecutionResult> ExecuteAsync(MoveNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!_sent)
+            demo._target = demo._position + 10;
+            demo._commands++;
+            demo._position = demo._target;
+            context.ReportProgress("位移命令已发");
+            if (!demo._lostResponse)
             {
-                _sent = true; demo._commands++; demo._position = target;
-                if (!demo._lostResponse)
-                {
-                    demo._lostResponse = true;
-                    return new ValueTask<NodeExecutionResult>(NodeExecutionResult.Fail("模拟轴完成响应丢失；设备实际状态须由处置逻辑核实。"));
-                }
+                demo._lostResponse = true;
+                return new ValueTask<NodeExecutionResult>(NodeExecutionResult.Fail("模拟轴完成响应丢失；设备实际状态须由处置逻辑核实。"));
             }
-            if (demo._position != target) return new ValueTask<NodeExecutionResult>(NodeExecutionResult.Fail("原目标不再满足，不能确认原操作完成。"));
+            return new ValueTask<NodeExecutionResult>(Completed(context));
+        }
+
+        // 核实并补完：模拟位置已经在目标上就按完成往下走，不再发位移。
+        public ValueTask<NodeExecutionResult> VerifyAndCompleteAsync(IWorkflowNodeModel node, IWorkflowNodeExecutionContext context,
+            WorkflowNodeInterruption interruption, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return new ValueTask<NodeExecutionResult>(demo._position == demo._target
+                ? Completed(context)
+                : NodeExecutionResult.Fail("原目标不再满足，不能确认原操作完成。"));
+        }
+
+        private NodeExecutionResult Completed(IWorkflowNodeExecutionContext context)
+        {
             var result = new MoveResult(demo._position, demo._commands, demo._feeds);
             context.Trace("模拟恢复结果", $"位置={result.Position}，命令次数={result.Commands}，进料次数={result.Feeds}");
-            return new ValueTask<NodeExecutionResult>(NodeExecutionResult.Continue(output: result));
+            return NodeExecutionResult.Continue(output: result);
         }
-        public ValueTask DisposeAsync() => default(ValueTask);
     }
 }

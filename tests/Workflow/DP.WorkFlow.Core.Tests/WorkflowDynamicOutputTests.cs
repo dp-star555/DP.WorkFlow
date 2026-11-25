@@ -59,7 +59,7 @@ public sealed class WorkflowDynamicOutputTests
     private static WorkflowDocument Chain(IWorkflowNodeModel first, params DecisionNodeModel[] consumers)
     {
         var document = new WorkflowDocument { Name = "DynamicOutputs" };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = first });
         string previous = first.Id, port = WorkflowPorts.Success;
         foreach (var consumer in consumers)

@@ -10,15 +10,22 @@ public sealed partial class WorkflowEngine
     /// <returns>包含活动 Token、节点最近状态、并行进度和子流程状态的不可变快照；不携带随运行增长的历史。</returns>
     /// <remarks>
     /// 这是**纯查询**：不改变引擎状态，也不把结果写回 <see cref="WorkflowRunState"/>。
-    /// 需要"每次状态迁移自动取快照"的调用方应订阅 <see cref="SnapshotChanged"/>；
-    /// 这里不保留"最近一次快照"的缓存，因为宿主侧的轮询入口是 <c>WorkflowRuntimeHost.GetSnapshot()</c>。
+    /// 快照只在调用方需要时构造（R1-04）：界面按帧率比较 <see cref="ChangeVersion"/>，变了才来取。
+    /// 正在运行的子运行的状态在这里向子引擎拉取，子引擎不再逐层推送。
     /// </remarks>
     public WorkflowRuntimeSnapshot GetRuntimeSnapshot(string? message = null)
     {
+        message ??= Volatile.Read(ref _changeMessage);
+        ActiveChildWorkflow[] activeChildList;
+        lock (_stateSync)
+            activeChildList = _activeChildWorkflows.Values.ToArray();
+        // 子引擎有自己的锁；在本引擎锁外读取，避免父子锁嵌套。
+        var activeChildren = new ReadOnlyDictionary<string, WorkflowChildRuntimeInfo>(
+            activeChildList.ToDictionary(child => child.Key, child => child.Capture(), StringComparer.Ordinal));
         WorkflowRuntimeSnapshot snapshot;
         lock (_stateSync)
         {
-            var now = DateTimeOffset.UtcNow;
+            var now = WorkflowClock.UtcNow;
             var nodes = new ReadOnlyDictionary<string, WorkflowNodeRuntimeInfo>(
                 _nodeRuntime.ToDictionary(
                     pair => pair.Key,
@@ -28,16 +35,16 @@ public sealed partial class WorkflowEngine
                 _parallelScopes.ToDictionary(pair => pair.Key, pair => pair.Value.ToSnapshot()));
             var tokens = new ReadOnlyDictionary<long, WorkflowActiveTokenInfo>(
                 _activeTokens.ToDictionary(pair => pair.Key, pair => pair.Value));
-            var activeChildren = new ReadOnlyDictionary<string, WorkflowChildRuntimeInfo>(
-                _activeChildWorkflows.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
             var latestChildren = new ReadOnlyDictionary<string, WorkflowChildRuntimeInfo>(
                 _latestChildWorkflowByParentNode.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
             snapshot = new WorkflowRuntimeSnapshot(
-                _runId,
+                RunState.RunId,
                 Interlocked.Increment(ref _snapshotSequence),
                 now,
                 _plan.Name,
-                _state,
+                IsScope && _state == E_WorkflowExecutionState.Running && Root.State == E_WorkflowExecutionState.Paused
+                    ? E_WorkflowExecutionState.Paused
+                    : _state,
                 _currentNodeId,
                 Array.AsReadOnly(_activeNodeIds.OrderBy(id => id, StringComparer.Ordinal).ToArray()),
                 tokens,
@@ -46,7 +53,7 @@ public sealed partial class WorkflowEngine
                 scopes,
                 activeChildren,
                 latestChildren,
-                Array.AsReadOnly(_externalHoldReasons.ToArray()),
+                Array.AsReadOnly((IsScope ? Root.ExternalHoldReasons : _externalHoldReasons).ToArray()),
                 message,
                 _currentFault,
                 _currentRecovery);
@@ -54,76 +61,41 @@ public sealed partial class WorkflowEngine
         return snapshot;
     }
 
-    /// <summary>获取内存中当前保留的不可变 Trace 批次。</summary>
+    /// <summary>获取内存中当前保留的不可变 Trace 批次（只含主画布）。</summary>
     /// <returns>来自 Recorder 最近事件窗口、按事件序号升序排列的条目及最后序号。</returns>
     public WorkflowTraceBatch GetTraceBatch() => GetTraceBatch(includeChildRuns: false);
 
-    /// <summary>获取内存中当前保留的 Trace 批次，可选合并子运行（子流程、循环块各圈）的轨迹。</summary>
+    /// <summary>获取内存中当前保留的 Trace 批次，可选包含子画布（子流程、循环块各圈）的轨迹。</summary>
     /// <param name="includeChildRuns">
-    /// 为真时同时返回正在运行的子运行实时轨迹和每个父节点已结束子运行的有界历史；
-    /// 这些条目的 <see cref="WorkflowTraceEntry.Parents"/> 标明所属复合节点和圈序号，序号属于各自的子运行。
+    /// 为真时同时返回子画布的条目；这些条目的 <see cref="WorkflowTraceEntry.Parents"/> 标明所属复合节点和圈序号。
+    /// 子画布与主画布在同一运行、同一份记录里（R3-a），序号统一递增。
     /// </param>
-    /// <returns>按发生时间排列的条目；<see cref="WorkflowTraceBatch.LastSequence"/> 始终是本层运行的最后序号。</returns>
+    /// <returns>按事件序号排列的条目。</returns>
     public WorkflowTraceBatch GetTraceBatch(bool includeChildRuns) => GetTraceBatch(includeChildRuns, null);
 
     /// <summary>
-    /// 增量读取 Trace：只返回 <paramref name="since"/> 之后新产生的条目（按发生时间排列），批次的
+    /// 增量读取 Trace：只返回 <paramref name="since"/> 之后新产生的条目，批次的
     /// <see cref="WorkflowTraceBatch.Cursor"/> 是下次读取的位置。监视界面周期刷新时用它代替整窗读取，
-    /// 每次只转换、合并、排序新条目，开销与新增条目数成正比，而不是与保留窗口大小成正比。
+    /// 开销与新增条目数成正比，而不是与保留窗口大小成正比。
     /// </summary>
-    /// <param name="includeChildRuns">是否合并子运行的轨迹，见 <see cref="GetTraceBatch(bool)"/>。</param>
+    /// <param name="includeChildRuns">是否包含子画布的轨迹，见 <see cref="GetTraceBatch(bool)"/>。</param>
     /// <param name="since">上次读取的位置；为空时返回整个保留窗口。</param>
     public WorkflowTraceBatch GetTraceBatch(bool includeChildRuns, WorkflowTraceCursor? since)
     {
         var cursor = since ?? WorkflowTraceCursor.Empty;
-        var recorder = _recorder;
-        var batch = recorder?.GetRecent(cursor.LastSequence(_runId));
+        var recorder = Root._recorder;
+        var currentRunId = Root._runId;
+        var batch = recorder?.GetRecent(cursor.LastSequence(currentRunId));
         // 以记录器的运行标识为准：新一轮刚开始、记录器尚未替换时，条目仍属于上一轮。
-        if (batch is not null && batch.RunId != _runId)
+        if (batch is not null && batch.RunId != currentRunId)
             batch = recorder!.GetRecent(cursor.LastSequence(batch.RunId));
-        var runId = batch?.RunId ?? _runId;
-        var entries = batch?.Events.Select(@event => ToTraceEntry(@event, runId)).ToArray() ?? Array.Empty<WorkflowTraceEntry>();
-        var lastSequence = entries.Length == 0 ? cursor.LastSequence(runId) : entries[^1].Sequence;
+        var runId = batch?.RunId ?? currentRunId;
+        var all = batch?.Events.Select(@event => ToTraceEntry(@event, runId)).ToArray() ?? Array.Empty<WorkflowTraceEntry>();
+        var lastSequence = all.Length == 0 ? cursor.LastSequence(runId) : all[^1].Sequence;
+        var entries = includeChildRuns ? all : all.Where(entry => entry.Parents is null).ToArray();
         var visible = new Dictionary<Guid, long>();
         if (runId != Guid.Empty) visible[runId] = lastSequence;
-        if (!includeChildRuns)
-            return new WorkflowTraceBatch(runId, lastSequence, Array.AsReadOnly(entries)) { Cursor = WorkflowTraceCursor.From(visible) };
-
-        var merged = new List<WorkflowTraceEntry>(entries);
-        (string ParentNodeId, WorkflowEngine Engine, int Cycle, Guid? ArchivedRunId)[] live;
-        lock (_stateSync)
-        {
-            // 已归档的子运行历史有界（每个父节点最多 MaxTraceEntries 条），只比较序号，不重新转换。
-            foreach (var history in _childTraceHistory.Values)
-            {
-                foreach (var entry in history)
-                {
-                    Advance(visible, entry.RunId, entry.Sequence);
-                    if (cursor.IsNew(entry)) merged.Add(entry);
-                }
-            }
-            live = _childTraceSources.Values
-                .Select(source => (source.ParentNodeId, source.Engine, source.Cycle, source.ArchivedRunId))
-                .ToArray();
-        }
-        // 子引擎有自己的锁；在本引擎锁外读取，避免父子锁嵌套。已归档的运行只从历史中读取。
-        foreach (var source in live)
-        {
-            var child = source.Engine.GetTraceBatch(includeChildRuns: true, cursor);
-            if (child.RunId == source.ArchivedRunId)
-                continue;
-            foreach (var pair in child.Cursor.Runs)
-                Advance(visible, pair.Key, pair.Value);
-            merged.AddRange(child.Entries.Select(entry => TagChildTrace(entry, source.ParentNodeId, source.Cycle)));
-        }
-        var ordered = merged.OrderBy(entry => entry.Timestamp).ToArray();
-        return new WorkflowTraceBatch(runId, lastSequence, Array.AsReadOnly(ordered)) { Cursor = WorkflowTraceCursor.From(visible) };
-    }
-
-    private static void Advance(Dictionary<Guid, long> visible, Guid runId, long sequence)
-    {
-        if (!visible.TryGetValue(runId, out var current) || sequence > current)
-            visible[runId] = sequence;
+        return new WorkflowTraceBatch(runId, lastSequence, Array.AsReadOnly(entries)) { Cursor = WorkflowTraceCursor.From(visible) };
     }
 
     private static WorkflowTraceEntry ToTraceEntry(WorkflowRunEvent @event, Guid runId)
@@ -156,7 +128,8 @@ public sealed partial class WorkflowEngine
             @event.ExecutionIdentity?.TokenId ?? 0,
             Array.AsReadOnly(@event.ExecutionIdentity?.ScopeIds.ToArray() ?? Array.Empty<long>()))
         {
-            RunId = runId
+            RunId = runId,
+            Parents = @event.Parents is { Count: > 0 } parents ? parents : null
         };
     }
 
@@ -177,7 +150,7 @@ public sealed partial class WorkflowEngine
                 State = E_NodeState.Running,
                 ExecutionCount = identity.NodeExecutionCount,
                 ExecutionSequence = ++_nodeExecutionSequence,
-                StartedAt = DateTimeOffset.UtcNow
+                StartedAt = WorkflowClock.UtcNow
             };
         }
         PublishSnapshot();
@@ -197,7 +170,7 @@ public sealed partial class WorkflowEngine
             if (_nodeRuntime.TryGetValue(nodeId, out var info))
             {
                 info.State = state;
-                info.CompletedAt = DateTimeOffset.UtcNow;
+                info.CompletedAt = WorkflowClock.UtcNow;
                 info.Elapsed = info.ExecutionStartedTimestamp > 0
                     ? Polyfill.GetElapsedTime(info.ExecutionStartedTimestamp)
                     : info.CompletedAt.Value - info.StartedAt.GetValueOrDefault(info.CompletedAt.Value);
@@ -217,20 +190,20 @@ public sealed partial class WorkflowEngine
     }
 
     /// <summary>
-    /// 在状态迁移后向订阅者发布一份新快照；**没有订阅者时直接返回，不构造快照**。
+    /// 标记一次可观察的状态迁移（R1-04）：只递增 <see cref="ChangeVersion"/> 并记下说明，不构造快照、不调用订阅方。
     /// </summary>
-    /// <remarks>
-    /// AR-17：发布点落在节点开始/结束这类热路径上，一次全量构造是 O(节点数)。
-    /// <c>SafeInvoke</c> 虽然对空处理器有保护，但实参是提前求值的，所以必须在调用之前判断。
-    /// 这里先把委托读进局部变量再判断，避免"判断为空、调用前又被订阅"的撕裂。
-    /// </remarks>
-    /// <param name="message">快照携带的触发原因或终态说明。</param>
+    /// <param name="message">下一份快照携带的触发原因或终态说明。</param>
     private void PublishSnapshot(string? message = null)
     {
-        var handlers = SnapshotChanged;
-        if (handlers is null)
-            return;
-        SafeInvoke(handlers, GetRuntimeSnapshot(message));
+        Volatile.Write(ref _changeMessage, message);
+        MarkChanged();
+    }
+
+    /// <summary>递增变化计数，并沿父链递增：子画布内部的变化同样让顶层界面在下一帧重新取快照。</summary>
+    private void MarkChanged()
+    {
+        Interlocked.Increment(ref _changeVersion);
+        Volatile.Read(ref _changeOwner)?.MarkChanged();
     }
 
     /// <summary>向 Recorder 提交一条事件草稿；未配置记录器时静默忽略，绝不改变运行结果。</summary>
@@ -252,6 +225,9 @@ public sealed partial class WorkflowEngine
         WorkflowRunEventDraft draft,
         WorkflowEventWriteMode writeMode = WorkflowEventWriteMode.Buffered)
     {
+        // 子画布作用域的事件写入根运行的记录，并标明所在画布（R3-a）。
+        if (_scopeRoot is { } root)
+            return root.TryRecordRunEvent(draft with { Parents = draft.Parents ?? _scopeParents }, writeMode);
         try
         {
             return _recorder?.Record(draft, writeMode);
@@ -269,50 +245,17 @@ public sealed partial class WorkflowEngine
         string step,
         string? message,
         IReadOnlyDictionary<string, object?>? data,
-        WorkflowEventWriteMode writeMode = WorkflowEventWriteMode.Buffered)
-    {
-        var receipt = TryRecordRunEvent(WorkflowRunEventDraft.Trace(step, node, identity, message, data), writeMode);
-        SafeInvoke(NodeTrace, new WorkflowTraceEntry(
-            receipt?.Sequence ?? 0,
-            DateTimeOffset.UtcNow,
-            node.Id,
-            node.NodeType,
-            step,
-            message,
-            TryCopyTraceData(data),
-            identity.TokenId,
-            Array.AsReadOnly(identity.ScopeIds.ToArray())));
-    }
+        WorkflowEventWriteMode writeMode = WorkflowEventWriteMode.Buffered) =>
+        TryRecordRunEvent(WorkflowRunEventDraft.Trace(step, node, identity, message, data), writeMode);
 
-    /// <summary>把已记录的运行事件同时发布到轨迹订阅者（不再重复记录事件）。</summary>
-    private void PublishTraceEntry(WorkflowRunEventReceipt? receipt, IWorkflowNodeModel node, WorkflowExecutionIdentity identity, string step, string message) =>
-        SafeInvoke(NodeTrace, new WorkflowTraceEntry(
-            receipt?.Sequence ?? 0,
-            DateTimeOffset.UtcNow,
-            node.Id,
-            node.NodeType,
-            step,
-            message,
-            null,
-            identity.TokenId,
-            Array.AsReadOnly(identity.ScopeIds.ToArray())));
-
-    /// <summary>复制一份跟踪数据快照；数据自身的枚举异常不得改变节点执行结果。</summary>
-    /// <param name="data">调用方提供的结构化跟踪数据。</param>
-    /// <returns>副本；数据为空或无法枚举时为 <see langword="null"/>。</returns>
-    private static IReadOnlyDictionary<string, object?>? TryCopyTraceData(IReadOnlyDictionary<string, object?>? data)
+    /// <summary>把一次回调交给后台分发（R1-04）；没有订阅方时不分配。</summary>
+    private void Notify<T>(Action<T>? handlers, T argument)
     {
-        if (data is null)
-            return null;
-        try
-        {
-            return new ReadOnlyDictionary<string, object?>(
-                data.ToDictionary(StringComparer.Ordinal));
-        }
-        catch
-        {
-            return null;
-        }
+        if (handlers is null)
+            return;
+        // 每个订阅方单独一条：一个订阅方抛异常不影响同一事件的其他订阅方。
+        foreach (Action<T> handler in handlers.GetInvocationList())
+            _notifications.Post(() => handler(argument));
     }
 
     private static void SafeInvoke<T>(Action<T>? handlers, T argument)

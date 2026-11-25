@@ -1,7 +1,9 @@
 namespace DP.WorkFlow;
 
 /// <summary>等待气缸伸出或缩回到位。</summary>
-[WorkflowNode("CylinderWait", DisplayName = "气缸等待节点", Category = "4.Motion/Pneumatic")]
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+[WorkflowNode("CylinderWait", DisplayName = "气缸等待节点", Category = "4.Motion/Pneumatic", OutputType = typeof(PneumaticNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
 public sealed class CylinderWaitNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -21,6 +23,10 @@ public sealed class CylinderWaitNodeModel : WorkflowNodeModel, IRecoverableWorkf
 /// <summary>执行气缸等待节点。</summary>
 public sealed class CylinderWaitNodeHandler : WorkflowNodeHandler<CylinderWaitNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(CylinderWaitNodeModel node) =>
+        new[] { MotionCapabilities.PneumaticCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(CylinderWaitNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

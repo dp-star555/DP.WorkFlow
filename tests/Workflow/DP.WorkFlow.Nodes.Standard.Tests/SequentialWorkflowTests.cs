@@ -9,7 +9,7 @@ public sealed class SequentialWorkflowTests
         var action = new ActionNodeModel { Id = "Action1", Title = "动作", FunctionKey = "Increment" };
         var end = new EndNodeModel { Id = "End1", Title = "结束" };
         var canvasDocument = new WorkflowDocument { Name = "最小闭环" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = start, X = 0, Y = 0 });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = action, X = 240, Y = 0 });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = end, X = 480, Y = 0 });
@@ -37,6 +37,7 @@ public sealed class SequentialWorkflowTests
         engine.NodeStarted += node => startedNodes.Add(node.Id);
 
         var result = await engine.RunAsync();
+        await engine.FlushNotificationsAsync(); // 回调在后台送达（R1-04）。
 
         Assert.True(result.Success, result.Message);
         Assert.Equal(E_WorkflowExecutionState.Completed, result.State);

@@ -35,5 +35,5 @@ internal static class WorkflowQueueNodeRuntime
         var first = snapshot?.FirstValue;
         return new(key, snapshot?.ValueType ?? type, true, changed, snapshot?.Count ?? 0, snapshot?.Version ?? 0, snapshot?.HasFirstValue == true, Convert.ToString(first, CultureInfo.InvariantCulture) ?? string.Empty, ConvertOr(first, 0, Convert.ToInt32), ConvertOr(first, 0L, Convert.ToInt64), ConvertOr(first, 0d, Convert.ToDouble), ConvertOr(first, false, Convert.ToBoolean), affected is not null, Convert.ToString(affected, CultureInfo.InvariantCulture) ?? string.Empty, ConvertOr(affected, 0, Convert.ToInt32), ConvertOr(affected, 0L, Convert.ToInt64), ConvertOr(affected, 0d, Convert.ToDouble), ConvertOr(affected, false, Convert.ToBoolean));
     }
-    internal static object Resolve(E_SignalValueSource source, string literal, WorkflowInput<object> binding, E_SignalValueType type, IWorkflowNodeExecutionContext context) => SignalValueSetNodeHandler.ConvertValue(source == E_SignalValueSource.Binding ? context.ResolveInput(binding) : literal, type);
+    internal static object Resolve(WorkflowInput<string> input, E_SignalValueType type, IWorkflowNodeExecutionContext context) => SignalValueSetNodeHandler.ConvertValue(context.ResolveInput(input), type);
 }

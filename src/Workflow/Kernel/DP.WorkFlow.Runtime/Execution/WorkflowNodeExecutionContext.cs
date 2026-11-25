@@ -1,7 +1,10 @@
 namespace DP.WorkFlow;
 
-internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionContext, IWorkflowChildExecutionContext
+internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionContext, IWorkflowChildExecutionContext, IWorkflowNodeNoticeSink, IWorkflowNodeProgressSink, IWorkflowRecoveryRoundSource
 {
+    private readonly Action<string, string>? _noticeRaiser;
+    // R2-c：执行前已取好的普通输入值，按输入实例引用索引。
+    private readonly Dictionary<object, object?> _prefetchedInputs = new(ReferenceEqualityComparer.Instance);
     private readonly WorkflowContext _context;
     private readonly Action<IWorkflowNodeModel, string, string?, IReadOnlyDictionary<string, object?>?, WorkflowEventWriteMode> _traceWriter;
     private readonly Action<WorkflowRunEventDraft, WorkflowEventWriteMode> _eventRecorder;
@@ -12,8 +15,6 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     private readonly WorkflowNodeInputMap _inputMap;
     private readonly Dictionary<string, object> _pendingVariableWrites = new(StringComparer.Ordinal);
     private readonly HashSet<string> _pendingVariableRemovals = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, object> _pendingPublicDataWrites = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _pendingPublicDataRemovals = new(StringComparer.Ordinal);
 
     /// <summary>创建单个节点执行实例看到的受限运行时适配器。</summary>
     /// <param name="context">底层共享运行上下文。</param>
@@ -28,6 +29,7 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     /// <param name="planPath">当前编译子计划路径。</param>
     /// <param name="bindingScopeId">已经准备的绑定作用域。</param>
     /// <param name="childSessionOpener">在父引擎监管下打开可反复运行子定义的会话的委托。</param>
+    /// <param name="noticeRaiser">为当前节点添加提示（类别、说明）的委托；为空时忽略提示。</param>
     public WorkflowNodeExecutionContext(
         WorkflowContext context,
         IWorkflowNodeModel node,
@@ -39,8 +41,10 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
         Action<string> degradedReporter,
         Func<WorkflowExecutionPlan, WorkflowContext, CancellationToken, Task<WorkflowRunResult>> childRunner,
         string planPath = "$", Guid bindingScopeId = default,
-        Func<WorkflowContext, IWorkflowChildWorkflowSession>? childSessionOpener = null)
+        Func<WorkflowContext, IWorkflowChildWorkflowSession>? childSessionOpener = null,
+        Action<string, string>? noticeRaiser = null)
     {
+        _noticeRaiser = noticeRaiser;
         _context = context;
         Node = node;
         PlanPath = planPath;
@@ -57,6 +61,22 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     }
 
     public IWorkflowNodeModel Node { get; }
+
+    /// <inheritdoc />
+    public void RaiseNotice(string category, string message) => _noticeRaiser?.Invoke(category, message);
+
+    /// <summary>节点最后报告的一步；故障或中断时随停点交给处理流程。</summary>
+    internal string? LastProgress { get; private set; }
+
+    /// <inheritdoc />
+    public int RecoveryRound { get; internal set; }
+
+    /// <inheritdoc />
+    public void ReportProgress(string step)
+    {
+        LastProgress = step;
+        Trace("Progress", step);
+    }
 
     public IReadOnlyDictionary<string, object?> SubflowInputs => _context.SubflowInputs;
 
@@ -113,48 +133,40 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
         return existed;
     }
 
-    public bool TryGetPublicData<T>(string key, out T? value)
+    /// <summary>
+    /// R2-c：在执行代码运行前，按输入槽逐个解析本节点的全部普通输入并缓存，每个输入记一条 InputResolved。
+    /// 之后执行代码中的 <see cref="ResolveInput{T}"/> 直接返回已取好的值，不再访问上游。
+    /// </summary>
+    /// <exception cref="Exception">任何一个输入解析失败时抛出原始异常，节点不进入执行代码。</exception>
+    internal void ResolveAllInputs()
     {
-        if (_pendingPublicDataRemovals.Contains(key))
+        foreach (var entry in _inputMap.Entries)
         {
-            value = default;
-            return false;
+            var resolver = PrefetchResolvers.GetOrAdd(entry.Key.GetType(), CreatePrefetchResolver);
+            _prefetchedInputs[entry.Key] = resolver(this, entry.Key, entry.Value);
         }
-        if (_pendingPublicDataWrites.TryGetValue(key, out var pending))
-        {
-            if (pending is T typed)
-            {
-                value = typed;
-                return true;
-            }
-            value = default;
-            return false;
-        }
-        return _context.PublicData.TryGet(key, out value);
     }
 
-    public void PublishData(string key, object value)
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Func<WorkflowNodeExecutionContext, object, string, object?>> PrefetchResolvers = new();
+
+    private static Func<WorkflowNodeExecutionContext, object, string, object?> CreatePrefetchResolver(Type inputType)
     {
-        if (string.IsNullOrWhiteSpace(key))
-            throw new ArgumentException("公共数据键不能为空。", nameof(key));
-        Guard.NotNull(value);
-        _pendingPublicDataRemovals.Remove(key);
-        _pendingPublicDataWrites[key] = value;
+        var valueType = inputType.GetGenericArguments()[0];
+        var method = typeof(WorkflowNodeExecutionContext)
+            .GetMethod(nameof(PrefetchInput), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
+            .MakeGenericMethod(valueType);
+        return (Func<WorkflowNodeExecutionContext, object, string, object?>)Delegate.CreateDelegate(
+            typeof(Func<WorkflowNodeExecutionContext, object, string, object?>), method);
     }
 
-    public bool RemovePublicData(string key)
-    {
-        if (string.IsNullOrWhiteSpace(key))
-            throw new ArgumentException("公共数据键不能为空。", nameof(key));
-        var existed = _pendingPublicDataWrites.Remove(key)
-            || _context.PublicData.Snapshot().ContainsKey(key);
-        _pendingPublicDataRemovals.Add(key);
-        return existed;
-    }
+    private static object? PrefetchInput<T>(WorkflowNodeExecutionContext context, object input, string key) =>
+        context.ResolveAndRecord((WorkflowInput<T>)input, key, WorkflowInputMetadataStatus.Automatic);
 
     public T? ResolveInput<T>(WorkflowInput<T> input)
     {
         Guard.NotNull(input);
+        if (_prefetchedInputs.TryGetValue(input, out var prefetched))
+            return (T?)prefetched;
         // 用引用映射把"Handler 实际传入的输入实例"定位回它的公开属性名；查不到说明是动态输入。
         var inputKey = _inputMap.TryGetKey(input, out var key) ? key : null;
         var metadataStatus = inputKey is null
@@ -245,13 +257,6 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
             WorkflowEventWriteMode.Buffered);
     }
 
-    public void RaiseWorkflowSignal(string signalKey) => _context.RaiseWorkflowSignal(signalKey);
-
-    public bool ContainsWorkflowSignal(string signalKey) => _context.ContainsWorkflowSignal(signalKey);
-
-    public ValueTask<bool> WaitAllWorkflowSignalsAsync(IReadOnlyList<string> signalKeys, TimeSpan? timeout, CancellationToken cancellationToken) =>
-        _context.WaitAllWorkflowSignalsAsync(signalKeys, timeout, cancellationToken);
-
     public void Trace(string step, string? message = null, IReadOnlyDictionary<string, object?>? data = null) =>
         _traceWriter(Node, step, message, data, WorkflowEventWriteMode.Buffered);
 
@@ -281,15 +286,9 @@ internal sealed class WorkflowNodeExecutionContext : IWorkflowNodeExecutionConte
     internal IReadOnlyList<string> ChangedVariableKeys =>
         _pendingVariableWrites.Keys.Concat(_pendingVariableRemovals).Distinct(StringComparer.Ordinal).ToArray();
 
-    internal IReadOnlyList<string> ChangedPublicDataKeys =>
-        _pendingPublicDataWrites.Keys.Concat(_pendingPublicDataRemovals).Distinct(StringComparer.Ordinal).ToArray();
-
-    /// <summary>Publishes local-variable and public-data changes staged by a successfully completed node.</summary>
+    /// <summary>Publishes local-variable changes staged by a successfully completed node.</summary>
     internal void CommitDataChanges()
     {
-        // Public adapters may reject a commit; apply them before the in-memory local-variable update
-        // so a rejected publication cannot leak local writes from a node that will be marked failed.
-        _context.ApplyPublicDataChanges(_pendingPublicDataWrites, _pendingPublicDataRemovals);
         _context.ApplyVariableChanges(_pendingVariableWrites, _pendingVariableRemovals);
     }
 }

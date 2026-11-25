@@ -223,8 +223,8 @@ public sealed class IndependentVisionNodePluginTests
             var source = new AcquireVisionImageNodeModel { Id = "source", FilePath = Path.Combine(AppContext.BaseDirectory, "VisionData", "barcode.pgm") };
             node.Frame = WorkflowInput<ImageFrame>.FromBinding(new WorkflowBindingKey(source.Id, "$"));
             var document = new WorkflowDocument { EntryNodeId = source.Id };
-            document.CanvasProjection.Nodes.Add(new() { Node = source }); document.CanvasProjection.Nodes.Add(new() { Node = node });
-            document.CanvasProjection.Connections.Add(new() { FromNodeId = source.Id, FromPort = WorkflowPorts.Success, ToNodeId = node.Id, ToPort = WorkflowPorts.Input }); return document;
+            document.Nodes.Add(new() { Node = source }); document.Nodes.Add(new() { Node = node });
+            document.Connections.Add(new() { FromNodeId = source.Id, FromPort = WorkflowPorts.Success, ToNodeId = node.Id, ToPort = WorkflowPorts.Input }); return document;
         }
         public WorkflowRuntimeHost Host(WorkflowDocument document)
         {

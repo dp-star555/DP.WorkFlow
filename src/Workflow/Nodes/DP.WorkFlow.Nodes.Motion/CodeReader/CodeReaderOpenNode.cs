@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>打开扫码设备连接。</summary>
-[WorkflowNode("CodeReaderOpen", DisplayName = "打开扫码枪", Category = "4.Motion/CodeReader")]
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+[WorkflowNode("CodeReaderOpen", DisplayName = "打开扫码枪", Category = "4.Motion/CodeReader", OutputType = typeof(string))]
 public sealed class CodeReaderOpenNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -15,6 +16,10 @@ public sealed class CodeReaderOpenNodeModel : WorkflowNodeModel, IRecoverableWor
 /// <summary>执行打开扫码设备节点。</summary>
 public sealed class CodeReaderOpenNodeHandler : WorkflowNodeHandler<CodeReaderOpenNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(CodeReaderOpenNodeModel node) =>
+        new[] { MotionCapabilities.CodeReaderCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(CodeReaderOpenNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

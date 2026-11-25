@@ -333,7 +333,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         if (_session is null || _model?.SelectedNode is null) return;
         var outputs = _session.GetDeclaredPorts(_model.SelectedNode.Id, WorkflowPortDirection.Output);
         if (outputs.Count <= 1) return;
-        var canvasNode = _session.Canvas.Nodes.First(item => item.Node.Id == _model.SelectedNode.Id);
+        var canvasNode = _session.Document.Nodes.First(item => item.Node.Id == _model.SelectedNode.Id);
         foreach (var port in outputs)
         {
             var text = $"启用输出 {WorkflowPorts.GetDisplayName(port.Key)}";

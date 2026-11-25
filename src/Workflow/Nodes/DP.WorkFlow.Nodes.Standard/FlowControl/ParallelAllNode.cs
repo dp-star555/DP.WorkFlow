@@ -3,7 +3,8 @@ namespace DP.WorkFlow;
 /// <summary>
 /// 将 Branch 端口上的全部连接同时派发，并在配对的汇聚节点等待全部分支完成。
 /// </summary>
-[WorkflowNode("ParallelAll", DisplayName = "并行节点", Category = "3.Control/流程控制")]
+[WorkflowNode("ParallelAll", DisplayName = "并行节点", Category = "3.Control/流程控制", Icon = "split")]
+[WorkflowOutputPorts(WorkflowPorts.Branch, MaxConnections = int.MaxValue)]
 public sealed class ParallelAllNodeModel : WorkflowNodeModel, IWorkflowParallelForkNode
 {
     /// <inheritdoc />

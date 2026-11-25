@@ -201,7 +201,7 @@ public sealed class WorkflowDiagnosticsModel : IDisposable
             _navigator.CurrentSession.SelectedNodeId = parents.Length > 0 ? parents[0] : item.NodeId; return true;
         }
         if (string.IsNullOrWhiteSpace(item.NodeId)
-            || !_session.Canvas.Nodes.Any(node => node.Node.Id == item.NodeId))
+            || !_session.Document.Nodes.Any(node => node.Node.Id == item.NodeId))
         {
             return false;
         }

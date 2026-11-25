@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>停止指定轴并可等待停止完成。</summary>
-[WorkflowNode("AxisStop", DisplayName = "轴停止", Category = "4.Motion/Axis")]
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+[WorkflowNode("AxisStop", DisplayName = "轴停止", Category = "4.Motion/Axis", OutputType = typeof(AxisStopNodeResult))]
 public sealed class AxisStopNodeModel : WorkflowAxisNodeModel
 {
     /// <inheritdoc />
@@ -12,13 +13,15 @@ public sealed class AxisStopNodeModel : WorkflowAxisNodeModel
     public int TimeoutMs { get; set; } = 5000;
     /// <summary>获取或设置轮询间隔毫秒数。</summary>
     public int PollIntervalMs { get; set; } = 20;
-    /// <summary>获取或设置结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "AxisStopResult";
 }
 
 /// <summary>执行轴停止节点。</summary>
 public sealed class AxisStopNodeHandler : WorkflowNodeHandler<AxisStopNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(AxisStopNodeModel node) =>
+        new[] { MotionCapabilities.AxisCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(AxisStopNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
@@ -26,7 +29,6 @@ public sealed class AxisStopNodeHandler : WorkflowNodeHandler<AxisStopNodeModel>
         var axis = node.ResolveAxis(context);
         var output = await AxisServoNodeHandler.GetService(context).StopAsync(
             axis, node.WaitForCompleted, node.TimeoutMs, node.PollIntervalMs, cancellationToken).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         if (!output.Success) return WorkflowRecoverableNodeFailure.Create(node, $"Axis stop timeout: axis={axis.DeviceId}[{axis.AxisId}], InPos=false");
         return NodeExecutionResult.Continue(output: output);
     }

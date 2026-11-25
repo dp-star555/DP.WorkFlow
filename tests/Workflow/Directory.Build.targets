@@ -1,0 +1,11 @@
+<Project>
+  <!--
+    R5-a 事件流规则核对：每个 Workflow 测试工程自动引用 DP.WorkFlow.Testing，并加上程序集级
+    [WorkflowEventStreamCheck]，每个测试结束后核对其中所有运行的事件流。规则见
+    DP.WorkFlow.Testing/WorkflowEventStreamInvariants.cs；个别测试可用 [SkipWorkflowEventStreamCheck("原因")] 跳过。
+  -->
+  <ItemGroup Condition="'$(IsTestProject)' == 'true' and '$(MSBuildProjectName)' != 'DP.WorkFlow.Testing'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)DP.WorkFlow.Testing/DP.WorkFlow.Testing.csproj" />
+    <Compile Include="$(MSBuildThisFileDirectory)DP.WorkFlow.Testing/EventStreamCheck.AssemblyInfo.cs" Link="Properties/EventStreamCheck.AssemblyInfo.cs" />
+  </ItemGroup>
+</Project>

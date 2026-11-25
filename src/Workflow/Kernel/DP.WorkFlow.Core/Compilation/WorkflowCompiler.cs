@@ -31,17 +31,23 @@ public sealed class WorkflowCompiler
     public WorkflowExecutionPlan Compile(WorkflowDocument document)
     {
         Guard.NotNull(document);
-        // 子流程接口的类型跟随来源，编译前按当前文档解析并注入启动节点和复合节点。
+        // 子流程接口的类型跟随来源，编译前按当前文档解析并注入启动节点和复合节点（设计器依赖原文档上的解析结果）。
         WorkflowSubflowInterfaces.Refresh(document, _catalog);
+        // R7-c：运行开始时按保存格式复制一份配置再编译，运行中修改原文档不会生效；派生内容在副本上重新解析。
+        document = WorkflowConfigurationCopy.CopyDocument(document);
+        WorkflowSubflowInterfaces.Refresh(document, _catalog);
+        // 公共数据清单登记在根文档上，覆盖全部子画布，在根上一次核对。
         return CompileCore(
             document,
-            new HashSet<WorkflowDocument>(ReferenceEqualityComparer.Instance));
+            new HashSet<WorkflowDocument>(ReferenceEqualityComparer.Instance),
+            WorkflowPublicDataManifest.Validate(document));
     }
 
     /// <summary>递归编译单个文档，并使用引用身份集合阻止子文档循环引用。</summary>
     private WorkflowExecutionPlan CompileCore(
         WorkflowDocument document,
-        HashSet<WorkflowDocument> ancestors)
+        HashSet<WorkflowDocument> ancestors,
+        IReadOnlyList<WorkflowValidationError>? publicDataDiagnostics = null)
     {
         Guard.NotNull(document);
         if (!ancestors.Add(document))
@@ -51,6 +57,8 @@ public sealed class WorkflowCompiler
         ChildCompilation Children() => children ??= CompileChildren(document, ancestors);
         var startNodeId = document.EntryNodeId;
         var diagnostics = _validator.Validate(document).ToList();
+        if (publicDataDiagnostics is not null)
+            diagnostics.AddRange(publicDataDiagnostics);
         var blockingErrors = diagnostics
             .Where(item => item.Severity == WorkflowValidationSeverity.Error)
             .ToArray();
@@ -126,7 +134,8 @@ public sealed class WorkflowCompiler
             outgoing,
             parallelScopes,
             childPlans,
-            diagnostics);
+            diagnostics,
+            publicDataDiagnostics is null ? null : document.PublicData);
     }
 
     /// <summary>编译当前文档中全部复合节点的子画布，收集各自的计划和带子画布路径的诊断。</summary>

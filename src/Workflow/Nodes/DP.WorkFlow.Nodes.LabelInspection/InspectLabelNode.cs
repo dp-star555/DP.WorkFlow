@@ -7,7 +7,9 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>一次明确图像输入的完整标签检测业务节点，不携带通用ROI/坐标系配置。</summary>
-[WorkflowNode("LabelInspection.Inspect", DisplayName = "标签检测", Category = "业务检测")]
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+[WorkflowNode("LabelInspection.Inspect", DisplayName = "标签检测", Category = "业务检测", OutputType = typeof(WorkflowLabelInspectionResult), Icon = "tag")]
+[WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class InspectLabelNodeModel : WorkflowNodeModel, IWorkflowNodeConfigurationValidator
 {
     /// <inheritdoc/>
@@ -211,6 +213,14 @@ public sealed class WorkflowLabelInspectionResult : IWorkflowVisionFrameFact
 /// <summary>无界面调用；默认产品NG/Review仍使用Success出口输出原报告，开启“NG走失败出口”时走Failed出口。</summary>
 public sealed class InspectLabelNodeHandler : WorkflowNodeHandler<InspectLabelNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(InspectLabelNodeModel node) => new[]
+    {
+        node.UsesRecipeCatalog ? WorkflowRuntimeCapabilityRequirement.Require<IWorkflowLabelRecipeInspectionService>()
+            : WorkflowRuntimeCapabilityRequirement.Require<IWorkflowLabelInspectionService>(),
+        WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>()
+    };
+
     /// <inheritdoc/>
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(InspectLabelNodeModel node,
         IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
@@ -250,13 +260,7 @@ public sealed class WorkflowLabelInspectionModule : IWorkflowRuntimePluginModule
     public void Register(WorkflowRuntimePluginCatalog extensions)
     {
         Guard.NotNull(extensions);
-        extensions.Nodes.Register(WorkflowNodeDescriptor.Create<InspectLabelNodeModel, WorkflowLabelInspectionResult>(ports: new[]
-        { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success), WorkflowPortDescriptor.Failure() }));
-        extensions.Handlers.Register(new InspectLabelNodeHandler(), node => new[]
-        {
-            ((InspectLabelNodeModel)node).UsesRecipeCatalog ? WorkflowRuntimeCapabilityRequirement.Require<IWorkflowLabelRecipeInspectionService>()
-                : WorkflowRuntimeCapabilityRequirement.Require<IWorkflowLabelInspectionService>(),
-            WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>()
-        });
+        extensions.Nodes.RegisterAssembly(typeof(WorkflowLabelInspectionModule).Assembly);
+        extensions.Handlers.RegisterAssembly(typeof(WorkflowLabelInspectionModule).Assembly);
     }
 }

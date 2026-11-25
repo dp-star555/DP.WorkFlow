@@ -1,0 +1,88 @@
+{
+  "SchemaVersion": 5,
+  "Name": "\u8282\u70B9\u6545\u969C",
+  "EntryNodeId": "Start",
+  "PublicData": [],
+  "Nodes": [
+    {
+      "Id": "Start",
+      "Title": "\u5F00\u59CB",
+      "NodeType": "Start",
+      "NodeVersion": 1,
+      "X": 0,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Start",
+        "Id": "Start",
+        "Title": "\u5F00\u59CB"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "Servo",
+      "Title": "\u4F3A\u670D",
+      "NodeType": "Action",
+      "NodeVersion": 1,
+      "X": 220,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "Action",
+        "FunctionKey": "Boom",
+        "Id": "Servo",
+        "Title": "\u4F3A\u670D"
+      },
+      "SubDocument": null
+    },
+    {
+      "Id": "End",
+      "Title": "\u7ED3\u675F",
+      "NodeType": "End",
+      "NodeVersion": 1,
+      "X": 440,
+      "Y": 0,
+      "Width": 180,
+      "Height": 60,
+      "PortSides": {},
+      "HiddenOutputPorts": [],
+      "ExposedOutputMembers": [],
+      "Config": {
+        "NodeType": "End",
+        "Id": "End",
+        "Title": "\u7ED3\u675F"
+      },
+      "SubDocument": null
+    }
+  ],
+  "Connections": [
+    {
+      "FromNodeId": "Start",
+      "FromPort": "Success",
+      "ToNodeId": "Servo",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "Waypoints": []
+    },
+    {
+      "FromNodeId": "Servo",
+      "FromPort": "Success",
+      "ToNodeId": "End",
+      "ToPort": "Input",
+      "FromSide": null,
+      "ToSide": null,
+      "LabelPosition": 0.5,
+      "Waypoints": []
+    }
+  ]
+}

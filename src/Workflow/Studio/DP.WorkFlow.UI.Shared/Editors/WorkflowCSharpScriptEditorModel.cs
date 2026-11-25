@@ -174,7 +174,6 @@ public sealed class WorkflowProgram : ICSharpProgram
         T? GetService<T>() where T : class => workflow.GetService<T>();
         void SetVariable(string key, object value) => workflow.SetVariable(key, value);
         bool RemoveVariable(string key) => workflow.RemoveVariable(key);
-        void PublishData(string key, object value) => workflow.PublishData(key, value);
         void Trace(string message) => workflow.Trace(message);
 #pragma warning restore CS8321
 

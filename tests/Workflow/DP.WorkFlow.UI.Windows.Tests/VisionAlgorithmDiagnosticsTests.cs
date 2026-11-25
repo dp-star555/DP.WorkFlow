@@ -159,5 +159,5 @@ public sealed class VisionAlgorithmDiagnosticsTests
     private sealed class Module(IVisionAlgorithmFactory factory) : IVisionAlgorithmModule
     { public string ExtensionId => "test"; public void Register(IVisionAlgorithmRegistration registrations) => registrations.Add(new("test.color", "Test", "1", factory)); }
     private static WorkflowDocument Document(params IWorkflowNodeModel[] nodes)
-    { var document = new WorkflowDocument { EntryNodeId = nodes[0].Id }; foreach (var node in nodes) document.CanvasProjection.Nodes.Add(new() { Node = node }); return document; }
+    { var document = new WorkflowDocument { EntryNodeId = nodes[0].Id }; foreach (var node in nodes) document.Nodes.Add(new() { Node = node }); return document; }
 }

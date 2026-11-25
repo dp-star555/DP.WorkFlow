@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Workflow 测试共用的支持库（不是测试工程本身）。
+    R5-a：事件流规则检查器。由 tests/Workflow/Directory.Build.targets 自动引用到各测试工程，
+    每个测试结束后核对该测试中所有运行的事件流；只在测试中运行，不进入现场程序。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 这个文件只给测试工程编译，见 tests/Workflow/Directory.Build.targets。 -->
+    <Compile Remove="EventStreamCheck.AssemblyInfo.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Workflow\Kernel\DP.WorkFlow.Abstractions\DP.WorkFlow.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflow\Kernel\DP.WorkFlow.Runtime\DP.WorkFlow.Runtime.csproj" />
+  </ItemGroup>
+
+</Project>

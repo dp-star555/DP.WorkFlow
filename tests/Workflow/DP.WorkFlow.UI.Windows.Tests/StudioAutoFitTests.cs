@@ -44,7 +44,7 @@ public sealed class StudioAutoFitTests
                         AssertCentered(opened, studio.Designer.ActualWidth, studio.Designer.ActualHeight);
                         Assert.False(workspace.IsDirty);
                         opened.SetViewport(0.9, 123, -45);
-                        opened.SelectNode(opened.Canvas.Nodes[0].Node.Id);
+                        opened.SelectNode(opened.Document.Nodes[0].Node.Id);
                         window.Width += 120;
                         Pump();
                         AssertViewportUnchanged(opened);
@@ -75,7 +75,7 @@ public sealed class StudioAutoFitTests
                     AssertCentered(opened, studio.Designer.ClientSize.Width, studio.Designer.ClientSize.Height);
                     Assert.False(workspace.IsDirty);
                     opened.SetViewport(0.9, 123, -45);
-                    opened.SelectNode(opened.Canvas.Nodes[0].Node.Id);
+                    opened.SelectNode(opened.Document.Nodes[0].Node.Id);
                     window.Width += 120;
                     Pump();
                     AssertViewportUnchanged(opened);
@@ -87,7 +87,7 @@ public sealed class StudioAutoFitTests
 
     private static void AssertCentered(WorkflowDesignerSession session, double width, double height)
     {
-        var nodes = session.Canvas.Nodes;
+        var nodes = session.Document.Nodes;
         var left = nodes.Min(n => n.X);
         var right = nodes.Max(n => n.X + n.Width);
         var top = nodes.Min(n => n.Y);

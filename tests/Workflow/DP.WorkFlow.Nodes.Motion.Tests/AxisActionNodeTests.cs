@@ -14,7 +14,7 @@ public sealed class AxisActionNodeTests
             OverrideTimeoutMs = 12000
         };
         var canvasDocument = new WorkflowDocument { Name = "轴" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterMotionNodes();
         canvasDocument.EntryNodeId = node.Id;
@@ -34,46 +34,49 @@ public sealed class AxisActionNodeTests
     }
 
     [Fact]
-    public async Task RecoverableAxisFailure_UsesCoordinatorAndRetriesNode()
+    public async Task RecoverableAxisFailure_StopsAtStopPointAndRedoesNode()
     {
         var node = new AxisServoNodeModel { Id = "Servo", Title = "伺服", DeviceId = "D1", AxisId = "0", Interrupt = new RecoverableInterruptOption { AlarmCode = 1001 } };
         var canvasDocument = new WorkflowDocument { Name = "可恢复轴" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var axis = new RetryAxisService();
-        var coordinator = new RetryCoordinator();
-        var services = new WorkflowServiceProvider().Add<IWorkflowAxisService>(axis).Add<IWorkflowFaultRecoveryCoordinator>(coordinator);
+        var coordinator = new ScriptedStopHandler(_ => WorkflowResumeDirective.Redo());
+        var services = new WorkflowServiceProvider().Add<IWorkflowAxisService>(axis);
         canvasDocument.EntryNodeId = node.Id;
         var definition = new WorkflowCompiler(new WorkflowNodeCatalog().RegisterMotionNodes()).Compile(canvasDocument);
 
-        var result = await new WorkflowEngine(definition, new WorkflowNodeHandlerCatalog().RegisterMotionNodeHandlers(), new WorkflowContext(services)).RunAsync();
+        var result = await new WorkflowEngine(definition, new WorkflowNodeHandlerCatalog().RegisterMotionNodeHandlers(), new WorkflowContext(services),
+            new WorkflowExecutionOptions { StopPointHandler = coordinator }).RunAsync();
 
         Assert.True(result.Success, result.Message);
         Assert.Equal(2, axis.ServoCalls);
         Assert.Equal(1, coordinator.Calls);
+        Assert.Equal(1001, coordinator.Points[0].AlarmCode);
+        Assert.Equal(WorkflowRecoveryCategory.Redoable, coordinator.Points[0].Category);
     }
 
     [Fact]
-    public async Task Servo_ContinueUsesCapturedAxisAndTargetOperation()
+    public async Task Servo_IsRedoableButHasNoVerifyAndComplete()
     {
         var node = new AxisServoNodeModel { Id = "Servo", DeviceId = "D1", AxisId = "0", Enabled = true };
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var axis = new RetryAxisService();
-        var coordinator = new RetryCoordinator(true);
-        var context = new WorkflowContext(new WorkflowServiceProvider()
-            .Add<IWorkflowAxisService>(axis).Add<IWorkflowFaultRecoveryCoordinator>(coordinator));
+        var coordinator = new ScriptedStopHandler(point => point.Rejection is null ? WorkflowResumeDirective.Continue() : WorkflowResumeDirective.Redo());
+        var context = new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowAxisService>(axis));
         var engine = new WorkflowEngine(new WorkflowCompiler(new WorkflowNodeCatalog().RegisterMotionNodes()).Compile(document),
-            new WorkflowNodeHandlerCatalog().RegisterMotionNodeHandlers(), context);
+            new WorkflowNodeHandlerCatalog().RegisterMotionNodeHandlers(), context, new WorkflowExecutionOptions { StopPointHandler = coordinator });
         var result = await engine.RunAsync();
         Assert.True(result.Success, result.Message);
         Assert.Equal(2, axis.ServoCalls);
-        Assert.Equal(1, coordinator.Calls);
-        Assert.NotNull(coordinator.OperationId);
+        Assert.Equal(2, coordinator.Calls);
+        Assert.False(coordinator.Points[0].CanContinueOperation);
+        Assert.Contains("没有实现核实并补完", coordinator.Points[1].Rejection);
     }
 
     [Fact]
-    public async Task RecoverableNodeConfigurationError_EntersCoordinatorButCannotBlindlyRetry()
+    public async Task RecoverableNodeConfigurationError_StopsButCannotBlindlyRedo()
     {
         var node = new AxisActionNodeModel
         {
@@ -83,18 +86,19 @@ public sealed class AxisActionNodeTests
             Interrupt = new RecoverableInterruptOption { AlarmCode = 1002 }
         };
         var canvasDocument = new WorkflowDocument { Name = "配置错误" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
-        var coordinator = new RetryCoordinator();
-        var services = new WorkflowServiceProvider().Add<IWorkflowAxisService>(new FakeAxisService()).Add<IWorkflowFaultRecoveryCoordinator>(coordinator);
+        var coordinator = new ScriptedStopHandler(point => point.Rejection is null ? WorkflowResumeDirective.Redo() : WorkflowResumeDirective.Stop("停止"));
+        var services = new WorkflowServiceProvider().Add<IWorkflowAxisService>(new FakeAxisService());
         canvasDocument.EntryNodeId = node.Id;
         var definition = new WorkflowCompiler(new WorkflowNodeCatalog().RegisterMotionNodes()).Compile(canvasDocument);
 
-        var result = await new WorkflowEngine(definition, new WorkflowNodeHandlerCatalog().RegisterMotionNodeHandlers(), new WorkflowContext(services)).RunAsync();
+        var result = await new WorkflowEngine(definition, new WorkflowNodeHandlerCatalog().RegisterMotionNodeHandlers(), new WorkflowContext(services),
+            new WorkflowExecutionOptions { StopPointHandler = coordinator }).RunAsync();
 
         Assert.False(result.Success);
-        Assert.Equal(1, coordinator.Calls);
-        Assert.Contains("禁止重试", result.Message, StringComparison.Ordinal);
+        Assert.Equal(2, coordinator.Calls);
+        Assert.Contains("不能直接重做", coordinator.Points[1].Rejection, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -102,15 +106,16 @@ public sealed class AxisActionNodeTests
     {
         var node = new AxisWaitNodeModel { Id = "Wait", Title = "等待", DeviceId = "D1", AxisId = "0", TimeoutAsFalseBranch = true };
         var canvasDocument = new WorkflowDocument { Name = "等待超时" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterMotionNodes();
         canvasDocument.EntryNodeId = node.Id;
         var definition = new WorkflowCompiler(catalog).Compile(canvasDocument);
-        var coordinator = new StopCoordinator();
-        var services = new WorkflowServiceProvider().Add<IWorkflowAxisService>(new TimeoutAxisService()).Add<IWorkflowFaultRecoveryCoordinator>(coordinator);
+        var coordinator = new ScriptedStopHandler(_ => WorkflowResumeDirective.Stop("stop"));
+        var services = new WorkflowServiceProvider().Add<IWorkflowAxisService>(new TimeoutAxisService());
+        var options = new WorkflowExecutionOptions { StopPointHandler = coordinator };
 
-        var timeoutBranch = await new WorkflowEngine(definition, new WorkflowNodeHandlerCatalog().RegisterMotionNodeHandlers(), new WorkflowContext(services)).RunAsync();
+        var timeoutBranch = await new WorkflowEngine(definition, new WorkflowNodeHandlerCatalog().RegisterMotionNodeHandlers(), new WorkflowContext(services), options).RunAsync();
         Assert.True(timeoutBranch.Success, timeoutBranch.Message);
         Assert.Equal(0, coordinator.Calls);
 
@@ -118,7 +123,7 @@ public sealed class AxisActionNodeTests
         node.Interrupt = new RecoverableInterruptOption { AlarmCode = 1201 };
         canvasDocument.EntryNodeId = node.Id;
         definition = new WorkflowCompiler(catalog).Compile(canvasDocument);
-        var recoverable = await new WorkflowEngine(definition, new WorkflowNodeHandlerCatalog().RegisterMotionNodeHandlers(), new WorkflowContext(services)).RunAsync();
+        var recoverable = await new WorkflowEngine(definition, new WorkflowNodeHandlerCatalog().RegisterMotionNodeHandlers(), new WorkflowContext(services), options).RunAsync();
         Assert.False(recoverable.Success);
         Assert.Equal(1, coordinator.Calls);
     }
@@ -128,7 +133,7 @@ public sealed class AxisActionNodeTests
     {
         var node = new AxisServoNodeModel { Id = "Servo", Title = "伺服", DeviceId = "D1", AxisId = "0" };
         var canvasDocument = new WorkflowDocument { Name = "取消设备调用" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var service = new BlockingAxisService();
         canvasDocument.EntryNodeId = node.Id;
@@ -143,12 +148,15 @@ public sealed class AxisActionNodeTests
         Assert.Equal(E_WorkflowExecutionState.Canceled, result.State);
     }
 
-    private sealed class RetryCoordinator(bool continueOperation = false) : IWorkflowFaultRecoveryCoordinator
+    private sealed class ScriptedStopHandler(Func<WorkflowStopPoint, WorkflowResumeDirective> decide) : IWorkflowStopPointHandler
     {
-        public int Calls { get; private set; }
-        public Guid? OperationId { get; private set; }
-        public ValueTask<WorkflowFaultRecoveryDecision> RecoverAsync(WorkflowFaultRecoveryRequest request, IWorkflowFaultRecoveryContext context, CancellationToken cancellationToken)
-        { Calls++; OperationId = request.OperationId; return ValueTask.FromResult(continueOperation ? WorkflowFaultRecoveryDecision.Continue() : WorkflowFaultRecoveryDecision.Retry()); }
+        public List<WorkflowStopPoint> Points { get; } = new();
+        public int Calls => Points.Count;
+        public Task<WorkflowResumeDirective> OnStoppedAsync(WorkflowEngine engine, WorkflowStopPoint stopPoint, CancellationToken cancellationToken)
+        {
+            Points.Add(stopPoint);
+            return Task.FromResult(decide(stopPoint));
+        }
     }
 
     private sealed class RetryAxisService : IWorkflowAxisService
@@ -160,11 +168,6 @@ public sealed class AxisActionNodeTests
         public ValueTask<AxisWaitNodeResult> WaitAsync(WorkflowAxisWaitRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
-    private sealed class StopCoordinator : IWorkflowFaultRecoveryCoordinator
-    {
-        public int Calls { get; private set; }
-        public ValueTask<WorkflowFaultRecoveryDecision> RecoverAsync(WorkflowFaultRecoveryRequest request, IWorkflowFaultRecoveryContext context, CancellationToken cancellationToken) { Calls++; return ValueTask.FromResult(WorkflowFaultRecoveryDecision.Stop("stop")); }
-    }
 
     private class FakeAxisService : IWorkflowAxisService
     {

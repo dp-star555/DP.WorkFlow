@@ -83,28 +83,26 @@ public sealed class WorkflowRunRecordingLineageTests
     public async Task InputResolved_PublicDataRecordsPublicDataKey()
     {
         var sink = new CollectingSink();
-        var publicData = new WorkflowPublicDataStore();
-        publicData.Apply(new WorkflowPublicDataChangeSet(
-            new Dictionary<string, object> { ["GlobalPayload"] = new PublicPayload(19) },
-            Array.Empty<string>()));
+        var context = new WorkflowContext();
+        context.PublicDataCenter.Values.WriteValue("GlobalCount", 19);
         var engine = CreateEngine(
             BuildDocument(
                 new LineageNodeModel
                 {
                     Id = "Consumer",
-                    Value = WorkflowInput<int>.FromBinding(WorkflowBindingKey.FromPublicData("GlobalPayload", "Count"))
+                    Value = WorkflowInput<int>.FromBinding(WorkflowBindingKey.FromPublicData("GlobalCount"))
                 },
                 startNodeId: "Consumer"),
             sink,
-            new WorkflowContext(publicData: publicData));
+            context);
 
         var result = await engine.RunAsync();
 
         Assert.True(result.Success, result.Message);
         var resolved = Assert.Single(sink.Events, item => item.EventType == "InputResolved");
         Assert.Equal("PublicData", resolved.Data!["SourceKind"].Text);
-        Assert.Equal("GlobalPayload", resolved.Data["PublicDataKey"].Text);
-        Assert.Equal("Count", resolved.Data["SourceOutputKey"].Text);
+        Assert.Equal("GlobalCount", resolved.Data["PublicDataKey"].Text);
+        Assert.Equal("$", resolved.Data["SourceOutputKey"].Text);
         Assert.Equal(19L, Convert.ToInt64(resolved.Data["ResolvedValueSummary"].Scalar));
     }
 
@@ -126,7 +124,9 @@ public sealed class WorkflowRunRecordingLineageTests
         var result = await engine.RunAsync();
 
         Assert.True(result.Success, result.Message);
-        var resolved = Assert.Single(sink.Events, item => item.EventType == "InputResolved");
+        // R2-c：普通输入槽 Value 在执行前已取齐（Automatic）；这里只看执行代码显式解析的动态输入。
+        var resolved = Assert.Single(sink.Events, item => item.EventType == "InputResolved"
+            && item.Data!["InputMetadataStatus"].Text != "Automatic");
         Assert.Equal("Samples[0]", resolved.Data!["InputKey"].Text);
         Assert.Equal("ExplicitDynamic", resolved.Data["InputMetadataStatus"].Text);
         // 显式动态键是受支持的正常路径，不应产生降级诊断。
@@ -148,7 +148,8 @@ public sealed class WorkflowRunRecordingLineageTests
 
         // 记录元数据识别失败必须 fail-open：解析仍成功、Run 不 Fault。
         Assert.True(result.Success, result.Message);
-        var resolved = Assert.Single(sink.Events, item => item.EventType == "InputResolved");
+        var resolved = Assert.Single(sink.Events, item => item.EventType == "InputResolved"
+            && item.Data!["InputMetadataStatus"].Text != "Automatic");
         Assert.Null(resolved.Data!["InputKey"].Scalar);
         Assert.Equal("Unresolved", resolved.Data["InputMetadataStatus"].Text);
         var health = engine.RecordingHealth;
@@ -181,6 +182,8 @@ public sealed class WorkflowRunRecordingLineageTests
         Assert.Equal("Value", failed.Data!["InputKey"].Text);
         // 失败诊断事件必须存在，但不能覆盖绑定解析的原始异常。
         Assert.NotNull(failed.Data["Message"]);
+        // R2-c：输入在执行前取齐，取不到时执行代码根本不会运行。
+        Assert.DoesNotContain(sink.Events, item => item.EventType == "HandlerEntered");
     }
 
     [Fact]
@@ -268,7 +271,7 @@ public sealed class WorkflowRunRecordingLineageTests
         string startNodeId)
     {
         var document = new WorkflowDocument { Name = "数据血缘", EntryNodeId = startNodeId };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = first });
         if (second is not null)
         {
@@ -298,8 +301,22 @@ public sealed class WorkflowRunRecordingLineageTests
     {
         public override string NodeType => "Test.LineageProducer";
 
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object?> Outputs = new();
+
+        /// <summary>输出登记键：配置只保存能保存的内容（R7-c），任意对象放在测试登记表里。</summary>
+        public string OutputKey { get; set; } = string.Empty;
+
         /// <summary>该节点提交的输出；用于验证 OutputCommitted 自动键值。</summary>
-        public object? Output { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore]
+        public object? Output
+        {
+            get => Outputs.TryGetValue(OutputKey, out var value) ? value : null;
+            set
+            {
+                OutputKey = Guid.NewGuid().ToString("N");
+                Outputs[OutputKey] = value;
+            }
+        }
     }
 
     [WorkflowNode("Test.LineageConsumer")]
@@ -331,6 +348,7 @@ public sealed class WorkflowRunRecordingLineageTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            context.Trace("HandlerEntered");
             switch (node.Mode)
             {
                 case "Dynamic":

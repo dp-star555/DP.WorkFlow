@@ -3,7 +3,9 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>将绘制的包含/排除ROI构建为同帧区域，供下游作为掩膜复用。</summary>
-[WorkflowNode("Vision.CreateRegion", DisplayName = "创建区域／掩膜", Category = WorkflowVisionCategories.Region)]
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+[WorkflowNode("Vision.CreateRegion", DisplayName = "创建区域／掩膜", Category = WorkflowVisionCategories.Region, OutputType = typeof(DP.Vision.Algorithms.RegionAnalysisResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class CreateVisionRegionNodeModel : AnalyzeVisionFrameNodeModel
 {
     /// <inheritdoc/>
@@ -15,6 +17,10 @@ public sealed class CreateVisionRegionNodeModel : AnalyzeVisionFrameNodeModel
 /// <summary>使用共同范围与坐标转换，不需要厂商引擎或持久化运行图像。</summary>
 public sealed class CreateVisionRegionNodeHandler : WorkflowNodeHandler<CreateVisionRegionNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(CreateVisionRegionNodeModel node) =>
+        new[] { WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>() };
+
     /// <inheritdoc/>
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(CreateVisionRegionNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

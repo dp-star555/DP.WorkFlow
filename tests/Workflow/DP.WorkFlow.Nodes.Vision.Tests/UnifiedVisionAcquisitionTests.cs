@@ -22,7 +22,7 @@ public sealed class UnifiedVisionAcquisitionTests
             var node = new AcquireVisionImageNodeModel { Id = "image", SourceMode = mode,
                 FilePath = file, FolderPath = directory, Source = new("Camera.Top") };
             var document = new WorkflowDocument { EntryNodeId = node.Id };
-            document.CanvasProjection.Nodes.Add(new() { Node = node });
+            document.Nodes.Add(new() { Node = node });
             var catalog = new WorkflowNodeCatalog().RegisterImageNodes();
             var store = new WorkflowDocumentJsonStore(catalog);
             var threadId = Environment.CurrentManagedThreadId;
@@ -131,11 +131,11 @@ public sealed class UnifiedVisionAcquisitionTests
         var node = new AcquireVisionImageNodeModel { Id = "input", SourceMode = mode, FilePath = "file.png", FolderPath = "folder",
             Source = new("Camera.Top"), Algorithm = new() { ImplementationId = "private.reader", Settings = new() { ["model"] = "private" } } };
         var store = new WorkflowDocumentJsonStore(new WorkflowNodeCatalog().RegisterImageNodes());
-        var document = new WorkflowDocument { EntryNodeId = node.Id }; document.CanvasProjection.Nodes.Add(new() { Node = node });
+        var document = new WorkflowDocument { EntryNodeId = node.Id }; document.Nodes.Add(new() { Node = node });
         var json = store.Serialize(document);
         Assert.DoesNotContain("AreaSource", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("LineSource", json, StringComparison.OrdinalIgnoreCase);
-        var restored = Assert.IsType<AcquireVisionImageNodeModel>(store.Deserialize(json).Document.CanvasProjection.Nodes.Single().Node);
+        var restored = Assert.IsType<AcquireVisionImageNodeModel>(store.Deserialize(json).Document.Nodes.Single().Node);
         Assert.Equal(mode, restored.SourceMode); Assert.Equal("Camera.Top", restored.Source!.SourceId);
         Assert.Equal("file.png", restored.FilePath); Assert.Equal("folder", restored.FolderPath);
         Assert.Equal("private", restored.Algorithm.Settings["model"]);
@@ -191,7 +191,7 @@ public sealed class UnifiedVisionAcquisitionTests
         }
         public void Configure()
         {
-            var document = new WorkflowDocument { EntryNodeId = Node.Id }; document.CanvasProjection.Nodes.Add(new() { Node = Node });
+            var document = new WorkflowDocument { EntryNodeId = Node.Id }; document.Nodes.Add(new() { Node = Node });
             Host.Configure(document, new WorkflowContext(_services));
         }
         private ImageFrame Output() => Assert.IsType<ImageFrame>(Host.Engine!.RunState.NodeOutputs.Single(output => output.NodeId == Node.Id).Value);

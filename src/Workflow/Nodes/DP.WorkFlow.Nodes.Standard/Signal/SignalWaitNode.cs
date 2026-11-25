@@ -1,13 +1,16 @@
 namespace DP.WorkFlow;
 
 /// <summary>等待命名布尔信号达到期望状态。</summary>
-[WorkflowNode("SignalWait", DisplayName = "信号等待", Category = "3.Control/信号")]
-public sealed class SignalWaitNodeModel : WorkflowNodeModel
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+[WorkflowNode("SignalWait", DisplayName = "信号等待", Category = "3.Control/信号", OutputType = typeof(SignalWaitNodeResult))]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout)]
+public sealed class SignalWaitNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
     public override string NodeType => "SignalWait";
 
     /// <summary>获取或设置稳定信号键。</summary>
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.PublicDataSignal)]
     public string SignalKey { get; set; } = string.Empty;
 
     /// <summary>获取或设置期望状态。</summary>
@@ -18,11 +21,17 @@ public sealed class SignalWaitNodeModel : WorkflowNodeModel
 
     /// <summary>获取或设置匹配后是否将信号复位为 false。</summary>
     public bool AutoResetAfterMatched { get; set; }
+    /// <inheritdoc />
+    public IEnumerable<WorkflowPublicDataDeclaration> GetPublicDataUses() => PublicDataUses.Signal(SignalKey);
 }
 
 /// <summary>执行信号等待节点。</summary>
 public sealed class SignalWaitNodeHandler : WorkflowNodeHandler<SignalWaitNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(SignalWaitNodeModel node) =>
+        StandardCapabilities.Signal;
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(
         SignalWaitNodeModel node,
@@ -32,7 +41,9 @@ public sealed class SignalWaitNodeHandler : WorkflowNodeHandler<SignalWaitNodeMo
         var service = SignalSetNodeHandler.GetService(context, node.SignalKey);
         var signalKey = node.SignalKey.Trim();
         var expected = context.ResolveInput(node.ExpectedState);
+        using var wait = context.BeginWait($"信号 {signalKey} = {expected}", node.Timeout);
         var success = await service.WaitAsync(signalKey, expected, node.Timeout, cancellationToken).ConfigureAwait(false);
+        wait.End(success);
         if (success && node.AutoResetAfterMatched)
             service.Write(signalKey, false);
         var output = new SignalWaitNodeResult(signalKey, expected, success, node.AutoResetAfterMatched);

@@ -49,23 +49,6 @@ public interface IWorkflowNodeExecutionContext
     /// <returns>删除了现有变量时返回 <see langword="true"/>。</returns>
     bool RemoveVariable(string key);
 
-    /// <summary>尝试读取独立公共数据仓中的指定值。</summary>
-    /// <typeparam name="T">要求的运行时类型。</typeparam>
-    /// <param name="key">公共数据稳定键。</param>
-    /// <param name="value">找到且类型兼容时返回公开值。</param>
-    /// <returns>键存在且值类型兼容时返回 <see langword="true"/>。</returns>
-    bool TryGetPublicData<T>(string key, out T? value);
-
-    /// <summary>暂存一个公共数据写入；仅在节点成功后提交。</summary>
-    /// <param name="key">公共数据稳定键。</param>
-    /// <param name="value">待公开的非空值。</param>
-    void PublishData(string key, object value);
-
-    /// <summary>暂存删除公共数据；仅在节点成功后提交。</summary>
-    /// <param name="key">公共数据稳定键。</param>
-    /// <returns>当前执行视图中该键存在时返回 <see langword="true"/>。</returns>
-    bool RemovePublicData(string key);
-
     /// <summary>解析固定值、公共数据或当前执行身份可见的节点输出绑定，并自动记录数据血缘。</summary>
     /// <typeparam name="T">节点属性要求的输入类型。</typeparam>
     /// <param name="input">包含固定值或绑定来源的输入配置；应为当前节点模型的公开输入属性实例。</param>
@@ -80,22 +63,6 @@ public interface IWorkflowNodeExecutionContext
     /// <returns>解析及类型转换后的值；可空输入允许返回 <see langword="null"/>。</returns>
     /// <remarks>只用于动态端口、集合元素和脚本输入等真实动态场景；内置普通节点应使用 <see cref="ResolveInput{T}(WorkflowInput{T})"/>。</remarks>
     T? ResolveDynamicInput<T>(string inputKey, WorkflowInput<T> input);
-
-    /// <summary>触发当前工作流上下文中的一个幂等信号。</summary>
-    /// <param name="signalKey">信号稳定键；同一运行中重复触发不会重复累积。</param>
-    void RaiseWorkflowSignal(string signalKey);
-
-    /// <summary>判断当前工作流上下文信号是否已触发。</summary>
-    /// <param name="signalKey">要检查的信号稳定键。</param>
-    /// <returns>该信号已在当前上下文触发时返回 <see langword="true"/>。</returns>
-    bool ContainsWorkflowSignal(string signalKey);
-
-    /// <summary>异步等待当前工作流上下文中的全部指定信号。</summary>
-    /// <param name="signalKeys">需要全部触发的信号键；空集合立即成功。</param>
-    /// <param name="timeout">最长等待时间；为空表示只受取消令牌限制。</param>
-    /// <param name="cancellationToken">由工作流取消或宿主停止操作触发的取消令牌。</param>
-    /// <returns>全部信号到达时返回 <see langword="true"/>；仅因配置超时到期时返回 <see langword="false"/>。</returns>
-    ValueTask<bool> WaitAllWorkflowSignalsAsync(IReadOnlyList<string> signalKeys, TimeSpan? timeout, CancellationToken cancellationToken);
 
     /// <summary>写入与当前节点和执行身份关联的结构化跟踪记录。</summary>
     /// <param name="step">稳定的跟踪步骤键，供监视器筛选和聚合。</param>
@@ -136,14 +103,39 @@ public interface IWorkflowNodeHandler
         CancellationToken cancellationToken);
 }
 
+/// <summary>在执行代码中声明宿主能力要求的处理器（R7-a）；目录注册时自动读取。</summary>
+public interface IWorkflowCapabilityDeclaringHandler
+{
+    /// <summary>执行指定节点需要的宿主能力。</summary>
+    /// <param name="node">节点配置。</param>
+    /// <returns>能力要求。</returns>
+    IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(IWorkflowNodeModel node);
+}
+
 /// <summary>
 /// 为强类型节点处理器提供模型匹配和安全转换。
 /// </summary>
 /// <typeparam name="TNode">当前处理器支持的节点模型类型。</typeparam>
-public abstract class WorkflowNodeHandler<TNode> : IWorkflowNodeHandler where TNode : class, IWorkflowNodeModel
+public abstract class WorkflowNodeHandler<TNode> : IWorkflowNodeHandler, IWorkflowCapabilityDeclaringHandler where TNode : class, IWorkflowNodeModel
 {
     /// <inheritdoc />
     public bool CanHandle(IWorkflowNodeModel node) => node is TNode;
+
+    /// <summary>
+    /// 执行该节点需要的宿主能力（R7-a：能力要求写在执行代码里）。可按节点配置返回不同要求，
+    /// 例如判断节点选"函数条件"时才需要条件注册表。默认没有要求。
+    /// </summary>
+    /// <param name="node">节点配置。</param>
+    /// <returns>能力要求。</returns>
+    protected virtual IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(TNode node) =>
+        Array.Empty<WorkflowRuntimeCapabilityRequirement>();
+
+    /// <inheritdoc />
+    IEnumerable<WorkflowRuntimeCapabilityRequirement> IWorkflowCapabilityDeclaringHandler.GetRequiredCapabilities(IWorkflowNodeModel node) =>
+        node is TNode typed ? GetRequiredCapabilities(typed) : Array.Empty<WorkflowRuntimeCapabilityRequirement>();
+
+    /// <summary>该处理器执行的节点模型类型。</summary>
+    public Type NodeModelType => typeof(TNode);
 
     /// <inheritdoc />
     /// <exception cref="ArgumentException"><paramref name="node"/> 不是 <typeparamref name="TNode"/> 实例。</exception>

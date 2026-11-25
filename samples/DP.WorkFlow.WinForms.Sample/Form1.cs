@@ -18,6 +18,7 @@ public partial class Form1 : Form
     private readonly WorkflowNodeCatalog _nodeCatalog;
     private readonly WorkflowDocumentWorkspace _workspace;
     private readonly WorkflowRuntimeHost _runtimeHost;
+    private WorkflowRunCenter? _faultCenter;
     private readonly WorkflowStudioRuntimeBinding _runtimeBinding;
     private readonly WorkflowContext _runtimeContext;
     private readonly WorkflowVisionFrameScope _frameScope;
@@ -108,7 +109,6 @@ public partial class Form1 : Form
         else if (recoveryDemo is null && Environment.GetCommandLineArgs().Contains("--geometry-demo", StringComparer.OrdinalIgnoreCase)) WorkflowImageDemo.PopulateGeometry(_workspace.Navigator!.RootSession);
         else if (recoveryDemo is null) WorkflowImageDemo.PopulateProcessing(_workspace.Navigator!.RootSession);
         else recoveryDemo.Populate(_workspace.Navigator!.RootSession);
-        SampleVisionHost.RegisterPublicData(_workspace.Navigator!.RootSession);
 
         // 4. 连接到设计器控件
         workflowStudioControl1.Workspace = _workspace;
@@ -128,7 +128,7 @@ public partial class Form1 : Form
         // 算法实现与“坐标系”下拉；坐标系下拉按本轮运行结果换算ROI等范围。
         var algorithmProperties = WorkflowVisionAlgorithmProperties.CreateProvider(algorithmCatalog);
         var coordinateProperties = WorkflowVisionCoordinateProperties.CreateProvider(_frameScope,
-            () => _workspace.Navigator?.CurrentSession.Canvas.Nodes.Select(n => n.Node).ToArray() ?? []);
+            () => _workspace.Navigator?.CurrentSession.Document.Nodes.Select(n => n.Node).ToArray() ?? []);
         workflowStudioControl1.Properties.AdditionalProperties = node => [.. algorithmProperties(node), .. coordinateProperties(node)];
 
         // 5. 注册宿主运行能力；节点和 Handler 已由上面的 Runtime Module 成组注册。
@@ -169,7 +169,6 @@ public partial class Form1 : Form
             .Add<IWorkflowProcessService>(new DemoProcessService())
             .Add<IWorkflowProductFlowService>(new DemoProductFlowService())
             .Add<IWorkflowWaferRobotService>(new DemoWaferRobotService())
-            .Add<IWorkflowRecoveryService>(new DemoRecoveryService())
             // 准备服务只做校验；退役上一轮资源是运行所有者的职责，只有根运行宿主持有它（AR-01 阶段2）。
             .Add<IWorkflowVisionAlgorithmBindings>(_algorithmBindings)
             .Add<IWorkflowNodeCapabilityProvider>(_algorithmBindings)
@@ -188,6 +187,8 @@ public partial class Form1 : Form
         };
         if (recoveryDemo is not null)
         {
+            // 模拟轴故障时由统管层的故障会话运行文档里的处理块（每次故障按当前文档查找）。
+            _faultCenter = recoveryDemo.AttachFaultHandling(_runtimeHost, services, _nodeCatalog, handlers);
             _runtimeBinding.AutoConfigureBeforeRun = false;
             _runtimeBinding.ConfigureBeforeRun = () =>
             {
@@ -195,7 +196,6 @@ public partial class Form1 : Form
                     throw new InvalidOperationException("恢复演示请从根流程运行。");
                 var document = _workspace.Navigator!.RootSession.Document;
                 _runtimeHost.Configure(document, _runtimeContext);
-                recoveryDemo.RebindTreatment(document, services, _nodeCatalog, handlers);
             };
         }
         workflowStudioControl1.RuntimeBinding = _runtimeBinding;
@@ -257,7 +257,7 @@ public partial class Form1 : Form
         _runtimeHost.Cancel();
         _operatorService.Dispose();
         _runtimeBinding.Dispose();
-        _runtimeHost.Dispose();
+        _faultCenter?.Dispose(); _runtimeHost.Dispose();
         _algorithmDiagnostics.Dispose(); _algorithmBindings.Dispose(); _algorithmRuntime.Dispose(); _frameScope.Dispose();
         _workspace.Dispose();
     }

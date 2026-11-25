@@ -43,7 +43,7 @@ public sealed class CompareNodeTests
             Operator = E_ValueCompareOperator.Equal
         };
         var canvasDocument = new WorkflowDocument { Name = "绑定比较" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = producer });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = compare });
         canvas.Connections.Add(new WorkflowConnectionModel
@@ -95,7 +95,7 @@ public sealed class CompareNodeTests
             TrimBeforeCompare = trim
         };
         var canvasDocument = new WorkflowDocument { Name = "字符串比较" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvasDocument.EntryNodeId = node.Id;
         var definition = new WorkflowCompiler().Compile(canvasDocument);
@@ -125,7 +125,7 @@ public sealed class CompareNodeTests
             Operator = E_ValueCompareOperator.GreaterThan
         };
         var canvasDocument = new WorkflowDocument { Name = "错误比较" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvasDocument.EntryNodeId = node.Id;
         var definition = new WorkflowCompiler().Compile(canvasDocument);
@@ -142,7 +142,7 @@ public sealed class CompareNodeTests
     private static async Task<CompareNodeResult> ExecuteValueCompareAsync(ValueCompareNodeModel node)
     {
         var canvasDocument = new WorkflowDocument { Name = "值比较" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvasDocument.EntryNodeId = node.Id;
         var definition = new WorkflowCompiler().Compile(canvasDocument);

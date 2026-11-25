@@ -118,7 +118,7 @@ public sealed class WorkflowVisionAlgorithmDiagnostics : IWorkflowDiagnosticProv
     /// <summary>显式升级当前节点的所有选择；先全部生成副本，再进入可撤销的配置提交。</summary>
     public void MigrateNode(WorkflowDesignerSession session, string nodeId)
     {
-        var node = session.Canvas.Nodes.Single(n => n.Node.Id == nodeId).Node;
+        var node = session.Document.Nodes.Single(n => n.Node.Id == nodeId).Node;
         if (node is not IWorkflowVisionAlgorithmNode algorithm) throw new InvalidOperationException("所选节点没有算法配置。");
         var inspector = new VisionAlgorithmInspection(Catalog);
         var upgraded = algorithm.GetAlgorithmSlots().ToDictionary(s => s.Name, s => inspector.Migrate(s.Selection), StringComparer.Ordinal);

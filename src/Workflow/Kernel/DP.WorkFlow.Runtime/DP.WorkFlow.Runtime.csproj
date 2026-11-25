@@ -14,6 +14,8 @@
   <ItemGroup>
     <!-- 记录链路的"无空唤醒"是资源性质，无法从 Sink 侧观察；开放内部诊断给测试工程。 -->
     <InternalsVisibleTo Include="DP.WorkFlow.Runtime.Tests" />
+    <!-- 事件流规则核对（R5-a）通过内部探针收集事件，只在测试中启用。 -->
+    <InternalsVisibleTo Include="DP.WorkFlow.Testing" />
   </ItemGroup>
 
 </Project>

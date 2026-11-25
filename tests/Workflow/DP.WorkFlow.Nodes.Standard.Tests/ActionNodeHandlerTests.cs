@@ -12,7 +12,7 @@ public sealed class ActionNodeHandlerTests
             FunctionKey = "Missing"
         };
         var canvasDocument = new WorkflowDocument { Name = "动作错误" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvasDocument.EntryNodeId = node.Id;
         var definition = new WorkflowCompiler().Compile(canvasDocument);

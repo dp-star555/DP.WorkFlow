@@ -25,9 +25,8 @@ public sealed class WorkflowNodeTrialRunnerTests
             .RunAsync(consumer, new Dictionary<object, object?>(ReferenceEqualityComparer.Instance) { [consumer.Input] = 21L });
 
         Assert.Equal(42L, result.Output);
-        // 流程运行写下的变量、公共数据和输出保持不变；试运行的写入被丢弃。
+        // 流程运行写下的变量和输出保持不变；试运行的写入被丢弃。
         Assert.True(context.TryGetVariable<long>("Seen", out var seen)); Assert.Equal(7L, seen);
-        Assert.True(context.PublicData.TryGet<long>("Trial", out var published)); Assert.Equal(7L, published);
         Assert.True(context.TryGetNodeOutput("Consumer", out var output)); Assert.Equal(14L, output!.Value);
     }
 
@@ -46,9 +45,9 @@ public sealed class WorkflowNodeTrialRunnerTests
         var producer = new ProducerNode { Id = "Producer" };
         var consumer = new ConsumerNode { Id = "Consumer", Input = WorkflowInput<long>.FromBinding(new WorkflowBindingKey("Producer", "Count")) };
         var document = new WorkflowDocument { Name = "试运行" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = producer });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = consumer });
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = producer.Id, ToNodeId = consumer.Id });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = producer });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = consumer });
+        document.Connections.Add(new WorkflowConnectionModel { FromNodeId = producer.Id, ToNodeId = consumer.Id });
         document.EntryNodeId = producer.Id;
         var handlers = new WorkflowNodeHandlerCatalog().Register(new ProducerHandler()).Register(new ConsumerHandler());
         var context = new WorkflowContext();
@@ -79,7 +78,6 @@ public sealed class WorkflowNodeTrialRunnerTests
         {
             var value = context.ResolveInput(node.Input);
             context.SetVariable("Seen", value);
-            context.PublishData("Trial", value);
             return ValueTask.FromResult(NodeExecutionResult.Continue(output: value * 2));
         }
     }

@@ -103,10 +103,10 @@ public sealed class WorkflowNodeInputLayoutTests
     {
         var inner = new TwoInputNode { Id = "Inner" };
         var childDocument = new WorkflowDocument { Name = "子流程", EntryNodeId = "Inner" };
-        childDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = inner });
+        childDocument.Nodes.Add(new WorkflowCanvasNode { Node = inner });
         var composite = new TestSubDocumentNode { Id = "Composite", Title = "复合", SubDocument = childDocument };
         var outerDocument = new WorkflowDocument { Name = "外层", EntryNodeId = "Composite" };
-        outerDocument.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = composite });
+        outerDocument.Nodes.Add(new WorkflowCanvasNode { Node = composite });
 
         var plan = new WorkflowCompiler().Compile(outerDocument);
         var bound = new WorkflowRuntimeBinder(new WorkflowNodeHandlerCatalog().Register(new AcceptAllHandler())).Bind(plan);

@@ -9,11 +9,11 @@ public sealed class ConvertValueNodeTests
         {
             Id = "Convert",
             Title = "转换",
-            LiteralValue = "12.5",
+            Value = WorkflowInput<string>.FromLiteral("12.5"),
             TargetType = E_SignalValueType.Double
         };
         var canvasDocument = new WorkflowDocument { Name = "转换" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         canvasDocument.EntryNodeId = node.Id;

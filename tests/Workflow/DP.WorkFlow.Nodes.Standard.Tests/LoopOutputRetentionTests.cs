@@ -79,7 +79,7 @@ public sealed class LoopOutputRetentionTests
     private static WorkflowDocument Document(string name, IEnumerable<IWorkflowNodeModel> nodes, params WorkflowConnectionModel[] connections)
     {
         var document = new WorkflowDocument { Name = name };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         foreach (var node in nodes)
             canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         foreach (var connection in connections)

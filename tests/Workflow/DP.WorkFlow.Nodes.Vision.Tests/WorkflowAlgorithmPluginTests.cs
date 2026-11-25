@@ -49,10 +49,10 @@ public sealed class WorkflowAlgorithmPluginTests
         var missingStore = new WorkflowDocumentJsonStore(new WorkflowNodeCatalog());
 
         var loaded = missingStore.Deserialize(json).Document;
-        Assert.IsType<UnknownWorkflowNodeModel>(Assert.Single(loaded.CanvasProjection.Nodes).Node);
+        Assert.IsType<UnknownWorkflowNodeModel>(Assert.Single(loaded.Nodes).Node);
         var restored = store.Deserialize(missingStore.Serialize(loaded)).Document;
 
-        var selection = rig.Slot(Assert.Single(restored.CanvasProjection.Nodes).Node).Selection;
+        var selection = rig.Slot(Assert.Single(restored.Nodes).Node).Selection;
         Assert.Equal("fixture.multiply", selection.ImplementationId);
         Assert.Equal("7", selection.Settings["amount"]);
     }
@@ -82,8 +82,8 @@ public sealed class WorkflowAlgorithmPluginTests
         var b = new BlockNodeModel { Id = "b", SubDocument = Document(rig.Node("same", "fixture.multiply", 5)) };
         a.Outputs.Add(new WorkflowSubflowOutput { Name = "A", Source = new WorkflowBindingKey("same", "$") });
         b.Outputs.Add(new WorkflowSubflowOutput { Name = "B", Source = new WorkflowBindingKey("same", "$") });
-        var document = Document(a); document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = b });
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = "a", FromPort = WorkflowPorts.Success, ToNodeId = "b", ToPort = WorkflowPorts.Input });
+        var document = Document(a); document.Nodes.Add(new WorkflowCanvasNode { Node = b });
+        document.Connections.Add(new WorkflowConnectionModel { FromNodeId = "a", FromPort = WorkflowPorts.Success, ToNodeId = "b", ToPort = WorkflowPorts.Input });
         using var host = rig.Host(document, out var context);
 
         Assert.True((await host.RunAsync()).Success);
@@ -127,7 +127,7 @@ public sealed class WorkflowAlgorithmPluginTests
     private static WorkflowDocument Document(IWorkflowNodeModel node)
     {
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node }); return document;
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node }); return document;
     }
 
     private sealed class Rig : IDisposable

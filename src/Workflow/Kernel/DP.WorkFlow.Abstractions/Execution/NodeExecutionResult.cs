@@ -1,16 +1,16 @@
 namespace DP.WorkFlow;
 
-/// <summary>指定节点故障进入恢复协调还是直接终止本次运行。</summary>
+/// <summary>节点故障交给故障会话处理，还是直接终止本次运行。</summary>
 public enum WorkflowFaultDisposition
 {
-    /// <summary>记录故障事实并终止本次运行。</summary>
-    StopRun = 0,
+    /// <summary>
+    /// 报告故障（默认）：流程停在故障节点上，交给统管层的故障会话按处理流程决定去向；
+    /// 没有故障会话（例如单独运行引擎）时终止本次运行。
+    /// </summary>
+    ReportFault = 0,
 
-    /// <summary>记录故障事实后请求宿主恢复协调器裁决。</summary>
-    RequestRecovery = 1,
-
-    /// <summary>普通节点故障交由所属运行的处理策略；无协调器时终止，不要求报警编码。</summary>
-    HandleAtScope = 2
+    /// <summary>节点明确要求停止运行：记录故障事实并终止本次运行，不进入故障会话。</summary>
+    StopRun = 1
 }
 
 /// <summary>指定一次节点执行互斥的终止形态。</summary>
@@ -61,7 +61,7 @@ public sealed class NodeExecutionResult
     /// <summary>获取节点失败后的处理策略。</summary>
     public WorkflowFaultDisposition FaultDisposition { get; private init; }
 
-    /// <summary>获取触发可恢复中断的报警编码；未配置时为 0。</summary>
+    /// <summary>获取故障的报警编号（故障会话据此选处理流程）；未配置时为 0。</summary>
     public int InterruptAlarmCode { get; private init; }
 
     /// <summary>创建沿指定输出端口继续调度的成功结果。</summary>
@@ -99,13 +99,13 @@ public sealed class NodeExecutionResult
     };
 
     /// <summary>创建节点执行失败结果，并声明运行时应采用的故障处理策略。</summary>
-    /// <param name="message">面向运行监视和恢复协调器的失败说明；空白文本会替换为默认消息。</param>
-    /// <param name="faultDisposition">终止本次运行或请求恢复协调的裁决入口。</param>
-    /// <param name="interruptAlarmCode">可恢复中断使用的报警编码；小于等于零表示未配置。</param>
+    /// <param name="message">面向运行监视和处理流程的失败说明；空白文本会替换为默认消息。</param>
+    /// <param name="faultDisposition">报告故障（交给故障会话）或直接停止运行。</param>
+    /// <param name="interruptAlarmCode">报警编号；小于等于零表示未配置。</param>
     /// <returns>不包含后继端口的失败结果。</returns>
     public static NodeExecutionResult Fail(
         string message,
-        WorkflowFaultDisposition faultDisposition = WorkflowFaultDisposition.HandleAtScope,
+        WorkflowFaultDisposition faultDisposition = WorkflowFaultDisposition.ReportFault,
         int interruptAlarmCode = 0) => new()
     {
         Outcome = NodeExecutionOutcome.Fault,

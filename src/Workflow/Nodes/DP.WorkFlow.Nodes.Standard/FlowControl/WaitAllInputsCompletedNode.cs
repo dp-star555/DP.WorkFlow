@@ -1,7 +1,7 @@
 namespace DP.WorkFlow;
 
 /// <summary>表示并行分支的显式汇聚点。该节点只会在全部分支到达后执行一次。</summary>
-[WorkflowNode("WaitAllInputsCompleted", DisplayName = "并行汇聚节点", Category = "3.Control/流程控制")]
+[WorkflowNode("WaitAllInputsCompleted", DisplayName = "并行汇聚节点", Category = "3.Control/流程控制", Icon = "merge")]
 public sealed class WaitAllInputsCompletedNodeModel : WorkflowNodeModel, IWorkflowParallelJoinNode
 {
     /// <inheritdoc />

@@ -1,7 +1,8 @@
 namespace DP.WorkFlow;
 
 /// <summary>关闭扫码设备连接。</summary>
-[WorkflowNode("CodeReaderClose", DisplayName = "关闭扫码枪", Category = "4.Motion/CodeReader")]
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+[WorkflowNode("CodeReaderClose", DisplayName = "关闭扫码枪", Category = "4.Motion/CodeReader", OutputType = typeof(string))]
 public sealed class CodeReaderCloseNodeModel : WorkflowNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -15,6 +16,10 @@ public sealed class CodeReaderCloseNodeModel : WorkflowNodeModel, IRecoverableWo
 /// <summary>执行关闭扫码设备节点。</summary>
 public sealed class CodeReaderCloseNodeHandler : WorkflowNodeHandler<CodeReaderCloseNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(CodeReaderCloseNodeModel node) =>
+        new[] { MotionCapabilities.CodeReaderCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(CodeReaderCloseNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

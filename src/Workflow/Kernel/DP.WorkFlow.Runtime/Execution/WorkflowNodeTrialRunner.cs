@@ -63,7 +63,6 @@ public sealed class WorkflowNodeTrialRunner
     {
         // 试运行的写入只在本次执行内可见，结束即丢弃。
         private readonly Dictionary<string, object?> _variables = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, object?> _publicData = new(StringComparer.Ordinal);
 
         public Guid BindingScopeId => scope;
         public string PlanPath => "$";
@@ -90,19 +89,6 @@ public sealed class WorkflowNodeTrialRunner
             return existed;
         }
 
-        public bool TryGetPublicData<T>(string key, out T? value)
-        {
-            if (_publicData.TryGetValue(key, out var local)) { value = local is T typed ? typed : default; return local is T; }
-            return context.PublicData.TryGet(key, out value);
-        }
-        public void PublishData(string key, object value) => _publicData[key] = value ?? throw new ArgumentNullException(nameof(value));
-        public bool RemovePublicData(string key)
-        {
-            bool existed = _publicData.TryGetValue(key, out var local) ? local is not null : context.PublicData.Snapshot().ContainsKey(key);
-            _publicData[key] = null;
-            return existed;
-        }
-
         public T? ResolveInput<T>(WorkflowInput<T> input)
         {
             Guard.NotNull(input);
@@ -111,10 +97,6 @@ public sealed class WorkflowNodeTrialRunner
         }
         public T? ResolveDynamicInput<T>(string inputKey, WorkflowInput<T> input) => ResolveInput(input);
 
-        public void RaiseWorkflowSignal(string signalKey) { }
-        public bool ContainsWorkflowSignal(string signalKey) => false;
-        public ValueTask<bool> WaitAllWorkflowSignalsAsync(IReadOnlyList<string> signalKeys, TimeSpan? timeout, CancellationToken cancellationToken) =>
-            signalKeys.Count == 0 ? Polyfill.FromResult(true) : throw new InvalidOperationException("单节点试运行不能等待流程信号。");
         public void Trace(string step, string? message = null, IReadOnlyDictionary<string, object?>? data = null) { }
         public void Trace(string step, string? message, IReadOnlyDictionary<string, object?>? data, WorkflowEventWriteMode writeMode) { }
     }

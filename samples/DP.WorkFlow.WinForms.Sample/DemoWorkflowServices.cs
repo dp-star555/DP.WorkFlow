@@ -121,11 +121,3 @@ internal sealed class DemoProcessService : IWorkflowProcessService
 {
     public ValueTask<ProductCreateNodeResult> CreateProductAsync(ProductCreateRequest request, CancellationToken cancellationToken) => Polyfill.FromResult(new ProductCreateNodeResult(request.ProductId ?? Guid.NewGuid().ToString("N"), "DEMO-LOT", request.Recipe, request.StationId, request.SlotId, "Created", 1, 1));
 }
-
-internal sealed class DemoRecoveryService : IWorkflowRecoveryService
-{
-    public ValueTask RegisterSafePointAsync(string safePointKey, WorkflowExecutionIdentity executionIdentity, CancellationToken cancellationToken) => default(ValueTask);
-    public ValueTask RequestStationStopAsync(string reason, WorkflowExecutionIdentity executionIdentity, CancellationToken cancellationToken) => default(ValueTask);
-    public ValueTask RequestRetryAsync(WorkflowExecutionIdentity executionIdentity, CancellationToken cancellationToken) => default(ValueTask);
-    public ValueTask ReturnToSafePointAsync(string safePointKey, WorkflowExecutionIdentity executionIdentity, CancellationToken cancellationToken) => default(ValueTask);
-}

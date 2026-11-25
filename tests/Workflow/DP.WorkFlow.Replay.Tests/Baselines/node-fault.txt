@@ -1,0 +1,11 @@
+运行 [节点故障]
+  [主线]
+    RunStarted EntryNodeId=Start Message=流程开始执行。 NodeCount=3 PlanPath=$ WorkflowName=节点故障
+    NodeStarted Start#1 Message=节点开始执行。
+    Start Start#1 Message=流程由启动节点进入。
+    OutputCommitted Start#1 OutputExecutionSequence=Start#1 OutputKeys=ResultRows OutputType=DP.WorkFlow.WorkflowSubflowValues OutputValue.ResultRows=
+    NodeCompleted Start#1 Message=节点执行完成。 SelectedPort=Success
+    NodeStarted Servo#1 Message=节点开始执行。
+    Invoke Servo#1 FunctionKey=Boom Message=开始调用工作流动作。
+    NodeFailed Servo#1 ExceptionType=System.InvalidOperationException InterruptAlarmCode=0 Message=模拟设备故障：伺服报警。
+    RunFaulted Message=模拟设备故障：伺服报警。 State=Faulted

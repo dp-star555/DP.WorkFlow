@@ -5,7 +5,7 @@ namespace DP.WorkFlow;
 /// <summary>
 /// 通过稳定的函数键调用宿主动作。
 /// </summary>
-[WorkflowNode("Action", DisplayName = "函数节点", Category = "2.Function/执行")]
+[WorkflowNode("Action", DisplayName = "函数节点", Category = "2.Function/执行", Icon = "bolt")]
 public sealed class ActionNodeModel : WorkflowNodeModel
 {
     /// <inheritdoc />
@@ -61,6 +61,10 @@ public sealed class WorkflowActionRegistry : IWorkflowActionRegistry
 /// <summary>执行函数节点。</summary>
 public sealed class ActionNodeHandler : WorkflowNodeHandler<ActionNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(ActionNodeModel node) =>
+        StandardCapabilities.ActionRegistry;
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(
         ActionNodeModel node,

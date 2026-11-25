@@ -41,7 +41,7 @@ public sealed class WaferRobotNodeTests
     private static async Task<WorkflowRunResult> RunAsync(IWorkflowNodeModel node, IWorkflowWaferRobotService service)
     {
         var canvasDocument = new WorkflowDocument { Name = "机器人" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvasDocument.EntryNodeId = node.Id;
         var definition = new WorkflowCompiler(new WorkflowNodeCatalog().RegisterProcessNodes()).Compile(canvasDocument);

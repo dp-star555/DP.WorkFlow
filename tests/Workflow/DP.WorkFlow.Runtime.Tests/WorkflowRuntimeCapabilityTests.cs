@@ -74,7 +74,7 @@ public sealed class WorkflowRuntimeCapabilityTests
     private static WorkflowDocument CreateDocument(IWorkflowNodeModel node)
     {
         var document = new WorkflowDocument { EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
         return document;
     }
 

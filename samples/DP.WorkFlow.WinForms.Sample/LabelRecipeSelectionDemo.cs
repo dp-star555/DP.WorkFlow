@@ -23,7 +23,7 @@ internal sealed class LabelRecipeSelectionDemo : IWorkflowRuntimePluginModule
     {
         var entryNodeId = session.Document.EntryNodeId; // 保留导航器既有入口，Start显式进入循环。
         LabelInspectionDemo.Populate(session);
-        var graph = session.Document.CanvasProjection;
+        var graph = session.Document;
         var inspect = (InspectLabelNodeModel)graph.Nodes.Single(n => n.Node.Id == "inspect").Node;
         var root = inspect.ResourceRoot;
         var a = WorkflowLabelRecipeProfile.FromNode(inspect, "A", 1);

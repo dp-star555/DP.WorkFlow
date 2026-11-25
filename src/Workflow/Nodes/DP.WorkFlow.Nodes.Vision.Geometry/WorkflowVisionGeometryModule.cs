@@ -10,35 +10,9 @@ public sealed class WorkflowVisionGeometryModule : IWorkflowRuntimePluginModule
     /// <inheritdoc/>
     public void Register(WorkflowRuntimePluginCatalog extensions)
     {
+        Guard.NotNull(extensions);
         WorkflowVisionOutputNames.EnsureRegistered();
-        var ports = new[] { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success), WorkflowPortDescriptor.Failure() };
-        extensions.Nodes
-            .Register(WorkflowNodeDescriptor.Create<BuildVisionCoordinateSystemNodeModel, VisionCoordinateSystemResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<CreateVisionPointNodeModel, VisionPoint>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<SelectVisionPointNodeModel, VisionPoint>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<TransformVisionPointNodeModel, VisionPoint>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<TransformVisionLineNodeModel, VisionLine>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<GenerateVisionLineNodeModel, VisionLine>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<MeasureVisionPointDistanceNodeModel, GeometricDistanceResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<MeasureVisionPointLineDistanceNodeModel, GeometricDistanceResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<MeasureVisionLineDistanceNodeModel, GeometricDistanceResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<IntersectVisionLinesNodeModel, VisionLineIntersectionResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<MeasureVisionLineAngleNodeModel, VisionLineAngleResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<IntersectVisionLineCircleNodeModel, VisionCurveIntersectionResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<IntersectVisionCirclesNodeModel, VisionCurveIntersectionResult>(ports: ports))
-            .Register(WorkflowNodeDescriptor.Create<ProjectVisionPointToLineNodeModel, VisionPerpendicularFootResult>(ports: ports));
-        var frames = WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>();
-        var bindings = WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionAlgorithmBindings>();
-        var geometry = WorkflowRuntimeCapabilityRequirement.Require<IGeometryMeasurer>();
-        extensions.Handlers.Register(new CreateVisionPointNodeHandler(), frames).Register(new SelectVisionPointNodeHandler(), frames)
-            .Register(new BuildVisionCoordinateSystemNodeHandler(), frames)
-            .Register(new TransformVisionPointNodeHandler(), frames).Register(new TransformVisionLineNodeHandler(), frames)
-            .Register(new GenerateVisionLineNodeHandler(), frames, bindings, geometry)
-            .Register(new MeasureVisionPointDistanceNodeHandler(), frames, bindings, geometry)
-            .Register(new MeasureVisionPointLineDistanceNodeHandler(), frames, bindings, geometry)
-            .Register(new MeasureVisionLineDistanceNodeHandler(), frames, bindings, geometry)
-            .Register(new IntersectVisionLinesNodeHandler(), frames).Register(new MeasureVisionLineAngleNodeHandler(), frames)
-            .Register(new IntersectVisionLineCircleNodeHandler(), frames).Register(new IntersectVisionCirclesNodeHandler(), frames)
-            .Register(new ProjectVisionPointToLineNodeHandler(), frames);
+        extensions.Nodes.RegisterAssembly(typeof(WorkflowVisionGeometryModule).Assembly);
+        extensions.Handlers.RegisterAssembly(typeof(WorkflowVisionGeometryModule).Assembly);
     }
 }

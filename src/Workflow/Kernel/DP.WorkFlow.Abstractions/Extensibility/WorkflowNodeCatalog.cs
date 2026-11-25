@@ -207,6 +207,53 @@ public sealed class WorkflowNodeDescriptor
         where TNode : class, IWorkflowNodeModel, new() =>
         CreateCore<TNode>(typeof(TOutput), nodeVersion, ports);
 
+    /// <summary>
+    /// 只按模型上的特性创建描述器（R7-a）：<see cref="WorkflowNodeAttribute"/> 提供类型键、名称、分类、说明、图标、版本、输出类型和是否有输入，
+    /// <see cref="WorkflowOutputPortsAttribute"/> 提供输出端口。
+    /// </summary>
+    /// <param name="modelType">带 <see cref="WorkflowNodeAttribute"/>、有公开无参构造函数的节点模型类型。</param>
+    /// <returns>节点描述器。</returns>
+    /// <exception cref="InvalidOperationException">没有特性、没有无参构造函数，或特性键与 <see cref="IWorkflowNodeModel.NodeType"/> 不一致。</exception>
+    public static WorkflowNodeDescriptor FromType(Type modelType)
+    {
+        Guard.NotNull(modelType);
+        var attribute = modelType.GetCustomAttribute<WorkflowNodeAttribute>()
+            ?? throw new InvalidOperationException($"节点 {modelType.FullName} 没有 [WorkflowNode] 特性。");
+        if (!typeof(IWorkflowNodeModel).IsAssignableFrom(modelType) || modelType.IsAbstract || modelType.GetConstructor(Type.EmptyTypes) is null)
+            throw new InvalidOperationException($"节点 {modelType.FullName} 必须是实现 IWorkflowNodeModel、有公开无参构造函数的具体类型。");
+        IWorkflowNodeModel Create() => (IWorkflowNodeModel)Activator.CreateInstance(modelType)!;
+        var sample = Create();
+        if (!string.Equals(attribute.Key, sample.NodeType, StringComparison.Ordinal))
+            throw new InvalidOperationException($"节点 {modelType.FullName} 的 Attribute Key 与 NodeType 不一致。");
+
+        var ports = new List<WorkflowPortDescriptor>();
+        if (attribute.HasInput)
+            ports.Add(WorkflowPortDescriptor.Input(maxConnections: int.MaxValue));
+        var outputs = modelType.GetCustomAttributes<WorkflowOutputPortsAttribute>(inherit: false).ToArray();
+        if (outputs.Length == 0)
+            ports.Add(WorkflowPortDescriptor.Output());
+        foreach (var output in outputs)
+        {
+            ports.AddRange(output.Keys.Select(key => WorkflowPortDescriptor.Output(key, output.MaxConnections)));
+            if (output.FailurePort)
+                ports.Add(WorkflowPortDescriptor.Failure());
+        }
+
+        return new WorkflowNodeDescriptor(
+            attribute.Key,
+            attribute.Version,
+            modelType,
+            Create,
+            attribute.DisplayName,
+            attribute.Category,
+            attribute.Description,
+            ports,
+            attribute.OutputType)
+        {
+            Icon = attribute.Icon
+        };
+    }
+
     private static WorkflowNodeDescriptor CreateCore<TNode>(
         Type? outputType,
         int nodeVersion,
@@ -277,6 +324,22 @@ public sealed class WorkflowNodeCatalog
         params WorkflowPortDescriptor[] ports)
         where TNode : class, IWorkflowNodeModel, new() =>
         Register(WorkflowNodeDescriptor.Create<TNode>(nodeVersion, ports));
+
+    /// <summary>
+    /// 注册程序集中全部带 <see cref="WorkflowNodeAttribute"/> 的公开节点模型（R7-a：启动时自动发现）。
+    /// </summary>
+    /// <param name="assembly">节点所在程序集。</param>
+    /// <returns>当前目录实例，便于链式注册。</returns>
+    /// <exception cref="InvalidOperationException">某个节点特性不完整，或类型键与已注册的重复；说明中指明节点。</exception>
+    public WorkflowNodeCatalog RegisterAssembly(Assembly assembly)
+    {
+        Guard.NotNull(assembly);
+        foreach (var type in assembly.GetExportedTypes()
+                     .Where(type => type.IsClass && !type.IsAbstract && type.GetCustomAttribute<WorkflowNodeAttribute>() is not null)
+                     .OrderBy(type => type.FullName, StringComparer.Ordinal))
+            Register(WorkflowNodeDescriptor.FromType(type));
+        return this;
+    }
 
     /// <summary>获取指定节点类型的描述。</summary>
     /// <param name="nodeType">要查找的稳定节点类型键。</param>

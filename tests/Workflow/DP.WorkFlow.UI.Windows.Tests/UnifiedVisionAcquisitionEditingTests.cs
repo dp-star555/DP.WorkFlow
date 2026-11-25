@@ -18,12 +18,12 @@ public sealed class UnifiedVisionAcquisitionEditingTests
         Assert.Equal("Vision.AcquireFrame", Assert.Single(acquisition).NodeType);
         Assert.Equal("图像获取", acquisition[0].DisplayName);
         var document = new WorkflowDocument { EntryNodeId = "file" };
-        document.CanvasProjection.Nodes.Add(new() { Node = new AcquireVisionImageNodeModel { Id = "file", FilePath = "preserve.png" } });
-        document.CanvasProjection.Nodes.Add(new() { Node = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.Folder, Id = "folder", FolderPath = "preserve-folder", Loop = true } });
-        document.CanvasProjection.Nodes.Add(new() { Node = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.AreaCamera, Id = "area", Source = new("Area") } });
-        document.CanvasProjection.Nodes.Add(new() { Node = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.LineCamera, Id = "line", Source = new("Line") } });
+        document.Nodes.Add(new() { Node = new AcquireVisionImageNodeModel { Id = "file", FilePath = "preserve.png" } });
+        document.Nodes.Add(new() { Node = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.Folder, Id = "folder", FolderPath = "preserve-folder", Loop = true } });
+        document.Nodes.Add(new() { Node = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.AreaCamera, Id = "area", Source = new("Area") } });
+        document.Nodes.Add(new() { Node = new AcquireVisionImageNodeModel { SourceMode = EWorkflowVisionImageSource.LineCamera, Id = "line", Source = new("Line") } });
         var store = new WorkflowDocumentJsonStore(nodes);
-        var restored = store.Deserialize(store.Serialize(document)).Document.CanvasProjection.Nodes
+        var restored = store.Deserialize(store.Serialize(document)).Document.Nodes
             .Select(item => Assert.IsType<AcquireVisionImageNodeModel>(item.Node)).ToArray();
         Assert.Equal("preserve.png", restored[0].FilePath);
         Assert.True(restored[1].Loop); Assert.Equal(EWorkflowVisionImageSource.Folder, restored[1].SourceMode);
@@ -115,7 +115,7 @@ public sealed class UnifiedVisionAcquisitionEditingTests
         Func<IWorkflowNodeModel, IReadOnlyList<WorkflowPropertyEntry>> Parameters) Create()
     {
         var node = new AcquireVisionImageNodeModel { Id = "image", FilePath = "preserve.png", FolderPath = "preserve-folder" };
-        var document = new WorkflowDocument { EntryNodeId = node.Id }; document.CanvasProjection.Nodes.Add(new() { Node = node });
+        var document = new WorkflowDocument { EntryNodeId = node.Id }; document.Nodes.Add(new() { Node = node });
         var session = new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterImageNodes()) { SelectedNodeId = node.Id };
         var sourceChoices = WorkflowVisionSourceChoices.CreateProvider(new WorkflowVisionSourceCatalog(
         [

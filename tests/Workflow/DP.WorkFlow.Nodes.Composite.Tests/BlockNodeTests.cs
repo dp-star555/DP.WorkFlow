@@ -27,6 +27,7 @@ public sealed class BlockNodeTests
         engine.NodeCompleted += node => completed.Add(node.Id);
 
         var result = await engine.RunAsync();
+        await engine.FlushNotificationsAsync(); // 回调在后台送达（R1-04）。
         var snapshot = engine.GetRuntimeSnapshot();
 
         Assert.True(result.Success, result.Message);
@@ -95,9 +96,9 @@ public sealed class BlockNodeTests
         var map = new ActionNodeModel { Id = "Map", Title = "映射", FunctionKey = "Map" };
         var child = new WorkflowDocument { Name = "Child", EntryNodeId = childStart.Id };
         foreach (var node in new IWorkflowNodeModel[] { childStart, gate, map })
-            child.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
-        child.CanvasProjection.Connections.Add(Connect(childStart.Id, gate.Id));
-        child.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+            child.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        child.Connections.Add(Connect(childStart.Id, gate.Id));
+        child.Connections.Add(new WorkflowConnectionModel
         {
             FromNodeId = gate.Id, FromPort = WorkflowPorts.True, ToNodeId = map.Id, ToPort = WorkflowPorts.Input
         });
@@ -110,9 +111,9 @@ public sealed class BlockNodeTests
         var producer = new ActionNodeModel { Id = "Producer", Title = "产生", FunctionKey = "Produce" };
         var parent = new WorkflowDocument { Name = "Parent", EntryNodeId = parentStart.Id };
         foreach (var node in new IWorkflowNodeModel[] { parentStart, producer, block })
-            parent.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
-        parent.CanvasProjection.Connections.Add(Connect(parentStart.Id, producer.Id));
-        parent.CanvasProjection.Connections.Add(Connect(producer.Id, block.Id));
+            parent.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        parent.Connections.Add(Connect(parentStart.Id, producer.Id));
+        parent.Connections.Add(Connect(producer.Id, block.Id));
         var catalog = CreateCatalog();
         var definition = new WorkflowCompiler(catalog).Compile(parent);
         var handlers = new WorkflowNodeHandlerCatalog()
@@ -239,14 +240,14 @@ public sealed class BlockNodeTests
             }
         };
         var canvasDocument = new WorkflowDocument { Name = "Parent" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = block, X = 12, Y = 34 });
         canvasDocument.EntryNodeId = block.Id;
         var definition = new WorkflowCompiler(catalogs).Compile(canvasDocument);
         var store = new WorkflowDocumentJsonStore(catalogs);
 
         var json = store.Serialize(canvasDocument);
-        var loaded = store.Deserialize(json).Canvas;
+        var loaded = store.Deserialize(json).Document;
 
         Assert.Equal("ChildStart", definition.GetChildPlanOrThrow(block.Id).EntryNodeId);
         var loadedBlock = Assert.IsType<BlockNodeModel>(Assert.Single(loaded.Nodes).Node);
@@ -281,7 +282,7 @@ public sealed class BlockNodeTests
         configure?.Invoke(block);
         var end = new EndNodeModel { Id = "ParentEnd", Title = "结束" };
         var parentDocument = new WorkflowDocument { Name = "Parent" };
-        var parent = parentDocument.CanvasProjection;
+        var parent = parentDocument;
         parent.Nodes.Add(new WorkflowCanvasNode { Node = block });
         parent.Nodes.Add(new WorkflowCanvasNode { Node = end });
         parent.Connections.Add(new WorkflowConnectionModel
@@ -312,7 +313,7 @@ public sealed class BlockNodeTests
         var start = new StartNodeModel { Id = "ChildStart", Title = "开始" };
         var end = new EndNodeModel { Id = "ChildEnd", Title = "结束" };
         var canvasDocument = new WorkflowDocument { Name = "Child" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvasDocument.EntryNodeId = start.Id;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = start });
         foreach (var action in actions)

@@ -46,7 +46,7 @@ public static class WorkflowRuntimeText
         {
             "NodeStarted" => WorkflowUiTextKeys.TraceStepNodeStarted,
             "NodeCompleted" => WorkflowUiTextKeys.TraceStepNodeCompleted,
-            "NodeFailed" => WorkflowUiTextKeys.TraceStepNodeFailed,
+            "NodeFailed" or "NodeInterrupted" => WorkflowUiTextKeys.TraceStepNodeFailed,
             "ParallelMerged" => WorkflowUiTextKeys.TraceStepParallelMerged,
             "ScriptOutput" => WorkflowUiTextKeys.TraceStepScriptOutput,
             _ => (TextKey?)null

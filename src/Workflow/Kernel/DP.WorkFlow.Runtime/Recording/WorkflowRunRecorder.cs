@@ -114,6 +114,9 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
         Guard.NotNull(@event);
         WorkflowRunEvent recorded;
         bool flush;
+        // 先编码再分配序号：编码失败时异常直接抛给调用方（引擎按记录降级处理），不占用序号，
+        // 同一运行的事件序号因此始终连续，不会出现"序号已分配但事件丢失"的空洞。
+        var payload = _encoder.Encode(@event.Data, @event.Message);
         lock (_recordSync)
         {
             if (_stopping)
@@ -123,7 +126,7 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
             recorded = new WorkflowRunEvent(
                 _runId,
                 sequence,
-                DateTimeOffset.UtcNow,
+                WorkflowClock.UtcNow,
                 @event.Category,
                 @event.EventType,
                 writeMode,
@@ -134,10 +137,12 @@ public sealed class WorkflowRunRecorder : IWorkflowRunRecorder
                 @event.OperationId,
                 @event.RecoveryCaseId,
                 SchemaVersion,
-                _encoder.Encode(@event.Data, @event.Message),
+                payload,
                 _parentRunId,
-                _parentExecution);
+                _parentExecution,
+                @event.Parents);
             AppendToWindow(recorded);
+            WorkflowRunEventProbe.Publish(recorded);
             _recordedCount++;
 
             flush = writeMode == WorkflowEventWriteMode.FlushRequested;

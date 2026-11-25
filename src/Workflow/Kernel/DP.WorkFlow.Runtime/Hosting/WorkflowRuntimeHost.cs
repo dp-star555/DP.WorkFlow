@@ -19,8 +19,9 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
     private readonly HashSet<string> _externalHoldReasons = new(StringComparer.Ordinal);
     private bool _manualPauseRequested;
     private bool _disposed;
-    private Action<WorkflowRuntimeSnapshot>? _snapshotChanged;
-    private bool _engineSnapshotSubscribed;
+    private WorkflowEngine? _stateSubscribedEngine;
+    // 引擎换新或清除的次数；与引擎自身的变化计数合成 ChangeVersion。
+    private long _engineGeneration;
 
     /// <summary>初始化负责定义编译和引擎生命周期的运行宿主。</summary>
     /// <param name="nodeCatalog">编译期使用的节点类型和端口目录。</param>
@@ -62,31 +63,39 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
     /// <summary>引擎实例变化时发生。</summary>
     public event Action<WorkflowEngine>? EngineChanged;
 
-    /// <summary>
-    /// 运行快照变化时发生。
-    /// </summary>
-    /// <remarks>
-    /// AR-17：引擎只在**真的有人订阅**时才构造快照，所以宿主也只在自身存在订阅者时才向引擎订阅。
-    /// 否则宿主会永久持有一个空转的引擎订阅，使"无订阅者不构造"在最常见的宿主路径上失效。
-    /// 用自定义访问器（而不是字段式事件）是为了让运行中订阅/退订也能立即生效。
-    /// </remarks>
-    public event Action<WorkflowRuntimeSnapshot>? SnapshotChanged
+    /// <inheritdoc />
+    public WorkflowNoticeBoard Notices => _executionOptions.Notices;
+
+    /// <summary>每次创建引擎时使用的执行选项（流程管理接管宿主时在这里装上停点处理方）。</summary>
+    internal WorkflowExecutionOptions ExecutionOptions => _executionOptions;
+
+    /// <summary>当前配置的执行计划；没有配置时为空。</summary>
+    public WorkflowExecutionPlan? Plan
     {
-        add
+        get
         {
             lock (_syncRoot)
-            {
-                _snapshotChanged += value;
-                UpdateEngineSnapshotSubscriptionLocked();
-            }
+                return _boundPlan?.Plan;
         }
-        remove
+    }
+
+    /// <inheritdoc />
+    public event Action<E_WorkflowExecutionState>? StateChanged;
+
+    /// <inheritdoc />
+    public long ChangeVersion
+    {
+        get
         {
+            long generation;
+            WorkflowEngine? engine;
             lock (_syncRoot)
             {
-                _snapshotChanged -= value;
-                UpdateEngineSnapshotSubscriptionLocked();
+                generation = _engineGeneration;
+                engine = _engine;
             }
+            // 只用于"变没变"的比较：换引擎时高位变化，同一引擎内低位递增。
+            return unchecked((generation << 40) + (engine?.ChangeVersion ?? 0));
         }
     }
 
@@ -108,7 +117,6 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
         lock (_syncRoot)
         {
             EnsureNotRunningLocked();
-            DetachEngineLocked();
             _boundPlan = boundPlan;
             _context = context ?? new WorkflowContext();
             _lastRunResult = null;
@@ -174,8 +182,6 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
             _runCancellation?.Dispose();
             _runCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _lastRunResult = null;
-            // 重新 Configure 会解除快照订阅；继续运行的仍是这个引擎，界面需要继续收到它的快照。
-            UpdateEngineSnapshotSubscriptionLocked();
             var engine = _engine;
             var runToken = _runCancellation.Token;
             _runTask = Task.Run(() => RunNodeCoreAsync(engine, boundPlan, nodeId, runToken));
@@ -429,40 +435,29 @@ public sealed class WorkflowRuntimeHost : IWorkflowRuntimeHost, IDisposable
             yield return node;
     }
 
-    /// <summary>接管本次运行新建的引擎，并按当前订阅者数量决定是否接收它的快照。</summary>
+    /// <summary>接管本次运行新建的引擎，并转发它的状态变化。</summary>
     /// <param name="engine">本次运行新创建的引擎。</param>
     private void AttachEngineLocked(WorkflowEngine engine)
     {
+        DetachEngineLocked();
         _engine = engine;
-        UpdateEngineSnapshotSubscriptionLocked();
+        _engineGeneration++;
+        engine.StateChanged += OnEngineStateChanged;
+        _stateSubscribedEngine = engine;
     }
 
     private void DetachEngineLocked()
     {
-        if (_engine is not null && _engineSnapshotSubscribed)
+        if (_stateSubscribedEngine is not null)
         {
-            _engine.SnapshotChanged -= OnEngineSnapshotChanged;
-            _engineSnapshotSubscribed = false;
+            _stateSubscribedEngine.StateChanged -= OnEngineStateChanged;
+            _stateSubscribedEngine = null;
         }
+        _engineGeneration++;
     }
 
-    /// <summary>把"宿主是否有订阅者"同步到"引擎是否被订阅"；两个方向都必须幂等。</summary>
-    private void UpdateEngineSnapshotSubscriptionLocked()
-    {
-        if (_engine is null)
-            return;
-        var shouldSubscribe = _snapshotChanged is not null;
-        if (shouldSubscribe == _engineSnapshotSubscribed)
-            return;
-        if (shouldSubscribe)
-            _engine.SnapshotChanged += OnEngineSnapshotChanged;
-        else
-            _engine.SnapshotChanged -= OnEngineSnapshotChanged;
-        _engineSnapshotSubscribed = shouldSubscribe;
-    }
-
-    private void OnEngineSnapshotChanged(WorkflowRuntimeSnapshot snapshot) =>
-        SafeInvoke(_snapshotChanged, snapshot);
+    private void OnEngineStateChanged(E_WorkflowExecutionState state) =>
+        SafeInvoke(StateChanged, state);
 
     private void EnsureNotRunningLocked()
     {

@@ -106,10 +106,10 @@ public sealed class WorkflowSubWorkflowRunCommandsTests
     private static (WorkflowDesignerSession Session, LoopBlockNodeModel Loop) RootSession()
     {
         var child = new WorkflowDocument { Name = "Child", EntryNodeId = "ChildStart" };
-        child.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new StartNodeModel { Id = "ChildStart" } });
+        child.Nodes.Add(new WorkflowCanvasNode { Node = new StartNodeModel { Id = "ChildStart" } });
         var loop = new LoopBlockNodeModel { Id = "Loop", Title = "循环", SubDocument = child };
         var document = new WorkflowDocument { Name = "Root" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = loop });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = loop });
         return (new WorkflowDesignerSession(document, new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes()), loop);
     }
 

@@ -16,7 +16,7 @@ public sealed class DecisionNodeTests
         var trueAction = new ActionNodeModel { Id = "TrueAction", Title = "真分支", FunctionKey = "TrueAction" };
         var falseAction = new ActionNodeModel { Id = "FalseAction", Title = "假分支", FunctionKey = "FalseAction" };
         var canvasDocument = new WorkflowDocument { Name = "判断测试" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         foreach (var node in new IWorkflowNodeModel[] { producer, decision, trueAction, falseAction })
             canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvas.Connections.Add(Connect("Read", WorkflowPorts.Success, "Decision"));

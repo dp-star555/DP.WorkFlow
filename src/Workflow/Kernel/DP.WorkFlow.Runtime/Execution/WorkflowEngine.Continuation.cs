@@ -41,10 +41,10 @@ public sealed partial class WorkflowEngine
         var title = string.IsNullOrWhiteSpace(node.Title) ? node.Id : node.Title;
         try
         {
-            await WaitForAdmissionAsync(cancellationToken).ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
             // 以本次运行根 Token 的身份执行：根路径上已提交的上游输出对它可见，与在主流程中执行该节点时一致。
-            var token = new ExecutionToken(_rootTokenId, Array.Empty<long>(), Array.Empty<long>());
+            await WaitForAdmissionAsync(new ExecutionToken(0, Array.Empty<long>(), Array.Empty<long>(), this, null, true, CurrentStopEpoch), cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            var token = new ExecutionToken(_rootTokenId, Array.Empty<long>(), Array.Empty<long>(), this, null, isCanvasRoot: true, CurrentStopEpoch);
             await ExecuteNodeAsync(node, token, cancellationToken).ConfigureAwait(false);
             var message = $"节点 {title} 单独运行完成。";
             SetTerminalState(E_WorkflowExecutionState.Completed, message);
@@ -67,7 +67,6 @@ public sealed partial class WorkflowEngine
         }
         finally
         {
-            await DisposePendingOperationsAsync().ConfigureAwait(false);
             E_WorkflowExecutionState terminalState;
             string? terminalMessage;
             lock (_stateSync)
@@ -101,8 +100,6 @@ public sealed partial class WorkflowEngine
             _currentRecovery = null;
             _activeNodeIds.Clear();
             _activeTokens.Clear();
-            // 该节点上一次子运行的各圈轨迹被这次运行取代，圈序号重新从 1 开始。
-            _childTraceHistory.Remove(node.Id);
             _runStopwatch = Stopwatch.StartNew();
             if (_parentRunId is null)
                 _manualPauseRequested = false;

@@ -2,114 +2,120 @@ namespace DP.WorkFlow;
 
 public sealed partial class WorkflowEngine
 {
+    /// <summary>
+    /// 运行一次子画布（子流程块）：在同一运行内开一个画布作用域（R3-a），结束时关闭作用域并按输出映射交出结果。
+    /// </summary>
     private Task<WorkflowRunResult> RunChildWorkflowAsync(
         IWorkflowNodeModel parentNode,
         WorkflowExecutionIdentity parentExecution,
-        WorkflowExecutionPlan childDefinition,
+        ExecutionToken parentToken,
+        WorkflowContext childContext,
+        CancellationToken cancellationToken) =>
+        RunCanvasScopeAsync(parentNode, parentExecution, parentToken, childContext, cancellationToken);
+
+    private async Task<WorkflowRunResult> RunCanvasScopeAsync(
+        IWorkflowNodeModel parentNode,
+        WorkflowExecutionIdentity parentExecution,
+        ExecutionToken parentToken,
         WorkflowContext childContext,
         CancellationToken cancellationToken)
     {
-        return RunTrackedChildAsync(parentNode, parentExecution, _boundPlan.GetChildPlan(parentNode.Id),
-            childContext, _options, null, false, cancellationToken, adoptOutputs: true);
+        var key = ChildKey(parentNode, parentExecution);
+        var scope = CreateCanvasScope(parentNode, parentToken, childContext, cycle: 0);
+        RegisterActiveScope(key, parentNode, parentExecution, scope, static () => 0);
+        try
+        {
+            var result = await scope.RunAsync(cancellationToken).ConfigureAwait(false);
+            lock (_stateSync)
+            {
+                if (_activeChildWorkflows.TryGetValue(key, out var active))
+                    active.LastMessage = result.Message;
+            }
+            // 子画布的映射输出可能引用其节点输出（例如图像帧），资源随父节点本次输出的生命周期释放（R2-e）。
+            AdoptChildOutputProjections(parentNode.Id, parentExecution.TokenId,
+                scope.DetachOutputProjections(result.Success ? GetReferencedChildOutputNodes(parentNode) : null), result.Success);
+            return result;
+        }
+        finally
+        {
+            RetireActiveChild(key, parentNode.Id, scope);
+        }
     }
 
-    /// <summary>为循环块打开可反复运行同一子计划的会话：子引擎只创建一次，每圈调用一次 RunAsync。</summary>
+    /// <summary>为循环块打开可反复运行同一子画布的会话：作用域对象只创建一次，每圈开一次画布作用域。</summary>
     /// <param name="parentNode">拥有子画布的父节点。</param>
     /// <param name="parentExecution">父节点本次执行身份。</param>
+    /// <param name="parentToken">父画布上执行循环块的令牌。</param>
     /// <param name="childContext">整个会话期间复用的子上下文。</param>
     /// <returns>调用方负责释放的会话。</returns>
     private IWorkflowChildWorkflowSession OpenChildWorkflowSession(
         IWorkflowNodeModel parentNode,
         WorkflowExecutionIdentity parentExecution,
+        ExecutionToken parentToken,
         WorkflowContext childContext)
     {
-        var key = $"{parentNode.Id}:{parentExecution.TokenId}:{parentExecution.NodeExecutionCount}";
-        var childEngine = new WorkflowEngine(_boundPlan.GetChildPlan(parentNode.Id), childContext, _options);
-        childEngine.PlanPath = WorkflowRunPreparationPlanner.ChildPath(PlanPath, parentNode.Id);
-        childEngine.BindingScopeId = BindingScopeId;
-        childEngine._deferRecordingCompletion = true;
-        childEngine.SetParentContext(_runId, parentExecution);
-        var traceSource = new ChildTraceSource(parentNode.Id, childEngine);
-        var session = new ChildWorkflowSession(this, parentNode, parentExecution, key, childEngine, traceSource);
-
-        bool isPaused;
-        string[] holdReasons;
-        lock (_stateSync)
-        {
-            // 整个会话期间保持登记，两圈之间到达的暂停、Hold 同样传给子引擎。
-            _activeChildEngines.Add(key, childEngine);
-            _childTraceSources.Add(key, traceSource);
-            isPaused = _manualPauseRequested;
-            holdReasons = _externalHoldReasons.ToArray();
-        }
-        childEngine.SnapshotChanged += session.OnSnapshotChanged;
-        if (isPaused)
-            childEngine.Pause();
-        foreach (var holdReason in holdReasons)
-            childEngine.AddExternalHold(holdReason);
+        var key = ChildKey(parentNode, parentExecution);
+        var scope = CreateCanvasScope(parentNode, parentToken, childContext, cycle: 0);
+        var session = new ChildWorkflowSession(this, parentNode, parentExecution, key, scope);
+        RegisterActiveScope(key, parentNode, parentExecution, scope, session.CurrentCycle);
         return session;
     }
 
-    private void UpdateChildWorkflowSnapshot(
+    private static string ChildKey(IWorkflowNodeModel parentNode, WorkflowExecutionIdentity parentExecution) =>
+        $"{parentNode.Id}:{parentExecution.TokenId}:{parentExecution.NodeExecutionCount}";
+
+    /// <summary>创建子画布作用域：本画布的计划、上下文和节点状态独立，运行身份、记录、暂停与令牌编号用根运行的。</summary>
+    private WorkflowEngine CreateCanvasScope(IWorkflowNodeModel parentNode, ExecutionToken parentToken, WorkflowContext childContext, int cycle)
+    {
+        var scope = new WorkflowEngine(_boundPlan.GetChildPlan(parentNode.Id), childContext, _options)
+        {
+            PlanPath = WorkflowRunPreparationPlanner.ChildPath(PlanPath, parentNode.Id),
+            BindingScopeId = BindingScopeId
+        };
+        scope._scopeRoot = Root;
+        scope._enclosingToken = parentToken;
+        scope._scopeParents = _scopeParents.Append(new WorkflowTraceParent(parentNode.Id, cycle)).ToArray();
+        return scope;
+    }
+
+    private void RegisterActiveScope(
         string key,
         IWorkflowNodeModel parentNode,
         WorkflowExecutionIdentity parentExecution,
-        WorkflowRuntimeSnapshot snapshot,
-        int cycle = 0)
+        WorkflowEngine scope,
+        Func<int> cycle)
     {
         lock (_stateSync)
-            _activeChildWorkflows[key] = new WorkflowChildRuntimeInfo(parentNode.Id, parentExecution, snapshot, cycle);
+            _activeChildWorkflows[key] = new ActiveChildWorkflow(key, parentNode.Id, parentExecution, scope, cycle);
+        Volatile.Write(ref scope._changeOwner, this);
         PublishSnapshot();
     }
 
     /// <summary>
-    /// 子运行一圈（或一次）结束后，把它的轨迹按父节点有界保留，并停止实时合并该来源；
-    /// 运行监控因此能看到已结束各圈的节点开始、完成、耗时，而不是只有父节点的开始。
+    /// 一个正在运行的子画布（或独立的处理流程）的登记项。父快照需要它时才取快照（R1-04），不逐次推送。
     /// </summary>
-    private void ArchiveChildTrace(ChildTraceSource source)
+    private sealed class ActiveChildWorkflow(
+        string key,
+        string parentNodeId,
+        WorkflowExecutionIdentity parentExecution,
+        WorkflowEngine engine,
+        Func<int> cycle)
     {
-        IReadOnlyList<WorkflowTraceEntry> entries;
-        Guid? runId = null;
-        try
-        {
-            var batch = source.Engine.GetTraceBatch(includeChildRuns: true);
-            entries = batch.Entries;
-            runId = batch.RunId;
-        }
-        catch (Exception exception)
-        {
-            // 轨迹只供观察，归档失败不改变子运行结果。
-            ReportRecordingDegraded($"归档子运行轨迹失败：{exception.Message}");
-            entries = Array.Empty<WorkflowTraceEntry>();
-        }
-        lock (_stateSync)
-        {
-            source.ArchivedRunId = runId;
-            if (!_childTraceHistory.TryGetValue(source.ParentNodeId, out var history))
-                _childTraceHistory[source.ParentNodeId] = history = new Queue<WorkflowTraceEntry>();
-            foreach (var entry in entries)
-            {
-                history.Enqueue(TagChildTrace(entry, source.ParentNodeId, source.Cycle));
-                while (history.Count > _options.MaxTraceEntries)
-                    history.Dequeue();
-            }
-        }
+        public string Key { get; } = key;
+        public WorkflowEngine Engine { get; } = engine;
+
+        /// <summary>子运行结束后最后一次的说明（成功、失败原因）；运行中为空。</summary>
+        public string? LastMessage { get; set; }
+
+        public WorkflowChildRuntimeInfo Capture() =>
+            new(parentNodeId, parentExecution, Engine.GetRuntimeSnapshot(LastMessage), cycle());
     }
 
-    private static WorkflowTraceEntry TagChildTrace(WorkflowTraceEntry entry, string parentNodeId, int cycle) =>
-        entry with
-        {
-            Parents = Array.AsReadOnly(
-                new[] { new WorkflowTraceParent(parentNodeId, cycle) }
-                    .Concat(entry.Parents ?? Array.Empty<WorkflowTraceParent>())
-                    .ToArray())
-        };
-
     /// <summary>
-    /// 查找本运行或其子运行（正在运行的，或每个父节点最近一次完成的）中节点的最近有效输出。
+    /// 查找本运行或其子画布（正在运行的，或每个父节点最近一次完成的）中节点的最近有效输出。
     /// 子画布按自身子快照的运行标识查询，因此循环块、子流程内部节点的结果也能在界面上实时查看。
     /// </summary>
-    /// <param name="runId">节点所属运行的标识。</param>
+    /// <param name="runId">节点所属运行（或子画布作用域）的标识。</param>
     /// <param name="nodeId">节点 ID。</param>
     /// <returns>最近一次未失效的输出；该运行已不在本引擎可见范围内时为空。</returns>
     public WorkflowNodeOutput? FindLatestNodeOutput(Guid runId, string nodeId)
@@ -119,7 +125,8 @@ public sealed partial class WorkflowEngine
             return RunState.TryGetLatestNodeOutput(nodeId, out var output) ? output : null;
         WorkflowEngine[] children;
         lock (_stateSync)
-            children = _activeChildEngines.Values.Concat(_latestChildEngineByParentNode.Values).Distinct().ToArray();
+            children = _activeChildWorkflows.Values.Select(child => child.Engine)
+                .Concat(_latestChildEngineByParentNode.Values).Distinct().ToArray();
         foreach (var child in children)
         {
             if (child.FindLatestNodeOutput(runId, nodeId) is { } found)
@@ -128,161 +135,85 @@ public sealed partial class WorkflowEngine
         return null;
     }
 
-    /// <summary>
-    /// 一个仍在登记的子引擎的轨迹来源。子引擎当前运行的轨迹已归档（<see cref="ArchivedRunId"/>）时不再实时合并，
-    /// 循环块两圈之间因此不会把上一圈重复显示为下一圈。
-    /// </summary>
-    private sealed class ChildTraceSource(string parentNodeId, WorkflowEngine engine)
-    {
-        public string ParentNodeId { get; } = parentNodeId;
-        public WorkflowEngine Engine { get; } = engine;
-        public int Cycle { get; set; }
-        public Guid? ArchivedRunId { get; set; }
-    }
-
-    /// <summary>循环块的子流程会话；释放时结束登记，并等待最后一圈的运行记录收尾。</summary>
+    /// <summary>循环块的子画布会话；每圈开一次画布作用域，释放时结束登记。</summary>
     private sealed class ChildWorkflowSession(
         WorkflowEngine owner,
         IWorkflowNodeModel parentNode,
         WorkflowExecutionIdentity parentExecution,
         string key,
-        WorkflowEngine engine,
-        ChildTraceSource trace) : IWorkflowChildWorkflowSession
+        WorkflowEngine scope) : IWorkflowChildWorkflowSession
     {
         private bool _keepLastCycleOutputs;
         private bool _disposed;
         private int _cycle;
 
-        internal void OnSnapshotChanged(WorkflowRuntimeSnapshot snapshot) =>
-            owner.UpdateChildWorkflowSnapshot(key, parentNode, parentExecution, snapshot, Volatile.Read(ref _cycle));
+        internal Func<int> CurrentCycle => () => Volatile.Read(ref _cycle);
 
         public async Task<WorkflowRunResult> RunCycleAsync(CancellationToken cancellationToken)
         {
             Guard.NotDisposed(_disposed, this);
             // 圈与圈之间不传递数据，上一圈剩余输出不会再被读取，开始新一圈前释放其资源。
-            owner.RetireChildOutputProjections(parentNode.Id, engine.DetachOutputProjections());
+            owner.RetireChildOutputProjections(parentNode.Id, scope.DetachOutputProjections());
             _keepLastCycleOutputs = false;
             var cycle = Interlocked.Increment(ref _cycle);
+            // 本圈的事件标明圈序号：位置写作"循环块@第 n 圈 / 节点"。
+            var parents = scope._scopeParents.ToArray();
+            parents[^1] = new WorkflowTraceParent(parentNode.Id, cycle);
+            scope._scopeParents = parents;
             lock (owner._stateSync)
-                trace.Cycle = cycle;
-            try
             {
-                var result = await engine.RunAsync(cancellationToken).ConfigureAwait(false);
-                OnSnapshotChanged(engine.GetRuntimeSnapshot(result.Message));
-                return result;
+                if (owner._activeChildWorkflows.TryGetValue(key, out var running))
+                    running.LastMessage = null;
             }
-            finally
+            var result = await scope.RunAsync(cancellationToken).ConfigureAwait(false);
+            lock (owner._stateSync)
             {
-                owner.ArchiveChildTrace(trace);
+                if (owner._activeChildWorkflows.TryGetValue(key, out var active))
+                    active.LastMessage = result.Message;
             }
+            owner.PublishSnapshot();
+            return result;
         }
 
         public void KeepLastCycleOutputs() => _keepLastCycleOutputs = true;
 
-        public async ValueTask DisposeAsync()
+        public ValueTask DisposeAsync()
         {
             if (_disposed)
-                return;
+                return default;
             _disposed = true;
             try
             {
                 owner.AdoptChildOutputProjections(parentNode.Id, parentExecution.TokenId,
-                    engine.DetachOutputProjections(), _keepLastCycleOutputs);
-                await engine._pendingRecordingCompletion.ConfigureAwait(false);
+                    scope.DetachOutputProjections(_keepLastCycleOutputs ? GetReferencedChildOutputNodes(parentNode) : null), _keepLastCycleOutputs);
             }
             finally
             {
-                engine.SnapshotChanged -= OnSnapshotChanged;
-                lock (owner._stateSync)
-                {
-                    owner._activeChildEngines.Remove(key);
-                    owner._childTraceSources.Remove(key);
-                    owner._latestChildEngineByParentNode[parentNode.Id] = engine;
-                    if (owner._activeChildWorkflows.Remove(key, out var completed))
-                        owner._latestChildWorkflowByParentNode[parentNode.Id] = completed;
-                }
-                owner.PublishSnapshot();
+                owner.RetireActiveChild(key, parentNode.Id, scope);
             }
+            return default;
         }
     }
 
-    private async Task<WorkflowRunResult> RunTrackedChildAsync(
-        IWorkflowNodeModel parentNode, WorkflowExecutionIdentity parentExecution,
-        WorkflowBoundExecutionPlan boundPlan, WorkflowContext childContext,
-        WorkflowExecutionOptions options, string? excludedHold, bool prepare,
-        CancellationToken cancellationToken, bool adoptOutputs = false)
+    /// <summary>
+    /// 子运行结束：从活动集合移除，并按父节点覆盖保存最后一份快照（只在这里构造一次）；更早历史只进入事件流。
+    /// </summary>
+    private void RetireActiveChild(string key, string parentNodeId, WorkflowEngine childEngine)
     {
-        var key = $"{parentNode.Id}:{parentExecution.TokenId}:{parentExecution.NodeExecutionCount}"
-            + (excludedHold is null ? string.Empty : ":Recovery");
-        var childEngine = new WorkflowEngine(boundPlan, childContext, options);
-        childEngine.PlanPath = WorkflowRunPreparationPlanner.ChildPath(PlanPath, parentNode.Id);
-        childEngine.BindingScopeId = prepare ? Guid.NewGuid() : BindingScopeId;
-        childEngine.SetParentContext(_runId, parentExecution);
-        void UpdateChildSnapshot(WorkflowRuntimeSnapshot snapshot)
-        {
-            lock (_stateSync)
-                _activeChildWorkflows[key] = new WorkflowChildRuntimeInfo(parentNode.Id, parentExecution, snapshot);
-            PublishSnapshot();
-        }
-
-        var traceSource = new ChildTraceSource(parentNode.Id, childEngine);
-        bool isPaused;
-        string[] holdReasons;
+        ActiveChildWorkflow? completed;
         lock (_stateSync)
         {
-            _activeChildEngines.Add(key, childEngine);
-            _childTraceSources[key] = traceSource;
-            isPaused = _manualPauseRequested;
-            holdReasons = _externalHoldReasons.Where(reason => !string.Equals(reason, excludedHold, StringComparison.Ordinal)).ToArray();
+            _latestChildEngineByParentNode[parentNodeId] = childEngine;
+            _activeChildWorkflows.Remove(key, out completed);
         }
-        childEngine.SnapshotChanged += UpdateChildSnapshot;
-        if (isPaused)
-            childEngine.Pause();
-        foreach (var holdReason in holdReasons)
-            childEngine.AddExternalHold(holdReason);
-
-        IWorkflowPreparedRun? prepared = null;
-        try
+        if (completed is not null)
         {
-            if (prepare)
-            {
-                WorkflowRuntimeCapabilityValidator.Validate(boundPlan, childContext.Services);
-                var preparationContext = new WorkflowRunPreparationContext(
-                    EnumerateRecoveryNodes(boundPlan.Plan).ToArray(), WorkflowRunScopeKind.Nested, parentNode.Id, childContext.Services,
-                    WorkflowRunPreparationPlanner.Enumerate(boundPlan.Plan, childEngine.PlanPath), childEngine.BindingScopeId);
-                if (childContext.Services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowTransactionalRunPreparationService transactional)
-                    prepared = await transactional.PrepareRunAsync(preparationContext, cancellationToken).ConfigureAwait(false);
-                else if (childContext.Services.GetService(typeof(IWorkflowRunPreparationService)) is IWorkflowRunPreparationService preparation)
-                    await preparation.PrepareAsync(preparationContext, cancellationToken).ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
-                prepared?.Commit();
-            }
-            var result = await childEngine.RunAsync(cancellationToken).ConfigureAwait(false);
-            UpdateChildSnapshot(childEngine.GetRuntimeSnapshot(result.Message));
-            // 子运行的映射输出可能引用其节点输出（例如图像帧），资源随父节点本次输出的生命周期释放。
-            if (adoptOutputs)
-                AdoptChildOutputProjections(parentNode.Id, parentExecution.TokenId,
-                    childEngine.DetachOutputProjections(), result.Success);
-            return result;
+            // 作用域有自己的锁，在本引擎锁外取快照。
+            var info = completed.Capture();
+            lock (_stateSync)
+                _latestChildWorkflowByParentNode[parentNodeId] = info;
         }
-        finally
-        {
-            try { if (prepared is not null) await prepared.DisposeAsync().ConfigureAwait(false); }
-            finally
-            {
-                childEngine.SnapshotChanged -= UpdateChildSnapshot;
-                ArchiveChildTrace(traceSource);
-                lock (_stateSync)
-                {
-                    _activeChildEngines.Remove(key);
-                    _childTraceSources.Remove(key);
-                    _latestChildEngineByParentNode[parentNode.Id] = childEngine;
-                    // 完成后从活动集合移除，并按父节点覆盖保存最近一次快照；更早历史只进入事件流。
-                    if (_activeChildWorkflows.Remove(key, out var completed))
-                        _latestChildWorkflowByParentNode[parentNode.Id] = completed;
-                }
-                PublishSnapshot();
-            }
-        }
+        Volatile.Write(ref childEngine._changeOwner, null);
+        PublishSnapshot();
     }
 }

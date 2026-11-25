@@ -22,7 +22,7 @@ public sealed class SignalNodeTests
             AutoResetAfterMatched = true
         };
         var canvasDocument = new WorkflowDocument { Name = "信号" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = set });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = wait });
         canvas.Connections.Add(new WorkflowConnectionModel

@@ -9,22 +9,23 @@ public sealed class CSharpScriptNodeTests
         {
             Id = "Script",
             Title = "脚本",
-            Script = "SetVariable(\"FromScript\", 21); Trace(\"done\"); return GetVariable<int>(\"FromScript\") * 2;",
-            ResultVarKey = "Result"
+            Script = "SetVariable(\"FromScript\", 21); Trace(\"done\"); return GetVariable<int>(\"FromScript\") * 2;"
         };
         var canvasDocument = new WorkflowDocument { Name = "脚本" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         var context = new WorkflowContext();
         canvasDocument.EntryNodeId = node.Id;
         var definition = new WorkflowCompiler(catalog).Compile(canvasDocument);
 
-        var run = await new WorkflowEngine(definition, new WorkflowNodeHandlerCatalog().Register(new CSharpScriptNodeHandler()), context).RunAsync();
+        var engine = new WorkflowEngine(definition, new WorkflowNodeHandlerCatalog().Register(new CSharpScriptNodeHandler()), context);
+        var run = await engine.RunAsync();
 
         Assert.True(run.Success, run.Message);
-        Assert.True(context.TryGetVariable<int>("Result", out var result));
-        Assert.Equal(42, result);
+        // R2-d：返回值只通过节点输出提供，不再写入流程变量。
+        Assert.Equal(42, ReturnValue(engine, node.Id));
+        Assert.False(context.TryGetVariable<int>("ScriptResult", out _));
     }
 
     [Fact]
@@ -32,7 +33,7 @@ public sealed class CSharpScriptNodeTests
     {
         var node = new CSharpScriptNodeModel { Id = "Script", Title = "脚本", Script = "Console.WriteLine(\"运行成功\"); return null;" };
         var canvasDocument = new WorkflowDocument { Name = "脚本输出" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         canvasDocument.EntryNodeId = node.Id;
@@ -50,7 +51,7 @@ public sealed class CSharpScriptNodeTests
     {
         var node = new CSharpScriptNodeModel { Id = "Script", Title = "脚本", Script = "not valid C#", ContinueOnError = true };
         var canvasDocument = new WorkflowDocument { Name = "脚本错误" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         canvasDocument.EntryNodeId = node.Id;
@@ -84,7 +85,7 @@ public sealed class CSharpScriptNodeTests
             ContinueOnError = true
         };
         var canvasDocument = new WorkflowDocument { Name = "脚本超时" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         canvasDocument.EntryNodeId = node.Id;
@@ -118,12 +119,11 @@ public sealed class CSharpScriptNodeTests
         {
             Id = "AllocationScript",
             ScriptId = "workflow-allocation-script",
-            ResultVarKey = string.Empty,
             TimeoutMilliseconds = 0,
             Script = "return 42;"
         };
         var canvasDocument = new WorkflowDocument { Name = "脚本热路径分配" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes();
         canvasDocument.EntryNodeId = node.Id;
@@ -156,7 +156,6 @@ public sealed class CSharpScriptNodeTests
         {
             Id = "Script",
             ScriptId = "workflow-hot-script",
-            ResultVarKey = "Result",
             Script = CounterProgram("return ++_counter;")
         };
         var context = new WorkflowContext();
@@ -176,14 +175,20 @@ public sealed class CSharpScriptNodeTests
         WorkflowContext context)
     {
         var canvasDocument = new WorkflowDocument { Name = "脚本热替换" };
-        var canvas = canvasDocument.CanvasProjection;
+        var canvas = canvasDocument;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvasDocument.EntryNodeId = node.Id;
         var definition = new WorkflowCompiler(new WorkflowNodeCatalog().RegisterStandardNodes()).Compile(canvasDocument);
-        var run = await new WorkflowEngine(definition, new WorkflowNodeHandlerCatalog().Register(handler), context).RunAsync();
+        var engine = new WorkflowEngine(definition, new WorkflowNodeHandlerCatalog().Register(handler), context);
+        var run = await engine.RunAsync();
         Assert.True(run.Success, run.Message);
-        Assert.True(context.TryGetVariable<int>(node.ResultVarKey, out var result));
-        return result;
+        return ReturnValue(engine, node.Id);
+    }
+
+    private static int ReturnValue(WorkflowEngine engine, string nodeId)
+    {
+        var output = engine.FindLatestNodeOutput(engine.RunState.RunId, nodeId);
+        return Assert.IsType<int>(Assert.IsType<CSharpScriptNodeResult>(output!.Value).Value);
     }
 
     private static string CounterProgram(string body) => $$"""

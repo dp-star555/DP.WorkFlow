@@ -9,7 +9,7 @@ public sealed class WorkflowDesignerNavigatorTests
     {
         var childStart = new StartNodeModel { Id = "ChildStart", Title = "子开始" };
         var childDocument = new WorkflowDocument { Name = "Child" };
-        var child = childDocument.CanvasProjection;
+        var child = childDocument;
         child.Nodes.Add(new WorkflowCanvasNode { Node = childStart });
         childDocument.EntryNodeId = childStart.Id;
         var block = new BlockNodeModel
@@ -19,7 +19,7 @@ public sealed class WorkflowDesignerNavigatorTests
             SubDocument = childDocument
         };
         var rootDocument = new WorkflowDocument { Name = "Root" };
-        var root = rootDocument.CanvasProjection;
+        var root = rootDocument;
         root.Nodes.Add(new WorkflowCanvasNode { Node = block });
         rootDocument.EntryNodeId = block.Id;
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes();
@@ -27,13 +27,13 @@ public sealed class WorkflowDesignerNavigatorTests
 
         Assert.True(navigator.EnterSubCanvas(block.Id));
         Assert.Equal(1, navigator.Depth);
-        Assert.Same(child, navigator.CurrentSession.Canvas);
+        Assert.Same(child, navigator.CurrentSession.Document);
         Assert.Equal(childStart.Id, navigator.CurrentEntryNodeId);
         Assert.Equal(new[] { "Root", "工位子流程" }, navigator.Breadcrumbs.Select(item => item.Title));
 
         Assert.True(navigator.NavigateUp());
         Assert.Equal(0, navigator.Depth);
-        Assert.Same(root, navigator.CurrentSession.Canvas);
+        Assert.Same(root, navigator.CurrentSession.Document);
     }
 
     [Fact]
@@ -41,17 +41,17 @@ public sealed class WorkflowDesignerNavigatorTests
     {
         var nestedStart = new StartNodeModel { Id = "NestedStart", Title = "嵌套开始" };
         var nestedCanvasDocument = new WorkflowDocument { Name = "Nested" };
-        var nestedCanvas = nestedCanvasDocument.CanvasProjection;
+        var nestedCanvas = nestedCanvasDocument;
         nestedCanvas.Nodes.Add(new WorkflowCanvasNode { Node = nestedStart });
         nestedCanvasDocument.EntryNodeId = nestedStart.Id;
         var nestedBlock = new BlockNodeModel { Id = "NestedBlock", Title = "嵌套块", SubDocument = nestedCanvasDocument };
         var childCanvasDocument = new WorkflowDocument { Name = "Child" };
-        var childCanvas = childCanvasDocument.CanvasProjection;
+        var childCanvas = childCanvasDocument;
         childCanvas.Nodes.Add(new WorkflowCanvasNode { Node = nestedBlock });
         childCanvasDocument.EntryNodeId = nestedBlock.Id;
         var parentBlock = new BlockNodeModel { Id = "ParentBlock", Title = "父块", SubDocument = childCanvasDocument };
         var rootDocument = new WorkflowDocument { Name = "Root" };
-        var root = rootDocument.CanvasProjection;
+        var root = rootDocument;
         root.Nodes.Add(new WorkflowCanvasNode { Node = parentBlock });
         rootDocument.EntryNodeId = parentBlock.Id;
         var navigator = new WorkflowDesignerNavigator(
@@ -62,12 +62,12 @@ public sealed class WorkflowDesignerNavigatorTests
         var childSession = navigator.CurrentSession;
         Assert.True(navigator.EnterSubCanvas(nestedBlock.Id));
         Assert.Equal(2, navigator.Depth);
-        Assert.Same(nestedCanvas, navigator.CurrentSession.Canvas);
+        Assert.Same(nestedCanvas, navigator.CurrentSession.Document);
         Assert.True(navigator.NavigateUp());
         Assert.Same(childSession, navigator.CurrentSession);
         Assert.True(navigator.NavigateUp());
         Assert.Equal(0, navigator.Depth);
-        Assert.Same(root, navigator.CurrentSession.Canvas);
+        Assert.Same(root, navigator.CurrentSession.Document);
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public sealed class WorkflowDesignerNavigatorTests
     {
         var block = new BlockNodeModel { Id = "Block", Title = "空子流程" };
         var rootDocument = new WorkflowDocument { Name = "Root" };
-        var root = rootDocument.CanvasProjection;
+        var root = rootDocument;
         root.Nodes.Add(new WorkflowCanvasNode { Node = block });
         rootDocument.EntryNodeId = block.Id;
         var catalog = new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes();

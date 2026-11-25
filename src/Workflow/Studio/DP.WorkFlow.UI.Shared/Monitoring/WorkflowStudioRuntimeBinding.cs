@@ -10,19 +10,25 @@ public enum WorkflowStudioRunTarget
 }
 
 /// <summary>将 RuntimeHost 状态和快照连接到设计器导航器。</summary>
+/// <remarks>
+/// R1-04：快照由这里按帧拉取，不由引擎推送。帧计时器每隔 <see cref="FrameIntervalMilliseconds"/>
+/// 比较一次 <see cref="IWorkflowRuntimeHost.ChangeVersion"/>，变了才取一份快照并在界面线程应用；
+/// 暂停、完成、失败、取消等状态变化另外立即刷新一帧。界面每秒最多处理固定次数的快照，
+/// 与流程跑得多快无关，执行线程也不再为界面构造快照。
+/// </remarks>
 public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWorkflowRuntimeMonitorSource, IDisposable
 {
     private readonly IWorkflowRuntimeHost _host;
     private WorkflowDesignerNavigator _navigator;
     private readonly SynchronizationContext? _dispatchContext;
     private readonly object _snapshotSync = new();
-    private WorkflowRuntimeSnapshot? _pendingSnapshot;
-    private bool _snapshotDispatchQueued;
-    // 相邻两次应用快照的最小间隔：快速循环时快照源源不断，若每次应用后立即再排队，
-    // 界面线程的消息队列始终有待处理的分发，鼠标、按钮和重绘都得不到处理。
-    private const int MinimumDispatchIntervalMilliseconds = 50;
-    private readonly System.Diagnostics.Stopwatch _sinceLastDispatch = System.Diagnostics.Stopwatch.StartNew();
-    private Timer? _dispatchDelay;
+    private readonly Timer _frameTimer;
+    private int _frameIntervalMilliseconds = DefaultFrameIntervalMilliseconds;
+    // 已排队但尚未在界面线程执行的一帧；同一时刻最多一帧，界面线程忙时不会越积越多。
+    private bool _frameQueued;
+    private long _lastPulledVersion = long.MinValue;
+    /// <summary>默认刷新间隔（毫秒），约每秒 10 帧。</summary>
+    public const int DefaultFrameIntervalMilliseconds = 100;
     private Guid _lastAppliedRunId;
     private long _lastAppliedSequence = -1;
     private bool _disposed;
@@ -37,9 +43,28 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
         _host = host ?? throw new ArgumentNullException(nameof(host));
         _navigator = navigator ?? throw new ArgumentNullException(nameof(navigator));
         _dispatchContext = SynchronizationContext.Current;
-        _host.SnapshotChanged += OnSnapshotChanged;
+        _host.StateChanged += OnHostStateChanged;
         BindOutputs();
+        _lastPulledVersion = _host.ChangeVersion;
         _navigator.SetRuntimeSnapshot(_host.GetSnapshot());
+        _frameTimer = new Timer(static state => ((WorkflowStudioRuntimeBinding)state!).OnFrameTick(), this,
+            _frameIntervalMilliseconds, _frameIntervalMilliseconds);
+    }
+
+    /// <summary>获取或设置检查运行状态变化的间隔（毫秒，至少 16）。</summary>
+    public int FrameIntervalMilliseconds
+    {
+        get => _frameIntervalMilliseconds;
+        set
+        {
+            var interval = Math.Max(16, value);
+            lock (_snapshotSync)
+            {
+                _frameIntervalMilliseconds = interval;
+                if (!_disposed)
+                    _frameTimer.Change(interval, interval);
+            }
+        }
     }
 
     public IWorkflowRuntimeHost Host => _host;
@@ -199,79 +224,53 @@ public sealed class WorkflowStudioRuntimeBinding : IWorkflowDesignerRuntime, IWo
         lock (_snapshotSync)
         {
             _disposed = true;
-            _pendingSnapshot = null;
-            _dispatchDelay?.Dispose();
-            _dispatchDelay = null;
+            _frameTimer.Dispose();
         }
-        _host.SnapshotChanged -= OnSnapshotChanged;
+        _host.StateChanged -= OnHostStateChanged;
     }
 
-    /// <summary>接收运行时快照并合并待分发状态。</summary>
-    /// <param name="snapshot">运行时快照。</param>
-    private void OnSnapshotChanged(WorkflowRuntimeSnapshot snapshot)
+    /// <summary>帧计时器：状态有变化才排队一帧，没变化什么都不做。</summary>
+    private void OnFrameTick()
     {
-        lock (_snapshotSync)
-        {
-            _pendingSnapshot = snapshot;
-            if (_snapshotDispatchQueued) return;
-            _snapshotDispatchQueued = true;
-        }
-        QueueSnapshotDispatch();
-    }
-
-    /// <summary>保证快照分发任务只排队一次；距上次应用不足最小间隔时延后排队。</summary>
-    private void QueueSnapshotDispatch()
-    {
-        var wait = MinimumDispatchIntervalMilliseconds - _sinceLastDispatch.ElapsedMilliseconds;
-        if (wait > 0)
-        {
-            lock (_snapshotSync)
-            {
-                if (_disposed) return;
-                _dispatchDelay ??= new Timer(static state => ((WorkflowStudioRuntimeBinding)state!).PostSnapshotDispatch(), this,
-                    Timeout.Infinite, Timeout.Infinite);
-                _dispatchDelay.Change(wait, Timeout.Infinite);
-            }
+        if (_disposed || _host.ChangeVersion == Volatile.Read(ref _lastPulledVersion))
             return;
-        }
-        PostSnapshotDispatch();
+        QueueFrame();
     }
 
-    /// <summary>把快照分发投递到界面同步上下文（没有时用线程池）。</summary>
-    private void PostSnapshotDispatch()
+    /// <summary>停止类状态（暂停、完成、失败、取消）立即刷新一帧，不等下一次帧检查。</summary>
+    private void OnHostStateChanged(E_WorkflowExecutionState state)
     {
+        if (state is E_WorkflowExecutionState.Paused or E_WorkflowExecutionState.Completed
+            or E_WorkflowExecutionState.Faulted or E_WorkflowExecutionState.Canceled)
+            QueueFrame();
+    }
+
+    /// <summary>把一帧投递到界面同步上下文（没有时用线程池）；已有一帧在排队时不重复投递。</summary>
+    private void QueueFrame()
+    {
+        lock (_snapshotSync)
+        {
+            if (_disposed || _frameQueued)
+                return;
+            _frameQueued = true;
+        }
         if (_dispatchContext is not null)
-            _dispatchContext.Post(static state => ((WorkflowStudioRuntimeBinding)state!).DispatchPendingSnapshot(), this);
+            _dispatchContext.Post(static state => ((WorkflowStudioRuntimeBinding)state!).ApplyFrame(), this);
         else
-            ThreadPool.QueueUserWorkItem(static state => ((WorkflowStudioRuntimeBinding)state!).DispatchPendingSnapshot(), this);
+            ThreadPool.QueueUserWorkItem(static state => ((WorkflowStudioRuntimeBinding)state!).ApplyFrame(), this);
     }
 
-    /// <summary>在同步上下文中提取并应用最新待处理快照。</summary>
-    private void DispatchPendingSnapshot()
+    /// <summary>在界面线程取一份最新快照并应用。先记下变化计数再取快照，期间的变化留给下一帧。</summary>
+    private void ApplyFrame()
     {
-        WorkflowRuntimeSnapshot? snapshot;
         lock (_snapshotSync)
         {
+            _frameQueued = false;
             if (_disposed)
-            {
-                _pendingSnapshot = null;
-                _snapshotDispatchQueued = false;
                 return;
-            }
-            snapshot = _pendingSnapshot;
-            _pendingSnapshot = null;
         }
-        if (snapshot is not null) ApplySnapshot(snapshot);
-        _sinceLastDispatch.Restart();
-        lock (_snapshotSync)
-        {
-            if (_pendingSnapshot is null)
-            {
-                _snapshotDispatchQueued = false;
-                return;
-            }
-        }
-        QueueSnapshotDispatch();
+        Volatile.Write(ref _lastPulledVersion, _host.ChangeVersion);
+        ApplySnapshot(_host.GetSnapshot());
     }
 
     /// <summary>将运行时快照更新到导航器和监视模型。</summary>

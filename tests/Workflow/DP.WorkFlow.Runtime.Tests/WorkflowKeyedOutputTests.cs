@@ -32,9 +32,9 @@ public sealed class WorkflowKeyedOutputTests
         var producer = new ProducerNode { Id = "Producer" };
         var consumer = new ConsumerNode { Id = "Consumer", Input = WorkflowInput<double>.FromBinding(new WorkflowBindingKey("Producer", path)) };
         var document = new WorkflowDocument { Name = "按键寻址" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = producer });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = consumer });
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = producer.Id, ToNodeId = consumer.Id });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = producer });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = consumer });
+        document.Connections.Add(new WorkflowConnectionModel { FromNodeId = producer.Id, ToNodeId = consumer.Id });
         document.EntryNodeId = producer.Id;
         var context = new WorkflowContext();
         var handlers = new WorkflowNodeHandlerCatalog().Register(new ProducerHandler()).Register(new ConsumerHandler());

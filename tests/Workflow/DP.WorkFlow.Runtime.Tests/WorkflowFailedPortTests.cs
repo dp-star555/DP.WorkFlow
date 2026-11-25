@@ -8,10 +8,9 @@ public sealed class WorkflowFailedPortTests
     {
         var (document, catalog, handlers, executed) = Create(connectFailed: true);
         var engine = new WorkflowEngine(new WorkflowCompiler(catalog).Compile(document), handlers);
-        var traces = new List<WorkflowTraceEntry>();
-        engine.NodeTrace += traces.Add;
 
         var result = await engine.RunAsync();
+        var traces = engine.GetTraceBatch().Entries;
 
         Assert.True(result.Success, result.Message);
         Assert.Equal(E_WorkflowExecutionState.Completed, result.State);
@@ -50,7 +49,7 @@ public sealed class WorkflowFailedPortTests
         var ok = new FailedPortTestNode { Id = "OnOk", Title = "OK" };
         var ng = new FailedPortTestNode { Id = "OnNg", Title = "NG" };
         var document = new WorkflowDocument { Name = "失败出口", EntryNodeId = inspect.Id };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         foreach (var node in new[] { inspect, ok, ng }) canvas.Nodes.Add(new WorkflowCanvasNode { Node = node });
         canvas.Connections.Add(new WorkflowConnectionModel { FromNodeId = inspect.Id, FromPort = WorkflowPorts.Success, ToNodeId = ok.Id, ToPort = WorkflowPorts.Input });
         if (connectFailed)

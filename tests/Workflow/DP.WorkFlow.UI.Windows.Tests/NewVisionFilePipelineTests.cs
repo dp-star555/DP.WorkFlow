@@ -62,7 +62,7 @@ public sealed class NewVisionFilePipelineTests
         try
         {
             var document = CreateDocument(path);
-            var acquire = (AcquireVisionImageNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "File").Node;
+            var acquire = (AcquireVisionImageNodeModel)document.Nodes.Single(n => n.Node.Id == "File").Node;
             acquire.PixelFormat = EWorkflowVisionPixelFormat.Original;
             using var frames = new WorkflowVisionFrameScope();
             var nodes = new WorkflowNodeCatalog().RegisterImageNodes();
@@ -102,7 +102,7 @@ public sealed class NewVisionFilePipelineTests
         try
         {
             var document = CreateDocument(path);
-            var node = (AnalyzeVisionBlobsNodeModel)document.CanvasProjection.Nodes.Single(n => n.Node.Id == "Blobs").Node;
+            var node = (AnalyzeVisionBlobsNodeModel)document.Nodes.Single(n => n.Node.Id == "Blobs").Node;
             node.MinimumGray = 200; node.MaximumGray = 20;
             Assert.Throws<WorkflowCompilationException>(() => new WorkflowCompiler(new WorkflowNodeCatalog().RegisterImageNodes()).Compile(document));
         }
@@ -134,22 +134,22 @@ public sealed class NewVisionFilePipelineTests
     private static WorkflowDocument CreateDocument(string path)
     {
         var document = new WorkflowDocument { EntryNodeId = "File" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AcquireVisionImageNodeModel
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new AcquireVisionImageNodeModel
         {
             Id = "File", SourceMode = EWorkflowVisionImageSource.File, FilePath = path, PixelFormat = EWorkflowVisionPixelFormat.Gray8
         } });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AnalyzeVisionBlobsNodeModel
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new AnalyzeVisionBlobsNodeModel
         {
             Id = "Blobs", Frame = WorkflowInput<ImageFrame>.FromBinding(new WorkflowBindingKey("File", "$")), MaximumGray = 0
         } });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AcquireVisionImageNodeModel { Id = "Original", FilePath = path } });
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new AnalyzeVisionColorNodeModel
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new AcquireVisionImageNodeModel { Id = "Original", FilePath = path } });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new AnalyzeVisionColorNodeModel
         {
             Id = "Color", Frame = WorkflowInput<ImageFrame>.FromBinding(new WorkflowBindingKey("Original", "$"))
         } });
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = "File", FromPort = WorkflowPorts.Success, ToNodeId = "Blobs", ToPort = WorkflowPorts.Input });
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = "Blobs", FromPort = WorkflowPorts.Success, ToNodeId = "Original", ToPort = WorkflowPorts.Input });
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel { FromNodeId = "Original", FromPort = WorkflowPorts.Success, ToNodeId = "Color", ToPort = WorkflowPorts.Input });
+        document.Connections.Add(new WorkflowConnectionModel { FromNodeId = "File", FromPort = WorkflowPorts.Success, ToNodeId = "Blobs", ToPort = WorkflowPorts.Input });
+        document.Connections.Add(new WorkflowConnectionModel { FromNodeId = "Blobs", FromPort = WorkflowPorts.Success, ToNodeId = "Original", ToPort = WorkflowPorts.Input });
+        document.Connections.Add(new WorkflowConnectionModel { FromNodeId = "Original", FromPort = WorkflowPorts.Success, ToNodeId = "Color", ToPort = WorkflowPorts.Input });
         return document;
     }
 

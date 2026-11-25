@@ -3,40 +3,41 @@ using System.Globalization;
 namespace DP.WorkFlow;
 
 /// <summary>写入强类型数据信号，支持直接写入、自加和自减。</summary>
-[WorkflowNode("SignalValueSet", DisplayName = "数据信号设置节点", Category = "3.Control/信号")]
-public sealed class SignalValueSetNodeModel : WorkflowNodeModel
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+[WorkflowNode("SignalValueSet", DisplayName = "数据信号设置节点", Category = "3.Control/信号", OutputType = typeof(SignalValueNodeResult))]
+public sealed class SignalValueSetNodeModel : WorkflowNodeModel, IWorkflowPublicDataUser
 {
     /// <inheritdoc />
     public override string NodeType => "SignalValueSet";
     /// <summary>信号键。</summary>
+    [WorkflowPropertyEditor(WorkflowPropertyEditorKeys.PublicDataValue)]
     public string SignalKey { get; set; } = string.Empty;
     /// <summary>值类型。</summary>
     public E_SignalValueType ValueType { get; set; }
     /// <summary>写入模式。</summary>
     public E_SignalValueWriteMode WriteMode { get; set; }
-    /// <summary>值来源。</summary>
-    public E_SignalValueSource ValueSource { get; set; }
-    /// <summary>固定值文本。</summary>
-    public string LiteralValue { get; set; } = string.Empty;
-    /// <summary>绑定值。</summary>
-    public WorkflowInput<object> BindingValue { get; set; } = WorkflowInput<object>.FromLiteral(null);
-    /// <summary>结果变量键。</summary>
-    public string ResultVarKey { get; set; } = "SignalValueSetResult";
+    /// <summary>写入值或加减量。固定值按 <see cref="ValueType"/> 解析；绑定时来源值先转为文本再按类型转换。</summary>
+    public WorkflowInput<string> Value { get; set; } = WorkflowInput<string>.FromLiteral(string.Empty);
+    /// <inheritdoc />
+    public IEnumerable<WorkflowPublicDataDeclaration> GetPublicDataUses() => PublicDataUses.Value(SignalKey, ValueType);
 }
 
 /// <summary>执行数据信号写入。</summary>
 public sealed class SignalValueSetNodeHandler : WorkflowNodeHandler<SignalValueSetNodeModel>
 {
     /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(SignalValueSetNodeModel node) =>
+        StandardCapabilities.ValueSignal;
+
+    /// <inheritdoc />
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(SignalValueSetNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var service = GetService(context, node.SignalKey);
-        var operand = ConvertValue(node.ValueSource == E_SignalValueSource.Binding ? context.ResolveInput(node.BindingValue) : node.LiteralValue, node.ValueType);
+        var operand = ConvertValue(context.ResolveInput(node.Value), node.ValueType);
         var value = node.WriteMode == E_SignalValueWriteMode.Set ? operand : Calculate(service.ReadSnapshot(node.SignalKey.Trim())?.Value, operand, node.ValueType, node.WriteMode);
         var snapshot = service.WriteValue(node.SignalKey.Trim(), value);
         var output = BuildResult(snapshot, node.ValueType, node.WriteMode, true);
-        if (!string.IsNullOrWhiteSpace(node.ResultVarKey)) context.SetVariable(node.ResultVarKey.Trim(), output);
         return Polyfill.FromResult(NodeExecutionResult.Continue(output: output));
     }
     internal static IWorkflowValueSignalService GetService(IWorkflowNodeExecutionContext context, string key)
@@ -44,15 +45,7 @@ public sealed class SignalValueSetNodeHandler : WorkflowNodeHandler<SignalValueS
         if (string.IsNullOrWhiteSpace(key)) throw new InvalidOperationException("SignalKey 为空。");
         return context.GetRequiredCapability<IWorkflowValueSignalService>();
     }
-    internal static object ConvertValue(object? value, E_SignalValueType type) => type switch
-    {
-        E_SignalValueType.String => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,
-        E_SignalValueType.Int32 => Convert.ToInt32(value, CultureInfo.InvariantCulture),
-        E_SignalValueType.Int64 => Convert.ToInt64(value, CultureInfo.InvariantCulture),
-        E_SignalValueType.Double => Convert.ToDouble(value, CultureInfo.InvariantCulture),
-        E_SignalValueType.Boolean => Convert.ToBoolean(value, CultureInfo.InvariantCulture),
-        _ => throw new ArgumentOutOfRangeException(nameof(type))
-    };
+    internal static object ConvertValue(object? value, E_SignalValueType type) => WorkflowPublicDataValues.Convert(value, type);
     internal static bool Compare(object? left, object right, E_SignalValueType type, E_SignalWaitOperator op)
     {
         var l = ConvertValue(left, type);

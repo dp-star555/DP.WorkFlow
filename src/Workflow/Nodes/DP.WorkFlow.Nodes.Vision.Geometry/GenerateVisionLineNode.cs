@@ -3,7 +3,9 @@ using DP.Vision.Algorithms;
 namespace DP.WorkFlow;
 
 /// <summary>生成直线而非拟合直线；两点必须具有可验证来源。</summary>
-[WorkflowNode("Vision.GenerateLine", DisplayName = "两点生成直线", Category = WorkflowVisionCategories.Geometry)]
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+[WorkflowNode("Vision.GenerateLine", DisplayName = "两点生成直线", Category = WorkflowVisionCategories.Geometry, OutputType = typeof(DP.Vision.Algorithms.VisionLine))]
+[WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class GenerateVisionLineNodeModel : WorkflowVisionGeometryAlgorithmNodeModel
 {
     /// <inheritdoc/>
@@ -22,6 +24,10 @@ public sealed class GenerateVisionLineNodeModel : WorkflowVisionGeometryAlgorith
 /// <summary>从本轮选定算法生成非退化直线。</summary>
 public sealed class GenerateVisionLineNodeHandler : WorkflowNodeHandler<GenerateVisionLineNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(GenerateVisionLineNodeModel node) =>
+        new[] { WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>(), WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionAlgorithmBindings>(), WorkflowRuntimeCapabilityRequirement.Require<IGeometryMeasurer>() };
+
     /// <inheritdoc/>
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(GenerateVisionLineNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

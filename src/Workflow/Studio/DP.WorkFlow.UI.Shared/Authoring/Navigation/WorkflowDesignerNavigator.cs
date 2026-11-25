@@ -51,7 +51,7 @@ public sealed class WorkflowDesignerNavigator
     public bool EnterSubCanvas(string nodeId)
     {
         var parentSession = CurrentSession;
-        var item = parentSession.Canvas.Nodes.FirstOrDefault(node => node.Node.Id == nodeId);
+        var item = parentSession.Document.Nodes.FirstOrDefault(node => node.Node.Id == nodeId);
         if (item?.Node is not IWorkflowSubDocumentNode composite)
             return false;
         var startNodeId = ResolveEntryNodeId(composite);
@@ -59,7 +59,7 @@ public sealed class WorkflowDesignerNavigator
             return false;
         var title = string.IsNullOrWhiteSpace(item.Node.Title) ? item.Node.Id : item.Node.Title;
         _frames.Add(new NavigationFrame(
-            new WorkflowDesignerSession(composite.SubDocument, _catalog, RootSession.PublicDataCatalog),
+            new WorkflowDesignerSession(composite.SubDocument, _catalog, RootSession.PublicData),
             startNodeId,
             title,
             item.Node.Id));

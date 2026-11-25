@@ -24,9 +24,6 @@ public interface IWorkflowScriptHostContext
     /// <summary>删除流程局部变量。</summary>
     bool RemoveVariable(string key);
 
-    /// <summary>暂存公共数据发布。</summary>
-    void PublishData(string key, object value);
-
     /// <summary>写入脚本 Trace。</summary>
     void Trace(string message);
 }

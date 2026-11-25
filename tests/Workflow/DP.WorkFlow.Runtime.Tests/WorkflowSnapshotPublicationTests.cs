@@ -1,17 +1,16 @@
 namespace DP.WorkFlow.Tests;
 
 /// <summary>
-/// AR-17 阶段 1：快照只在真的有人要的时候才构造。
+/// R1-04：快照只在调用方来取时构造；运行中引擎只递增变化计数，界面按帧率比较计数后再取。
 /// </summary>
 /// <remarks>
 /// 观测点是 <see cref="WorkflowRuntimeSnapshot.Sequence"/>：它只在一次快照构造里被自增一次。
-/// 因此"整轮运行结束后，第一次显式取快照拿到的序号是 1"与"运行期间一次都没有构造过快照"等价，
-/// 而不需要去数分配或计时间——分配次数和锁等待时间在本仓都不可观测。
+/// 因此"整轮运行结束后，第一次显式取快照拿到的序号是 1"与"运行期间一次都没有构造过快照"等价。
 /// </remarks>
 public sealed class WorkflowSnapshotPublicationTests
 {
     [Fact]
-    public async Task 无订阅者时不构造快照()
+    public async Task 运行中不构造快照()
     {
         var (document, catalog, handlers) = CreateTwoNodeWorkflow();
         var engine = new WorkflowEngine(new WorkflowCompiler(catalog).Compile(document), handlers);
@@ -23,25 +22,25 @@ public sealed class WorkflowSnapshotPublicationTests
     }
 
     [Fact]
-    public async Task 有订阅者时每个状态迁移各发布一次快照()
+    public async Task 每个状态迁移递增一次变化计数()
     {
         var (document, catalog, handlers) = CreateTwoNodeWorkflow();
         var engine = new WorkflowEngine(new WorkflowCompiler(catalog).Compile(document), handlers);
-        var snapshots = new List<WorkflowRuntimeSnapshot>();
-        engine.SnapshotChanged += snapshots.Add;
+        Assert.Equal(0, engine.ChangeVersion);
 
         var result = await engine.RunAsync();
 
         // 运行开始 1 次、两个节点各"开始/结束"一次共 4 次、终态与收尾各 1 次，合计 7 次。
-        // 这条断言是"每次状态迁移一次发布"的契约：任何合并发布的优化都必须先改这里。
+        // 计数只用于界面判断"要不要重新取"，这里钉住"每次迁移都记一次、一次都不漏"。
         Assert.True(result.Success, result.Message);
-        Assert.Equal(7, snapshots.Count);
-        Assert.True(snapshots.Zip(snapshots.Skip(1), (left, right) => left.Sequence < right.Sequence).All(value => value));
-        Assert.Equal(E_WorkflowExecutionState.Completed, snapshots[^1].ExecutionState);
+        Assert.Equal(7, engine.ChangeVersion);
+        var snapshot = engine.GetRuntimeSnapshot();
+        Assert.Equal(E_WorkflowExecutionState.Completed, snapshot.ExecutionState);
+        Assert.Equal(7, engine.ChangeVersion); // 取快照不改变计数。
     }
 
     [Fact]
-    public async Task 宿主无订阅者时不构造快照()
+    public async Task 宿主运行中不构造快照()
     {
         var (document, catalog, handlers) = CreateTwoNodeWorkflow();
         using var host = new WorkflowRuntimeHost(catalog, handlers);
@@ -55,87 +54,51 @@ public sealed class WorkflowSnapshotPublicationTests
     }
 
     [Fact]
-    public async Task 宿主订阅后立即退订则不再构造快照()
-    {
-        var (document, catalog, handlers) = CreateTwoNodeWorkflow();
-        using var host = new WorkflowRuntimeHost(catalog, handlers);
-        Action<WorkflowRuntimeSnapshot> observer = _ => { };
-        host.SnapshotChanged += observer;
-        host.SnapshotChanged -= observer;
-        host.Configure(document);
-
-        var result = await host.RunAsync();
-
-        Assert.True(result.Success, result.Message);
-        Assert.Equal(1, host.Engine!.GetRuntimeSnapshot().Sequence);
-    }
-
-    [Fact]
-    public async Task 宿主有订阅者时按序收到快照()
-    {
-        var (document, catalog, handlers) = CreateTwoNodeWorkflow();
-        using var host = new WorkflowRuntimeHost(catalog, handlers);
-        var snapshots = new List<WorkflowRuntimeSnapshot>();
-        host.SnapshotChanged += snapshots.Add;
-        host.Configure(document);
-
-        var result = await host.RunAsync();
-
-        Assert.True(result.Success, result.Message);
-        Assert.NotEmpty(snapshots);
-        Assert.True(snapshots.Zip(snapshots.Skip(1), (left, right) => left.Sequence < right.Sequence).All(value => value));
-        Assert.Contains(snapshots, snapshot => snapshot.ExecutionState == E_WorkflowExecutionState.Completed);
-    }
-
-    [Fact]
-    public async Task 运行中订阅后立即开始收到快照()
-    {
-        using var gate = new ManualResetEventSlim();
-        var (document, catalog, handlers) = CreateTwoNodeWorkflow(
-            new GatedSnapshotHandler("First", gate));
-        using var host = new WorkflowRuntimeHost(catalog, handlers);
-        host.Configure(document);
-
-        var runTask = host.RunAsync();
-        await WaitUntilAsync(() => host.Engine is not null);
-        var snapshots = new List<WorkflowRuntimeSnapshot>();
-        host.SnapshotChanged += snapshots.Add;
-        gate.Set();
-
-        var result = await runTask;
-
-        Assert.True(result.Success, result.Message);
-        Assert.NotEmpty(snapshots);
-    }
-
-    [Fact]
-    public async Task 运行中退订后引擎不再构造快照()
+    public async Task 宿主变化计数在运行中变化且按需取得最新快照()
     {
         using var proceed = new ManualResetEventSlim();
         var handler = new GatedSnapshotHandler("First", proceed);
         var (document, catalog, handlers) = CreateTwoNodeWorkflow(handler);
         using var host = new WorkflowRuntimeHost(catalog, handlers);
-        var snapshots = new List<WorkflowRuntimeSnapshot>();
-        Action<WorkflowRuntimeSnapshot> observer = snapshots.Add;
-        host.SnapshotChanged += observer;
         host.Configure(document);
+        var idleVersion = host.ChangeVersion;
 
         var runTask = host.RunAsync();
         await WaitUntilAsync(() => handler.Entered.IsSet);
-        // 首节点的"开始"发布已经发生，而"结束"发布被 handler 挡在 proceed 后面，
-        // 所以此处读到的数量是稳定的，不会有在途发布改写它。
-        var countBeforeUnsubscribe = snapshots.Count;
-        Assert.True(countBeforeUnsubscribe > 0, "订阅者应当在退订之前已经收到过快照。");
-        host.SnapshotChanged -= observer;
+        var runningVersion = host.ChangeVersion;
+        var running = host.GetSnapshot();
         proceed.Set();
-
         var result = await runTask;
 
         Assert.True(result.Success, result.Message);
-        Assert.Equal(countBeforeUnsubscribe, snapshots.Count);
-        // 退订之后还剩 5 次状态迁移（首节点结束、次节点开始/结束、终态、收尾），
-        // 它们都不应该再构造快照；+1 是本断言自己这一次显式取快照。
-        Assert.Equal(countBeforeUnsubscribe + 1, host.Engine!.GetRuntimeSnapshot().Sequence);
+        Assert.NotEqual(idleVersion, runningVersion);
+        Assert.Equal(E_NodeState.Running, running.Nodes["First"].State);
+        Assert.NotEqual(runningVersion, host.ChangeVersion);
+        Assert.Equal(E_WorkflowExecutionState.Completed, host.GetSnapshot().ExecutionState);
+    }
+
+    [Fact]
+    public async Task 宿主转发引擎状态变化()
+    {
+        var (document, catalog, handlers) = CreateTwoNodeWorkflow();
+        using var host = new WorkflowRuntimeHost(catalog, handlers);
+        var states = new List<E_WorkflowExecutionState>();
+        host.StateChanged += state =>
+        {
+            lock (states)
+                states.Add(state);
+        };
+        host.Configure(document);
+
+        var result = await host.RunAsync();
+        await host.Engine!.FlushNotificationsAsync();
+
+        Assert.True(result.Success, result.Message);
+        lock (states)
+        {
+            Assert.Contains(E_WorkflowExecutionState.Running, states);
+            Assert.Equal(E_WorkflowExecutionState.Completed, states[^1]);
+        }
     }
 
     private static (WorkflowDocument Document, WorkflowNodeCatalog Catalog, WorkflowNodeHandlerCatalog Handlers)
@@ -144,7 +107,7 @@ public sealed class WorkflowSnapshotPublicationTests
         var first = new SnapshotTestNode { Id = "First", Title = "一" };
         var second = new SnapshotTestNode { Id = "Second", Title = "二" };
         var document = new WorkflowDocument { Name = "快照发布", EntryNodeId = first.Id };
-        var canvas = document.CanvasProjection;
+        var canvas = document;
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = first });
         canvas.Nodes.Add(new WorkflowCanvasNode { Node = second });
         canvas.Connections.Add(new WorkflowConnectionModel

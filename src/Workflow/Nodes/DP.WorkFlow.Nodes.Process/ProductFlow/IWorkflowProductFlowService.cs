@@ -8,7 +8,8 @@ public enum E_ProductFlowState { Active = 0, Succeeded = 1, Failed = 2 }
 public enum E_ProductMoveStartMode { Normal = 0, VirtualCreate = 1 }
 
 /// <summary>开始产品流转请求。</summary>
-public sealed record ProductMoveStartRequest(E_ProductMoveStartMode MoveMode, string? FromStationId, string? FromSlotId, string ToStationId, string? ToSlotId, string? Reason, string? ProductId, bool AutoGenerateProductId, string Recipe);
+/// <remarks><c>RecoveryRound</c> 是发起方流程的恢复轮次号：交接时带上，接收方能认出恢复前留下的旧交接并丢掉。</remarks>
+public sealed record ProductMoveStartRequest(E_ProductMoveStartMode MoveMode, string? FromStationId, string? FromSlotId, string ToStationId, string? ToSlotId, string? Reason, string? ProductId, bool AutoGenerateProductId, string Recipe, int RecoveryRound = 0);
 /// <summary>开始产品流转结果。</summary>
 public sealed record ProductMoveStartNodeResult([property: DisplayName("运输会话")] string SessionId, [property: DisplayName("产品")] string ProductId, [property: DisplayName("来源工站")] string? FromStationId, [property: DisplayName("来源槽位")] string? FromSlotId, [property: DisplayName("目标工站")] string ToStationId, [property: DisplayName("目标槽位")] string? ToSlotId, [property: DisplayName("流转状态")] E_ProductFlowState State);
 /// <summary>完成产品流转结果。</summary>

@@ -20,7 +20,9 @@ public enum EWorkflowBarcodeOrder
 }
 
 /// <summary>独立条码节点插件；只依赖中立读码契约。</summary>
-[WorkflowNode("Vision.ReadBarcode", DisplayName = "读取条码", Category = WorkflowVisionCategories.Recognition)]
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+[WorkflowNode("Vision.ReadBarcode", DisplayName = "读取条码", Category = WorkflowVisionCategories.Recognition, OutputType = typeof(WorkflowVisionBarcodeFact), Icon = "barcode")]
+[WorkflowOutputPorts(WorkflowPorts.Success, FailurePort = true)]
 public sealed class ReadVisionBarcodeNodeModel : AnalyzeVisionFrameNodeModel, IWorkflowVisionAlgorithmNode
 {
     /// <summary>明确的引擎选择；不会自动切换到其他读码器。</summary>
@@ -138,6 +140,10 @@ public sealed class WorkflowVisionBarcodeFact : IWorkflowVisionFrameFact
 /// <summary>只从本轮已提交的 reader 槽位取得引擎，保持资源租约。</summary>
 public sealed class ReadVisionBarcodeNodeHandler : WorkflowNodeHandler<ReadVisionBarcodeNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(ReadVisionBarcodeNodeModel node) =>
+        new[] { WorkflowRuntimeCapabilityRequirement.Require<IBarcodeReader>(), WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionAlgorithmBindings>(), WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>() };
+
     /// <inheritdoc/>
     protected override ValueTask<NodeExecutionResult> ExecuteAsync(ReadVisionBarcodeNodeModel node,
         IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
@@ -166,9 +172,8 @@ public sealed class WorkflowVisionBarcodeModule : IWorkflowRuntimePluginModule
     /// <inheritdoc/>
     public void Register(WorkflowRuntimePluginCatalog extensions)
     {
-        extensions.Nodes.Register(WorkflowNodeDescriptor.Create<ReadVisionBarcodeNodeModel, WorkflowVisionBarcodeFact>(ports: new[]
-        { WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(WorkflowPorts.Success), WorkflowPortDescriptor.Failure() }));
-        extensions.Handlers.Register(new ReadVisionBarcodeNodeHandler(), WorkflowRuntimeCapabilityRequirement.Require<IBarcodeReader>(),
-            WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionAlgorithmBindings>(), WorkflowRuntimeCapabilityRequirement.Require<IWorkflowVisionFrameScope>());
+        Guard.NotNull(extensions);
+        extensions.Nodes.RegisterAssembly(typeof(WorkflowVisionBarcodeModule).Assembly);
+        extensions.Handlers.RegisterAssembly(typeof(WorkflowVisionBarcodeModule).Assembly);
     }
 }

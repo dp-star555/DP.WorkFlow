@@ -19,7 +19,7 @@ public sealed class WorkflowNodeOutputProjectionTests
         var handlers = new WorkflowNodeHandlerCatalog().Register(new ProjectingNodeHandler(projection));
 
         var document = new WorkflowDocument { Name = "投影流程", EntryNodeId = "project" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new ProjectingNode { Id = "project" } });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new ProjectingNode { Id = "project" } });
 
         var engine = new WorkflowEngine(
             new WorkflowCompiler(catalog).Compile(document),
@@ -45,7 +45,7 @@ public sealed class WorkflowNodeOutputProjectionTests
         var handlers = new WorkflowNodeHandlerCatalog().Register(new ProjectingNodeHandler(projection, fail: true));
 
         var document = new WorkflowDocument { Name = "投影失败流程", EntryNodeId = "project" };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = new ProjectingNode { Id = "project" } });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = new ProjectingNode { Id = "project" } });
 
         var engine = new WorkflowEngine(
             new WorkflowCompiler(catalog).Compile(document),
@@ -117,7 +117,7 @@ public sealed class WorkflowNodeOutputProjectionTests
             var fault = new FaultOnceNode { Id = "fault" };
             document.EntryNodeId = entry.Id;
             foreach (var node in new IWorkflowNodeModel[] { entry, file, fault })
-                document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+                document.Nodes.Add(new WorkflowCanvasNode { Node = node });
             Connect(document, "entry", "file");
             Connect(document, "file", "fault");
 
@@ -128,13 +128,11 @@ public sealed class WorkflowNodeOutputProjectionTests
                 .Add<IWorkflowVisionFrameScope>(scope)
                 .Add<IWorkflowRunPreparationService>(scope)
                 .Add<IWorkflowRunResourceOwner>(scope)
-                .Add<IWorkflowNodeOutputProjectionSink>(sink)
-                .Add<IWorkflowRecoveryEntryGuard>(new AllowGuard())
-                .Add<IWorkflowFaultRecoveryCoordinator>(new RestartCoordinator());
+                .Add<IWorkflowNodeOutputProjectionSink>(sink);
 
             var engine = new WorkflowEngine(
                 new WorkflowCompiler(catalog).Compile(document), handlers, new WorkflowContext(services),
-                new WorkflowExecutionOptions { MaxRecoveryAttempts = 2 });
+                new WorkflowExecutionOptions { StopPointHandler = new RestartHandler() });
             var result = await engine.RunAsync();
 
             Assert.True(result.Success, result.Message);
@@ -166,7 +164,7 @@ public sealed class WorkflowNodeOutputProjectionTests
     }
 
     private static void Connect(WorkflowDocument document, string from, string to) =>
-        document.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        document.Connections.Add(new WorkflowConnectionModel
         { FromNodeId = from, FromPort = WorkflowPorts.Success, ToNodeId = to, ToPort = WorkflowPorts.Input });
 
     private static async Task RunLoadFileAsync(WorkflowVisionFrameScope scope)
@@ -181,7 +179,7 @@ public sealed class WorkflowNodeOutputProjectionTests
             var document = new WorkflowDocument { Name = "采图流程" };
             var file = new AcquireVisionImageNodeModel { Id = "file", FilePath = path };
             document.EntryNodeId = file.Id;
-            document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = file });
+            document.Nodes.Add(new WorkflowCanvasNode { Node = file });
 
             var services = new WorkflowServiceProvider()
                 .Add<IImageFileReader>(new NumberedReader())
@@ -294,10 +292,9 @@ public sealed class WorkflowNodeOutputProjectionTests
     }
 
     [WorkflowNode("TestAr29Fault")]
-    private sealed class FaultOnceNode : WorkflowNodeModel, IWorkflowRetrySafetyNode
+    private sealed class FaultOnceNode : WorkflowNodeModel
     {
         public override string NodeType => "TestAr29Fault";
-        public WorkflowRetrySafety RetrySafety => WorkflowRetrySafety.Idempotent;
     }
 
     private sealed class FaultOnceHandler : WorkflowNodeHandler<FaultOnceNode>
@@ -314,17 +311,9 @@ public sealed class WorkflowNodeOutputProjectionTests
         }
     }
 
-    private sealed class RestartCoordinator : IWorkflowFaultRecoveryCoordinator
+    private sealed class RestartHandler : IWorkflowStopPointHandler
     {
-        public ValueTask<WorkflowFaultRecoveryDecision> RecoverAsync(
-            WorkflowFaultRecoveryRequest request, IWorkflowFaultRecoveryContext context, CancellationToken cancellationToken) =>
-            ValueTask.FromResult(WorkflowFaultRecoveryDecision.Restart("station"));
-    }
-
-    private sealed class AllowGuard : IWorkflowRecoveryEntryGuard
-    {
-        public ValueTask<WorkflowRecoveryEntryValidation> ValidateAsync(
-            WorkflowRecoveryEntryPlan plan, IWorkflowFaultRecoveryContext context, CancellationToken cancellationToken) =>
-            ValueTask.FromResult(new WorkflowRecoveryEntryValidation(true));
+        public Task<WorkflowResumeDirective> OnStoppedAsync(WorkflowEngine engine, WorkflowStopPoint stopPoint, CancellationToken cancellationToken) =>
+            Task.FromResult(WorkflowResumeDirective.EnterAt("station"));
     }
 }

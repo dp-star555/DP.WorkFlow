@@ -1,12 +1,13 @@
 namespace DP.WorkFlow;
 
 /// <summary>弹出人工多选一确认框并按选项 Key 路由。</summary>
-[WorkflowNode("OperatorChoice", DisplayName = "人工选择", Category = "8.Process/异常恢复")]
+[WorkflowNode("OperatorChoice", DisplayName = "人工选择", Category = "8.Process/异常恢复", OutputType = typeof(string), Icon = "user")]
+[WorkflowOutputPorts]
 public sealed class OperatorChoiceNodeModel : WorkflowNodeModel, IWorkflowDynamicPortProvider
 {
     /// <inheritdoc />
     public override string NodeType => "OperatorChoice";
-    /// <summary>提示内容；为空时从中断上下文生成。</summary>
+    /// <summary>提示内容；为空时根据当前故障生成。</summary>
     public string Message { get; set; } = string.Empty;
     /// <summary>选项配置，格式“显示文本=Key”，多项以逗号或分号分隔。</summary>
     public string OptionsText { get; set; } = "继续=Continue,停止=Stop";
@@ -27,6 +28,10 @@ public sealed class OperatorChoiceNodeModel : WorkflowNodeModel, IWorkflowDynami
 /// <summary>执行人工选择节点。</summary>
 public sealed class OperatorChoiceNodeHandler : WorkflowNodeHandler<OperatorChoiceNodeModel>
 {
+    /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(OperatorChoiceNodeModel node) =>
+        new[] { ProcessCapabilities.OperatorCapability };
+
     /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(OperatorChoiceNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {

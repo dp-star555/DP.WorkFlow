@@ -145,7 +145,7 @@ var action = new ActionNodeModel
 var end = new EndNodeModel { Id = "End", Title = "结束" };
 
 var document = new WorkflowDocument { Name = "夹紧流程", EntryNodeId = start.Id };
-var canvas = document.CanvasProjection; // 当前桌面设计器过渡投影
+var canvas = document; // 节点和连线直接挂在文档上（R6-b）
 canvas.Nodes.Add(new WorkflowCanvasNode { Node = start, X = 80, Y = 100 });
 canvas.Nodes.Add(new WorkflowCanvasNode { Node = action, X = 320, Y = 100 });
 canvas.Nodes.Add(new WorkflowCanvasNode { Node = end, X = 560, Y = 100 });
@@ -264,30 +264,24 @@ decision.Condition = WorkflowInput<bool>.FromBinding(
 
 WinForms/WPF 属性面板使用可搜索绑定树，可按节点、成员路径和 CLR 类型搜索。将参数来源切换为 `Binding` 后，值区域显示带下拉标识的绑定按钮；选择器按“前道节点输出”和“公共数据”分组，并支持树形折叠、展开和搜索。
 
-宿主可声明允许设计器绑定的公共数据类型：
+公共数据只有三种形态、五种基本类型（R2-d）：bool 信号、数值（String / Int32 / Int64 / Double / Boolean）、固定类型的队列。先登记后使用：流程文件的 `PublicData` 清单（Schema 5）登记本流程用到的公共数据，设计器的信号键、队列键从清单中选择，`$global:` 绑定的候选也只来自清单：
 
 ```csharp
-session.PublicDataCatalog
-    .Register<bool>("MachineReady", "设备就绪", "设备数据")
-    .Register<IVisionImage>("VisionImage", "当前视觉图像", "视觉数据")
-    .Register<ProductContext>("CurrentProduct", "当前产品", "生产数据");
+session.DeclarePublicData(WorkflowPublicDataDeclaration.Signal("MachineReady") with { DisplayName = "设备就绪" });
+session.DeclarePublicData(WorkflowPublicDataDeclaration.Value("Recipe", E_SignalValueType.String, "R1"));
+session.DeclarePublicData(WorkflowPublicDataDeclaration.Queue("Jobs", E_SignalValueType.Int32));
+session.DeclareMissingPublicData(); // 按节点的使用补登
 ```
 
-公共数据声明只提供设计期名称和类型。运行时值位于独立 `IWorkflowPublicDataStore`，不再写入流程局部变量：
+运行时值由公共数据中心（`WorkflowContext.PublicDataCenter`）保存，运行开始时根流程的清单登记到中心，与已有登记的形态或类型冲突则本次运行以故障结束。节点通过信号设置 / 数值设置 / 队列节点读写，写入立即生效；`$global:` 绑定读取当前值：bool 信号为 `bool`，数值为当前值，队列为 `WorkflowQueueSnapshot`（可选 `Count`、`FirstValue`、`HasFirstValue` 等成员）。宿主可直接读写：
 
 ```csharp
-var publicData = new WorkflowPublicDataStore();
-publicData.Apply(new WorkflowPublicDataChangeSet(
-    new Dictionary<string, object>
-    {
-        ["MachineReady"] = true,
-        ["CurrentProduct"] = product
-    },
-    Array.Empty<string>()));
-var context = new WorkflowContext(publicData: publicData);
+var context = new WorkflowContext(services);
+context.PublicDataCenter.Values.WriteValue("Recipe", "R2");
+context.PublicDataCenter.Signals.Write("MachineReady", true);
 ```
 
-节点可通过 `context.PublishData(key, value)` 暂存显式发布；仅节点成功后提交。整个公共值使用 `$`，复杂对象可继续选择 `ProductId`、`Recipe.Name` 等兼容成员。未发布、成员不存在或运行时类型不兼容时会产生明确的 `WorkflowBindingException`。
+键没有登记或尚无值、成员不存在或类型不兼容时产生明确的 `WorkflowBindingException`；编译时按清单核对（WFPD01～03）。
 
 ---
 
@@ -832,7 +826,7 @@ public static WorkflowServices CreateWorkflowServices()
 9. Block 输入输出映射；
 10. RuntimeHost Pause/Hold/Reset。
 
-测试可直接构造 `WorkflowCanvasModel`，无需启动 WinForms/WPF。
+测试可直接构造 `WorkflowDocument`，无需启动 WinForms/WPF。
 
 ---
 

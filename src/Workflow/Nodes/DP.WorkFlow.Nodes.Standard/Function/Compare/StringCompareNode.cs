@@ -17,7 +17,9 @@ public enum E_StringCompareOperator
 }
 
 /// <summary>比较两个固定字符串或上游绑定值，并选择 True/False 端口。</summary>
-[WorkflowNode("StringCompare", DisplayName = "字符串比较节点", Category = "2.Function/判断")]
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+[WorkflowNode("StringCompare", DisplayName = "字符串比较节点", Category = "2.Function/判断", OutputType = typeof(CompareNodeResult), Icon = "compare")]
+[WorkflowOutputPorts(WorkflowPorts.True, WorkflowPorts.False)]
 public sealed class StringCompareNodeModel : WorkflowNodeModel
 {
     public override string NodeType => "StringCompare";

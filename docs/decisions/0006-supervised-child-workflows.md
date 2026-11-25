@@ -1,6 +1,6 @@
 # ADR-0006：编译期子流程定义与父引擎监管
 
-- 状态：Accepted
+- 状态：Superseded（2026-11-22，R3-a：子画布改为同一运行内的画布作用域，不再建子引擎；见 `docs/runtime-optimization-record.md`）
 - 日期：2026-01-01
 
 ## 决策

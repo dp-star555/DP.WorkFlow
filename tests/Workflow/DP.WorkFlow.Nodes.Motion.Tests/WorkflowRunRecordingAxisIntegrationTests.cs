@@ -17,21 +17,19 @@ public sealed class WorkflowRunRecordingAxisIntegrationTests
             StepKeySource = E_AxisStepValueSource.Binding,
             // 绑定到公共数据的成员：真实节点 + 非字面量来源，验证公共数据血缘也能自动关联。
             StepKeyBinding = WorkflowInput<string>.FromBinding(
-                WorkflowBindingKey.FromPublicData("GlobalPayload", "StepKey"))
+                WorkflowBindingKey.FromPublicData("StepKey"))
         };
         var document = new WorkflowDocument { Name = "轴动作血缘", EntryNodeId = node.Id };
-        document.CanvasProjection.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Nodes.Add(new WorkflowCanvasNode { Node = node });
 
-        var publicData = new WorkflowPublicDataStore();
-        publicData.Apply(new WorkflowPublicDataChangeSet(
-            new Dictionary<string, object> { ["GlobalPayload"] = new AxisPayload("LoadPosition") },
-            Array.Empty<string>()));
         var axis = new RecordingAxisService();
         var services = new WorkflowServiceProvider().Add<IWorkflowAxisService>(axis);
+        var context = new WorkflowContext(services);
+        context.PublicDataCenter.Values.WriteValue("StepKey", "LoadPosition");
         var engine = new WorkflowEngine(
             new WorkflowCompiler(new WorkflowNodeCatalog().RegisterMotionNodes()).Compile(document),
             new WorkflowNodeHandlerCatalog().RegisterMotionNodeHandlers(),
-            new WorkflowContext(services, publicData),
+            context,
             new WorkflowExecutionOptions { Recording = new WorkflowRunRecordingOptions { Sink = sink } });
 
         var result = await engine.RunAsync();
@@ -43,12 +41,10 @@ public sealed class WorkflowRunRecordingAxisIntegrationTests
         Assert.Equal("StepKeyBinding", resolved.Data!["InputKey"].Text);
         Assert.Equal("Automatic", resolved.Data["InputMetadataStatus"].Text);
         Assert.Equal("PublicData", resolved.Data["SourceKind"].Text);
-        Assert.Equal("GlobalPayload", resolved.Data["PublicDataKey"].Text);
-        Assert.Equal("StepKey", resolved.Data["SourceOutputKey"].Text);
+        Assert.Equal("StepKey", resolved.Data["PublicDataKey"].Text);
+        Assert.Equal("$", resolved.Data["SourceOutputKey"].Text);
         Assert.Equal("LoadPosition", resolved.Data["ResolvedValueSummary"].Text);
     }
-
-    private sealed record AxisPayload(string StepKey);
 
     private sealed class RecordingAxisService : IWorkflowAxisService
     {

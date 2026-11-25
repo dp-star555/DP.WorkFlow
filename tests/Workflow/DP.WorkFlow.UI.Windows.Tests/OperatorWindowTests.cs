@@ -204,7 +204,7 @@ public sealed class OperatorWindowTests
     private sealed class RecreatingForm : Forms.Form { public void RecreateForTest() => RecreateHandle(); }
 
     [Fact]
-    public async Task DemoRebind_UsesEditedTreatmentInsteadOfOldSnapshot()
+    public async Task Demo_UsesEditedTreatmentOfCurrentDocument()
     {
         var nodes = new WorkflowNodeCatalog(); var handlers = new WorkflowNodeHandlerCatalog();
         var demo = new WorkflowRecoveryDemo();
@@ -217,12 +217,12 @@ public sealed class OperatorWindowTests
         demo.ConfigureServices(services, nodes, handlers, new WorkflowActionRegistry());
         var document = workspace.Navigator.RootSession.Document;
         var block = document.Graph.Nodes.OfType<WarningHandlerBlockNodeModel>().Single();
-        block.SubDocument.CanvasProjection.Connections.Clear();
-        block.SubDocument.CanvasProjection.Connections.Add(new WorkflowConnectionModel
+        block.SubDocument.Connections.Clear();
+        block.SubDocument.Connections.Add(new WorkflowConnectionModel
             { FromNodeId = "HandlerStart", FromPort = WorkflowPorts.Success, ToNodeId = "Stop" });
         block.SubDocument.Graph.Nodes.OfType<StopCurrentStationNodeModel>().Single().Reason = "工程师改为停止";
-        demo.RebindTreatment(document, services, nodes, handlers);
         using var host = new WorkflowRuntimeHost(nodes, handlers);
+        using var center = demo.AttachFaultHandling(host, services, nodes, handlers);
         host.Configure(document, new WorkflowContext(services));
         var result = await host.RunAsync().WaitAsync(TimeSpan.FromSeconds(5));
         Assert.False(result.Success);
@@ -287,6 +287,7 @@ public sealed class OperatorWindowTests
     private sealed class DemoRun : IDisposable
     {
         private readonly WorkflowDocumentWorkspace _workspace;
+        private readonly WorkflowRunCenter _center;
         public WorkflowRuntimeHost Host { get; }
         public WorkflowContext Context { get; }
         public DemoRun(IWorkflowOperatorService interaction)
@@ -301,6 +302,7 @@ public sealed class OperatorWindowTests
             demo.ConfigureServices(services, nodes, handlers, new WorkflowActionRegistry());
             Context = new WorkflowContext(services);
             Host = new WorkflowRuntimeHost(nodes, handlers);
+            _center = demo.AttachFaultHandling(Host, services, nodes, handlers);
             Host.Configure(_workspace.Navigator.RootSession.Document, Context);
         }
         public void AssertResult(bool restart)
@@ -310,6 +312,6 @@ public sealed class OperatorWindowTests
             Assert.Equal(restart ? 2 : 1, result.Commands);
             Assert.Equal(1, result.Feeds);
         }
-        public void Dispose() { Host.Dispose(); _workspace.Dispose(); }
+        public void Dispose() { _center.Dispose(); Host.Dispose(); _workspace.Dispose(); }
     }
 }

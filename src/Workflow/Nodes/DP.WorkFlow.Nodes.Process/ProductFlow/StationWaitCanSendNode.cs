@@ -1,7 +1,9 @@
 namespace DP.WorkFlow;
 
 /// <summary>循环等待工站允许出料。</summary>
-[WorkflowNode("StationWaitCanSend", DisplayName = "等待可出料节点", Category = "8.Process/ProductFlow")]
+[WorkflowRecovery(WorkflowRecoveryCategory.Redoable)]
+[WorkflowNode("StationWaitCanSend", DisplayName = "等待可出料节点", Category = "8.Process/ProductFlow", OutputType = typeof(StationWaitNodeResult), Icon = "station")]
+[WorkflowOutputPorts(WorkflowPorts.Success, WorkflowPorts.Timeout, WorkflowPorts.Failed)]
 public sealed class StationWaitCanSendNodeModel : ProductFlowStationSlotNodeModel, IRecoverableWorkflowNode
 {
     /// <inheritdoc />
@@ -20,11 +22,17 @@ public sealed class StationWaitCanSendNodeModel : ProductFlowStationSlotNodeMode
 public sealed class StationWaitCanSendNodeHandler : WorkflowNodeHandler<StationWaitCanSendNodeModel>
 {
     /// <inheritdoc />
+    protected override IEnumerable<WorkflowRuntimeCapabilityRequirement> GetRequiredCapabilities(StationWaitCanSendNodeModel node) =>
+        new[] { ProcessCapabilities.ProductFlowCapability };
+
+    /// <inheritdoc />
     protected override async ValueTask<NodeExecutionResult> ExecuteAsync(StationWaitCanSendNodeModel node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
     {
         var address = ProductFlowNodeRuntime.ResolveAddress(node, context);
         var service = ProductFlowNodeRuntime.GetService(context);
+        using var wait = context.BeginWait($"工站 {address.StationId} 可出料", node.TimeoutMs);
         var matched = await ProductFlowNodeRuntime.WaitAsync(ct => service.CanSendAsync(address.StationId, address.SlotId, ct), node.TimeoutMs, node.PollIntervalMs, cancellationToken).ConfigureAwait(false);
+        wait.End(matched);
         var output = new StationWaitNodeResult(address.StationId, address.SlotId, matched);
         if (!matched && !node.TimeoutAsFalseBranch)
             return WorkflowRecoverableNodeFailure.Create(node, $"等待工站可出料超时: {address.StationId}");
