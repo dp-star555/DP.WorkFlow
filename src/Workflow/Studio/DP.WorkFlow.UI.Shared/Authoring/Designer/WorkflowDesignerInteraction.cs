@@ -393,14 +393,14 @@ public static class WorkflowDesignerInteraction
         return FormatElapsed(elapsed);
     }
 
-    /// <summary>将运行耗时格式化为合适精度的文本。</summary>
+    /// <summary>运行耗时的短文字，统一带单位：1.5s、530ms、9.7ms、&lt;1ms。</summary>
     public static string FormatElapsed(TimeSpan elapsed) => elapsed.TotalSeconds >= 1
-        ? $"{elapsed.TotalSeconds:F2}s"
+        ? elapsed.TotalSeconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "s"
         : elapsed.TotalMilliseconds >= 10
-            ? $"{elapsed.TotalMilliseconds:F0}ms"
+            ? elapsed.TotalMilliseconds.ToString("0", System.Globalization.CultureInfo.InvariantCulture) + "ms"
             : elapsed.TotalMilliseconds >= 1
-                ? $"{elapsed.TotalMilliseconds:F1}ms"
-                : $"{elapsed.TotalMilliseconds:F3}ms";
+                ? elapsed.TotalMilliseconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "ms"
+                : "<1ms";
 
     /// <summary>构建包含可选手工拐点的基础正交折线路径，用于连接拖动预览。</summary>
     public static IReadOnlyList<WorkflowPoint> BuildOrthogonalPath(

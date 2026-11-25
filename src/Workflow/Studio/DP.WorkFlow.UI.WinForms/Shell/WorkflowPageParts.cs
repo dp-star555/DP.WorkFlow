@@ -76,19 +76,19 @@ public sealed class WorkflowMetricStrip : WorkflowCard
         var headTop = inner.Top + Math.Max(0, (inner.Height - bold.Height - small.Height - S(2)) / 2);
         var valueTop = inner.Top + Math.Max(0, (inner.Height - big.Height - small.Height) / 2);
         var headWidth = Math.Min(S(260), Math.Max(
-            TextRenderer.MeasureText(e.Graphics, _title, bold, Size.Empty, flags).Width,
-            TextRenderer.MeasureText(e.Graphics, _subtitle, small, Size.Empty, flags).Width));
+            WorkflowText.Width(e.Graphics, _title, bold),
+            WorkflowText.Width(e.Graphics, _subtitle, small)));
         TextRenderer.DrawText(e.Graphics, _title, bold, new Rectangle(x, headTop, headWidth, bold.Height), theme.Text, flags);
         TextRenderer.DrawText(e.Graphics, _subtitle, small, new Rectangle(x, headTop + bold.Height + S(2), headWidth, small.Height), theme.TextSecondary, flags);
         x += headWidth + S(32);
 
-        var noteWidth = string.IsNullOrEmpty(_note) ? 0 : TextRenderer.MeasureText(e.Graphics, _note, small, Size.Empty, flags).Width;
+        var noteWidth = string.IsNullOrEmpty(_note) ? 0 : WorkflowText.Width(e.Graphics, _note, small);
         var limit = right - (noteWidth == 0 ? 0 : noteWidth + S(24));
         foreach (var metric in _metrics)
         {
             var width = Math.Max(
-                TextRenderer.MeasureText(e.Graphics, metric.Value, big, Size.Empty, flags).Width,
-                TextRenderer.MeasureText(e.Graphics, metric.Caption, small, Size.Empty, flags).Width);
+                WorkflowText.Width(e.Graphics, metric.Value, big),
+                WorkflowText.Width(e.Graphics, metric.Caption, small));
             if (x + width > limit) break;
             TextRenderer.DrawText(e.Graphics, metric.Value, big, new Rectangle(x, valueTop, width, big.Height), metric.Color ?? theme.Text, flags);
             TextRenderer.DrawText(e.Graphics, metric.Caption, small, new Rectangle(x, valueTop + big.Height, width, small.Height), theme.TextSecondary, flags);
@@ -167,7 +167,7 @@ public sealed class WorkflowFactList : Control
             if (y + height > Height) break;
             var row = new Rectangle(left, y, width, height);
             var valueWidth = string.IsNullOrEmpty(fact.Value) ? 0
-                : Math.Min(width * 2 / 3, TextRenderer.MeasureText(e.Graphics, fact.Value, fact.Strong ? bold : Font, Size.Empty, flags).Width);
+                : Math.Min(width * 2 / 3, WorkflowText.Width(e.Graphics, fact.Value, fact.Strong ? bold : Font));
             var labelFont = fact.Heading || fact.Strong ? bold : Font;
             TextRenderer.DrawText(e.Graphics, fact.Label, labelFont, new Rectangle(row.X, row.Y, Math.Max(0, row.Width - valueWidth - S(8)), row.Height),
                 theme.Text, flags);

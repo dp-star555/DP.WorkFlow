@@ -51,6 +51,19 @@ public sealed class WorkflowRunStatisticsTests
     }
 
     [Fact]
+    public void LoopNode_CountsEachPassAsLap()
+    {
+        var statistics = new WorkflowRunStatistics { LoopNodeIds = new[] { "Loop" } };
+        var run = Guid.NewGuid();
+        statistics.Observe(LoopNodeSnapshot(run, 1, T0, 1), T0);
+        statistics.Observe(LoopNodeSnapshot(run, 2, T0.AddMilliseconds(500), 2), T0.AddMilliseconds(500));
+        statistics.Observe(LoopNodeSnapshot(run, 3, T0.AddMilliseconds(1000), 3), T0.AddMilliseconds(1000));
+
+        Assert.Equal(3, statistics.Laps);
+        Assert.Equal(TimeSpan.FromMilliseconds(500), statistics.AverageCycle);
+    }
+
+    [Fact]
     public void Window_KeepsOnlyRecentCycles_AndResetClears()
     {
         var statistics = new WorkflowRunStatistics(window: 2);
@@ -66,6 +79,15 @@ public sealed class WorkflowRunStatisticsTests
         Assert.Null(statistics.AverageCycle);
         Assert.Null(statistics.DisplayLatency);
     }
+
+    private static WorkflowRuntimeSnapshot LoopNodeSnapshot(Guid runId, long sequence, DateTimeOffset at, int passes) =>
+        Snapshot(runId, sequence, at, E_WorkflowExecutionState.Running, TimeSpan.Zero) with
+        {
+            Nodes = new Dictionary<string, WorkflowNodeRuntimeInfo>
+            {
+                ["Loop"] = new("Loop", E_NodeState.Completed, passes, passes, at, at, TimeSpan.Zero)
+            }
+        };
 
     private static WorkflowRuntimeSnapshot Snapshot(Guid runId, long sequence, DateTimeOffset at, E_WorkflowExecutionState state, TimeSpan elapsed,
         params (string Node, int Cycle)[] loops)

@@ -249,6 +249,7 @@ public sealed class WorkflowRunPage : WorkflowPage
         Unbind();
         _flow = flow;
         _statistics.Reset();
+        _statistics.LoopNodeIds = Array.Empty<string>();
         _observedSequence = -1;
         if (flow is null)
         {
@@ -263,6 +264,7 @@ public sealed class WorkflowRunPage : WorkflowPage
         }
         if (document is not null && !string.IsNullOrWhiteSpace(document.EntryNodeId))
         {
+            _statistics.LoopNodeIds = document.Nodes.Where(item => item.Node is IWorkflowLoopNode).Select(item => item.Node.Id).ToArray();
             _navigator = new WorkflowDesignerNavigator(document, _catalog);
             _binding = new WorkflowStudioRuntimeBinding(flow.Host, _navigator);
             Canvas.Session = _navigator.CurrentSession;
@@ -340,7 +342,7 @@ public sealed class WorkflowRunPage : WorkflowPage
         var timings = Monitor.TimingTrends;
         var slowest = timings.Count == 0 ? null : timings.OrderByDescending(item => item.Elapsed).First();
         foreach (var item in timings.Take(8))
-            facts.Add(new WorkflowFact(NodeTitle(item.NodeId), item.ExecutionCount == 0 ? "—" : $"{item.Elapsed.TotalMilliseconds.ToString("0.0", CultureInfo.InvariantCulture)} ms",
+            facts.Add(new WorkflowFact(NodeTitle(item.NodeId), item.ExecutionCount == 0 ? "—" : WorkflowDesignerInteraction.FormatElapsed(item.Elapsed),
                 Strong: ReferenceEquals(item, slowest)));
         if (timings.Count == 0) facts.Add(new WorkflowFact("还没有节点执行"));
         facts.Add(WorkflowFact.Group("界面同步", s.DisplayLatency is null ? string.Empty : "正常"));

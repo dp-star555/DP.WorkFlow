@@ -7,7 +7,7 @@ namespace DP.WorkFlow.UI;
 /// <remarks>
 /// 节拍的算法：
 /// <list type="bullet">
-/// <item>根画布上有循环块在转圈时，节拍是主循环（本次运行第一次看到时圈数最多的那个）相邻两圈开始的间隔；
+/// <item>根画布上有循环块或循环节点（<see cref="LoopNodeIds"/>，每经过一次算一圈）在转圈时，节拍是主循环（本次运行第一次看到时圈数最多的那个）相邻两圈开始的间隔；
 /// 一帧里跳过多圈时按跳过的圈数平分。</item>
 /// <item>没有循环块的流程，节拍是每次运行结束时的总耗时。</item>
 /// </list>
@@ -35,6 +35,9 @@ public sealed class WorkflowRunStatistics
 
     /// <summary>算平均节拍取的次数。</summary>
     public int Window { get; }
+
+    /// <summary>根画布上循环节点（回连到自己的“循环节点”）的 ID：每执行一次算开始一圈。由宿主按流程文档给出。</summary>
+    public IReadOnlyCollection<string> LoopNodeIds { get; set; } = Array.Empty<string>();
 
     /// <summary>结束的运行次数（成功、出错、取消都算）。</summary>
     public int Runs => Succeeded + Failed + Canceled;
@@ -122,6 +125,9 @@ public sealed class WorkflowRunStatistics
         foreach (var child in snapshot.EnumerateChildWorkflows())
             if (child.Cycle > 0 && (!cycles.TryGetValue(child.ParentNodeId, out var known) || child.Cycle > known))
                 cycles[child.ParentNodeId] = child.Cycle;
+        foreach (var id in LoopNodeIds)
+            if (snapshot.Nodes.TryGetValue(id, out var info) && info.ExecutionCount > 0)
+                cycles[id] = info.ExecutionCount;
         if (cycles.Count == 0)
             return;
         _runHadLaps = true;

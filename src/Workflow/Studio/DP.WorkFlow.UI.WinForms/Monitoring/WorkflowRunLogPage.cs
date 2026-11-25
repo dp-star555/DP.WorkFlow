@@ -261,8 +261,8 @@ public sealed class WorkflowRunLogPage : WorkflowPage
             }
             if (lines.Count > 0)
             {
-                if (_follow.Checked) _table.FirstDisplayedScrollingRowIndex = lines.Count - 1;
-                else if (first >= 0) _table.FirstDisplayedScrollingRowIndex = Math.Min(first, lines.Count - 1);
+                if (_follow.Checked) ScrollTo(lines.Count - 1);
+                else if (first >= 0) ScrollTo(Math.Min(first, lines.Count - 1));
             }
         }
         finally
@@ -334,6 +334,19 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         _view.Toggle(_lines[index]);
         _follow.Checked = false;
         Rebuild(true);
+    }
+
+    // 表格还没排版（页面没显示、高度不够一行）时设滚动位置会抛“没有可供显示行的空间”，这时不滚。
+    private void ScrollTo(int row)
+    {
+        if (!_table.Visible || _table.DisplayRectangle.Height <= _table.ColumnHeadersHeight + _table.RowTemplate.Height) return;
+        try
+        {
+            _table.FirstDisplayedScrollingRowIndex = row;
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     private void StopFollowingWhenScrolledUp()

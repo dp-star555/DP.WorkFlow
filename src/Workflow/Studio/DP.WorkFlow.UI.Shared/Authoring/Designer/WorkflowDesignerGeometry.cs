@@ -155,13 +155,14 @@ public static class WorkflowDesignerGeometry
         var gap = 6 * zoom;
         var badgeHeight = Math.Min(headerHeight, 18 * zoom);
         var orderWidth = measuredOrderWidth > 0 ? measuredOrderWidth + 10 * zoom : 0;
-        var durationWidth = measuredDurationWidth > 0 ? measuredDurationWidth : 0;
+        // 量出的宽度留 2 px 余量，避免取整后被省略成“53…”。
+        var durationWidth = measuredDurationWidth > 0 ? measuredDurationWidth + 2 * zoom : 0;
         var runtimeWidth = orderWidth + durationWidth + (orderWidth > 0 && durationWidth > 0 ? gap : 0);
-        if (runtimeWidth > available * 0.5 && runtimeWidth > 0)
+        if (runtimeWidth > available * 0.6 && durationWidth > 0)
         {
-            // 空间不足时先压缩耗时，序号保持完整。
-            durationWidth = Math.Max(0, durationWidth - (runtimeWidth - available * 0.5));
-            runtimeWidth = orderWidth + durationWidth + (orderWidth > 0 && durationWidth > 0 ? gap : 0);
+            // 放不下完整的耗时就不显示（半截数字会看错），序号保持完整。
+            durationWidth = 0;
+            runtimeWidth = orderWidth;
         }
         var durationBounds = new WorkflowDesignerRect(right - durationWidth, nodeBounds.Y, durationWidth, headerHeight);
         var orderRight = durationWidth > 0 ? durationBounds.X - gap : right;
