@@ -1,59 +1,75 @@
+using System.Drawing.Drawing2D;
 using System.Globalization;
 using ModernUI.WinForms;
 
 namespace DP.WorkFlow.UI.WinForms;
 
 /// <summary>
-/// 故障工作台（第 8 类）：当前故障会话的上报、受影响的流程、每个流程停在哪里（画布 / 节点 @ 圈次 [分支]）、
-/// 能否就地恢复和最后一步；处理流程没处理完时在这里逐个流程选去向放行、重新运行处理流程或全部停止。
-/// 也可以查看最近结束的会话。
+/// 故障处理（运行页右栏，按窄栏竖排）：上面一条故障横幅和概况，中间是各流程停在哪里（画布 / 节点 @ 圈次 [分支]、能否就地恢复），
+/// 下面是所选停点所在流程的去向；处理流程没处理完时在这里逐个流程选去向放行、重新运行处理流程或全部停止。
+/// 顶部的“查看”可以切到最近结束的会话。
 /// </summary>
 /// <remarks>
 /// 去向是否允许由停点判断，不允许的去向显示为灰色并写明原因。工作台不懂业务：设备是否安全、物料怎么处理由处理流程和业务系统负责。
 /// </remarks>
 public sealed class WorkflowFaultWorkbenchControl : UserControl
 {
-    private readonly Label _state = new() { AutoSize = true, Font = new Font(SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont, FontStyle.Bold) };
-    private readonly Label _message = new() { AutoSize = true, MaximumSize = new Size(900, 0), Margin = new Padding(0, 4, 0, 0) };
-    private readonly Label _details = new() { AutoSize = true, MaximumSize = new Size(900, 0), Margin = new Padding(0, 4, 0, 0) };
-    private readonly ComboBox _view = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
-    private readonly ListView _stops = new()
-    {
-        Dock = DockStyle.Fill,
-        View = View.Details,
-        FullRowSelect = true,
-        HideSelection = false,
-        MultiSelect = false,
-        BorderStyle = BorderStyle.None,
-        ShowItemToolTips = true
-    };
-    private readonly Label _optionsTitle = new() { AutoSize = true, Dock = DockStyle.Top, Padding = new Padding(0, 0, 0, 6) };
-    private readonly ListBox _options = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, DrawMode = DrawMode.OwnerDrawFixed, IntegralHeight = false };
-    private readonly Label _optionReason = new() { AutoSize = true, Dock = DockStyle.Bottom, MaximumSize = new Size(320, 0), Padding = new Padding(0, 6, 0, 0) };
-    private readonly ModernButton _release = new() { Text = "按所选去向放行", ButtonType = ModernButtonType.Primary, AutoSize = true };
-    private readonly ModernButton _rerun = new() { Text = "重新运行处理流程", AutoSize = true };
-    private readonly ModernButton _stopAll = new() { Text = "全部停止", ButtonType = ModernButtonType.Danger, AutoSize = true };
-    private readonly Label _hint = new() { AutoSize = true, Margin = new Padding(0, 8, 12, 0) };
+    private const string Current = "当前故障";
+    private readonly ModernSelect _view = new();
+    private readonly WorkflowBanner _banner = new() { Dock = DockStyle.Top };
+    private readonly WorkflowFactList _facts = new() { Dock = DockStyle.Top };
+    private readonly Label _stopsTitle = Heading("停在哪里");
+    private readonly WorkflowItemList _stops = new() { Dock = DockStyle.Top, EmptyText = "没有停下的流程" };
+    private readonly Label _optionsTitle = Heading("去向");
+    private readonly WorkflowItemList _options = new() { RowHeight = 0, EmptyText = "先在上面选一个停点" };
+    private readonly Label _hint = new() { Dock = DockStyle.Bottom, AutoEllipsis = true, UseMnemonic = false, TextAlign = ContentAlignment.MiddleLeft };
+    private readonly ModernButton _release = new() { Text = "按所选去向放行", ButtonType = ModernButtonType.Primary, Dock = DockStyle.Top };
+    private readonly ModernButton _rerun = new() { Text = "重新运行处理流程", Dock = DockStyle.Top };
+    private readonly ModernButton _stopAll = new() { Text = "全部停止", ButtonType = ModernButtonType.DangerOutline, Dock = DockStyle.Top };
+    private readonly WorkflowBlock _actions = new() { Dock = DockStyle.Bottom };
     private readonly Dictionary<string, WorkflowResumeDirective> _choices = new(StringComparer.Ordinal);
+    private IReadOnlyList<WorkflowFaultSession> _history = Array.Empty<WorkflowFaultSession>();
     private WorkflowFaultWorkbenchModel? _model;
     private WorkflowFaultSessionView? _shown;
     private string _signature = string.Empty;
     private bool _rebuilding;
 
-    /// <summary>初始化工作台。</summary>
+    /// <summary>初始化故障处理面板。</summary>
     public WorkflowFaultWorkbenchControl()
     {
-        _stops.Columns.Add("流程", 120);
-        _stops.Columns.Add("位置", 260);
-        _stops.Columns.Add("节点", 140);
-        _stops.Columns.Add("原因", 70);
-        _stops.Columns.Add("可就地恢复", 80);
-        _stops.Columns.Add("最后一步", 160);
-        _stops.Columns.Add("说明", 300);
-        _stops.SelectedIndexChanged += (_, _) => ShowOptions();
-        _options.ItemHeight = 26;
-        _options.DrawItem += DrawOption;
-        _options.SelectedIndexChanged += (_, _) => ChooseOption();
+        int S(int value) => LogicalToDeviceUnits(value);
+        Padding = new Padding(S(12), S(10), S(12), S(10));
+        _view.Dock = DockStyle.Top;
+        _view.Height = S(30);
+        _view.Items.Add(Current);
+        _view.SelectedIndex = 0;
+        _stops.Height = S(104);
+        _options.Dock = DockStyle.Fill;
+        _hint.Height = S(26);
+        _stopsTitle.Height = _optionsTitle.Height = S(30);
+        OnFontChanged(EventArgs.Empty);
+        foreach (var button in new[] { _stopAll, _rerun, _release })
+        {
+            button.Height = S(32);
+            _actions.Controls.Add(button);
+            _actions.Controls.Add(new WorkflowBlock { Dock = DockStyle.Top, LogicalExtent = 8 });
+        }
+        _actions.LogicalExtent = 3 * 40;
+
+        Controls.Add(_options);
+        Controls.Add(_optionsTitle);
+        Controls.Add(_stops);
+        Controls.Add(_stopsTitle);
+        Controls.Add(_facts);
+        Controls.Add(new WorkflowBlock { Dock = DockStyle.Top, LogicalExtent = 8 });
+        Controls.Add(_banner);
+        Controls.Add(new WorkflowBlock { Dock = DockStyle.Top, LogicalExtent = 10 });
+        Controls.Add(_view);
+        Controls.Add(_hint);
+        Controls.Add(_actions);
+
+        _stops.SelectionChanged += (_, _) => { if (!_rebuilding) ShowOptions(); };
+        _options.SelectionChanged += (_, _) => ChooseOption();
         _view.SelectedIndexChanged += (_, _) => { if (!_rebuilding) { _signature = string.Empty; RefreshView(); } };
         _release.Click += (_, _) =>
         {
@@ -73,36 +89,12 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
                 Gated(new WorkflowOperation(WorkflowOperationKind.StopFaultedFlows, "*"), () => _model?.StopAll());
         };
 
-        var header = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(0, 0, 0, 8) };
-        var titleRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
-        titleRow.Controls.Add(_state);
-        titleRow.Controls.Add(new Label { Text = "查看", AutoSize = true, Margin = new Padding(24, 4, 6, 0) });
-        titleRow.Controls.Add(_view);
-        header.Controls.Add(titleRow);
-        header.Controls.Add(_message);
-        header.Controls.Add(_details);
-
-        var right = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8, 0, 0, 0) };
-        right.Controls.Add(_options);
-        right.Controls.Add(_optionReason);
-        right.Controls.Add(_optionsTitle);
-        var split = new ModernSplitter { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, InitialPanel2Size = 300 };
-        split.Panel1.Controls.Add(_stops);
-        split.Panel2.Controls.Add(right);
-
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(0, 8, 0, 0) };
-        actions.Controls.AddRange(new Control[] { _hint, _release, _rerun, _stopAll });
-
-        Controls.Add(split);
-        Controls.Add(actions);
-        Controls.Add(header);
-
         WorkflowRefreshClock.Subscribe(this, RefreshView);
         WorkflowWinFormsTheme.Follow(this, () => { _signature = string.Empty; RefreshView(); });
         RefreshView();
     }
 
-    /// <summary>获取或设置模型；工作台不负责释放模型。</summary>
+    /// <summary>获取或设置模型；面板不负责释放模型。</summary>
     public WorkflowFaultWorkbenchModel? Model
     {
         get => _model;
@@ -135,7 +127,10 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
 
     private bool _canOperate = true;
 
-    /// <summary>出现等待操作员选择的兜底询问时发生（界面线程），宿主可以据此切到工作台。</summary>
+    /// <summary>当前是否有故障会话（在看当前会话时）。</summary>
+    public bool HasCurrentFault => _model?.GetCurrent() is not null;
+
+    /// <summary>出现等待操作员选择的兜底询问时发生（界面线程），宿主可以据此切到这里。</summary>
     public event EventHandler? DecisionRequested;
 
     /// <summary>操作出错时发生（例如去向不被允许），由宿主显示。</summary>
@@ -163,32 +158,29 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
         _signature = signature;
         if (view?.Session.Id != _shown?.Session.Id) _choices.Clear();
         _shown = view;
-        var theme = WorkflowWinFormsTheme.Modern;
         if (view is null)
         {
-            _state.Text = _model is null ? "未接入流程管理" : "没有故障";
-            _state.ForeColor = theme.Success;
-            _message.Text = _model is null ? string.Empty : "流程出故障或业务系统上报故障时，这里显示各流程停在哪里，以及处理流程给出的去向。";
-            _message.ForeColor = theme.TextSecondary;
-            _details.Text = string.Empty;
+            _banner.Show(WorkflowTone.Success, _model is null ? "未接入流程管理" : "没有故障",
+                _model is null ? string.Empty : "流程出故障或业务系统上报故障时，这里显示各流程停在哪里和可选的去向。");
+            _facts.Show(Array.Empty<WorkflowFact>());
+            _facts.Height = 0;
         }
         else
         {
             var session = view.Session;
             var fault = session.PrimaryFault;
-            _state.Text = view.StateText;
-            _state.ForeColor = view.Fallback is not null ? theme.Error : session.State == WorkflowFaultSessionState.Ended ? theme.TextSecondary : theme.Warning;
-            _message.Text = fault.Message + (session.Faults.Count > 1 ? $"（另有 {session.Faults.Count - 1} 条上报）" : string.Empty);
-            _message.ForeColor = theme.Text;
-            var parts = new List<string> { "开始 " + session.StartedAt.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture) };
-            if (!string.IsNullOrEmpty(fault.Source)) parts.Add("来源 " + fault.Source);
-            if (fault.AlarmCode != 0) parts.Add("报警 " + fault.AlarmCode.ToString(CultureInfo.InvariantCulture));
-            parts.Add(session.ConditionsCleared ? "故障条件已消除" : "故障条件未消除");
-            parts.Add("受影响 " + string.Join("、", session.AffectedFlows));
-            if (view.Fallback is not null) parts.Add("没处理完的原因：" + view.Fallback.Failure);
-            else if (!string.IsNullOrEmpty(session.LastFailure)) parts.Add("上次没处理完：" + session.LastFailure);
-            _details.Text = string.Join("　·　", parts);
-            _details.ForeColor = view.Fallback is not null ? theme.Error : theme.TextSecondary;
+            var tone = view.Fallback is not null ? WorkflowTone.Error : session.State == WorkflowFaultSessionState.Ended ? WorkflowTone.Neutral : WorkflowTone.Warning;
+            _banner.Show(tone, view.StateText, fault.Message + (session.Faults.Count > 1 ? $"（另有 {session.Faults.Count - 1} 条上报）" : string.Empty));
+            var theme = WorkflowWinFormsTheme.Modern;
+            var facts = new List<WorkflowFact> { new("开始", session.StartedAt.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)) };
+            if (!string.IsNullOrEmpty(fault.Source)) facts.Add(new WorkflowFact("来源", fault.Source));
+            if (fault.AlarmCode != 0) facts.Add(new WorkflowFact("报警", fault.AlarmCode.ToString(CultureInfo.InvariantCulture)));
+            facts.Add(new WorkflowFact("故障条件", session.ConditionsCleared ? "已消除" : "未消除", ValueColor: session.ConditionsCleared ? theme.Success : theme.Warning));
+            facts.Add(new WorkflowFact("受影响", string.Join("、", session.AffectedFlows)));
+            if (view.Fallback is not null) facts.Add(new WorkflowFact("没处理完", view.Fallback.Failure, ValueColor: theme.Error));
+            else if (!string.IsNullOrEmpty(session.LastFailure)) facts.Add(new WorkflowFact("上次没处理完", session.LastFailure!));
+            _facts.Show(facts);
+            _facts.Height = LogicalToDeviceUnits(28 * facts.Count + 8);
         }
         RebuildStops(view);
         UpdateActions();
@@ -197,19 +189,18 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
     private void RebuildViewChoices()
     {
         var history = _model?.History ?? Array.Empty<WorkflowFaultSession>();
-        var wanted = new List<object> { "当前" };
-        wanted.AddRange(history.Select(session => (object)new HistoryChoice(session)));
-        if (_view.Items.Count == wanted.Count && _view.Items.Cast<object>().Skip(1).Select(item => ((HistoryChoice)item).Session.Id)
-                .SequenceEqual(history.Select(session => session.Id)))
-            return;
-        var selectedId = (_view.SelectedItem as HistoryChoice)?.Session.Id;
+        if (history.Select(session => session.Id).SequenceEqual(_history.Select(session => session.Id))) return;
+        var selectedId = _view.SelectedIndex > 0 && _view.SelectedIndex - 1 < _history.Count ? _history[_view.SelectedIndex - 1].Id : (Guid?)null;
+        _history = history.ToArray();
         _rebuilding = true;
         try
         {
             _view.Items.Clear();
-            _view.Items.AddRange(wanted.ToArray());
-            var index = selectedId is null ? 0 : Math.Max(0, wanted.FindIndex(item => item is HistoryChoice choice && choice.Session.Id == selectedId));
-            _view.SelectedIndex = index;
+            _view.Items.Add(Current);
+            foreach (var session in _history)
+                _view.Items.Add(session.StartedAt.ToLocalTime().ToString("MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + " " + session.PrimaryFault.Message);
+            var index = selectedId is null ? -1 : _history.ToList().FindIndex(session => session.Id == selectedId);
+            _view.SelectedIndex = index < 0 ? 0 : index + 1;
         }
         finally
         {
@@ -217,9 +208,11 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
         }
     }
 
+    private WorkflowFaultSession? HistorySession => _view.SelectedIndex > 0 && _view.SelectedIndex - 1 < _history.Count ? _history[_view.SelectedIndex - 1] : null;
+
     private WorkflowFaultSessionView? SelectedView() =>
         _model is null ? null
-        : _view.SelectedItem is HistoryChoice choice ? _model.Describe(choice.Session)
+        : HistorySession is { } session ? _model.Describe(session)
         : _model.GetCurrent();
 
     private static string Signature(WorkflowFaultSessionView? view) => view is null
@@ -230,70 +223,62 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
 
     private void RebuildStops(WorkflowFaultSessionView? view)
     {
-        var theme = WorkflowWinFormsTheme.Modern;
-        var selected = SelectedStop?.Id;
-        _stops.BeginUpdate();
+        var stops = (view?.Flows ?? Array.Empty<WorkflowFaultFlowView>())
+            .SelectMany(flow => flow.StopPoints.Select(stop => (Flow: flow, Stop: stop)))
+            .ToArray();
+        _stopsBy = stops.ToDictionary(item => item.Stop.Id, item => (item.Flow, item.Stop));
+        var selected = _stops.SelectedKey;
+        _rebuilding = true;
         try
         {
-            _stops.Items.Clear();
-            foreach (var flow in view?.Flows ?? Array.Empty<WorkflowFaultFlowView>())
-            foreach (var stop in flow.StopPoints)
-            {
-                var item = new ListViewItem(flow.FlowName) { Tag = (flow, stop), ToolTipText = stop.Message };
-                item.SubItems.Add(stop.Position.ToString());
-                item.SubItems.Add(stop.NodeTitle);
-                item.SubItems.Add(ReasonText(stop.Reason));
-                item.SubItems.Add(stop.CanRecoverInPlace ? "是" : "否");
-                item.SubItems.Add(stop.Progress ?? string.Empty);
-                item.SubItems.Add(stop.Rejection is null ? stop.Message ?? string.Empty : $"{stop.Message}（上次去向被拒：{stop.Rejection}）");
-                item.ForeColor = stop.Reason == WorkflowStopReason.Requested ? theme.TextSecondary : theme.Text;
-                _stops.Items.Add(item);
-                if (stop.Id == selected) item.Selected = true;
-            }
-            if (_stops.SelectedItems.Count == 0)
-            {
-                // 默认选中第一个出故障的停点。
-                var first = _stops.Items.Cast<ListViewItem>().FirstOrDefault(item => ((ValueTuple<WorkflowFaultFlowView, WorkflowStopPoint>)item.Tag!).Item2.Reason != WorkflowStopReason.Requested)
-                            ?? _stops.Items.Cast<ListViewItem>().FirstOrDefault();
-                if (first is not null) first.Selected = true;
-            }
+            _stops.Show(stops.Select(item => new WorkflowListItem(
+                item.Stop.Id,
+                $"{item.Flow.FlowName} · {item.Stop.NodeTitle}",
+                item.Stop.Position + (item.Stop.CanRecoverInPlace ? " · 可就地恢复" : string.Empty)
+                + (item.Stop.Rejection is null ? string.Empty : " · 上次去向被拒：" + item.Stop.Rejection),
+                Badge: ReasonText(item.Stop.Reason),
+                BadgeTone: item.Stop.Reason == WorkflowStopReason.Requested ? WorkflowTone.Neutral : WorkflowTone.Error,
+                SubtitleTone: item.Stop.Rejection is null ? WorkflowTone.Neutral : WorkflowTone.Error)));
+            _stops.Height = LogicalToDeviceUnits(52 * Math.Max(1, Math.Min(3, stops.Length)));
+            // 默认选中第一个出故障的停点。
+            if (selected is not Guid id || !_stopsBy.ContainsKey(id))
+                _stops.SelectedKey = stops.Where(item => item.Stop.Reason != WorkflowStopReason.Requested).Select(item => (object?)item.Stop.Id).FirstOrDefault()
+                                     ?? stops.Select(item => (object?)item.Stop.Id).FirstOrDefault();
         }
         finally
         {
-            _stops.EndUpdate();
+            _rebuilding = false;
         }
         ShowOptions();
     }
 
-    private WorkflowStopPoint? SelectedStop => SelectedFlowStop?.Stop;
+    private Dictionary<Guid, (WorkflowFaultFlowView Flow, WorkflowStopPoint Stop)> _stopsBy = new();
 
     private (WorkflowFaultFlowView Flow, WorkflowStopPoint Stop)? SelectedFlowStop =>
-        _stops.SelectedItems.Count == 1 && _stops.SelectedItems[0].Tag is ValueTuple<WorkflowFaultFlowView, WorkflowStopPoint> tag ? tag : null;
+        _stops.SelectedKey is Guid id && _stopsBy.TryGetValue(id, out var value) ? value : null;
 
     private void ShowOptions()
     {
-        var selection = SelectedFlowStop;
         _rebuilding = true;
         try
         {
-            _options.Items.Clear();
-            if (selection is not { } value)
+            if (SelectedFlowStop is not { } selection)
             {
                 _optionsTitle.Text = "去向";
-                _optionReason.Text = string.Empty;
+                _options.Show(Array.Empty<WorkflowListItem>());
                 return;
             }
-            var flow = value.Flow;
+            var flow = selection.Flow;
             var deciding = _shown?.Fallback is not null;
             _optionsTitle.Text = deciding
-                ? $"流程 {flow.FlowName} 的去向" + (flow.NeedsDirective ? string.Empty : "（只被要求停下，不选时照常继续）")
-                : $"流程 {flow.FlowName} 的去向：" + (flow.Directive?.DisplayName ?? "处理流程还没给");
-            foreach (var option in flow.Options) _options.Items.Add(option);
+                ? $"{flow.FlowName} 的去向" + (flow.NeedsDirective ? string.Empty : "（不选时照常继续）")
+                : $"{flow.FlowName} 的去向：" + (flow.Directive?.DisplayName ?? "处理流程还没给");
+            _options.EmptyText = deciding ? "这个停点没有可选的去向" : "去向由处理流程给出；没处理完时才在这里选。";
+            _options.Show(flow.Options.Select((option, index) => new WorkflowListItem(index, option.Text,
+                option.Allowed ? null : "不能选：" + option.Reason, Enabled: option.Allowed, SubtitleTone: WorkflowTone.Error)));
             var chosen = _choices.TryGetValue(flow.FlowName, out var picked) ? picked : deciding ? null : flow.Directive;
-            if (chosen is not null)
-                _options.SelectedIndex = flow.Options.ToList().FindIndex(option => SameDirective(option.Directive, chosen));
-            _options.Enabled = true;
-            UpdateOptionReason();
+            var chosenIndex = chosen is null ? -1 : flow.Options.ToList().FindIndex(option => SameDirective(option.Directive, chosen));
+            _options.SelectedKey = chosenIndex < 0 ? null : chosenIndex;
         }
         finally
         {
@@ -303,57 +288,45 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
 
     private void ChooseOption()
     {
-        if (_rebuilding) return;
-        UpdateOptionReason();
-        if (_shown?.Fallback is null || SelectedFlowStop is not { } selection || _options.SelectedItem is not WorkflowFaultDirectiveOption option) return;
-        if (!option.Allowed) return;
-        _choices[selection.Flow.FlowName] = option.Directive;
+        if (_rebuilding || _shown?.Fallback is null || SelectedFlowStop is not { } selection || _options.SelectedKey is not int index) return;
+        var options = selection.Flow.Options;
+        if (index < 0 || index >= options.Count || !options[index].Allowed) return;
+        _choices[selection.Flow.FlowName] = options[index].Directive;
         UpdateActions();
-    }
-
-    private void UpdateOptionReason()
-    {
-        var theme = WorkflowWinFormsTheme.Modern;
-        if (_options.SelectedItem is WorkflowFaultDirectiveOption { Allowed: false } option)
-        {
-            _optionReason.Text = "不能选：" + option.Reason;
-            _optionReason.ForeColor = theme.Error;
-        }
-        else
-        {
-            _optionReason.Text = _shown?.Fallback is null ? "去向由处理流程给出；处理流程没处理完时才在这里选择。" : string.Empty;
-            _optionReason.ForeColor = theme.TextSecondary;
-        }
     }
 
     private void UpdateActions()
     {
-        var deciding = _shown?.Fallback is not null && _view.SelectedItem is not HistoryChoice;
-        _release.Visible = _rerun.Visible = _stopAll.Visible = deciding;
+        var deciding = _shown?.Fallback is not null && HistorySession is null;
+        _actions.Visible = deciding;
         _rerun.Enabled = _canOperate && _shown?.Fallback?.HasHandler == true;
         _stopAll.Enabled = _canOperate;
         var missing = deciding
             ? _shown!.Flows.Where(flow => flow.NeedsDirective && !_choices.ContainsKey(flow.FlowName)).Select(flow => flow.FlowName).ToArray()
             : Array.Empty<string>();
         _release.Enabled = _canOperate && deciding && missing.Length == 0;
-        _hint.Text = !deciding ? string.Empty
-            : missing.Length > 0 ? "还要给这些流程选去向：" + string.Join("、", missing)
-            : "各流程的去向都选好了。";
+        _hint.Visible = deciding;
+        _hint.Text = missing.Length > 0 ? "还要给这些流程选去向：" + string.Join("、", missing) : "各流程的去向都选好了。";
         _hint.ForeColor = missing.Length > 0 ? WorkflowWinFormsTheme.Modern.Warning : WorkflowWinFormsTheme.Modern.TextSecondary;
     }
 
-    private void DrawOption(object? sender, DrawItemEventArgs e)
+    private static Label Heading(string text) => new()
     {
-        if (e.Index < 0 || e.Index >= _options.Items.Count) return;
-        var option = (WorkflowFaultDirectiveOption)_options.Items[e.Index];
-        var theme = WorkflowWinFormsTheme.Modern;
-        var selected = (e.State & DrawItemState.Selected) != 0;
-        using (var back = new SolidBrush(selected ? theme.PrimaryBackground : _options.BackColor))
-            e.Graphics.FillRectangle(back, e.Bounds);
-        var color = !option.Allowed ? theme.TextDisabled : selected ? theme.Primary : theme.Text;
-        var text = option.Allowed ? option.Text : option.Text + "（不可用）";
-        TextRenderer.DrawText(e.Graphics, text, _options.Font, Rectangle.Inflate(e.Bounds, -8, 0), color,
-            TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+        Text = text,
+        Dock = DockStyle.Top,
+        Height = 30,
+        TextAlign = ContentAlignment.BottomLeft,
+        UseMnemonic = false,
+        AutoEllipsis = true
+    };
+
+    /// <inheritdoc />
+    protected override void OnFontChanged(EventArgs e)
+    {
+        base.OnFontChanged(e);
+        var bold = new Font(Font, FontStyle.Bold);
+        _stopsTitle.Font = bold;
+        _optionsTitle.Font = bold;
     }
 
     // 经过宿主的准入：拒绝或出错时显示消息；完成后刷新。
@@ -423,12 +396,70 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
         if (disposing && _model is not null) _model.Changed -= OnModelChanged;
         base.Dispose(disposing);
     }
+}
 
-    private sealed class HistoryChoice(WorkflowFaultSession session)
+/// <summary>
+/// 提示条（故障横幅等）：浅色底、粗体标题、正文自动换行，高度跟着宽度和文字变。
+/// </summary>
+public sealed class WorkflowBanner : Control
+{
+    private WorkflowTone _tone;
+    private string _title = string.Empty;
+    private string _message = string.Empty;
+
+    /// <summary>创建提示条。</summary>
+    public WorkflowBanner()
     {
-        public WorkflowFaultSession Session { get; } = session;
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+    }
 
-        public override string ToString() =>
-            Session.StartedAt.ToLocalTime().ToString("MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + " " + Session.PrimaryFault.Message;
+    /// <summary>当前标题。</summary>
+    public string Title => _title;
+
+    /// <summary>换内容。</summary>
+    public void Show(WorkflowTone tone, string title, string message)
+    {
+        if (_tone == tone && _title == title && _message == message) return;
+        _tone = tone;
+        _title = title;
+        _message = message;
+        Measure();
+        Invalidate();
+    }
+
+    /// <inheritdoc />
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        Measure();
+    }
+
+    private void Measure()
+    {
+        int S(int value) => LogicalToDeviceUnits(value);
+        using var bold = new Font(Font, FontStyle.Bold);
+        var width = Math.Max(S(40), Width - S(24));
+        var message = string.IsNullOrEmpty(_message) ? 0
+            : TextRenderer.MeasureText(_message, Font, new Size(width, int.MaxValue), TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix).Height + S(2);
+        var height = S(20) + bold.Height + message;
+        if (Height != height) Height = height;
+    }
+
+    /// <inheritdoc />
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        int S(int value) => LogicalToDeviceUnits(value);
+        e.Graphics.Clear(BackColor);
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using (var path = WorkflowCard.Rounded(new RectangleF(0, 0, Width - 1, Height - 1), S(WorkflowWinFormsTheme.Palette.Radius)))
+        using (var fill = new SolidBrush(WorkflowTones.Back(_tone)))
+            e.Graphics.FillPath(fill, path);
+        using var bold = new Font(Font, FontStyle.Bold);
+        var fore = _tone == WorkflowTone.Neutral ? WorkflowWinFormsTheme.Modern.Text : WorkflowTones.Fore(_tone);
+        TextRenderer.DrawText(e.Graphics, _title, bold, new Rectangle(S(12), S(10), Width - S(24), bold.Height), fore,
+            TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+        if (!string.IsNullOrEmpty(_message))
+            TextRenderer.DrawText(e.Graphics, _message, Font, new Rectangle(S(12), S(10) + bold.Height + S(2), Width - S(24), Height - bold.Height - S(12)), fore,
+                TextFormatFlags.NoPrefix | TextFormatFlags.WordBreak);
     }
 }

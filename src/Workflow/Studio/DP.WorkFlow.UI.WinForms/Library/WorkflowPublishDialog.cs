@@ -7,7 +7,7 @@ namespace DP.WorkFlow.UI.WinForms;
 /// <summary>发布确认框：上面是这次发布改了什么，下面填发布说明。流程库页和设计页共用。</summary>
 public sealed class WorkflowPublishDialog : Form
 {
-    private readonly TextBox _note = new() { Dock = DockStyle.Top, MaxLength = 200 };
+    private readonly ModernInput _note = new() { Dock = DockStyle.Top, MaxLength = 200, Height = 34, PlaceholderText = "这次改了什么" };
 
     private WorkflowPublishDialog(string name, string changes)
     {
@@ -20,22 +20,18 @@ public sealed class WorkflowPublishDialog : Form
         MinimizeBox = false;
         MaximizeBox = false;
         Padding = new Padding(10);
-        var changesBox = new TextBox
-        {
-            Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.None,
-            Text = changes
-        };
+        var changesBox = new ModernTextArea { Dock = DockStyle.Fill, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Text = changes };
         var hint = new Label
         {
             Dock = DockStyle.Top, AutoSize = false, Height = 40,
             Text = "发布后替换正式流程文件，记一个版本，没有流程在运行时重新加载。"
         };
         var noteLabel = new Label { Dock = DockStyle.Top, AutoSize = false, Height = 22, Text = "发布说明（记进版本历史）：" };
-        var ok = new ModernButton { Text = "发布", AutoSize = true, ButtonType = ModernButtonType.Primary, DialogResult = DialogResult.OK };
-        var cancel = new ModernButton { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
+        var ok = WorkflowSizing.Fit(new ModernButton { Text = "发布", ButtonType = ModernButtonType.Primary, DialogResult = DialogResult.OK });
+        var cancel = WorkflowSizing.Fit(new ModernButton { Text = "取消", DialogResult = DialogResult.Cancel });
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 8, 0, 0) };
         buttons.Controls.AddRange(new Control[] { cancel, ok });
-        var lower = new Panel { Dock = DockStyle.Bottom, Height = 56 };
+        var lower = new Panel { Dock = DockStyle.Bottom, Height = 64 };
         lower.Controls.Add(_note);
         lower.Controls.Add(noteLabel);
         Controls.Add(changesBox);

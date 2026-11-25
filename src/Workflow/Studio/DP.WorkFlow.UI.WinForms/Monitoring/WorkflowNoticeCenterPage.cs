@@ -18,10 +18,10 @@ public sealed class WorkflowNoticeCenterPage : WorkflowPage
     private readonly Func<WorkflowRunCenterFlow, WorkflowDocument?> _documentOf;
     private readonly Dictionary<string, WorkflowDocument?> _documents = new(StringComparer.Ordinal);
     private readonly ModernSegmentedControl _categories = new();
-    private readonly ComboBox _flowPicker = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
-    private readonly ModernInput _search = new() { PlaceholderText = "搜索内容、节点或类别", Width = 240 };
+    private readonly ModernSelect _flowPicker = new();
+    private readonly ModernInput _search = new() { PlaceholderText = "搜索内容、节点或类别" };
     private readonly ModernButton _acknowledgeAll = new() { Text = "全部确认" };
-    private readonly ListBox _nodes = new() { BorderStyle = BorderStyle.None, DrawMode = DrawMode.OwnerDrawFixed, IntegralHeight = false };
+    private readonly WorkflowItemList _nodes = new() { EmptyText = "没有提示" };
     private readonly ModernDataGridView _table = Table("类别", "流程", "节点", "内容", "次数", "最近出现");
     private readonly WorkflowFactList _detail = new();
     private readonly ModernButton _acknowledge = new() { Text = "确认此位置" };
@@ -43,38 +43,25 @@ public sealed class WorkflowNoticeCenterPage : WorkflowPage
         _center = center ?? throw new ArgumentNullException(nameof(center));
         _documentOf = documentOf ?? (_ => null);
 
-        var filters = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Color.Transparent };
-        _categories.Width = 320;
-        foreach (var control in new Control[] { _categories, _flowPicker, _search })
-        {
-            control.Margin = new Padding(LogicalToDeviceUnits(8), LogicalToDeviceUnits(9), 0, 0);
-            filters.Controls.Add(control);
-        }
-        var right = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.RightToLeft, BackColor = Color.Transparent };
-        WorkflowCommandSizing.Fit(_acknowledgeAll);
-        right.Controls.Add(_acknowledgeAll);
-        right.Padding = new Padding(0, LogicalToDeviceUnits(6), LogicalToDeviceUnits(6), 0);
-        var bar = new WorkflowCard { Dock = DockStyle.Top, LogicalExtent = 52 };
-        bar.Controls.Add(filters);
-        bar.Controls.Add(right);
+        // 工具条卡：类别分段、流程、搜索；右边“全部确认”。
+        var bar = new WorkflowToolbar();
+        bar.Add(_categories);
+        bar.Add(_flowPicker, 170);
+        bar.Add(_search, 240);
+        _acknowledgeAll.ButtonType = ModernButtonType.Primary;
+        bar.AddRight(_acknowledgeAll);
 
-        _nodes.ItemHeight = LogicalToDeviceUnits(48);
-        _nodes.DrawItem += DrawNode;
-        _nodesCard = Section("按节点", null, _nodes, DockStyle.Left, 260);
+        _nodesCard = Section("按节点", null, _nodes, DockStyle.Left, 250);
         _tableCard = Section("提示", null, _table);
-        var detailBody = new Panel { Dock = DockStyle.Fill };
-        var detailFooter = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = LogicalToDeviceUnits(46), FlowDirection = FlowDirection.RightToLeft, BackColor = Color.Transparent };
-        WorkflowCommandSizing.Fit(_acknowledge);
-        detailFooter.Controls.Add(_acknowledge);
-        detailBody.Controls.Add(_detail);
-        detailBody.Controls.Add(detailFooter);
+        var detailCard = Section("详情", null, _detail, DockStyle.Right, 330);
+        HeaderOf(detailCard).AddAction(_acknowledge);
 
         var middle = new Panel { Dock = DockStyle.Fill };
         middle.Controls.Add(_tableCard);
         middle.Controls.Add(Gap(DockStyle.Left));
         middle.Controls.Add(_nodesCard);
         middle.Controls.Add(Gap(DockStyle.Right));
-        middle.Controls.Add(Section("详情", null, detailBody, DockStyle.Right, 320));
+        middle.Controls.Add(detailCard);
 
         Controls.Add(middle);
         Controls.Add(Gap(DockStyle.Top));
@@ -90,7 +77,7 @@ public sealed class WorkflowNoticeCenterPage : WorkflowPage
         _categories.SelectedIndexChanged += (_, _) => { if (!_updating) ApplyFilter(); };
         _flowPicker.SelectedIndexChanged += (_, _) => { if (!_updating) ApplyFilter(); };
         _search.TextChanged += (_, _) => ApplyFilter();
-        _nodes.SelectedIndexChanged += (_, _) => { if (!_updating) SelectNode(); };
+        _nodes.SelectionChanged += (_, _) => { if (!_updating) SelectNode(); };
         _table.SelectionChanged += (_, _) => { if (!_updating) ShowDetail(); };
         _acknowledge.Click += (_, _) => { if (Selected is { } entry) Acknowledge(new[] { entry }); };
         _acknowledgeAll.Click += (_, _) => Acknowledge(_shown);
@@ -142,7 +129,6 @@ public sealed class WorkflowNoticeCenterPage : WorkflowPage
                     _categories.Items.Add(new ModernSegmentedItem($"{group.Key} {group.Count()}", group.Key));
                 var index = selected is null ? 0 : Math.Max(0, _categories.Items.ToList().FindIndex(item => Equals(item.Value, selected)));
                 _categories.SelectedIndex = index;
-                _categories.Width = LogicalToDeviceUnits(90) * _categories.Items.Count;
             }
             var flows = _center.Flows.Select(flow => flow.Name).ToArray();
             var flowSignature = string.Join("|", flows);
@@ -182,7 +168,6 @@ public sealed class WorkflowNoticeCenterPage : WorkflowPage
 
     private void RebuildNodes()
     {
-        (string Flow, string PlanPath, string? NodeId)? selected = _nodes.SelectedItem is NodeGroup current ? current.Key : null;
         var groups = _shown.GroupBy(entry => (entry.Flow.Name, entry.Notice.PlanPath, entry.Notice.NodeId))
             .Select(group => new NodeGroup(group.Key, group.First(), group.Sum(entry => entry.Notice.Count)))
             .OrderByDescending(group => group.Count)
@@ -190,12 +175,9 @@ public sealed class WorkflowNoticeCenterPage : WorkflowPage
         _updating = true;
         try
         {
-            _nodes.BeginUpdate();
-            _nodes.Items.Clear();
-            foreach (var group in groups) _nodes.Items.Add(group);
-            _nodes.EndUpdate();
-            var index = selected is null ? -1 : Array.FindIndex(groups, group => group.Key == selected);
-            _nodes.SelectedIndex = index;
+            _nodes.Show(groups.Select(group => new WorkflowListItem(group.Key, group.First.NodeTitle,
+                group.First.Flow.Name + (group.Key.NodeId is null ? " · 画布" : " · " + group.Key.NodeId),
+                Badge: group.Count.ToString(CultureInfo.InvariantCulture), BadgeTone: WorkflowTone.Warning)));
         }
         finally
         {
@@ -206,8 +188,7 @@ public sealed class WorkflowNoticeCenterPage : WorkflowPage
 
     private void SelectNode()
     {
-        if (_nodes.SelectedItem is not NodeGroup group) { RebuildTable(null); return; }
-        RebuildTable(group.Key);
+        RebuildTable(_nodes.SelectedKey is ValueTuple<string, string, string?> key ? key : null);
     }
 
     private void RebuildTable((string Flow, string PlanPath, string? NodeId)? location)
@@ -295,27 +276,6 @@ public sealed class WorkflowNoticeCenterPage : WorkflowPage
         }
         var node = document?.Nodes.FirstOrDefault(item => item.Node.Id == nodeId)?.Node;
         return node is null || string.IsNullOrWhiteSpace(node.Title) ? nodeId : node.Title;
-    }
-
-    private void DrawNode(object? sender, DrawItemEventArgs e)
-    {
-        if (e.Index < 0 || _nodes.Items[e.Index] is not NodeGroup group) return;
-        var theme = WorkflowWinFormsTheme.Modern;
-        var selected = (e.State & DrawItemState.Selected) != 0;
-        using (var back = new SolidBrush(selected ? theme.PrimarySurface : _nodes.BackColor))
-            e.Graphics.FillRectangle(back, e.Bounds);
-        int S(int value) => LogicalToDeviceUnits(value);
-        var flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
-        using var bold = new Font(_nodes.Font, FontStyle.Bold);
-        var countText = group.Count.ToString(CultureInfo.InvariantCulture);
-        var countWidth = TextRenderer.MeasureText(countText, bold).Width;
-        var left = e.Bounds.Left + S(14);
-        var width = Math.Max(0, e.Bounds.Width - S(28) - countWidth - S(8));
-        TextRenderer.DrawText(e.Graphics, group.First.NodeTitle, bold, new Rectangle(left, e.Bounds.Top + S(6), width, S(20)), theme.Text, flags);
-        var sub = group.First.Flow.Name + (group.Key.NodeId is null ? " · 画布" : " · " + group.Key.NodeId);
-        TextRenderer.DrawText(e.Graphics, sub, _nodes.Font, new Rectangle(left, e.Bounds.Top + S(26), width, S(18)), theme.TextSecondary, flags);
-        TextRenderer.DrawText(e.Graphics, countText, bold, new Rectangle(e.Bounds.Right - S(14) - countWidth, e.Bounds.Top, countWidth, e.Bounds.Height),
-            theme.Warning, flags | TextFormatFlags.VerticalCenter);
     }
 
     private sealed record Entry(WorkflowRunCenterFlow Flow, WorkflowNotice Notice, string NodeTitle)

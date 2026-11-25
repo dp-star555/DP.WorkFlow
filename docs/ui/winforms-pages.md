@@ -11,7 +11,7 @@
 ## 打包给 DP.Foundation
 
 - DP.Foundation 的 Workflow 功能包引用本仓库的包，不引用源码：内核、持久化、标准 / 复合 / 工艺 / 运动节点、脚本、UI.Shared、UI.WinForms，加上 DP.Vision 的 DP.Plugins.Runtime，共 13 个。
-- 版本在根目录 `Directory.Build.props` 的 `<Version>`（现在 1.0.0-preview.10）。改了这些库：版本加一，运行 `tools/Pack-ForFoundation.ps1`（打包并复制到同级 DP.Foundation\vendor\packages），再在 Foundation 改引用版本、vendor\README.md 的哈希，`dotnet restore --force-evaluate`。
+- 版本在根目录 `Directory.Build.props` 的 `<Version>`（现在 1.0.0-preview.11）。改了这些库：版本加一，运行 `tools/Pack-ForFoundation.ps1`（打包并复制到同级 DP.Foundation\vendor\packages），再在 Foundation 改引用版本、vendor\README.md 的哈希，`dotnet restore --force-evaluate`。
 - 脚本库的包 ID 改成 `DP.WorkFlow.ScriptEngine` / `DP.WorkFlow.ScriptEngine.WinForms`（程序集名不变）。后者带一个 buildTransitive 目标，间接引用时也把 Scintilla 原生库复制到程序目录。
 
 ## 主题
@@ -27,7 +27,9 @@
 
 - `WorkflowCanvasWorkspaceControl` 排成卡片（`WorkflowCard`：表面色底、细线描边、主题圆角；卡片里的宿主控件按表面色着色）：
   - 上面命令卡：左边工具条（宿主条目如“文件”、保存，撤销、重做，当前路径和“已修改”），右边适合画布、自动布局、对齐 ▾、宿主按钮（`AddCommand`，如“发布”）、校验（带问题数）、调试运行；运行中换成暂停 / 继续 / 停止。
-  - 中间：工具箱卡（220，标题“工具箱 · 拖到画布”、搜索、分类树）| 画布卡（点状网格）| 检查器卡（300，`Inspector`，为空时不显示）。
+  - 中间：工具箱卡（220，标题“工具箱 · 拖到画布”、搜索、分类树，可以拖到画布，也可以双击放到画布中间）| 画布卡（点状网格）| 检查器卡（300，`Inspector`）。
+  - 检查器默认隐藏：点命令卡上的“节点属性”浮在画布右侧，鼠标移开且焦点不在里面时自动收起；标题行的“固定”让它占一栏，“取消固定”后回到自动收起（`InspectorPinned`）。
+  - 工具箱拖动自己判断：`ModernTreeView` 自己处理鼠标按下，原生的 `ItemDrag` 不会触发，所以按下记住节点，移动超过系统拖动阈值就开始拖放。
   - 下面页签卡：诊断 (n) | 节点提示 (n) | 运行监视 | 公共数据，和中间之间可以拖动。
   - 最下面一行状态：节点数、连线数、选中节点；右边是宿主消息（`StatusMessage`）。
 - `WorkflowNodeInspectorControl`：选中节点的图标、标题、类型 · 标识、上次运行状态；“参数 | 结果 | 提示”三页；底部“打开节点编辑”进完整的节点窗口。参数改了立即写进流程（可撤销），不另设“应用”。
@@ -37,14 +39,21 @@
 ## 尺寸与缩放（排版规则）
 
 - 卡片、间隔、标题行、状态行都是 `WorkflowBlock`：`LogicalExtent`（宽或高）和 `LogicalPadding` 按当前 DPI 换算，宿主按字体自动缩放时不再缩它们，否则会和 DPI 换算叠加（曾把工具箱 220 放大成约 700 像素）。
-- `ModernButton` 是 UserControl，`AutoSize` 会算出 0 宽；命令按钮一律用 `WorkflowCommandSizing.Fit` 按文字定宽（30 高），文字、字体、DPI 变了自动重量。
-- 页面用 `WorkflowPage.Section`（42 px 标题行的卡片）、`Gap`（10 px 间隔）、`WorkflowMetricStrip`（顶部指标条）、`WorkflowFactList`（侧栏“名称 …… 值”）、`WorkflowStatusLine`（最下面一行状态）拼。
+- `ModernButton` 是 UserControl，`AutoSize` 会算出 0 宽；控件一律用 `WorkflowSizing.Fit(控件, 逻辑宽度)` 定尺寸：高 30、外边距 4（相邻间隔 8），宽度给定或按文字量（按钮、分段、勾选），文字、字体、DPI 变了自动重量。分段控件各段等宽，按最长的文字定宽，不会被截断。
+- 页面用这些部件拼，不直接用原生 ComboBox / CheckBox / TextBox / ListBox / ListView / TreeView：
+  - `WorkflowToolbar`：顶部 52 高的工具条卡，`Add` 左边、`AddRight` 右边、`AddSeparator`；放 `ModernSelect`、`ModernInput`、`ModernSegmentedControl`、`ModernCheckbox`、`ModernSwitch`、`ModernButton`。
+  - `WorkflowPage.Section`（42 高标题行的卡片，`HeaderOf(card).AddAction` 在标题行右边放按钮）、`Gap`（10 间隔）。
+  - `WorkflowMetricStrip`（指标条，文字高度按字体量、垂直居中）、`WorkflowFactList`（侧栏“名称 …… 值”）、`WorkflowStatusLine`（最下面一行状态：左概况、右最近一条消息）。
+  - `WorkflowItemList`（卡片里的列表：标题 + 副标题、状态点、右边小标签或图标按钮）、`WorkflowBanner`（故障横幅）、`WorkflowTones`（成功 / 运行中 / 提示 / 故障的颜色和小标签）。
+  - 改名、连线备注这类一行输入用 `WorkflowInputDialog`。
 
 ## 其他页面（按设计稿画板）
 
-- 运行监视页：指标条（流程、状态、运行次数、平均节拍、最近一圈、圈数、成功、出错，右边选流程和统计清零）| 只读画布卡 + 右栏“本次节点耗时 / 界面同步”（300）| 下面运行数据卡（轨迹在第一页）| 状态行。设计稿里的 OK / NG / 良率不做（流程只管自己的东西）。
-- 节点提示页（`WorkflowNoticeCenterPage`，新）：筛选条（类别、流程、搜索、全部确认）| 按节点（260）| 提示表 | 详情（320，确认此位置）| 状态行。汇总流程管理里所有流程的提示板。
-- 流程库页：工具条（新建、导入、搜索、全部 / 已发布 / 草稿 / 有诊断、显示已删除，右边流程目录和刷新）| 流程表 | 详情（360：文件、草稿、修改人、版本列表，下面打开设计、查看修改、发布、放弃草稿、复制、改名、导出、历史、删除）| 状态行。
+- 运行页（`WorkflowRunPage`，原运行总览和运行监视合成一页）：左边流程列表（260：状态点、状态 / 提示 / 恢复轮次、故障标签、单独启停）| 中间指标条（运行次数、平均节拍、最近一圈、圈数、出错，统计清零）和只读画布卡 | 右栏“故障处理 | 节点耗时”（320，出故障时自动切到故障处理）| 下面运行数据卡（轨迹、令牌、并行域、子流程、输出、节点耗时）| 状态行。整线启停用宿主顶部按钮，页面不再放“全部启动 / 全部停止”。设计稿里的 OK / NG / 良率不做（流程只管自己的东西）。
+- 故障处理（`WorkflowFaultWorkbenchControl`，运行页右栏）按窄栏竖排：查看（当前 / 最近结束的会话）、故障横幅、概况、停在哪里（流程 · 节点、位置、可否就地恢复）、所选流程的去向（不可用的灰显并写原因），处理流程没处理完时下面是放行、重新运行处理流程、全部停止。
+- 节点提示页（`WorkflowNoticeCenterPage`）：工具条（类别分段、流程、搜索，右边全部确认）| 按节点（250）| 提示表 | 详情（330，标题行“确认此位置”）| 状态行。汇总流程管理里所有流程的提示板。
+- 运行日志页：工具条（流程、运行、结果、只看控制步骤、搜索，右边跟随最新开关）| 运行记录（标题行全部展开、自动折叠）| 选中的记录（380，“名称 …… 值”，标题行复制）| 状态行。
+- 流程库页：工具条（新建流程、导入 | 搜索、全部 / 已发布 / 草稿 / 有诊断、显示已删除，右边刷新）| 流程表 | 详情（380：标题行流程名和状态，下面打开设计、发布…、更多 ▾（查看修改、放弃草稿、历史版本、复制、改名、导出、删除），再下面文件、草稿、修改人和版本）| 状态行（概况和流程目录）。
 - 节点编辑窗口：顶部节点标题卡（图标、标题、类型 · 标识、上次运行状态）| 左边页签卡（参数、输入输出、ROI 等列表页）| 中间主体卡（子画布、脚本、图像）| 右栏运行结果和本节点提示 | 底部取消 / 应用 / 确定。仍是弹出窗口，没做成页内页面。
 
 ## 统一刷新节拍（R4-b）
@@ -95,21 +104,17 @@
   - 不传时只显示。
 - 控件 `WorkflowFaultWorkbenchControl`：不可用的去向灰显。`DecisionRequested` 事件让宿主切到工作台。
 
-## 页面基类与运行总览
+## 页面基类
 
 - `WorkflowPage`：结构同 Foundation 的 `FeaturePage`，提供：
   - 同样的入口：`OnRefresh(canOperate, force)` 和 `ShowMessage`。
   - 卡片、网格、文字、表格工厂，以及 `RestoreSelection`。
   - 单独运行时按统一时钟每秒刷新；由外壳驱动时把 `AutoRefresh` 设为 false。
   - 挂进操作台时把基类换成 FeaturePage，或写一个薄适配器，页面代码不用改。
-- `WorkflowRunCenterPage`：流程管理的运行总览，分三块：
-  - 各流程的状态、恢复轮次、提示条数、记录健康，可以启动和停止。
-  - 选中流程的提示。
-  - 故障工作台。
 
-## 运行监视页
+## 运行页
 
-- `WorkflowRunMonitorPage(center, catalog, documentOf)`：选一个流程，上面一排是状态、运行次数、圈数、节拍、界面同步，中间是只读画布，下面是 `WorkflowRuntimeMonitorControl`（令牌、并行域、子流程、事件、输出、节点耗时）。
+- `WorkflowRunPage(center, catalog, documentOf, workbench)`：见上面“其他页面”。
 - 画布 `WorkflowDesignerControl.ReadOnly`：只能平移、缩放、选中、看提示，不能拖动、连线、删除、粘贴、拖入节点，双击不打开节点编辑。
 - 统计 `WorkflowRunStatistics`（UI.Shared）：只从界面拉到的快照推算。
   - 节拍：根画布有循环块时是主循环相邻两圈的间隔（一帧跳过多圈时平分），没有时是每次运行结束时的总耗时；取近 60 次平均。
@@ -159,7 +164,7 @@
 - `IWorkflowOperationGate`（UI.Shared）：宿主对界面操作的准入与记录，默认 `WorkflowOperationGates.Direct` 直接执行。
 - `WorkflowOperation(Kind, Target, Detail)`，`Key` 是稳定的操作键，例如 `workflow.flow.start`、`workflow.fault.release`、`workflow.design.run`。
 - 经过它的操作：
-  - 运行总览：单独启动 / 停止、全部启动 / 停止（`WorkflowRunCenterPage.Gate`）。
+  - 运行页：单独启动 / 停止（`WorkflowRunPage.Gate`，同时交给故障处理）。
   - 故障工作台：放行、重新运行处理流程、全部停止（`WorkflowFaultWorkbenchControl.Gate`，另有 `CanOperate`）。
   - 设计器运行：开始（整个流程、当前子流程、单节点）和停止（`WorkflowStudioRuntimeBinding.Gate`）。
 - 只包住“发出命令”，不等流程跑完。

@@ -385,7 +385,7 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     /// <summary>创建Diagnostics。</summary>
     private static Control CreateDiagnostics(WorkflowScriptEditorPageModel page)
     {
-        var list = new ListBox { Dock = DockStyle.Fill };
+        var list = new ModernUI.WinForms.ModernListBox { Dock = DockStyle.Fill };
         var diagnostics = page.GetDiagnostics();
         if (diagnostics.Count == 0) list.Items.Add("✓ 未发现脚本诊断。");
         else foreach (var item in diagnostics) list.Items.Add(item);
