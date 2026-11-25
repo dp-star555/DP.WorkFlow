@@ -7,7 +7,7 @@ namespace DP.WorkFlow.UI.WinForms;
 /// 画布工作区（设计页的主体，按设计稿排成卡片）：
 /// 上面一条命令卡（宿主的“文件”等条目、撤销、重做、路径和“已修改”标记；右边适合画布、自动布局、对齐、校验、调试运行），
 /// 中间左边工具箱卡、中间画布卡、右边可选的检查器卡（<see cref="Inspector"/>，默认隐藏，可浮出或固定，见 <see cref="InspectorPinned"/>），
-/// 下面页签卡“诊断 | 节点提示 | 运行监视 | 公共数据”，最下面一行状态（节点数、连线数、选中节点、宿主消息）。
+/// 下面页签卡“诊断 | 节点提示 | 运行监视 | 公共数据”（默认收起成一条页签名，见 <see cref="BottomExpanded"/>），最下面一行状态（节点数、连线数、选中节点、宿主消息）。
 /// 工作台主画布和节点窗口的子画布共用这一个控件；两者的差别只在运行命令（<see cref="RunCommands"/>）、
 /// 监视来源（<see cref="WorkflowRuntimeMonitorControl.Source"/>）、检查器和宿主加入的条目。
 /// </summary>
@@ -54,7 +54,12 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     private readonly TabPage _runtimePage = new() { Name = "runtimePage", Text = "运行监视", Padding = new Padding(6) };
     private readonly TabPage _publicDataPage = new() { Name = "publicDataPage", Text = "公共数据", Padding = new Padding(6) };
     private readonly WorkflowStatusLine _status = new();
-    private readonly WorkflowCardHeader _inspectorHeader = new("节点属性", "选中节点后在这里改参数");
+    private readonly WorkflowCardHeader _inspectorHeader = new("节点属性");
+    // 底部页签默认收起成一条（只有页签名），把高度留给画布；点页签名或“展开”再打开。
+    private readonly WorkflowToolbar _bottomBar = new() { Dock = DockStyle.Bottom, LogicalExtent = 44 };
+    private readonly WorkflowBlock _bottomBarGap = new() { Dock = DockStyle.Bottom, LogicalExtent = 10 };
+    private readonly ModernButton _collapseButton = new() { Name = "collapseButton", Text = "收起", ButtonType = ModernButtonType.Text, Icon = ModernIconKind.ChevronDown };
+    private readonly Dictionary<TabPage, ModernButton> _tabButtons = new();
     private Panel _middle = null!;
     private WorkflowPublicDataManifestModel? _publicDataModel;
     private WorkflowDesignerSession? _session;
@@ -71,6 +76,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _toolbar.GripStyle = ToolStripGripStyle.Hidden;
         _toolbar.Dock = DockStyle.Fill;
         _toolbar.Items.AddRange(new ToolStripItem[] { _undoButton, _redoButton, _editSeparator, _breadcrumbLabel, _stateLabel });
+        _toolbar.ItemAdded += (_, e) => { if (e.Item is { } item) SpaceToolbarItem(item); };
         BreadcrumbText = null;
 
         Designer = new WorkflowDesignerControl
@@ -94,7 +100,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _bottomTabs.TabPages.Add(_runtimePage);
         _bottomTabs.TabPages.Add(_publicDataPage);
         _bottomTabs.Dock = DockStyle.Fill;
-        Notices.CountChanged += (_, _) => _noticesPage.Text = Notices.NoticeCount == 0 ? "节点提示" : $"节点提示 ({Notices.NoticeCount})";
+        Notices.CountChanged += (_, _) => SetTabText(_noticesPage, Notices.NoticeCount == 0 ? "节点提示" : $"节点提示 ({Notices.NoticeCount})");
         Notices.NoticeActivated += (_, notice) => RevealNotice(notice);
         Designer.NoticesPageRequested += (_, _) => ShowNotices();
         Diagnostics.SummaryChanged += (_, _) => UpdateDiagnosticsCount();
@@ -103,7 +109,8 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _commands.Controls.AddRange(new Control[] { _stopButton, _resumeButton, _pauseButton, _runButton, _validateButton, Separator(), _alignButton, _autoLayoutButton, _fitButton, _inspectorButton });
         foreach (Control command in _commands.Controls)
             if (command is ModernButton button) WorkflowSizing.Fit(button);
-        _commandCard.LogicalExtent = 46;
+        _commandCard.LogicalExtent = 52;
+        _commandCard.Resize += (_, _) => CenterCommands();
         _commandCard.Controls.Add(_toolbar);
         _commandCard.Controls.Add(_commands);
 
@@ -112,7 +119,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _toolboxCard.Controls.Add(Toolbox);
         _toolboxCard.Controls.Add(new WorkflowCardHeader("工具箱", "拖到画布"));
         _canvasCard.Controls.Add(Designer);
-        _inspectorCard.LogicalExtent = 300;
+        _inspectorCard.LogicalExtent = 340;
         _inspectorHeader.AddAction(_pinButton);
         _inspectorCard.Controls.Add(_inspectorHeader);
         var middle = _middle = new Panel { Dock = DockStyle.Fill };
@@ -122,14 +129,30 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         middle.Controls.Add(_inspectorGap);
         middle.Controls.Add(_inspectorCard);
         _bottomCard.Controls.Add(_bottomTabs);
+        _bottomCard.Controls.Add(WorkflowSizing.Fit(_collapseButton));
+        _collapseButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        _collapseButton.BringToFront();
+        _bottomCard.Resize += (_, _) => _collapseButton.Location = new Point(
+            _bottomCard.ClientSize.Width - _collapseButton.Width - LogicalToDeviceUnits(8), LogicalToDeviceUnits(4));
+        foreach (TabPage page in _bottomTabs.TabPages)
+        {
+            var button = _bottomBar.Add(new ModernButton { Text = page.Text, ButtonType = ModernButtonType.Text });
+            var target = page;
+            button.Click += (_, _) => ShowBottom(target);
+            _tabButtons[page] = button;
+        }
+        _bottomBar.AddRight(new ModernButton { Text = "展开", ButtonType = ModernButtonType.Text, Icon = ModernIconKind.ChevronUp })
+            .Click += (_, _) => ShowBottom(_bottomTabs.SelectedTab);
+        _collapseButton.Click += (_, _) => BottomExpanded = false;
 
-        // 中间和底部页签之间可以拖动分隔，默认底部 190。
+        // 中间和底部页签之间可以拖动分隔，展开时底部默认 220。
         _canvasAndBottom.Size = new Size(1180, 640);
         _canvasAndBottom.Dock = DockStyle.Fill;
         _canvasAndBottom.Orientation = Orientation.Horizontal;
         _canvasAndBottom.FixedPanel = FixedPanel.Panel2;
         _canvasAndBottom.SplitterWidth = S(10);
-        _canvasAndBottom.InitialPanel2Size = 190;
+        _canvasAndBottom.InitialPanel2Size = 220;
+        _canvasAndBottom.Panel2Collapsed = true;
         _canvasAndBottom.SplitterDistance = 440;
         _canvasAndBottom.Panel1.Controls.Add(middle);
         _canvasAndBottom.Panel2.Controls.Add(_bottomCard);
@@ -137,6 +160,8 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         Controls.Add(_canvasAndBottom);
         Controls.Add(new WorkflowBlock { Dock = DockStyle.Top, LogicalExtent = 10 });
         Controls.Add(_commandCard);
+        Controls.Add(_bottomBarGap);
+        Controls.Add(_bottomBar);
         Controls.Add(_status);
         Size = new Size(1180, 720);
         ResumeLayout(false);
@@ -158,8 +183,8 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _validateButton.Click += (_, _) =>
         {
             Diagnostics.RefreshDiagnostics();
-            _bottomTabs.SelectedTab = _diagnosticsPage;
-      };
+            ShowBottom(_diagnosticsPage);
+        };
         _runButton.Click += async (_, _) => await RunAsync();
         _inspectorButton.Click += (_, _) => ToggleInspector();
         _pinButton.Click += (_, _) => InspectorPinned = !InspectorPinned;
@@ -334,13 +359,13 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     public WorkflowPublicDataPage PublicData { get; }
 
     /// <summary>切到公共数据页。</summary>
-    public void ShowPublicData() => _bottomTabs.SelectedTab = _publicDataPage;
+    public void ShowPublicData() => ShowBottom(_publicDataPage);
 
     /// <summary>切到提示页。</summary>
     public void ShowNotices()
     {
         Notices.RefreshNotices();
-        _bottomTabs.SelectedTab = _noticesPage;
+        ShowBottom(_noticesPage);
     }
 
     /// <summary>命令卡左边的工具条；宿主可在最前面插入自己的条目（例如“文件”菜单、保存）。</summary>
@@ -419,7 +444,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             if (!result.Success && result.State == E_WorkflowExecutionState.Faulted)
             {
                 // 运行失败只记录：失败节点标红、故障写入运行监视轨迹，切到运行监视查看，不弹窗。
-                _bottomTabs.SelectedTab = _runtimePage;
+                ShowBottom(_runtimePage);
                 RunFaulted?.Invoke(this, $"流程运行失败：{result.Message}");
             }
         }
@@ -431,7 +456,50 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     }
 
     /// <summary>切到运行监视页。</summary>
-    public void ShowRuntimeMonitor() => _bottomTabs.SelectedTab = _runtimePage;
+    public void ShowRuntimeMonitor() => ShowBottom(_runtimePage);
+
+    /// <summary>
+    /// 底部页签（诊断、节点提示、运行监视、公共数据）是否展开。默认收起成一条页签名，画布占满中间；
+    /// 校验、运行失败、定位提示等会自动展开到对应页。
+    /// </summary>
+    public bool BottomExpanded
+    {
+        get => !_canvasAndBottom.Panel2Collapsed;
+        set
+        {
+            if (BottomExpanded == value) return;
+            SuspendLayout();
+            _canvasAndBottom.Panel2Collapsed = !value;
+            _bottomBar.Visible = _bottomBarGap.Visible = !value;
+            ResumeLayout(true);
+        }
+    }
+
+    private void ShowBottom(TabPage? page)
+    {
+        if (page is not null) _bottomTabs.SelectedTab = page;
+        BottomExpanded = true;
+    }
+
+    private void SetTabText(TabPage page, string text)
+    {
+        page.Text = text;
+        if (_tabButtons.TryGetValue(page, out var button)) button.Text = text;
+    }
+
+    private void CenterCommands()
+    {
+        var top = Math.Max(0, (_commandCard.DisplayRectangle.Height - LogicalToDeviceUnits(38)) / 2);
+        _commands.Padding = new Padding(0, top, LogicalToDeviceUnits(6), 0);
+        _toolbar.Padding = new Padding(LogicalToDeviceUnits(8), 0, 0, 0);
+    }
+
+    // 工具条条目统一留白：图标按钮、菜单和路径之间不再挤在一起。
+    private void SpaceToolbarItem(ToolStripItem item)
+    {
+        item.Margin = new Padding(LogicalToDeviceUnits(2), 0, LogicalToDeviceUnits(2), 0);
+        item.Padding = item is ToolStripSeparator ? Padding.Empty : new Padding(LogicalToDeviceUnits(6), LogicalToDeviceUnits(4), LogicalToDeviceUnits(6), LogicalToDeviceUnits(4));
+    }
 
     /// <summary>重新读取运行命令的可用性和提示，例如导航层级变化后。</summary>
     public void RefreshRunCommands() => UpdateRuntimeCommands();
@@ -440,6 +508,8 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
+        foreach (ToolStripItem item in _toolbar.Items) SpaceToolbarItem(item);
+        CenterCommands();
         QueueAutoFit();
     }
 
@@ -566,7 +636,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         var count = Diagnostics.IssueCount;
         _validateButton.Text = count == 0 ? "校验" : $"校验 · {count}";
         _validateButton.ButtonType = count == 0 ? ModernButtonType.Default : ModernButtonType.Warning;
-        _diagnosticsPage.Text = count == 0 ? "诊断" : $"诊断 ({count})";
+        SetTabText(_diagnosticsPage, count == 0 ? "诊断" : $"诊断 ({count})");
     }
 
     /// <summary>

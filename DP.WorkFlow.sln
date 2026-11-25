@@ -181,6 +181,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DP.WorkFlow.Testing", "test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DP.WorkFlow.Replay.Tests", "tests\Workflow\DP.WorkFlow.Replay.Tests\DP.WorkFlow.Replay.Tests.csproj", "{96A38AA9-F728-4BF7-8839-6BA87201FEC7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DP.WorkFlow.Pages.Sample", "samples\DP.WorkFlow.Pages.Sample\DP.WorkFlow.Pages.Sample.csproj", "{55520EC7-242D-4A81-91C1-60B45DFECF62}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -1043,6 +1045,18 @@ Global
 		{96A38AA9-F728-4BF7-8839-6BA87201FEC7}.Release|x64.Build.0 = Release|Any CPU
 		{96A38AA9-F728-4BF7-8839-6BA87201FEC7}.Release|x86.ActiveCfg = Release|Any CPU
 		{96A38AA9-F728-4BF7-8839-6BA87201FEC7}.Release|x86.Build.0 = Release|Any CPU
+		{55520EC7-242D-4A81-91C1-60B45DFECF62}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{55520EC7-242D-4A81-91C1-60B45DFECF62}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{55520EC7-242D-4A81-91C1-60B45DFECF62}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{55520EC7-242D-4A81-91C1-60B45DFECF62}.Debug|x64.Build.0 = Debug|Any CPU
+		{55520EC7-242D-4A81-91C1-60B45DFECF62}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{55520EC7-242D-4A81-91C1-60B45DFECF62}.Debug|x86.Build.0 = Debug|Any CPU
+		{55520EC7-242D-4A81-91C1-60B45DFECF62}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{55520EC7-242D-4A81-91C1-60B45DFECF62}.Release|Any CPU.Build.0 = Release|Any CPU
+		{55520EC7-242D-4A81-91C1-60B45DFECF62}.Release|x64.ActiveCfg = Release|Any CPU
+		{55520EC7-242D-4A81-91C1-60B45DFECF62}.Release|x64.Build.0 = Release|Any CPU
+		{55520EC7-242D-4A81-91C1-60B45DFECF62}.Release|x86.ActiveCfg = Release|Any CPU
+		{55520EC7-242D-4A81-91C1-60B45DFECF62}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -1131,5 +1145,6 @@ Global
 		{EB7C5CAD-9C95-4C36-A2F2-061E7473BBF7} = {11000000-0000-0000-0000-000000000005}
 		{5C2A5E4C-F72E-4B63-AF5B-9FCB0CABC5DC} = {44000000-0000-0000-0000-000000000001}
 		{96A38AA9-F728-4BF7-8839-6BA87201FEC7} = {44000000-0000-0000-0000-000000000001}
+		{55520EC7-242D-4A81-91C1-60B45DFECF62} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 	EndGlobalSection
 EndGlobal
