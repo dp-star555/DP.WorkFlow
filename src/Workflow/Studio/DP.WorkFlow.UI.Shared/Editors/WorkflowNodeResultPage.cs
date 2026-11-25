@@ -240,7 +240,9 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
         type.GetMethod(nameof(ToString), Type.EmptyTypes)?.DeclaringType is { } declaring && declaring != typeof(object)
         && declaring != typeof(ValueType);
 
-    private static string StateText(E_NodeState state) => state switch
+    /// <summary>节点运行状态的显示文字。</summary>
+    /// <param name="state">节点状态。</param>
+    public static string StateText(E_NodeState state) => state switch
     {
         E_NodeState.Idle => "未执行",
         E_NodeState.Running => "运行中",

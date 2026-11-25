@@ -31,13 +31,18 @@ public sealed class StudioShellStyleTests
             var toolbar = Descendants(studio).OfType<ModernToolStrip>().Single();
             var buttons = toolbar.Items.OfType<ToolStripButton>().ToDictionary(item => item.Name ?? string.Empty);
 
-            foreach (var name in new[] { "_undoButton", "_redoButton", "_runButton", "_pauseButton", "_resumeButton", "_stopButton" })
+            foreach (var name in new[] { "_saveButton", "_undoButton", "_redoButton" })
             {
                 Assert.Equal(ToolStripItemDisplayStyle.Image, buttons[name].DisplayStyle);
                 Assert.NotNull(buttons[name].Image);
                 Assert.False(string.IsNullOrWhiteSpace(buttons[name].ToolTipText));
             }
             Assert.DoesNotContain("_upButton", buttons.Keys);
+            // 右边的命令按钮带文字（设计稿：适合画布、自动布局、对齐、校验、调试运行）。
+            var commands = Descendants(studio).OfType<ModernButton>().ToDictionary(button => button.Name);
+            foreach (var name in new[] { "fitButton", "autoLayoutButton", "alignButton", "validateButton", "_runButton" })
+                Assert.False(string.IsNullOrWhiteSpace(commands[name].Text));
+            Assert.Equal(ModernButtonType.Primary, commands["_runButton"].ButtonType);
             Assert.All(toolbar.Items.OfType<ToolStripDropDownButton>().SelectMany(menu => menu.DropDownItems.Cast<ToolStripItem>()),
                 item => Assert.NotNull(item.Image));
         });
