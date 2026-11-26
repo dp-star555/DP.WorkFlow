@@ -354,8 +354,8 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     {
         if (e.RowIndex < 0 || e.RowIndex >= _lines.Count || e.ColumnIndex != 0) return;
         var line = _lines[e.RowIndex];
-        var glyph = 4 + line.Depth * Indent;
-        if (e.X >= glyph - 2 && e.X <= glyph + 16) Toggle(e.RowIndex);
+        var glyph = _table.LogicalToDeviceUnits(4 + line.Depth * Indent);
+        if (e.X >= glyph - 2 && e.X <= glyph + _table.LogicalToDeviceUnits(18)) Toggle(e.RowIndex);
     }
 
     private void OnCellValueNeeded(object? sender, DataGridViewCellValueEventArgs e)
@@ -395,11 +395,21 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         if (line.HasFailure)
             using (var bar = new SolidBrush(WorkflowWinFormsTheme.Solid(colors.Error)))
                 e.Graphics.FillRectangle(bar, bounds.Left, bounds.Top + 2, 3, bounds.Height - 4);
-        var x = bounds.Left + 4 + line.Depth * Indent;
+        // 每一层一条竖向引导线，层级一眼能看出来；有下一层的行画展开 / 收起箭头。
+        var indent = _table.LogicalToDeviceUnits(Indent);
+        var glyphSize = _table.LogicalToDeviceUnits(16);
+        using (var guide = new Pen(WorkflowWinFormsTheme.Solid(colors.Line)))
+            for (var level = 1; level <= line.Depth; level++)
+            {
+                var guideX = bounds.Left + _table.LogicalToDeviceUnits(4) + (level - 1) * indent + glyphSize / 2;
+                e.Graphics.DrawLine(guide, guideX, bounds.Top, guideX, bounds.Bottom);
+            }
+        var x = bounds.Left + _table.LogicalToDeviceUnits(4) + line.Depth * indent;
         var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
         if (line.HasChildren)
-            TextRenderer.DrawText(e.Graphics, line.Expanded ? "▾" : "▸", font, new Rectangle(x, bounds.Top, 16, bounds.Height), muted, flags);
-        x += 18;
+            TextRenderer.DrawText(e.Graphics, line.Expanded ? "▾" : "▸", font, new Rectangle(x, bounds.Top, glyphSize, bounds.Height), text,
+                flags | TextFormatFlags.HorizontalCenter);
+        x += glyphSize + _table.LogicalToDeviceUnits(2);
         var tagText = line.IsGroup ? "已合并" : line.Kind == WorkflowRunLogRowKind.Run ? null : WorkflowRunLogText.KindTag(line.Kind);
         if (tagText is not null)
         {

@@ -197,7 +197,7 @@ public sealed class WorkflowRunLog
                 var fault = runEvent.Category == WorkflowRunEventCategory.Fault;
                 // 循环节点每圈写的“进入第 n 次循环”已经体现在圈行上，不再单独记。
                 if (!fault && canvas.LoopRows.ContainsKey(owner)) return;
-                var row = NewRow(owner, fault ? WorkflowRunLogRowKind.Fault : WorkflowRunLogRowKind.Message, runEvent.EventType, runEvent.Timestamp);
+                var row = NewRow(owner, fault ? WorkflowRunLogRowKind.Fault : WorkflowRunLogRowKind.Message, MessageTitle(runEvent.EventType), runEvent.Timestamp);
                 if (row is null) return;
                 Fill(row, runEvent, canvas);
                 row.Detail = Message(runEvent);
@@ -561,6 +561,13 @@ public sealed class WorkflowRunLog
 
     private static string Key(string nodeId, long token, int execution) =>
         nodeId + "#" + token.ToString(CultureInfo.InvariantCulture) + "#" + execution.ToString(CultureInfo.InvariantCulture);
+
+    private static string MessageTitle(string eventType) => eventType switch
+    {
+        "NodeWaitStarted" => "开始等待",
+        "NodeWaitEnded" => "等待结束",
+        _ => eventType
+    };
 
     private static string LifecycleTitle(string eventType) => eventType switch
     {
