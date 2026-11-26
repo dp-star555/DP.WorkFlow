@@ -141,6 +141,8 @@ public sealed partial class WorkflowToolboxControl : UserControl
         var previous = _icons;
         _icons = new ImageList { ColorDepth = ColorDepth.Depth32Bit, ImageSize = new Size(size, size) };
         toolboxTreeView.ImageList = _icons;
+        // 分类行没有图标：不留图标位，文字紧跟展开箭头。
+        toolboxTreeView.ReserveEmptyImageSlot = false;
         previous?.Dispose();
     }
 

@@ -16,6 +16,7 @@ internal sealed class SampleForm : Form
     private readonly WorkflowItemList _nav = new();
     private readonly ModernSelect _theme = new();
     private readonly ModernSelect _storage = new();
+    private readonly ModernCheckbox _operator = new() { Text = "有操作权限", Checked = true };
     private readonly ModernButton _startAll = new() { Text = "全部启动", ButtonType = ModernButtonType.Primary, Icon = ModernIconKind.Play };
     private readonly ModernButton _stopAll = new() { Text = "全部停止", Icon = ModernIconKind.Stop };
     private readonly Label _summary = new();
@@ -99,6 +100,10 @@ internal sealed class SampleForm : Form
         _storage.SelectedIndexChanged += (_, _) => { if (_storage.SelectedItem is string storage) _host.RunLogStorage = storage; };
         bar.Add(_storage, 120);
         bar.AddSeparator();
+        // 模拟登录权限：去掉勾后运行页不显示单独启停按钮（Foundation 里由“流程操作”权限决定）。
+        _operator.CheckedChanged += (_, _) => _run?.RefreshPage(_operator.Checked, true);
+        bar.Add(_operator, 110);
+        bar.AddSeparator();
         bar.Add(_summary, 260);
         bar.AddRight(_startAll);
         bar.AddRight(_stopAll);
@@ -152,6 +157,7 @@ internal sealed class SampleForm : Form
         _notices = new WorkflowNoticeCenterPage(center, flow => _host.LoadedDocumentOf(flow.Name));
         _pages["run"] = _run;
         _pages["notices"] = _notices;
+        _run.RefreshPage(_operator.Checked, true);
         if (shown is not null) _run.ShowFlow(shown);
         if (wasVisible is "run" or "notices") Navigate(wasVisible);
     }

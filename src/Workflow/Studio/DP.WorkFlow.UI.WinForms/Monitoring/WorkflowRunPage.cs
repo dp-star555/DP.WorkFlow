@@ -172,9 +172,9 @@ public sealed class WorkflowRunPage : WorkflowPage
             var tone = StateTone(row);
             return new WorkflowListItem(row.Name, row.Name, subtitle, tone,
                 Badge: row.InFault ? "故障" : null, BadgeTone: WorkflowTone.Error,
-                Action: active ? ModernIconKind.Stop : ModernIconKind.Play,
+                // 没有操作权限的人不显示单独启停按钮（不是灰掉）。
+                Action: !CanOperate ? ModernIconKind.None : active ? ModernIconKind.Stop : ModernIconKind.Play,
                 ActionText: active ? "停止这个流程" : "启动这个流程",
-                Enabled: CanOperate,
                 SubtitleTone: tone is WorkflowTone.Error or WorkflowTone.Warning ? tone : WorkflowTone.Neutral);
         }));
         var faults = rows.Count(row => row.InFault || row.State == E_WorkflowExecutionState.Faulted);
@@ -242,6 +242,8 @@ public sealed class WorkflowRunPage : WorkflowPage
     {
         if (!CanOperate || _center.GetFlow(name) is not { } flow) return;
         var active = flow.State is E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused;
+        // 单独停止前确认，免得误点停掉正在跑的流程。
+        if (active && MessageBox.Show(FindForm(), $"确定停止流程“{name}”？", "停止流程", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
         try
         {
             await (Gate ?? WorkflowOperationGates.Direct).RunAsync(new WorkflowOperation(active ? WorkflowOperationKind.StopFlow : WorkflowOperationKind.StartFlow, name),
