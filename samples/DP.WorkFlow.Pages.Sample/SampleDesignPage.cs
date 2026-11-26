@@ -19,6 +19,7 @@ internal sealed class SampleDesignPage : UserControl
     private readonly ModernButton _publish = new() { Text = "发布…" };
     private readonly ToolStripMenuItem _open;
     private WorkflowStudioRuntimeBinding? _trial;
+    private volatile string _trialLogName = SampleWorkflowHost.TrialRunLogNameOf(null);
 
     public SampleDesignPage(SampleWorkflowHost host)
     {
@@ -44,7 +45,7 @@ internal sealed class SampleDesignPage : UserControl
         _publish.Click += async (_, _) => await PublishAsync();
         _studio.ConfirmDiscardChanges = () => MessageBox.Show(FindForm(), "当前流程还没保存，放弃修改？", "流程设计", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes;
         _studio.InteractionError += (_, message) => ShowMessage(message);
-        _studio.RunFaulted += (_, message) => ShowMessage($"{message}（详情见运行日志 · {SampleWorkflowHost.TrialRunLogName}）");
+        _studio.RunFaulted += (_, message) => ShowMessage($"{message}（详情见运行日志 · {_trialLogName}）");
         _studio.Workspace = _workspace;
         Controls.Add(_studio);
 
@@ -110,13 +111,18 @@ internal sealed class SampleDesignPage : UserControl
     private void EnsureTrialRun()
     {
         if (_trial is not null || _workspace.Navigator is not { } navigator) return;
-        _trial = new WorkflowStudioRuntimeBinding(_host.CreateTrialHost(), navigator)
+        _trial = new WorkflowStudioRuntimeBinding(_host.CreateTrialHost(() => _trialLogName), navigator)
         {
             AutoConfigureBeforeRun = true,
             RunContext = new WorkflowContext(_host.Services),
             RunBlockedReason = () => _host.IsRunning ? "运行页有流程在跑，先停止再调试运行。" : null
         };
-        _trial.RunConfiguring += _ => _trial.RunContext = new WorkflowContext(_host.Services);
+        _trial.RunConfiguring += _ =>
+        {
+            _trial.RunContext = new WorkflowContext(_host.Services);
+            // 运行日志按流程分开记；名字在界面线程取好，记录线程只读这个字段。
+            _trialLogName = SampleWorkflowHost.TrialRunLogNameOf(CurrentName());
+        };
         _studio.RuntimeBinding = _trial;
     }
 

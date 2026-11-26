@@ -103,13 +103,26 @@ public sealed class WorkflowRunLogBook
     public IWorkflowRunEventSink CreateSink(string flowName, Func<WorkflowExecutionPlan?> plan)
     {
         Guard.NotNullOrWhiteSpace(flowName);
-        Guard.NotNull(plan);
-        return new Sink(this, flowName.Trim(), plan);
+        var name = flowName.Trim();
+        return CreateSink(() => name, plan);
     }
 
-    private sealed class Sink(WorkflowRunLogBook book, string flowName, Func<WorkflowExecutionPlan?> plan) : IWorkflowRunEventSink
+    /// <summary>
+    /// 同上，但名字在每次启动时取一次（例如“试运行 · 上料”，按设计页当前打开的流程分开记）；这次运行后面的事件都记在这个名字下。
+    /// </summary>
+    /// <param name="flowName">每次启动时取名字；在记录线程上调用，不要访问界面。</param>
+    /// <param name="plan">取宿主当前的执行计划。</param>
+    public IWorkflowRunEventSink CreateSink(Func<string> flowName, Func<WorkflowExecutionPlan?> plan)
+    {
+        Guard.NotNull(flowName);
+        Guard.NotNull(plan);
+        return new Sink(this, flowName, plan);
+    }
+
+    private sealed class Sink(WorkflowRunLogBook book, Func<string> flowName, Func<WorkflowExecutionPlan?> plan) : IWorkflowRunEventSink
     {
         private static readonly WorkflowOutletOptions Filter = OutletOptions();
+        private string? _current;
 
         public ValueTask<WorkflowRunEventWriteResult> WriteAsync(IReadOnlyList<WorkflowRunEvent> events, bool requestImmediateFlush,
             CancellationToken cancellationToken)
@@ -117,8 +130,13 @@ public sealed class WorkflowRunLogBook
             foreach (var runEvent in events)
             {
                 if (WorkflowOutlet.GetLevel(runEvent) < Filter.MinimumLevel || Filter.Categories?.Contains(runEvent.Category) == false) continue;
-                if (IsRootStart(runEvent)) book.UsePlan(flowName, plan());
-                book.Add(flowName, runEvent);
+                if (IsRootStart(runEvent) || _current is null)
+                {
+                    var name = flowName()?.Trim();
+                    _current = string.IsNullOrEmpty(name) ? "试运行" : name;
+                    if (IsRootStart(runEvent)) book.UsePlan(_current, plan());
+                }
+                book.Add(_current, runEvent);
             }
             return new ValueTask<WorkflowRunEventWriteResult>(WorkflowRunEventWriteResult.Success);
         }
