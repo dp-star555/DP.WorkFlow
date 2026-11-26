@@ -439,7 +439,7 @@ public sealed partial class ModernComboBox : ModernValidatedControl
     {
         _comboBox.AccessibleName = AccessibleName;
         _comboBox.AccessibleDescription = AccessibleDescription;
-        return _comboBox.AccessibilityObject;
+        return new ControlAccessibleObject(this);
     }
 
     protected override void SynchronizeValidationAccessibility()

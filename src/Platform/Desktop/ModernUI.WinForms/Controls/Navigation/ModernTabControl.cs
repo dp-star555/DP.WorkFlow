@@ -46,7 +46,6 @@ public sealed partial class ModernTabControl : UserControl
             _lastSelectedIndex = _nativeTabs.SelectedIndex;
             _header.AnimateIndicator(previousIndex, _lastSelectedIndex);
             _header.Invalidate();
-            if (IsHandleCreated) AccessibilityNotifyClients(AccessibleEvents.Selection, SelectedIndex);
             SelectedIndexChanged?.Invoke(this, EventArgs.Empty);
         };
         _nativeTabs.ControlAdded += (_, eventArgs) =>
@@ -172,7 +171,7 @@ public sealed partial class ModernTabControl : UserControl
     {
         _nativeTabs.AccessibleName = AccessibleName;
         _nativeTabs.AccessibleDescription = AccessibleDescription;
-        return _nativeTabs.AccessibilityObject;
+        return new ControlAccessibleObject(this);
     }
 
     protected override void OnControlAdded(ControlEventArgs e)

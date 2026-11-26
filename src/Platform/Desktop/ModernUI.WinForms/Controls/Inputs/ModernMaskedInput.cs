@@ -133,7 +133,7 @@ public sealed class ModernMaskedInput : ModernValidatedControl
     {
         _textBox.AccessibleName = AccessibleName;
         _textBox.AccessibleDescription = AccessibleDescription;
-        return _textBox.AccessibilityObject;
+        return new ControlAccessibleObject(this);
     }
 
     protected override void SynchronizeValidationAccessibility()
