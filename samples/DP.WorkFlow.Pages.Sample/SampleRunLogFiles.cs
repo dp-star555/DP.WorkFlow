@@ -4,10 +4,10 @@ using System.Text;
 namespace DP.WorkFlow.Samples.Pages;
 
 /// <summary>
-/// 示例用的运行日志本地存储（只为测试“历史”）：只管存在哪，不碰内容。每次运行一个文本文件
-/// runlogs\日期\流程名\时分秒_运行ID.log，行是 Workflow 交来的原样（用记事本就能看）；
+/// 示例用的“文本文件”运行日志存储（只为测试“历史”）：只管存在哪，不碰内容。每次运行一个文本文件
+/// runlogs\日期\流程名\时分秒_运行ID.jsonl，一行一条 Workflow 交来的数据（原样）；
 /// 每天一个 runs.txt 记有哪些运行（开始、结束、结果、文件），查历史时用。保留 30 天。
-/// 实际项目存在哪由宿主自己决定，只要实现 <see cref="IWorkflowRunLogStore"/>。
+/// 实际项目存在哪由宿主（功能包）按设置决定，只要实现 <see cref="IWorkflowRunLogStore"/>。
 /// </summary>
 internal sealed class SampleRunLogFiles : IWorkflowRunLogStore, IDisposable
 {
@@ -38,18 +38,14 @@ internal sealed class SampleRunLogFiles : IWorkflowRunLogStore, IDisposable
                 var day = Path.Combine(Directory, started.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
                 var folder = Path.Combine(day, Safe(record.FlowName));
                 System.IO.Directory.CreateDirectory(folder);
-                var file = Path.Combine(folder, $"{started:HHmmss}_{record.RunId:N}.log");
+                var file = Path.Combine(folder, $"{started:HHmmss}_{record.RunId:N}.jsonl");
                 var writer = new StreamWriter(new FileStream(file, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete), Utf8)
                     { AutoFlush = true };
                 _open[record.FlowName] = run = new OpenRun(record.RunId, file, Path.Combine(day, IndexName), writer);
-                Index(run, record);
+                Index(run, record, null);
             }
-            run.Writer.WriteLine(record.Line);
-            if (record.RunEnded is not null && !run.Ended)
-            {
-                run.Ended = true;
-                Index(run, record);
-            }
+            run.Writer.WriteLine(record.Data);
+            if (record.EndState is { } state) Index(run, record, state);
         }
     }
 
@@ -85,13 +81,13 @@ internal sealed class SampleRunLogFiles : IWorkflowRunLogStore, IDisposable
     }
 
     // runs.txt 一行：开始	结束	结果	流程	运行ID	文件（相对 runlogs），用制表符隔开。
-    private void Index(OpenRun run, WorkflowRunLogRecord record)
+    private void Index(OpenRun run, WorkflowRunLogRecord record, WorkflowRunLogState? ended)
     {
         var fields = new[]
         {
             record.RunStarted.ToString("o", CultureInfo.InvariantCulture),
-            record.RunEnded?.ToString("o", CultureInfo.InvariantCulture) ?? string.Empty,
-            record.RunState?.ToString() ?? string.Empty,
+            ended is null ? string.Empty : record.Time.ToString("o", CultureInfo.InvariantCulture),
+            ended?.ToString() ?? string.Empty,
             record.FlowName.Replace('\t', ' '),
             record.RunId.ToString("N"),
             run.File.Substring(Directory.Length + 1)
@@ -140,6 +136,5 @@ internal sealed class SampleRunLogFiles : IWorkflowRunLogStore, IDisposable
         public string File { get; } = file;
         public string IndexFile { get; } = indexFile;
         public StreamWriter Writer { get; } = writer;
-        public bool Ended { get; set; }
     }
 }
