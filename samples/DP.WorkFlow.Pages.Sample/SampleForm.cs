@@ -30,7 +30,11 @@ internal sealed class SampleForm : Form
     public SampleForm(SampleWorkflowHost host)
     {
         _host = host;
-        Text = "Workflow 页面示例";
+        // 标题带上实际加载的 ModernUI 版本，换包后一眼能看出是不是还在用旧的 dll。
+        var modernUi = typeof(ModernDataGridView).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion?.Split('+')[0];
+        Text = $"Workflow 页面示例 · ModernUI {modernUi}";
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Dpi;
         Size = new Size(1440, 900);

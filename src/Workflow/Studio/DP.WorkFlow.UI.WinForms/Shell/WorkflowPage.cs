@@ -124,9 +124,14 @@ public class WorkflowPage : UserControl
 
     /// <summary>只读表格（整行选择、列宽填满），表头与隔行取次一级表面色。</summary>
     /// <param name="captions">列标题。</param>
-    public static ModernDataGridView Table(params string[] captions)
+    public static ModernDataGridView Table(params string[] captions) => Table<ModernDataGridView>(captions);
+
+    /// <summary>同 <see cref="Table(string[])"/>，表格用派生类型（需要自己画单元格等）。</summary>
+    /// <typeparam name="T">表格类型。</typeparam>
+    /// <param name="captions">列标题。</param>
+    public static T Table<T>(params string[] captions) where T : ModernDataGridView, new()
     {
-        var table = new ModernDataGridView
+        var table = new T
         {
             Dock = DockStyle.Fill,
             ReadOnly = true,
