@@ -23,12 +23,10 @@ public sealed class WorkflowPublicDataPage : UserControl
     /// <summary>初始化页面。</summary>
     public WorkflowPublicDataPage()
     {
-        float[] weights = { 18, 14, 10, 10, 10, 6, 9, 6, 17 };
-        for (var i = 0; i < weights.Length; i++) _list.Columns[i].FillWeight = weights[i];
+        // 键、显示名、默认值、状态按比例分宽，其余短列按内容。
+        WorkflowPage.ColumnWidths(_list, 24, 20, 0, 0, 16, 0, 0, 0, 20);
         _list.Columns[7].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
-        _uses.Columns[0].FillWeight = 30;
-        _uses.Columns[1].FillWeight = 35;
-        _uses.Columns[2].FillWeight = 35;
+        WorkflowPage.ColumnWidths(_uses, 45, 55, 0);
 
         _list.SelectionChanged += (_, _) => { ShowUses(); UpdateCommands(); };
         _list.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) EditSelected(); };

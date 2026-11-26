@@ -43,9 +43,7 @@ public sealed class WorkflowNodeInspectorControl : UserControl
         Properties.Dock = DockStyle.Fill;
         Properties.UseCompactLayout();
         _parametersPage.Controls.Add(Properties);
-        _notices.Columns[0].FillWeight = 24;
-        _notices.Columns[1].FillWeight = 60;
-        _notices.Columns[2].FillWeight = 16;
+        WorkflowPage.ColumnWidths(_notices, 0, 1, 0);
         var noticeBar = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 4, 0, 0) };
         noticeBar.Controls.Add(_clearNotices);
         _noticesPage.Controls.Add(_notices);

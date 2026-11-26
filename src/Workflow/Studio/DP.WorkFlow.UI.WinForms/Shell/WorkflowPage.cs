@@ -144,6 +144,46 @@ public class WorkflowPage : UserControl
         return table;
     }
 
+    /// <summary>
+    /// 设置列宽：权重为 0 的列按内容（含列头）自适应，其余列按权重比例分剩下的宽度。
+    /// 时间、状态、次数这类短列完整显示，长文本列占余下空间。
+    /// </summary>
+    /// <param name="table">表格。</param>
+    /// <param name="weights">每列的权重，按列顺序。</param>
+    public static void ColumnWidths(DataGridView table, params int[] weights)
+    {
+        Guard.NotNull(table);
+        for (var i = 0; i < Math.Min(weights.Length, table.Columns.Count); i++)
+        {
+            var column = table.Columns[i];
+            if (weights[i] <= 0)
+                column.AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
+            else
+            {
+                column.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+                column.FillWeight = weights[i];
+                column.MinimumWidth = 80;
+            }
+        }
+    }
+
+    /// <summary>滚动到指定行；表格不可见或高度放不下一行时跳过（此时设置会抛异常）。</summary>
+    /// <param name="table">表格。</param>
+    /// <param name="row">行号。</param>
+    public static void ScrollTo(DataGridView table, int row)
+    {
+        Guard.NotNull(table);
+        if (row < 0 || row >= table.RowCount || !table.Visible
+            || table.DisplayRectangle.Height <= table.ColumnHeadersHeight + table.RowTemplate.Height) return;
+        try
+        {
+            table.FirstDisplayedScrollingRowIndex = row;
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
     /// <summary>重建表格后按稳定 ID 恢复选择；目标消失时保持未选中，不回退到第一行。</summary>
     /// <param name="table">表格。</param>
     /// <param name="id">要恢复的 ID。</param>

@@ -131,10 +131,14 @@ public sealed class WorkflowDesignerSessionTests
         Assert.Equal(WorkflowDesignerGeometry.TitleFontPixels, layout.TitleFontSize);
         Assert.Equal(WorkflowDesignerGeometry.DetailFontPixels, layout.DetailFontSize);
 
-        // 放不下完整耗时就不显示，序号徽标保持完整（回环时靠序号找最后执行的节点）。
-        var crowded = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(new WorkflowDesignerRect(0, 0, 144, 48), 1, 20, 500);
+        // 并排会挤掉标题时改为两行：标题占上半行全宽，序号和耗时完整显示在下半行。
+        var crowded = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(new WorkflowDesignerRect(0, 0, 144, 48), 1, 20, 40);
         Assert.Equal(30, crowded.OrderBounds.Width);
-        Assert.Equal(0, crowded.DurationBounds.Width);
+        Assert.Equal(42, crowded.DurationBounds.Width);
+        Assert.Equal(144 - 10, crowded.TitleBounds.X + crowded.TitleBounds.Width, 6);
+        Assert.True(crowded.TitleBounds.Y + crowded.TitleBounds.Height <= crowded.OrderBounds.Y + 1);
+        Assert.True(crowded.TitleBounds.Y + crowded.TitleBounds.Height <= crowded.DurationBounds.Y + 3);
+        Assert.Equal(144 - 10, crowded.DurationBounds.X + crowded.DurationBounds.Width, 6);
 
         var idle = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(new WorkflowDesignerRect(0, 0, 144, 48), 1, 0, 0);
         Assert.Equal(0, idle.OrderBounds.Width);

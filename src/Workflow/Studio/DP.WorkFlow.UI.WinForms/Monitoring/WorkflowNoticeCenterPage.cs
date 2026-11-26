@@ -68,12 +68,7 @@ public sealed class WorkflowNoticeCenterPage : WorkflowPage
         Controls.Add(bar);
         Controls.Add(_status);
 
-        _table.Columns[0].FillWeight = 12;
-        _table.Columns[1].FillWeight = 14;
-        _table.Columns[2].FillWeight = 16;
-        _table.Columns[3].FillWeight = 44;
-        _table.Columns[4].FillWeight = 8;
-        _table.Columns[5].FillWeight = 16;
+        ColumnWidths(_table, 0, 20, 20, 60, 0, 0);
         _categories.SelectedIndexChanged += (_, _) => { if (!_updating) ApplyFilter(); };
         _flowPicker.SelectedIndexChanged += (_, _) => { if (!_updating) ApplyFilter(); };
         _search.TextChanged += (_, _) => ApplyFilter();

@@ -15,7 +15,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     private readonly ILocalizationManager _defaultLocalizationManager = WorkflowUiLocalization.CreateManager(CultureInfo.GetCultureInfo("zh-CN"));
     private readonly ModernCommand _exportCommand;
     private readonly ModernContextMenu _listMenu = new() { Theme = WorkflowWinFormsTheme.Modern };
-    private ListView? _menuList;
+    private DataGridView? _menuList;
     private WorkflowStudioRuntimeBinding? _runtimeBinding;
     private IWorkflowRuntimeMonitorSource? _source;
     private ILocalizationContext _localizationContext = null!;
@@ -32,29 +32,32 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     {
         InitializeComponent();
         // 每张表右键菜单导出当前表格；Ctrl+Shift+E 导出轨迹。
-        _exportCommand = new ModernCommand(() => ExportCsv(_menuList ?? traceListView))
+        _exportCommand = new ModernCommand(() => ExportCsv(_menuList ?? traceTable))
         {
             Icon = ModernIconKind.Save,
             ShortcutKeys = Keys.Control | Keys.Shift | Keys.E,
-            CanExecutePredicate = () => (_menuList ?? traceListView).Items.Count > 0
+            CanExecutePredicate = () => (_menuList ?? traceTable).RowCount > 0
         };
         _listMenu.SetCommands(new[] { _exportCommand });
         _listMenu.Opening += (_, e) =>
         {
-            _menuList = _listMenu.SourceControl as ListView;
+            _menuList = _listMenu.SourceControl as DataGridView;
             _exportCommand.RaiseCanExecuteChanged();
             if (_menuList is null) e.Cancel = true;
         };
         _listMenu.Closed += (_, _) => _menuList = null;
-        foreach (var list in new ListView[] { tokensListView, scopesListView, childrenListView, traceListView, outputListView, timingListView })
+        foreach (var list in new DataGridView[] { tokensTable, scopesTable, childrenTable, traceTable, outputTable, timingTable })
             list.ContextMenuStrip = _listMenu;
         commandManager.Commands.Add(_exportCommand);
 
-        // 轨迹与输出可能有数千行，使用虚拟列表：刷新只更新行数，只为可见行创建条目。
-        traceListView.VirtualMode = true;
-        traceListView.RetrieveVirtualItem += (_, e) => e.Item = TraceItem(_shownTrace, e.ItemIndex);
-        outputListView.VirtualMode = true;
-        outputListView.RetrieveVirtualItem += (_, e) => e.Item = OutputItem(_shownOutput, e.ItemIndex);
+        // 轨迹与输出可能有数千行，使用虚拟模式：刷新只更新行数，只为可见单元格取值（按时间顺序，不支持点列头排序）。
+        foreach (var table in new DataGridView[] { traceTable, outputTable })
+        {
+            table.VirtualMode = true;
+            foreach (DataGridViewColumn column in table.Columns) column.SortMode = DataGridViewColumnSortMode.NotSortable;
+        }
+        traceTable.CellValueNeeded += (_, e) => e.Value = TraceCell(_shownTrace, e.RowIndex, e.ColumnIndex);
+        outputTable.CellValueNeeded += (_, e) => e.Value = OutputCell(_shownOutput, e.RowIndex, e.ColumnIndex);
         _refreshFrame = WorkflowRefreshClock.Subscribe(this, FlushRuntimeData);
         monitorTabs.SelectedIndexChanged += (_, _) => RefreshLists(autoScrollTrace: false);
         VisibleChanged += (_, _) => { if (Visible) FlushRuntimeData(); };
@@ -230,19 +233,19 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         var culture = LocalizationContext.Current.Culture;
         var page = monitorTabs.SelectedTab;
         if (page == tokensPage)
-            Replace(tokensListView, _model.Tokens.Select(item => ((object)item.TokenId, new[]
+            Replace(tokensTable, _model.Tokens.Select(item => ((object)item.TokenId, new[]
             {
                 item.TokenId.ToString(culture), item.CurrentNodeId, item.ScopePath, item.AncestorTokens
             })));
         else if (page == scopesPage)
-            Replace(scopesListView, _model.ParallelScopes.Select(item => ((object)item.ScopeId, new[]
+            Replace(scopesTable, _model.ParallelScopes.Select(item => ((object)item.ScopeId, new[]
             {
                 item.ScopeId.ToString(culture), item.ScopeNodeId, item.MergeNodeId,
                 $"{item.CompletedBranches.ToString(culture)}/{item.TotalBranches.ToString(culture)}",
                 LocalizationContext.Text(item.IsCompleted ? WorkflowUiTextKeys.RuntimeYes : WorkflowUiTextKeys.RuntimeNo)
             })));
         else if (page == childrenPage)
-            Replace(childrenListView, _model.ChildWorkflows.Select(item => ((object)item.RunId, new[]
+            Replace(childrenTable, _model.ChildWorkflows.Select(item => ((object)item.RunId, new[]
             {
                 item.ParentNodeId, item.WorkflowName,
                 WorkflowRuntimeText.ExecutionState(LocalizationContext, item.State)
@@ -251,14 +254,14 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
             })));
         else if (page == tracePage)
         {
-            _shownTrace = ReplaceVirtual(traceListView, _shownTrace, _model.TraceEntries);
-            if (autoScrollTrace && !_model.IsTracePaused && traceListView.IsHandleCreated && _shownTrace.Count > 0)
-                traceListView.EnsureVisible(_shownTrace.Count - 1);
+            _shownTrace = ReplaceVirtual(traceTable, _shownTrace, _model.TraceEntries);
+            if (autoScrollTrace && !_model.IsTracePaused && traceTable.IsHandleCreated)
+                WorkflowPage.ScrollTo(traceTable, _shownTrace.Count - 1);
         }
         else if (page == outputPage)
-            _shownOutput = ReplaceVirtual(outputListView, _shownOutput, _model.OutputEntries);
+            _shownOutput = ReplaceVirtual(outputTable, _shownOutput, _model.OutputEntries);
         else if (page == timingPage)
-            Replace(timingListView, _model.TimingTrends.Select(item => ((object)item.NodeId, new[]
+            Replace(timingTable, _model.TimingTrends.Select(item => ((object)item.NodeId, new[]
             {
                 item.NodeId, item.ExecutionCount.ToString(culture), $"{item.Elapsed.TotalMilliseconds.ToString("F1", culture)} ms",
                 $"{item.AverageMilliseconds.ToString("F1", culture)} ms", WorkflowRuntimeText.NodeState(LocalizationContext, item.State)
@@ -267,54 +270,53 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         _exportCommand.RaiseCanExecuteChanged();
     }
 
-    private ListViewItem TraceItem(IReadOnlyList<WorkflowTraceMonitorItem> rows, int index)
+    private string TraceCell(IReadOnlyList<WorkflowTraceMonitorItem> rows, int index, int column)
     {
+        if (index < 0 || index >= rows.Count) return string.Empty;
+        var row = rows[index];
         var culture = LocalizationContext.Current.Culture;
-        var row = index >= 0 && index < rows.Count ? rows[index] : null;
-        var item = new ListViewItem(row?.Sequence.ToString(culture) ?? string.Empty) { Tag = row is null ? null : (row.Sequence, row.NodeId) };
-        if (row is not null)
-            item.SubItems.AddRange(new[]
-            {
-                row.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff", culture), row.NodeId, row.TokenId.ToString(culture),
-                row.ScopePath, WorkflowRuntimeText.TraceStep(LocalizationContext, row.Step), row.Message
-            });
-        return item;
+        return column switch
+        {
+            0 => row.Sequence.ToString(culture),
+            1 => row.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff", culture),
+            2 => row.NodeId,
+            3 => row.TokenId.ToString(culture),
+            4 => row.ScopePath,
+            5 => WorkflowRuntimeText.TraceStep(LocalizationContext, row.Step),
+            _ => row.Message
+        };
     }
 
-    private ListViewItem OutputItem(IReadOnlyList<WorkflowTraceMonitorItem> rows, int index)
+    private string OutputCell(IReadOnlyList<WorkflowTraceMonitorItem> rows, int index, int column)
     {
-        var row = index >= 0 && index < rows.Count ? rows[index] : null;
-        var item = new ListViewItem(row?.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff", LocalizationContext.Current.Culture) ?? string.Empty)
+        if (index < 0 || index >= rows.Count) return string.Empty;
+        var row = rows[index];
+        return column switch
         {
-            Tag = row?.Sequence
+            0 => row.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff", LocalizationContext.Current.Culture),
+            1 => row.NodeId,
+            _ => row.Message
         };
-        if (row is not null) item.SubItems.AddRange(new[] { row.NodeId, row.Message });
-        return item;
     }
 
     /// <summary>
-    /// 更新虚拟列表：只改行数并重绘可见行；选中行按轨迹序号和节点跟随（有界缓存丢弃旧记录后行号会前移）。
+    /// 更新虚拟表格：只改行数并重绘可见行；选中行按轨迹序号和节点跟随（有界缓存丢弃旧记录后行号会前移）。
     /// </summary>
     private static IReadOnlyList<WorkflowTraceMonitorItem> ReplaceVirtual(
-        ListView list, IReadOnlyList<WorkflowTraceMonitorItem> previous, IReadOnlyList<WorkflowTraceMonitorItem> rows)
+        DataGridView table, IReadOnlyList<WorkflowTraceMonitorItem> previous, IReadOnlyList<WorkflowTraceMonitorItem> rows)
     {
-        if (ReferenceEquals(previous, rows) && list.VirtualListSize == rows.Count) return rows;
-        var selected = list.SelectedIndices.Cast<int>()
-            .Where(index => index < previous.Count)
-            .Select(index => (previous[index].Sequence, previous[index].NodeId))
+        if (ReferenceEquals(previous, rows) && table.RowCount == rows.Count) return rows;
+        var selected = table.SelectedRows.Cast<DataGridViewRow>()
+            .Where(row => row.Index < previous.Count)
+            .Select(row => (previous[row.Index].Sequence, previous[row.Index].NodeId))
             .ToHashSet();
-        list.BeginUpdate();
-        try
-        {
-            list.SelectedIndices.Clear();
-            list.VirtualListSize = rows.Count;
-            if (selected.Count > 0)
-                for (var index = 0; index < rows.Count; index++)
-                    if (selected.Contains((rows[index].Sequence, rows[index].NodeId)))
-                        list.SelectedIndices.Add(index);
-            list.Invalidate();
-        }
-        finally { list.EndUpdate(); }
+        table.ClearSelection();
+        table.RowCount = rows.Count;
+        if (selected.Count > 0)
+            for (var index = 0; index < rows.Count; index++)
+                if (selected.Contains((rows[index].Sequence, rows[index].NodeId)))
+                    table.Rows[index].Selected = true;
+        table.Invalidate();
         return rows;
     }
 
@@ -349,9 +351,9 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     }
 
     /// <summary>导出右键所在表格；轨迹表按完整轨迹字段导出，其余表格按当前列导出。</summary>
-    private void ExportCsv(ListView list)
+    private void ExportCsv(DataGridView list)
     {
-        var name = ReferenceEquals(list, traceListView) ? "trace" : list.Name.Replace("ListView", string.Empty, StringComparison.Ordinal);
+        var name = ReferenceEquals(list, traceTable) ? "trace" : list.Name.Replace("Table", string.Empty, StringComparison.Ordinal);
         using var dialog = new SaveFileDialog
         {
             Filter = LocalizationContext.Text(WorkflowUiTextKeys.RuntimeCsvFilter),
@@ -361,7 +363,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         try
         {
             using var writer = new StreamWriter(dialog.FileName, false, new System.Text.UTF8Encoding(true));
-            if (ReferenceEquals(list, traceListView))
+            if (ReferenceEquals(list, traceTable))
                 _model.ExportTraceCsv(writer, new WorkflowTraceCsvHeaders(
                     LocalizationContext.Text(WorkflowUiTextKeys.RuntimeSequence),
                     LocalizationContext.Text(WorkflowUiTextKeys.RuntimeTime),
@@ -374,7 +376,8 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
                 WriteListCsv(writer, list);
             if (FindForm() is { } owner)
                 ModernMessage.Success(owner, LocalizationContext.Text(WorkflowUiTextKeys.RuntimeExported,
-                    new Dictionary<string, object?> { ["count"] = ReferenceEquals(list, traceListView) ? _model.TraceEntries.Count : list.Items.Count }));
+                    new Dictionary<string, object?> { ["count"] = ReferenceEquals(list, traceTable) ? _model.TraceEntries.Count 
+                        : list.RowCount }));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
         {
@@ -383,15 +386,15 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         }
     }
 
-    private static void WriteListCsv(TextWriter writer, ListView list)
+    private static void WriteListCsv(TextWriter writer, DataGridView list)
     {
         static string Csv(string? value) => value is null || value.IndexOfAny(new[] { ',', '"', '\r', '\n' }) < 0
             ? value ?? string.Empty
             : "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
-        writer.WriteLine(string.Join(",", list.Columns.Cast<ColumnHeader>().Select(column => Csv(column.Text))));
-        // 虚拟列表不能枚举 Items，按行号逐行取。
-        for (var index = 0; index < list.Items.Count; index++)
-            writer.WriteLine(string.Join(",", list.Items[index].SubItems.Cast<ListViewItem.ListViewSubItem>().Select(cell => Csv(cell.Text))));
+        writer.WriteLine(string.Join(",", list.Columns.Cast<DataGridViewColumn>().Select(column => Csv(column.HeaderText))));
+        // 按当前显示顺序（含排序）逐行导出；虚拟模式下取值会触发 CellValueNeeded。
+        foreach (DataGridViewRow row in list.Rows)
+            writer.WriteLine(string.Join(",", row.Cells.Cast<DataGridViewCell>().Select(cell => Csv(Convert.ToString(cell.Value, CultureInfo.CurrentCulture)))));
     }
 
     private void ShowApplicationError(ApplicationError error)
@@ -421,23 +424,23 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
             tracePage.Text = LocalizationContext.Text(WorkflowUiTextKeys.RuntimeTabTrace);
             outputPage.Text = LocalizationContext.Text(WorkflowUiTextKeys.RuntimeTabOutput);
             timingPage.Text = LocalizationContext.Text(WorkflowUiTextKeys.RuntimeTabTiming);
-            tokensListView.AccessibleName = tokensPage.Text;
-            scopesListView.AccessibleName = scopesPage.Text;
-            childrenListView.AccessibleName = childrenPage.Text;
-            traceListView.AccessibleName = tracePage.Text;
-            outputListView.AccessibleName = outputPage.Text;
-            timingListView.AccessibleName = timingPage.Text;
-            SetHeaders(tokensListView, WorkflowUiTextKeys.RuntimeToken, WorkflowUiTextKeys.RuntimeCurrentNode,
+            tokensTable.AccessibleName = tokensPage.Text;
+            scopesTable.AccessibleName = scopesPage.Text;
+            childrenTable.AccessibleName = childrenPage.Text;
+            traceTable.AccessibleName = tracePage.Text;
+            outputTable.AccessibleName = outputPage.Text;
+            timingTable.AccessibleName = timingPage.Text;
+            SetHeaders(tokensTable, WorkflowUiTextKeys.RuntimeToken, WorkflowUiTextKeys.RuntimeCurrentNode,
                 WorkflowUiTextKeys.RuntimeScope, WorkflowUiTextKeys.RuntimeAncestorToken);
-            SetHeaders(scopesListView, WorkflowUiTextKeys.RuntimeScope, WorkflowUiTextKeys.RuntimeDispatchNode,
+            SetHeaders(scopesTable, WorkflowUiTextKeys.RuntimeScope, WorkflowUiTextKeys.RuntimeDispatchNode,
                 WorkflowUiTextKeys.RuntimeMergeNode, WorkflowUiTextKeys.RuntimeProgress, WorkflowUiTextKeys.RuntimeCompleted);
-            SetHeaders(childrenListView, WorkflowUiTextKeys.RuntimeParentNode, WorkflowUiTextKeys.RuntimeChildWorkflow,
+            SetHeaders(childrenTable, WorkflowUiTextKeys.RuntimeParentNode, WorkflowUiTextKeys.RuntimeChildWorkflow,
                 WorkflowUiTextKeys.RuntimeState, WorkflowUiTextKeys.RuntimeElapsed, WorkflowUiTextKeys.RuntimeRunId);
-            SetHeaders(traceListView, WorkflowUiTextKeys.RuntimeSequence, WorkflowUiTextKeys.RuntimeTime,
+            SetHeaders(traceTable, WorkflowUiTextKeys.RuntimeSequence, WorkflowUiTextKeys.RuntimeTime,
                 WorkflowUiTextKeys.RuntimeNode, WorkflowUiTextKeys.RuntimeToken, WorkflowUiTextKeys.RuntimeScope,
                 WorkflowUiTextKeys.RuntimeStep, WorkflowUiTextKeys.RuntimeMessage);
-            SetHeaders(outputListView, WorkflowUiTextKeys.RuntimeTime, WorkflowUiTextKeys.RuntimeNode, WorkflowUiTextKeys.RuntimeOutput);
-            SetHeaders(timingListView, WorkflowUiTextKeys.RuntimeNode, WorkflowUiTextKeys.RuntimeExecutionCount,
+            SetHeaders(outputTable, WorkflowUiTextKeys.RuntimeTime, WorkflowUiTextKeys.RuntimeNode, WorkflowUiTextKeys.RuntimeOutput);
+            SetHeaders(timingTable, WorkflowUiTextKeys.RuntimeNode, WorkflowUiTextKeys.RuntimeExecutionCount,
                 WorkflowUiTextKeys.RuntimeTotalElapsed, WorkflowUiTextKeys.RuntimeAverageElapsed, WorkflowUiTextKeys.RuntimeState);
             traceFilterTextBox.PlaceholderText = LocalizationContext.Text(WorkflowUiTextKeys.RuntimeFilterPlaceholder);
             traceFilterTextBox.AccessibleName = traceFilterTextBox.PlaceholderText;
@@ -450,31 +453,36 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         finally { ResumeLayout(true); }
     }
 
-    private void SetHeaders(ListView list, params TextKey[] keys)
+    private void SetHeaders(DataGridView table, params TextKey[] keys)
     {
-        for (var index = 0; index < Math.Min(list.Columns.Count, keys.Length); index++)
-            list.Columns[index].Text = LocalizationContext.Text(keys[index]);
+        for (var index = 0; index < Math.Min(table.Columns.Count, keys.Length); index++)
+            table.Columns[index].HeaderText = LocalizationContext.Text(keys[index]);
     }
 
-    private static void Replace(ListView list, IEnumerable<(object Key, string[] Cells)> rows)
+    /// <summary>重建行，保留选中行、滚动位置和用户点列头选的排序。</summary>
+    private static void Replace(DataGridView table, IEnumerable<(object Key, string[] Cells)> rows)
     {
-        var selected = list.SelectedItems.Cast<ListViewItem>().Select(item => item.Tag).ToHashSet();
-        var topIndex = list.IsHandleCreated ? list.TopItem?.Index ?? 0 : 0;
-        list.BeginUpdate();
+        var selected = table.SelectedRows.Cast<DataGridViewRow>().Select(row => row.Tag).ToHashSet();
+        var top = table.FirstDisplayedScrollingRowIndex;
+        var sortColumn = table.SortedColumn;
+        var sortOrder = table.SortOrder;
+        table.SuspendLayout();
         try
         {
-            list.Items.Clear();
+            table.Rows.Clear();
             foreach (var row in rows)
             {
-                var item = new ListViewItem(row.Cells[0]) { Tag = row.Key };
-                item.SubItems.AddRange(row.Cells.Skip(1).ToArray());
-                item.Selected = selected.Contains(row.Key);
-                list.Items.Add(item);
+                var index = table.Rows.Add(row.Cells);
+                table.Rows[index].Tag = row.Key;
             }
-            if (list.IsHandleCreated && list.Items.Count > 0 && topIndex > 0)
-                list.Items[Math.Min(topIndex, list.Items.Count - 1)].EnsureVisible();
+            if (sortColumn is not null && sortOrder != SortOrder.None)
+                table.Sort(sortColumn, sortOrder == SortOrder.Ascending ? ListSortDirection.Ascending : ListSortDirection.Descending);
+            table.ClearSelection();
+            foreach (DataGridViewRow row in table.Rows)
+                if (selected.Contains(row.Tag)) row.Selected = true;
+            if (top > 0) WorkflowPage.ScrollTo(table, Math.Min(top, table.RowCount - 1));
         }
-        finally { list.EndUpdate(); }
+        finally { table.ResumeLayout(); }
     }
 
     private void DisposeRuntimeMonitor()

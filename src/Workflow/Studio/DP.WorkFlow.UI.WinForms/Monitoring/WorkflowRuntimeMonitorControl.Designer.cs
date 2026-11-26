@@ -16,27 +16,27 @@ partial class WorkflowRuntimeMonitorControl
 
     #region 组件设计器生成的代码
 
-    /// <summary>初始化现代命令栏、运行摘要、监视页签和固定列表列。</summary>
+    /// <summary>初始化监视页签和各页表格。</summary>
     private void InitializeComponent()
     {
         components = new System.ComponentModel.Container();
         monitorTabs = new ModernUI.WinForms.ModernTabControl();
         tokensPage = new TabPage();
-        tokensListView = new ModernUI.WinForms.ModernListView();
+        tokensTable = WorkflowPage.Table();
         scopesPage = new TabPage();
-        scopesListView = new ModernUI.WinForms.ModernListView();
+        scopesTable = WorkflowPage.Table();
         childrenPage = new TabPage();
-        childrenListView = new ModernUI.WinForms.ModernListView();
+        childrenTable = WorkflowPage.Table();
         tracePage = new TabPage();
-        traceListView = new ModernUI.WinForms.ModernListView();
+        traceTable = WorkflowPage.Table();
         traceToolbar = new FlowLayoutPanel();
         traceFilterTextBox = new ModernUI.WinForms.ModernInput();
         traceDateRange = new ModernUI.WinForms.ModernDateRangePicker();
         pauseTraceCheckBox = new ModernUI.WinForms.ModernCheckbox();
         outputPage = new TabPage();
-        outputListView = new ModernUI.WinForms.ModernListView();
+        outputTable = WorkflowPage.Table();
         timingPage = new TabPage();
-        timingListView = new ModernUI.WinForms.ModernListView();
+        timingTable = WorkflowPage.Table();
         localizationProvider = new ModernUI.WinForms.ModernLocalizationProvider(components);
         validationProvider = new ModernUI.WinForms.ModernValidationProvider(components);
         commandManager = new ModernUI.WinForms.ModernCommandManager(components);
@@ -55,17 +55,17 @@ partial class WorkflowRuntimeMonitorControl
         monitorTabs.Name = "monitorTabs";
         monitorTabs.SelectedIndex = 0;
 
-        ConfigurePage(tokensPage, tokensListView);
-        ConfigureList(tokensListView, 100, 150, 160, 190);
-        ConfigurePage(scopesPage, scopesListView);
-        ConfigureList(scopesListView, 100, 160, 160, 100, 90);
-        ConfigurePage(childrenPage, childrenListView);
-        ConfigureList(childrenListView, 150, 180, 120, 110, 260);
+        ConfigurePage(tokensPage, tokensTable);
+        ConfigureTable(tokensTable, 0, 30, 30, 40);
+        ConfigurePage(scopesPage, scopesTable);
+        ConfigureTable(scopesTable, 0, 50, 50, 0, 0);
+        ConfigurePage(childrenPage, childrenTable);
+        ConfigureTable(childrenTable, 25, 30, 25, 0, 20);
 
         tracePage.Padding = new Padding(3);
         tracePage.UseVisualStyleBackColor = false;
-        ConfigureList(traceListView, 78, 120, 140, 90, 140, 120, 360);
-        traceListView.Dock = DockStyle.Fill;
+        ConfigureTable(traceTable, 0, 0, 20, 0, 20, 0, 60);
+        traceTable.Dock = DockStyle.Fill;
         traceToolbar.Controls.Add(traceFilterTextBox);
         traceToolbar.Controls.Add(traceDateRange);
         traceToolbar.Controls.Add(pauseTraceCheckBox);
@@ -81,13 +81,13 @@ partial class WorkflowRuntimeMonitorControl
         pauseTraceCheckBox.Name = "pauseTraceCheckBox";
         pauseTraceCheckBox.Width = 140;
         pauseTraceCheckBox.Padding = new Padding(4, 6, 4, 0);
-        tracePage.Controls.Add(traceListView);
+        tracePage.Controls.Add(traceTable);
         tracePage.Controls.Add(traceToolbar);
 
-        ConfigurePage(outputPage, outputListView);
-        ConfigureList(outputListView, 130, 180, 560);
-        ConfigurePage(timingPage, timingListView);
-        ConfigureList(timingListView, 190, 110, 130, 130, 140);
+        ConfigurePage(outputPage, outputTable);
+        ConfigureTable(outputTable, 0, 25, 75);
+        ConfigurePage(timingPage, timingTable);
+        ConfigureTable(timingTable, 1, 0, 0, 0, 0);
 
         AutoScaleDimensions = new SizeF(7F, 17F);
         AutoScaleMode = AutoScaleMode.Font;
@@ -109,36 +109,32 @@ partial class WorkflowRuntimeMonitorControl
         page.Controls.Add(content);
     }
 
-    private static void ConfigureList(ListView list, params int[] widths)
+    /// <summary>按权重建列：0 按内容自适应，其余按比例分剩下的宽度（列头文字在本地化时设置）。</summary>
+    private static void ConfigureTable(ModernUI.WinForms.ModernDataGridView table, params int[] weights)
     {
-        list.BorderStyle = BorderStyle.None;
-        list.Dock = DockStyle.Fill;
-        list.FullRowSelect = true;
-        list.HideSelection = false;
-        list.UseCompatibleStateImageBehavior = false;
-        list.View = View.Details;
-        foreach (var width in widths) list.Columns.Add(string.Empty, width);
+        foreach (var _ in weights) table.Columns.Add(new DataGridViewTextBoxColumn());
+        WorkflowPage.ColumnWidths(table, weights);
     }
 
     #endregion
 
     private ModernUI.WinForms.ModernTabControl monitorTabs = null!;
     private TabPage tokensPage = null!;
-    private ModernUI.WinForms.ModernListView tokensListView = null!;
+    private ModernUI.WinForms.ModernDataGridView tokensTable = null!;
     private TabPage scopesPage = null!;
-    private ModernUI.WinForms.ModernListView scopesListView = null!;
+    private ModernUI.WinForms.ModernDataGridView scopesTable = null!;
     private TabPage childrenPage = null!;
-    private ModernUI.WinForms.ModernListView childrenListView = null!;
+    private ModernUI.WinForms.ModernDataGridView childrenTable = null!;
     private TabPage tracePage = null!;
-    private ModernUI.WinForms.ModernListView traceListView = null!;
+    private ModernUI.WinForms.ModernDataGridView traceTable = null!;
     private FlowLayoutPanel traceToolbar = null!;
     private ModernUI.WinForms.ModernInput traceFilterTextBox = null!;
     private ModernUI.WinForms.ModernDateRangePicker traceDateRange = null!;
     private ModernUI.WinForms.ModernCheckbox pauseTraceCheckBox = null!;
     private TabPage outputPage = null!;
-    private ModernUI.WinForms.ModernListView outputListView = null!;
+    private ModernUI.WinForms.ModernDataGridView outputTable = null!;
     private TabPage timingPage = null!;
-    private ModernUI.WinForms.ModernListView timingListView = null!;
+    private ModernUI.WinForms.ModernDataGridView timingTable = null!;
     private ModernUI.WinForms.ModernLocalizationProvider localizationProvider = null!;
     private ModernUI.WinForms.ModernValidationProvider validationProvider = null!;
     private ModernUI.WinForms.ModernCommandManager commandManager = null!;

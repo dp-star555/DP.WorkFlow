@@ -24,10 +24,9 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
     public WorkflowDiagnosticsControl()
     {
         InitializeComponent();
-        diagnosticsListView.ShowItemToolTips = true;
         _localizationContext = _defaultLocalizationManager.Context;
         // 双击诊断行定位到对应节点。
-        diagnosticsListView.DoubleClick += (_, _) => NavigateSelected();
+        diagnosticsTable.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) NavigateSelected(); };
         LocalizationContext = _defaultLocalizationManager.Context;
         // 错误 / 警告行的文字颜色取自当前主题，切换主题后重建列表。
         WorkflowWinFormsTheme.Changed += OnThemeChanged;
@@ -36,7 +35,9 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
 
     private void OnThemeChanged(object? sender, EventArgs e)
     {
-        if (!IsDisposed) RefreshItems();
+        if (IsDisposed) return;
+        diagnosticsTable.Theme = WorkflowWinFormsTheme.Table(WorkflowWinFormsTheme.Modern);
+        RefreshItems();
     }
 
     /// <summary>获取或设置页面使用的本地化上下文；切换不会丢失当前诊断选择。</summary>
@@ -143,8 +144,8 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
 
     private void NavigateSelected()
     {
-        if (diagnosticsListView.SelectedItems.Count == 1 &&
-            diagnosticsListView.SelectedItems[0].Tag is WorkflowDiagnosticItem item) _model?.NavigateTo(item);
+        if (diagnosticsTable.SelectedRows.Count == 1 &&
+            diagnosticsTable.SelectedRows[0].Tag is WorkflowDiagnosticItem item) _model?.NavigateTo(item);
     }
 
     private void LocalizationChanged(object? sender, LocaleChangedEventArgs e)
@@ -155,39 +156,33 @@ public sealed partial class WorkflowDiagnosticsControl : UserControl
 
     private void ApplyLocalization()
     {
-        severityColumn.Text = LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsSeverity);
-        codeColumn.Text = LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsCode);
-        nodeColumn.Text = LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsNode);
-        messageColumn.Text = LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsMessage);
+        diagnosticsTable.Columns[0].HeaderText = LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsSeverity);
+        diagnosticsTable.Columns[1].HeaderText = LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsCode);
+        diagnosticsTable.Columns[2].HeaderText = LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsNode);
+        diagnosticsTable.Columns[3].HeaderText = LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsMessage);
         AccessibleName = LocalizationContext.Text(WorkflowUiTextKeys.DiagnosticsAccessibleName);
-        diagnosticsListView.AccessibleName = AccessibleName;
+        diagnosticsTable.AccessibleName = AccessibleName;
         RefreshItems();
     }
 
     /// <summary>刷新Items。</summary>
     private void RefreshItems()
     {
-        var selected = diagnosticsListView.SelectedItems.Count == 1 ? diagnosticsListView.SelectedItems[0].Tag : null;
-        diagnosticsListView.BeginUpdate();
-        diagnosticsListView.Items.Clear();
+        var selected = diagnosticsTable.SelectedRows.Count == 1 ? diagnosticsTable.SelectedRows[0].Tag : null;
+        diagnosticsTable.Rows.Clear();
         foreach (var diagnostic in _model?.Items ?? Array.Empty<WorkflowDiagnosticItem>())
         {
-            var item = new ListViewItem(LocalizationContext.Text(diagnostic.Severity == WorkflowValidationSeverity.Error
-                ? WorkflowUiTextKeys.DiagnosticsError : WorkflowUiTextKeys.DiagnosticsWarning))
-            {
-                Tag = diagnostic,
-                ToolTipText = diagnostic.Detail ?? diagnostic.Message,
-                ForeColor = diagnostic.Severity == WorkflowValidationSeverity.Error
-                    ? WorkflowWinFormsTheme.Modern.Error
-                    : WorkflowWinFormsTheme.Modern.Warning
-            };
-            item.SubItems.Add(diagnostic.Code);
-            item.SubItems.Add(diagnostic.NodeId ?? string.Empty);
-            item.SubItems.Add(diagnostic.Message);
-            diagnosticsListView.Items.Add(item);
-            if (ReferenceEquals(selected, diagnostic) || Equals(selected, diagnostic)) item.Selected = true;
+            var index = diagnosticsTable.Rows.Add(LocalizationContext.Text(diagnostic.Severity == WorkflowValidationSeverity.Error
+                    ? WorkflowUiTextKeys.DiagnosticsError : WorkflowUiTextKeys.DiagnosticsWarning),
+                diagnostic.Code, diagnostic.NodeId ?? string.Empty, diagnostic.Message);
+            var row = diagnosticsTable.Rows[index];
+            row.Tag = diagnostic;
+            row.Cells[3].ToolTipText = diagnostic.Detail ?? diagnostic.Message;
+            row.Cells[0].Style.ForeColor = diagnostic.Severity == WorkflowValidationSeverity.Error
+                ? WorkflowWinFormsTheme.Modern.Error
+                : WorkflowWinFormsTheme.Modern.Warning;
         }
-        diagnosticsListView.EndUpdate();
+        WorkflowPage.RestoreSelection(diagnosticsTable, selected, row => row.Tag);
         var errors = (_model?.Items ?? Array.Empty<WorkflowDiagnosticItem>()).Count(item => item.Severity == WorkflowValidationSeverity.Error);
         var warnings = (_model?.Items ?? Array.Empty<WorkflowDiagnosticItem>()).Count - errors;
         _summaryText = errors + warnings == 0

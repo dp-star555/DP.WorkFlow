@@ -59,10 +59,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         bar.AddRight(_follow);
 
         _table.VirtualMode = true;
-        _table.Columns[0].FillWeight = 62;
-        _table.Columns[1].FillWeight = 14;
-        _table.Columns[2].FillWeight = 11;
-        _table.Columns[3].FillWeight = 13;
+        ColumnWidths(_table, 1, 0, 0, 0);
         foreach (DataGridViewColumn column in _table.Columns)
             column.SortMode = DataGridViewColumnSortMode.NotSortable;
         _table.CellValueNeeded += OnCellValueNeeded;
@@ -261,8 +258,8 @@ public sealed class WorkflowRunLogPage : WorkflowPage
             }
             if (lines.Count > 0)
             {
-                if (_follow.Checked) ScrollTo(lines.Count - 1);
-                else if (first >= 0) ScrollTo(Math.Min(first, lines.Count - 1));
+                if (_follow.Checked) ScrollTo(_table, lines.Count - 1);
+                else if (first >= 0) ScrollTo(_table, Math.Min(first, lines.Count - 1));
             }
         }
         finally
@@ -337,18 +334,6 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     }
 
     // 表格还没排版（页面没显示、高度不够一行）时设滚动位置会抛“没有可供显示行的空间”，这时不滚。
-    private void ScrollTo(int row)
-    {
-        if (!_table.Visible || _table.DisplayRectangle.Height <= _table.ColumnHeadersHeight + _table.RowTemplate.Height) return;
-        try
-        {
-            _table.FirstDisplayedScrollingRowIndex = row;
-        }
-        catch (InvalidOperationException)
-        {
-        }
-    }
-
     private void StopFollowingWhenScrolledUp()
     {
         if (_follow.Checked && _table.RowCount > 0 && _table.FirstDisplayedScrollingRowIndex + _table.DisplayedRowCount(false) < _table.RowCount)
