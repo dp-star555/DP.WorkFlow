@@ -44,7 +44,7 @@ internal sealed class SampleDesignPage : UserControl
         _publish.Click += async (_, _) => await PublishAsync();
         _studio.ConfirmDiscardChanges = () => MessageBox.Show(FindForm(), "当前流程还没保存，放弃修改？", "流程设计", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes;
         _studio.InteractionError += (_, message) => ShowMessage(message);
-        _studio.RunFaulted += (_, message) => ShowMessage(message);
+        _studio.RunFaulted += (_, message) => ShowMessage($"{message}（详情见运行日志 · {SampleWorkflowHost.TrialRunLogName}）");
         _studio.Workspace = _workspace;
         Controls.Add(_studio);
 
