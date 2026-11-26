@@ -344,7 +344,8 @@ public sealed class LocalizationClosureTests
                 Assert.Equal("No runtime data", monitor.SummaryText);
                 Assert.Equal("Filter node, token, scope, step, or message", filter.PlaceholderText);
                 Assert.DoesNotContain(Descendants(monitor), control => control is ModernCommandBar or ModernAlert);
-                Assert.All(Descendants(monitor).OfType<ModernListView>(), list =>
+                Assert.Equal(6, Descendants(monitor).OfType<ModernDataGridView>().Count());
+                Assert.All(Descendants(monitor).OfType<ModernDataGridView>(), list =>
                     Assert.Contains(Assert.IsType<ModernContextMenu>(list.ContextMenuStrip).Items.Cast<ToolStripItem>(),
                         item => item.Text == "Export CSV"));
             }

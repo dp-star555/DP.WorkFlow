@@ -48,31 +48,17 @@ internal sealed class WorkflowNoticePopup : ToolStripDropDown
         };
         panel.Controls.Add(header, 0, 0);
 
-        var list = new ModernListView
-        {
-            Dock = DockStyle.Fill,
-            View = View.Details,
-            FullRowSelect = true,
-            HeaderStyle = ColumnHeaderStyle.Nonclickable,
-            BorderStyle = BorderStyle.None,
-            ShowItemToolTips = true
-        };
-        list.Columns.Add("时间", 76);
-        list.Columns.Add("类别", 80);
-        list.Columns.Add("说明", 210);
-        list.Columns.Add("次数", 44, HorizontalAlignment.Right);
+        // 时间、类别、次数按内容，说明占剩下的宽度。
+        var list = WorkflowPage.Table("时间", "类别", "说明", "次数");
+        WorkflowPage.ColumnWidths(list, 0, 0, 1, 0);
+        list.Columns[3].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
         foreach (var notice in notices.Reverse())
         {
-            var item = new ListViewItem(notice.Timestamp.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture))
-            {
-                ToolTipText = notice.Message,
-                ForeColor = theme.Text
-            };
-            item.SubItems.Add(notice.Category);
-            item.SubItems.Add(notice.Message);
-            item.SubItems.Add(notice.Count.ToString(CultureInfo.InvariantCulture));
-            list.Items.Add(item);
+            var index = list.Rows.Add(notice.Timestamp.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture),
+                notice.Category, notice.Message, notice.Count.ToString(CultureInfo.InvariantCulture));
+            list.Rows[index].Cells[2].ToolTipText = notice.Message;
         }
+        list.ClearSelection();
         panel.Controls.Add(list, 0, 1);
 
         var buttons = new FlowLayoutPanel

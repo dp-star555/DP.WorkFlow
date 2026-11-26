@@ -48,14 +48,7 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
     public WorkflowFlowLibraryPage(WorkflowFlowLibrary library)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
-        _table.Columns[0].FillWeight = 160;
-        _table.Columns[1].FillWeight = 80;
-        _table.Columns[2].FillWeight = 70;
-        _table.Columns[3].FillWeight = 50;
-        _table.Columns[4].FillWeight = 110;
-
-        _table.Columns[5].FillWeight = 70;
-        _table.Columns[6].FillWeight = 70;
+        ColumnWidths(_table, 1, 0, 0, 0, 0, 0, 0);
 
         // 工具条卡：新建、导入 | 搜索、分段筛选、显示已删除；右边刷新。
         foreach (var item in new[] { "全部", "已发布", "草稿", "有诊断" })
@@ -484,6 +477,7 @@ internal sealed class WorkflowFlowHistoryDialog : Form
                 version.SavedBy ?? string.Empty, version.Note ?? string.Empty);
             _versions.Rows[index].Tag = version;
         }
+        WorkflowPage.ColumnWidths(_versions, 0, 0, 0, 1);
         _compare.Enabled = entry.IsPublished;
         _restore.Enabled = canEdit;
         _versions.SelectionChanged += (_, _) => _comparePrevious.Enabled = Previous(Selected) is not null;

@@ -153,24 +153,29 @@ public static class WorkflowDesignerGeometry
         var right = nodeBounds.X + nodeBounds.Width - 10 * zoom;
         var available = Math.Max(0, right - titleLeft);
         var gap = 6 * zoom;
-        var badgeHeight = Math.Min(headerHeight, 18 * zoom);
         var orderWidth = measuredOrderWidth > 0 ? measuredOrderWidth + 10 * zoom : 0;
-        var durationWidth = measuredDurationWidth > 0 ? measuredDurationWidth : 0;
+        // 量出的宽度留 2 px 余量，避免取整后被省略成“53…”。
+        var durationWidth = measuredDurationWidth > 0 ? measuredDurationWidth + 2 * zoom : 0;
         var runtimeWidth = orderWidth + durationWidth + (orderWidth > 0 && durationWidth > 0 ? gap : 0);
-        if (runtimeWidth > available * 0.5 && runtimeWidth > 0)
-        {
-            // 空间不足时先压缩耗时，序号保持完整。
-            durationWidth = Math.Max(0, durationWidth - (runtimeWidth - available * 0.5));
-            runtimeWidth = orderWidth + durationWidth + (orderWidth > 0 && durationWidth > 0 ? gap : 0);
-        }
-        var durationBounds = new WorkflowDesignerRect(right - durationWidth, nodeBounds.Y, durationWidth, headerHeight);
+        // 运行信息（序号、耗时）始终完整显示。和标题并排会把标题挤到一半以下时，改为两行：
+        // 标题占上半行全宽，序号和耗时靠右放在下半行。
+        var stacked = runtimeWidth > available * 0.5;
+        var half = headerHeight / 2;
+        var titleBounds = stacked
+            ? new WorkflowDesignerRect(titleLeft, nodeBounds.Y + 2 * zoom, available, half)
+            : new WorkflowDesignerRect(titleLeft, nodeBounds.Y, Math.Max(0, available - runtimeWidth - (runtimeWidth > 0 ? 8 * zoom : 0)), headerHeight);
+        var rowTop = stacked ? nodeBounds.Y + half - 1 * zoom : nodeBounds.Y;
+        var rowHeight = stacked ? half : headerHeight;
+        var badgeHeight = Math.Min(rowHeight, (stacked ? 16 : 18) * zoom);
+        if (runtimeWidth > available && orderWidth > 0 && durationWidth > 0) orderWidth = 0; // 极窄时先让出序号。
+        var durationBounds = new WorkflowDesignerRect(right - durationWidth, rowTop, durationWidth, rowHeight);
         var orderRight = durationWidth > 0 ? durationBounds.X - gap : right;
-        var orderBounds = new WorkflowDesignerRect(orderRight - orderWidth, Center(badgeHeight), orderWidth, orderWidth > 0 ? badgeHeight : 0);
-        var titleWidth = Math.Max(0, available - runtimeWidth - (runtimeWidth > 0 ? 8 * zoom : 0));
+        var orderBounds = new WorkflowDesignerRect(orderRight - orderWidth, rowTop + (rowHeight - badgeHeight) / 2,
+            orderWidth, orderWidth > 0 ? badgeHeight : 0);
         return new WorkflowNodeHeaderLayout(
             indicatorBounds,
             iconBounds,
-            new WorkflowDesignerRect(titleLeft, nodeBounds.Y, titleWidth, headerHeight),
+            titleBounds,
             orderBounds,
             durationBounds,
             Math.Max(3, TitleFontPixels * zoom),

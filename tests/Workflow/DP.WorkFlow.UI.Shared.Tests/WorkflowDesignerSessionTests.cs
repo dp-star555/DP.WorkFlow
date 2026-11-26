@@ -121,7 +121,7 @@ public sealed class WorkflowDesignerSessionTests
         Assert.True(layout.OrderBounds.X + layout.OrderBounds.Width <= layout.DurationBounds.X);
         Assert.Equal(240 + 100 - 10, layout.DurationBounds.X + layout.DurationBounds.Width, 6);
         Assert.Equal(30, layout.OrderBounds.Width);
-        Assert.Equal(40, layout.DurationBounds.Width);
+        Assert.Equal(42, layout.DurationBounds.Width);
         // 全部垂直居中在 48 高的标题行内，与正文无关。
         var headerCenter = 50 + WorkflowDesignerGeometry.HeaderHeight / 2;
         Assert.Equal(headerCenter, layout.IndicatorBounds.Y + layout.IndicatorBounds.Height / 2, 6);
@@ -131,11 +131,14 @@ public sealed class WorkflowDesignerSessionTests
         Assert.Equal(WorkflowDesignerGeometry.TitleFontPixels, layout.TitleFontSize);
         Assert.Equal(WorkflowDesignerGeometry.DetailFontPixels, layout.DetailFontSize);
 
-        // 空间不足时先压缩耗时，序号徽标保持完整（回环时靠序号找最后执行的节点）。
-        var crowded = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(new WorkflowDesignerRect(0, 0, 144, 48), 1, 20, 500);
+        // 并排会挤掉标题时改为两行：标题占上半行全宽，序号和耗时完整显示在下半行。
+        var crowded = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(new WorkflowDesignerRect(0, 0, 144, 48), 1, 20, 40);
         Assert.Equal(30, crowded.OrderBounds.Width);
-        var available = 144 - 10 - crowded.TitleBounds.X;
-        Assert.True(crowded.OrderBounds.Width + crowded.DurationBounds.Width + 6 <= available * 0.5 + 0.01);
+        Assert.Equal(42, crowded.DurationBounds.Width);
+        Assert.Equal(144 - 10, crowded.TitleBounds.X + crowded.TitleBounds.Width, 6);
+        Assert.True(crowded.TitleBounds.Y + crowded.TitleBounds.Height <= crowded.OrderBounds.Y + 1);
+        Assert.True(crowded.TitleBounds.Y + crowded.TitleBounds.Height <= crowded.DurationBounds.Y + 3);
+        Assert.Equal(144 - 10, crowded.DurationBounds.X + crowded.DurationBounds.Width, 6);
 
         var idle = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(new WorkflowDesignerRect(0, 0, 144, 48), 1, 0, 0);
         Assert.Equal(0, idle.OrderBounds.Width);

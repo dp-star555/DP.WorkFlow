@@ -5,10 +5,10 @@ namespace DP.WorkFlow.Tests;
 public sealed class WorkflowDesignerInteractionTests
 {
     [Theory]
-    [InlineData(1500, "1.50s")]
+    [InlineData(1500, "1.5s")]
     [InlineData(25, "25ms")]
     [InlineData(2.5, "2.5ms")]
-    [InlineData(0.25, "0.250ms")]
+    [InlineData(0.25, "<1ms")]
     public void FormatElapsed_ChoosesPrecisionByMagnitude(double milliseconds, string expected) =>
         Assert.Equal(expected, WorkflowDesignerInteraction.FormatElapsed(TimeSpan.FromMilliseconds(milliseconds)));
 

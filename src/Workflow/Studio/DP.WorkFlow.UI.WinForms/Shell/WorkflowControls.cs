@@ -76,6 +76,17 @@ public static class WorkflowTones
     }
 }
 
+/// <summary>量文字宽度。</summary>
+/// <remarks>
+/// 量的时候不能带 EndEllipsis 之类的绘制标志：带上后在没给尺寸时会按省略后的样子量，量出来只有一个字加省略号宽。
+/// </remarks>
+public static class WorkflowText
+{
+    /// <summary>单行文字在 <paramref name="font"/> 下的宽度（多留 1 px，避免取整后被省略）。</summary>
+    public static int Width(IDeviceContext graphics, string? text, Font font) => string.IsNullOrEmpty(text) ? 0
+        : TextRenderer.MeasureText(graphics, text, font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width + 1;
+}
+
 /// <summary>
 /// 控件统一尺寸：高 30、外边距 4（相邻控件间隔 8），宽度按文字量或按给定的逻辑宽度。
 /// 宿主按字体自动缩放或换 DPI 时会改控件尺寸，改完再按这里的规则量回来。
