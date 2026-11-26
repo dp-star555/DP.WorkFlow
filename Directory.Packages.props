@@ -14,7 +14,7 @@
     <PackageVersion Include="Microsoft.Bcl.TimeProvider" Version="8.0.1" />
     <PackageVersion Include="Scintilla.NET" Version="5.3.2.9" />
     <!-- 与 DP.Foundation 同一份 ModernUI；升级时从 DP.Foundation/vendor/packages 复制新包到 vendor/packages。 -->
-    <PackageVersion Include="ModernUI.WinForms" Version="1.1.1-foundation.25" />
+    <PackageVersion Include="ModernUI.WinForms" Version="1.1.1-foundation.26" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageVersion Include="xunit" Version="2.9.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />

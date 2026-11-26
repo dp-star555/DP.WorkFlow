@@ -66,8 +66,8 @@ public sealed record WorkflowRunLogLine(
 /// 把运行日志树按折叠规则展开成列表。
 /// </summary>
 /// <remarks>
-/// 自动折叠：成功结束的子流程、循环圈、并行分支收起；连续成功的圈合并成一行“第 a–b 圈”；
-/// 有失败、故障或提示的层级保持展开，正在运行的层级也展开。手动展开 / 收起（<see cref="Overrides"/>）优先于自动规则。
+/// 自动折叠：成功结束的子流程、循环圈、并行分支收起；连续成功的圈合并成一行“第 a–b 圈”（只有提示的圈也合并，行上标出提示条数）；
+/// 有失败、故障的层级保持展开，正在运行的层级也展开。手动展开 / 收起（<see cref="Overrides"/>）优先于自动规则。
 /// </remarks>
 public sealed class WorkflowRunLogView
 {
@@ -194,9 +194,12 @@ public sealed class WorkflowRunLogView
         for (var index = first; index <= last; index++)
             total += Elapsed(children[index], now) ?? TimeSpan.Zero;
         var title = $"第 {start.Cycle.ToString(CultureInfo.InvariantCulture)}–{stop.Cycle.ToString(CultureInfo.InvariantCulture)} 圈";
+        var notices = 0;
+        for (var index = first; index <= last; index++)
+            notices += children[index].NoticeCount;
         var detail = $"全部成功 · 平均 {WorkflowRunLogText.Duration(TimeSpan.FromTicks(total.Ticks / count))} / 圈";
         lines.Add(new WorkflowRunLogLine(key, null, depth, WorkflowRunLogRowKind.Cycle, title, detail, start.Started, stop.Ended,
-            stop.Ended is { } ended ? ended - start.Started : null, WorkflowRunLogState.Succeeded, true, expanded, false, 0, null, null,
+            stop.Ended is { } ended ? ended - start.Started : null, WorkflowRunLogState.Succeeded, true, expanded, false, notices, null, null,
             start.CanvasPath, 0, 0, path.Length == 0 ? title : path + " / " + title, null, true));
         if (!expanded) return;
         for (var index = first; index <= last; index++)
@@ -211,12 +214,11 @@ public sealed class WorkflowRunLogView
     }
 
     private static bool Quiet(WorkflowRunLogRow row) =>
-        row.Kind == WorkflowRunLogRowKind.Cycle && row.State == WorkflowRunLogState.Succeeded && !row.HasFailure && row.NoticeCount == 0;
+        row.Kind == WorkflowRunLogRowKind.Cycle && row.State == WorkflowRunLogState.Succeeded && !row.HasFailure;
 
     private static bool AutoExpanded(WorkflowRunLogRow row) =>
         row.Kind == WorkflowRunLogRowKind.Run
         || row.HasFailure
-        || row.NoticeCount > 0
         || (row.IsContainer && row.State == WorkflowRunLogState.Running);
 
     private static TimeSpan? Elapsed(WorkflowRunLogRow row, DateTimeOffset now)
