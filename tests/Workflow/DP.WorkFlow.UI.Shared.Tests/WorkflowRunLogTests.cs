@@ -293,13 +293,13 @@ public sealed class WorkflowRunLogTests
     }
 
     [Fact]
-    public async Task History_SavedAsJsonLines_ReplaysExactlyLikeTheLiveLog()
+    public async Task Store_GetsReadableLines_AndReplaysExactlyLikeTheLiveLog()
     {
-        var book = new WorkflowRunLogBook();
+        var store = new MemoryStore();
+        var book = new WorkflowRunLogBook { Store = store };
         WorkflowRuntimeHost? host = null;
-        var saved = new List<string>();
         var options = new WorkflowExecutionOptions();
-        options.Recording.Sink = new Tee(book.CreateSink("上料", () => host?.Plan), saved);
+        options.Recording.Sink = book.CreateSink("上料", () => host?.Plan);
         host = new WorkflowRuntimeHost(
             new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes(),
             new WorkflowNodeHandlerCatalog().RegisterStandardNodeHandlers().RegisterCompositeNodeHandlers(),
@@ -312,8 +312,18 @@ public sealed class WorkflowRunLogTests
         Assert.True((await host.RunAsync()).Success);
         await WaitEnded(book, "上料", 1);
 
-        // 外部存的是原始事件（这里一行一条 JSON）；读回来重建，显示和实时记录的一样。
-        var replayed = book.Replay("上料", saved.Select(WorkflowRunEventJson.Read));
+        // 存储收到的是给人看的文字行（和流程出口推送的一样），一次运行的第一行标了开始，结束后带上结果。
+        var records = store.Records;
+        Assert.True(records[0].IsRunStart);
+        Assert.Single(records, record => record.IsRunStart);
+        Assert.All(records, record => Assert.Equal(records[0].RunId, record.RunId));
+        Assert.Equal(WorkflowRunLogState.Succeeded, records[^1].RunState);
+        Assert.Contains(records, record => record.Line.Contains(" INFO [上料") && record.Line.Contains("节点 扫描#1"));
+        Assert.All(records, record => Assert.DoesNotContain('\n', record.Line));
+
+        // 原样交回这些行（夹杂外部加的空行、注释也不要紧），重建出来和实时记录的一样。
+        var lines = records.Select(record => record.Line).Prepend("# 外部加的注释").Append(string.Empty).ToArray();
+        var replayed = book.Replay("上料", lines);
         var view = new WorkflowRunLogView { ExpandAll = true, ControlOnly = false };
         var now = DateTimeOffset.UtcNow;
         var live = book.Read("上料", 0, log => view.Build(log, now))!;
@@ -326,15 +336,38 @@ public sealed class WorkflowRunLogTests
         Assert.Equal(WorkflowRunLogState.Succeeded, replayed.Root.State);
     }
 
-    private sealed class Tee(IWorkflowRunEventSink inner, List<string> saved) : IWorkflowRunEventSink
+    [Fact]
+    public void Store_Failure_DoesNotStopTheLiveLog()
     {
-        public ValueTask<WorkflowRunEventWriteResult> WriteAsync(IReadOnlyList<WorkflowRunEvent> events, bool requestImmediateFlush, CancellationToken cancellationToken)
+        var book = new WorkflowRunLogBook { Store = new MemoryStore { Fail = true } };
+        var run = Guid.NewGuid();
+        book.Add("甲", Event(run, "RunStarted"));
+        book.Add("甲", Event(run, "RunCompleted"));
+        Assert.Equal(WorkflowRunLogState.Succeeded, Assert.Single(book.Runs("甲")).State);
+    }
+
+    private sealed class MemoryStore : IWorkflowRunLogStore
+    {
+        private readonly List<WorkflowRunLogRecord> _records = new();
+
+        public bool Fail { get; init; }
+
+        public IReadOnlyList<WorkflowRunLogRecord> Records
         {
-            lock (saved) saved.AddRange(events.Select(WorkflowRunEventJson.Write));
-            return inner.WriteAsync(events, requestImmediateFlush, cancellationToken);
+            get { lock (_records) return _records.ToArray(); }
         }
 
-        public ValueTask FlushAsync(CancellationToken cancellationToken) => inner.FlushAsync(cancellationToken);
+        public void Append(WorkflowRunLogRecord record)
+        {
+            if (Fail) throw new IOException("磁盘满了");
+            lock (_records) _records.Add(record);
+        }
+
+        public Task<IReadOnlyList<WorkflowRunLogHistoryEntry>> FindAsync(WorkflowRunLogHistoryQuery query, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<string>> ReadAsync(WorkflowRunLogHistoryEntry entry, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private static async Task WaitEnded(WorkflowRunLogBook book, string flow, int count)

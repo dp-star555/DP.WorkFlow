@@ -1,17 +1,21 @@
+using System.Globalization;
 using System.Text;
 
 namespace DP.WorkFlow.Samples.Pages;
 
 /// <summary>
-/// 示例用的运行日志本地存储（只为测试“历史”）：每次运行一个文件，一行一条事件（<see cref="WorkflowRunEventJson"/>），
-/// 放在 runlogs\日期\流程名\时分秒_运行ID.jsonl，保留 30 天。实际项目怎么存由宿主自己决定，只要实现 <see cref="IWorkflowRunLogHistory"/>。
+/// 示例用的运行日志本地存储（只为测试“历史”）：只管存在哪，不碰内容。每次运行一个文本文件
+/// runlogs\日期\流程名\时分秒_运行ID.log，行是 Workflow 交来的原样（用记事本就能看）；
+/// 每天一个 runs.txt 记有哪些运行（开始、结束、结果、文件），查历史时用。保留 30 天。
+/// 实际项目存在哪由宿主自己决定，只要实现 <see cref="IWorkflowRunLogStore"/>。
 /// </summary>
-internal sealed class SampleRunLogFiles : IWorkflowRunLogHistory, IDisposable
+internal sealed class SampleRunLogFiles : IWorkflowRunLogStore, IDisposable
 {
     private const int KeepDays = 30;
-    private static readonly WorkflowOutletOptions Filter = WorkflowRunLogBook.OutletOptions();
+    private const string IndexName = "runs.txt";
+    private static readonly Encoding Utf8 = new UTF8Encoding(true);
     private readonly object _sync = new();
-    private readonly Dictionary<string, StreamWriter> _writers = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, OpenRun> _open = new(StringComparer.Ordinal);
 
     public SampleRunLogFiles(string root)
     {
@@ -23,48 +27,28 @@ internal sealed class SampleRunLogFiles : IWorkflowRunLogHistory, IDisposable
     /// <summary>日志所在目录。</summary>
     public string Directory { get; }
 
-    /// <summary>挂到流程管理每个流程的出口上（保留出口原有回调，和运行日志本收到的事件相同）。</summary>
-    public void Attach(WorkflowRunCenter center)
+    public void Append(WorkflowRunLogRecord record)
     {
-        foreach (var flow in center.Flows)
-        {
-            var name = flow.Name;
-            var previous = flow.Outlet.OnEvent;
-            flow.Outlet.OnEvent = item =>
-            {
-                previous?.Invoke(item);
-                Save(name, item.Event);
-            };
-        }
-    }
-
-    /// <summary>包一层运行宿主的 Sink：事件照常交给 <paramref name="inner"/>，同时存到本地（名字每次启动时取）。</summary>
-    public IWorkflowRunEventSink Wrap(IWorkflowRunEventSink inner, Func<string> flowName) => new Tee(this, inner, flowName);
-
-    /// <summary>存一条事件：根运行开始时新开一个文件，其余接在该名字当前的文件后面；过滤和运行日志本一样。</summary>
-    public void Save(string flowName, WorkflowRunEvent runEvent)
-    {
-        if (WorkflowOutlet.GetLevel(runEvent) < Filter.MinimumLevel || Filter.Categories?.Contains(runEvent.Category) == false) return;
         lock (_sync)
         {
-            try
+            if (!_open.TryGetValue(record.FlowName, out var run) || run.RunId != record.RunId)
             {
-                if (IsRootStart(runEvent))
-                {
-                    if (_writers.TryGetValue(flowName, out var old)) old.Dispose();
-                    var started = runEvent.Timestamp.ToLocalTime();
-                    var folder = Path.Combine(Directory, started.ToString("yyyy-MM-dd"), Safe(flowName));
-                    System.IO.Directory.CreateDirectory(folder);
-                    var file = Path.Combine(folder, $"{started:HHmmss}_{runEvent.RunId:N}.jsonl");
-                    _writers[flowName] = new StreamWriter(file, append: true, new UTF8Encoding(false)) { AutoFlush = true };
-                }
-                if (_writers.TryGetValue(flowName, out var writer))
-                    writer.WriteLine(WorkflowRunEventJson.Write(runEvent));
+                run?.Writer.Dispose();
+                var started = record.RunStarted.ToLocalTime();
+                var day = Path.Combine(Directory, started.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                var folder = Path.Combine(day, Safe(record.FlowName));
+                System.IO.Directory.CreateDirectory(folder);
+                var file = Path.Combine(folder, $"{started:HHmmss}_{record.RunId:N}.log");
+                var writer = new StreamWriter(new FileStream(file, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete), Utf8)
+                    { AutoFlush = true };
+                _open[record.FlowName] = run = new OpenRun(record.RunId, file, Path.Combine(day, IndexName), writer);
+                Index(run, record);
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            run.Writer.WriteLine(record.Line);
+            if (record.RunEnded is not null && !run.Ended)
             {
-                // 示例存储：写不进就算了，不影响运行和内存里的运行日志。
-                System.Diagnostics.Trace.TraceWarning("运行日志写文件失败：" + exception.Message);
+                run.Ended = true;
+                Index(run, record);
             }
         }
     }
@@ -72,64 +56,57 @@ internal sealed class SampleRunLogFiles : IWorkflowRunLogHistory, IDisposable
     public Task<IReadOnlyList<WorkflowRunLogHistoryEntry>> FindAsync(WorkflowRunLogHistoryQuery query, CancellationToken cancellationToken = default) =>
         Task.Run<IReadOnlyList<WorkflowRunLogHistoryEntry>>(() =>
         {
-            var entries = new List<WorkflowRunLogHistoryEntry>();
+            var runs = new Dictionary<string, WorkflowRunLogHistoryEntry>(StringComparer.OrdinalIgnoreCase);
             for (var day = query.From.ToLocalTime().Date; day < query.To.ToLocalTime(); day = day.AddDays(1))
             {
-                var dayFolder = Path.Combine(Directory, day.ToString("yyyy-MM-dd"));
-                if (!System.IO.Directory.Exists(dayFolder)) continue;
-                foreach (var flowFolder in System.IO.Directory.GetDirectories(dayFolder))
-                {
-                    var name = Path.GetFileName(flowFolder);
-                    if (query.FlowName is not null && !string.Equals(name, Safe(query.FlowName), StringComparison.Ordinal)) continue;
-                    foreach (var file in System.IO.Directory.GetFiles(flowFolder, "*.jsonl"))
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        if (Describe(name, file) is { } entry && entry.Started >= query.From && entry.Started < query.To) entries.Add(entry);
-                    }
-                }
+                cancellationToken.ThrowIfCancellationRequested();
+                var index = Path.Combine(Directory, day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), IndexName);
+                if (!File.Exists(index)) continue;
+                // 一次运行开始、结束各记一行，后面的为准。
+                foreach (var line in ReadLines(index))
+                    if (Parse(line) is { } entry) runs[entry.Key!] = entry;
             }
-            return entries.OrderByDescending(entry => entry.Started).Take(query.MaxResults).ToArray();
+            return runs.Values
+                .Where(entry => entry.Started >= query.From && entry.Started < query.To
+                                && (query.FlowName is null || string.Equals(entry.FlowName, query.FlowName, StringComparison.Ordinal)))
+                .OrderByDescending(entry => entry.Started).Take(query.MaxResults).ToArray();
         }, cancellationToken);
 
-    public Task<IReadOnlyList<WorkflowRunEvent>> LoadAsync(WorkflowRunLogHistoryEntry entry, CancellationToken cancellationToken = default) =>
-        Task.Run<IReadOnlyList<WorkflowRunEvent>>(() =>
-        {
-            lock (_sync)
-                if (_writers.Values.FirstOrDefault(writer => writer.BaseStream is FileStream stream && stream.Name == entry.Key) is { } open) open.Flush();
-            return ReadLines(entry.Key!).Select(WorkflowRunEventJson.Read).ToArray();
-        }, cancellationToken);
+    public Task<IReadOnlyList<string>> ReadAsync(WorkflowRunLogHistoryEntry entry, CancellationToken cancellationToken = default) =>
+        Task.Run<IReadOnlyList<string>>(() => ReadLines(entry.Key!).ToArray(), cancellationToken);
 
     public void Dispose()
     {
         lock (_sync)
         {
-            foreach (var writer in _writers.Values) writer.Dispose();
-            _writers.Clear();
+            foreach (var run in _open.Values) run.Writer.Dispose();
+            _open.Clear();
         }
     }
 
-    // 列表只读首行（开始）和末行（结束和结果）。
-    private static WorkflowRunLogHistoryEntry? Describe(string flowName, string file)
+    // runs.txt 一行：开始	结束	结果	流程	运行ID	文件（相对 runlogs），用制表符隔开。
+    private void Index(OpenRun run, WorkflowRunLogRecord record)
     {
-        string? first = null, last = null;
-        foreach (var line in ReadLines(file))
+        var fields = new[]
         {
-            if (line.Length == 0) continue;
-            first ??= line;
-            last = line;
-        }
-        if (first is null) return null;
-        var start = WorkflowRunEventJson.Read(first);
-        var end = WorkflowRunEventJson.Read(last!);
-        var state = end.ParentRunId is null && end.Parents is not { Count: > 0 } ? end.EventType switch
-        {
-            "RunCompleted" => WorkflowRunLogState.Succeeded,
-            "RunCanceled" => WorkflowRunLogState.Canceled,
-            "RunFaulted" => WorkflowRunLogState.Failed,
-            _ => (WorkflowRunLogState?)null
-        } : null;
-        return new WorkflowRunLogHistoryEntry(flowName, start.RunId, start.Timestamp, state is null ? null : end.Timestamp,
-            state, file);
+            record.RunStarted.ToString("o", CultureInfo.InvariantCulture),
+            record.RunEnded?.ToString("o", CultureInfo.InvariantCulture) ?? string.Empty,
+            record.RunState?.ToString() ?? string.Empty,
+            record.FlowName.Replace('\t', ' '),
+            record.RunId.ToString("N"),
+            run.File.Substring(Directory.Length + 1)
+        };
+        File.AppendAllText(run.IndexFile, string.Join("\t", fields) + Environment.NewLine, Utf8);
+    }
+
+    private WorkflowRunLogHistoryEntry? Parse(string line)
+    {
+        var fields = line.Split('\t');
+        if (fields.Length != 6 || !DateTimeOffset.TryParse(fields[0], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var started)
+            || !Guid.TryParse(fields[4], out var runId)) return null;
+        DateTimeOffset? ended = DateTimeOffset.TryParse(fields[1], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var end) ? end : null;
+        WorkflowRunLogState? state = Enum.TryParse<WorkflowRunLogState>(fields[2], out var value) ? value : null;
+        return new WorkflowRunLogHistoryEntry(fields[3], runId, started, ended, state, Path.Combine(Directory, fields[5]));
     }
 
     // 正在写的文件也能读。
@@ -145,14 +122,11 @@ internal sealed class SampleRunLogFiles : IWorkflowRunLogHistory, IDisposable
         var oldest = DateTime.Today.AddDays(-KeepDays);
         foreach (var folder in System.IO.Directory.GetDirectories(Directory))
         {
-            if (!DateTime.TryParseExact(Path.GetFileName(folder), "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var day) || day >= oldest) continue;
+            if (!DateTime.TryParseExact(Path.GetFileName(folder), "yyyy-MM-dd", null, DateTimeStyles.None, out var day) || day >= oldest) continue;
             try { System.IO.Directory.Delete(folder, recursive: true); }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
         }
     }
-
-    private static bool IsRootStart(WorkflowRunEvent runEvent) =>
-        runEvent.EventType == "RunStarted" && runEvent.Parents is not { Count: > 0 } && runEvent.ParentRunId is null;
 
     private static string Safe(string name)
     {
@@ -160,20 +134,12 @@ internal sealed class SampleRunLogFiles : IWorkflowRunLogHistory, IDisposable
         return new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray()).Trim();
     }
 
-    private sealed class Tee(SampleRunLogFiles files, IWorkflowRunEventSink inner, Func<string> flowName) : IWorkflowRunEventSink
+    private sealed class OpenRun(Guid runId, string file, string indexFile, StreamWriter writer)
     {
-        private string _current = string.Empty;
-
-        public ValueTask<WorkflowRunEventWriteResult> WriteAsync(IReadOnlyList<WorkflowRunEvent> events, bool requestImmediateFlush, CancellationToken cancellationToken)
-        {
-            foreach (var runEvent in events)
-            {
-                if (IsRootStart(runEvent) || _current.Length == 0) _current = flowName();
-                files.Save(_current, runEvent);
-            }
-            return inner.WriteAsync(events, requestImmediateFlush, cancellationToken);
-        }
-
-        public ValueTask FlushAsync(CancellationToken cancellationToken) => inner.FlushAsync(cancellationToken);
+        public Guid RunId { get; } = runId;
+        public string File { get; } = file;
+        public string IndexFile { get; } = indexFile;
+        public StreamWriter Writer { get; } = writer;
+        public bool Ended { get; set; }
     }
 }
