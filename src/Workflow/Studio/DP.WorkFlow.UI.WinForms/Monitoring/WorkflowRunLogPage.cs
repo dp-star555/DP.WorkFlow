@@ -433,7 +433,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     /// 运行日志专用表格：第一列（树形缩进、引导线、展开箭头、种类标记）和结果列自己画。
     /// 直接重写 OnCellPainting，不依赖基类是否触发 CellPainting 事件。
     /// </summary>
-    private sealed class TreeTable : WorkflowTable
+    private sealed class TreeTable : ModernDataGridView
     {
         public Func<DataGridViewCellPaintingEventArgs, bool>? PaintCell { get; set; }
 

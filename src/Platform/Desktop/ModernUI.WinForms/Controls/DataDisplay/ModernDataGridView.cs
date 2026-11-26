@@ -35,6 +35,9 @@ public sealed class ModernDataGridView : DataGridView
     // Overlay HWNDs use final client coordinates and must not be scaled again as child controls.
     protected override bool ScaleChildren => false;
 
+    // 只向 UI 自动化公开表格本身，不公开每一格：外部无障碍客户端（输入法、翻译取词等）遍历频繁刷新的大表格会让界面卡死。
+    protected override AccessibleObject CreateAccessibilityInstance() => new ControlAccessibleObject(this);
+
     public ModernDataGridView()
     {
         BorderStyle = BorderStyle.None;
