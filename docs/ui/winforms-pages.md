@@ -153,7 +153,7 @@
   - `Compare` 比根画布：新增、删掉、参数变了、只挪了位置的节点，新增和删掉的连线，流程名、入口、公共数据清单。`CompareDraft` 比草稿和已发布的。
 - `WorkflowDraftPublisher`（UI.Shared）：发布 / 放弃草稿的共同流程。`BlockedReason`（例如有流程在运行）、`CheckDraft`（宿主编译 + 设备检查）、`Gate`（准入，操作键 `workflow.design.publish` / `workflow.design.discard`）、`CurrentUser`。
 - `WorkflowPublishDialog`（UI.WinForms）：先检查，不过就列原因；过了显示这次改了什么，填发布说明，再发布。流程库页和设计页共用。
-- `WorkflowFlowLibraryPage`（UI.WinForms）：表格（多一列“草稿”：未发布 / 有修改）、搜索、显示已删除；查看修改、发布、放弃草稿，新建（交给宿主）、复制、改名、删除、导入、导出、历史版本对话框（比较、恢复成草稿）。状态文字由宿主给，发布器在 `Publisher` 上配置。
+- `WorkflowFlowLibraryPage`（UI.WinForms）：表格（多一列“草稿”：未发布 / 有修改）、搜索、显示已删除；查看修改、发布、放弃草稿，新建（交给宿主）、复制、改名、删除、导入、导出、历史版本对话框（比较、恢复成草稿）。恢复成草稿后发 `OpenRequested`（草稿路径），宿主打开到流程设计里看、试运行，确认再发布，不要就放弃草稿。改了文件发 `FilesChanged`，宿主让设计页按磁盘重新打开当前流程（示例 `SampleDesignPage.LibraryChanged`：有未保存修改或正在调试运行时只提示）。状态文字由宿主给，发布器在 `Publisher` 上配置。
 - `WorkflowDocumentWorkspace.Saved`：写到文件后发生（打开文件、放弃修改不发）。
 
 ## 插件节点的专用编辑器

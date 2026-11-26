@@ -54,7 +54,11 @@ internal sealed class SampleForm : Form
         _library.Publisher.BlockedReason = () => host.IsRunning ? "有流程在运行，先停止再发布。" : null;
         _library.OpenRequested += (_, file) => { _design.OpenFile(file); Navigate("design"); };
         _library.NewRequested += (_, _) => { _design.CreateNew(); Navigate("design"); };
-        _library.FilesChanged += (_, _) => { if (!host.IsRunning) host.Load(); };
+        _library.FilesChanged += (_, _) =>
+        {
+            _design.LibraryChanged();
+            if (!host.IsRunning) host.Load();
+        };
         _pages["design"] = _design;
         _pages["log"] = _log;
         _pages["library"] = _library;
