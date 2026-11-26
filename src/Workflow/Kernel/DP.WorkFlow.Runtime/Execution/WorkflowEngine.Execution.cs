@@ -300,17 +300,17 @@ public sealed partial class WorkflowEngine
                 faultIdentity,
                 pathException.Message,
                 pathException.InterruptAlarmCode,
-                (exception.InnerException ?? exception).GetType().FullName,
+                // 节点自己返回失败时没有真正的异常：不记类型（否则记成引擎内部的路径异常）。
+                exception is WorkflowPathException ? exception.InnerException?.GetType().FullName : (exception.InnerException ?? exception).GetType().FullName,
                 WorkflowClock.UtcNow);
             RunState.RecordFault(fault);
             lock (_stateSync)
                 _currentFault = fault;
             MarkNodeFinished(node.Id, token.TokenId, E_NodeState.Failed, pathException.Message);
-            var faultData = new Dictionary<string, object?>
-            {
-                ["ExceptionType"] = fault.ExceptionType,
-                ["InterruptAlarmCode"] = fault.InterruptAlarmCode
-            };
+            // 只记有内容的项：没有异常、没有报警码时不写，免得记录里出现空的“异常类型”“报警码 0”。
+            var faultData = new Dictionary<string, object?>();
+            if (fault.ExceptionType is not null) faultData["ExceptionType"] = fault.ExceptionType;
+            if (fault.InterruptAlarmCode > 0) faultData["InterruptAlarmCode"] = fault.InterruptAlarmCode;
             // 节点报告过"做到哪一步"时随故障记下，交给处理流程和就地恢复。
             if (pathException.Progress is not null)
                 faultData["Progress"] = pathException.Progress;
