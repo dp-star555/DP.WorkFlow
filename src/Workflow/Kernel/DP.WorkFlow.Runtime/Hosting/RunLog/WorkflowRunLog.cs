@@ -94,7 +94,12 @@ public sealed class WorkflowRunLog
             case "NodeStarted":
             {
                 StepCount++;
-                var container = ContainerOf(canvas, identity, nodeId);
+                if (identity?.LoopIteration is not null)
+                {
+                    EnterLoopNode(canvas, runEvent, identity, nodeId);
+                    return;
+                }
+                var container = Body(canvas, identity, nodeId);
                 var row = NewRow(container, WorkflowRunLogRowKind.Node, Title(canvas, nodeId), runEvent.Timestamp);
                 if (row is null) return;
                 Fill(row, runEvent, canvas);
@@ -104,8 +109,14 @@ public sealed class WorkflowRunLog
                 return;
             }
             case "NodeCompleted":
-                Finish(Find(canvas, runEvent), runEvent, WorkflowRunLogState.Succeeded);
+            {
+                var row = Find(canvas, runEvent);
+                if (row is not null && canvas.LoopRows.TryGetValue(row, out var loop))
+                    LeaveLoopNode(canvas, loop, runEvent, identity);
+                else
+                    Finish(row, runEvent, WorkflowRunLogState.Succeeded);
                 return;
+            }
             case "NodeFailed":
                 Finish(Find(canvas, runEvent), runEvent, WorkflowRunLogState.Failed);
                 return;
@@ -140,7 +151,7 @@ public sealed class WorkflowRunLog
                 var row = LatestOf(canvas, nodeId, token);
                 if (row is null)
                 {
-                    row = NewRow(ContainerOf(canvas, identity, nodeId), WorkflowRunLogRowKind.Parallel, Title(canvas, nodeId), runEvent.Timestamp);
+                    row = NewRow(Body(canvas, identity, nodeId), WorkflowRunLogRowKind.Parallel, Title(canvas, nodeId), runEvent.Timestamp);
                     if (row is null) return;
                     Fill(row, runEvent, canvas);
                     row.State = WorkflowRunLogState.Running;
@@ -171,7 +182,7 @@ public sealed class WorkflowRunLog
             }
             case "NodeNoticeRaised":
             {
-                var owner = Find(canvas, runEvent) ?? LatestOf(canvas, nodeId, token) ?? ContainerOf(canvas, identity, nodeId);
+                var owner = Find(canvas, runEvent) ?? LatestOf(canvas, nodeId, token) ?? Body(canvas, identity, nodeId);
                 var row = NewRow(owner, WorkflowRunLogRowKind.Notice, "提示", runEvent.Timestamp);
                 if (row is null) return;
                 Fill(row, runEvent, canvas);
@@ -182,8 +193,10 @@ public sealed class WorkflowRunLog
             default:
             {
                 // 节点自己写的进度、说明和其他故障类事件：挂在这次执行下面。
-                var owner = Find(canvas, runEvent) ?? LatestOf(canvas, nodeId, token) ?? ContainerOf(canvas, identity, nodeId);
+                var owner = Find(canvas, runEvent) ?? LatestOf(canvas, nodeId, token) ?? Body(canvas, identity, nodeId);
                 var fault = runEvent.Category == WorkflowRunEventCategory.Fault;
+                // 循环节点每圈写的“进入第 n 次循环”已经体现在圈行上，不再单独记。
+                if (!fault && canvas.LoopRows.ContainsKey(owner)) return;
                 var row = NewRow(owner, fault ? WorkflowRunLogRowKind.Fault : WorkflowRunLogRowKind.Message, runEvent.EventType, runEvent.Timestamp);
                 if (row is null) return;
                 Fill(row, runEvent, canvas);
@@ -385,6 +398,86 @@ public sealed class WorkflowRunLog
         return canvas;
     }
 
+    /// <summary>节点该挂在哪一层：令牌正在某个循环节点的一圈里时挂在这一圈下，否则按令牌 / 并行分支找。</summary>
+    private WorkflowRunLogRow Body(Canvas canvas, WorkflowExecutionIdentity? identity, string nodeId) =>
+        canvas.Loops.TryGetValue(identity?.TokenId ?? 0, out var loops) && loops.Count > 0
+            ? loops[loops.Count - 1].Current
+            : ContainerOf(canvas, identity, nodeId);
+
+    /// <summary>
+    /// 走到循环节点：第一次进入时建一行“循环”，之后再回到它就是上一圈结束。
+    /// 循环体里的节点按圈挂在“第 n 圈”下，界面就能像循环块一样把成功的圈合并收起。
+    /// </summary>
+    private void EnterLoopNode(Canvas canvas, WorkflowRunEvent runEvent, WorkflowExecutionIdentity identity, string nodeId)
+    {
+        if (!canvas.Loops.TryGetValue(identity.TokenId, out var loops))
+            canvas.Loops[identity.TokenId] = loops = new List<LoopState>();
+        var index = loops.FindLastIndex(item => string.Equals(item.NodeId, nodeId, StringComparison.Ordinal));
+        LoopState loop;
+        if (index >= 0)
+        {
+            // 回到外层循环节点：里面没正常退出的循环一并结束。
+            for (var inner = loops.Count - 1; inner > index; inner--)
+            {
+                EndLoop(canvas, loops[inner], runEvent.Timestamp);
+                loops.RemoveAt(inner);
+            }
+            loop = loops[index];
+            EndCycle(loop, runEvent.Timestamp);
+        }
+        else
+        {
+            var parent = loops.Count > 0 ? loops[loops.Count - 1].Current : ContainerOf(canvas, identity, nodeId);
+            var row = NewRow(parent, WorkflowRunLogRowKind.LoopBlock, Title(canvas, nodeId), runEvent.Timestamp);
+            if (row is null) return;
+            Fill(row, runEvent, canvas);
+            row.State = WorkflowRunLogState.Running;
+            loop = new LoopState(nodeId, row);
+            loops.Add(loop);
+            canvas.LoopRows[row] = loop;
+        }
+        canvas.Nodes[Key(nodeId, identity.TokenId, identity.NodeExecutionCount)] = loop.Row;
+        canvas.Latest[nodeId] = loop.Row;
+    }
+
+    /// <summary>循环节点这次判断完：走“循环”口开始新的一圈，走“完成”口整个循环结束。</summary>
+    private void LeaveLoopNode(Canvas canvas, LoopState loop, WorkflowRunEvent runEvent, WorkflowExecutionIdentity? identity)
+    {
+        if (string.Equals(ReadText(runEvent, "SelectedPort"), WorkflowPorts.Loop, StringComparison.Ordinal))
+        {
+            var cycle = identity?.LoopIteration ?? loop.Row.Children.Count(child => child.Kind == WorkflowRunLogRowKind.Cycle) + 1;
+            var row = NewRow(loop.Row, WorkflowRunLogRowKind.Cycle, $"第 {cycle.ToString(CultureInfo.InvariantCulture)} 圈", runEvent.Timestamp);
+            if (row is null) return;
+            row.Cycle = cycle;
+            row.CanvasPath = canvas.Path;
+            row.TokenId = loop.Row.TokenId;
+            row.State = WorkflowRunLogState.Running;
+            loop.Current = row;
+            return;
+        }
+        EndLoop(canvas, loop, runEvent.Timestamp);
+        if (identity is not null && canvas.Loops.TryGetValue(identity.TokenId, out var loops))
+            loops.Remove(loop);
+    }
+
+    private static void EndCycle(LoopState loop, DateTimeOffset at)
+    {
+        var cycle = loop.Current;
+        if (ReferenceEquals(cycle, loop.Row) || cycle.State != WorkflowRunLogState.Running) return;
+        cycle.State = cycle.HasFailure ? WorkflowRunLogState.Failed : WorkflowRunLogState.Succeeded;
+        cycle.Ended = at;
+        loop.Current = loop.Row;
+    }
+
+    private static void EndLoop(Canvas canvas, LoopState loop, DateTimeOffset at)
+    {
+        EndCycle(loop, at);
+        if (loop.Row.State == WorkflowRunLogState.Running)
+            loop.Row.State = loop.Row.HasFailure ? WorkflowRunLogState.Failed : WorkflowRunLogState.Succeeded;
+        loop.Row.Ended = at;
+        canvas.LoopRows.Remove(loop.Row);
+    }
+
     private WorkflowRunLogRow ContainerOf(Canvas canvas, WorkflowExecutionIdentity? identity, string nodeId)
     {
         if (identity is null || identity.TokenId == 0)
@@ -514,6 +607,17 @@ public sealed class WorkflowRunLog
         public Dictionary<string, WorkflowRunLogRow> Latest { get; } = new(StringComparer.Ordinal);
         public Dictionary<long, WorkflowRunLogRow> Tokens { get; } = new();
         public Dictionary<long, ParallelState> Parallels { get; } = new();
+        /// <summary>每个令牌正在跑的循环节点（里层在后）。</summary>
+        public Dictionary<long, List<LoopState>> Loops { get; } = new();
+        public Dictionary<WorkflowRunLogRow, LoopState> LoopRows { get; } = new();
+    }
+
+    private sealed class LoopState(string nodeId, WorkflowRunLogRow row)
+    {
+        public string NodeId { get; } = nodeId;
+        public WorkflowRunLogRow Row { get; } = row;
+        /// <summary>当前这一圈；还没开始一圈时是循环行本身。</summary>
+        public WorkflowRunLogRow Current { get; set; } = row;
     }
 
     private sealed class ParallelState(WorkflowRunLogRow row, string[] entries)
