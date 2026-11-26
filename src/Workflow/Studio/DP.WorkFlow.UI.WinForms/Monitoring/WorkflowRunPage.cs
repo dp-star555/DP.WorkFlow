@@ -6,10 +6,10 @@ namespace DP.WorkFlow.UI.WinForms;
 /// <summary>
 /// 运行页（原“运行总览”和“运行监视”合成一页，按设计稿“运行”画板）：
 /// 左边流程列表（状态、提示、单独启停），中间是所选流程的指标条和只读画布，
-/// 右边“故障处理 | 节点耗时”（有故障时自动切到故障处理），下面是轨迹、令牌、并行域、子流程、输出。
+/// 右边“故障处理 | 节点耗时”（有故障时自动切到故障处理）。轨迹等明细看运行日志页。
 /// </summary>
 /// <remarks>
-/// 画布和下方表格挂在流程自己的运行宿主上，按界面节拍拉快照（<see cref="WorkflowStudioRuntimeBinding"/>），不拖慢执行线程。
+/// 画布挂在流程自己的运行宿主上，按界面节拍拉快照（<see cref="WorkflowStudioRuntimeBinding"/>），不拖慢执行线程。
 /// 单独启动 / 停止和故障去向都经过 <see cref="Gate"/>（宿主的鉴权和审计）；整线启停由宿主的顶部按钮负责。
 /// </remarks>
 public sealed class WorkflowRunPage : WorkflowPage
@@ -29,7 +29,7 @@ public sealed class WorkflowRunPage : WorkflowPage
     private readonly WorkflowCard _canvasCard;
     private readonly WorkflowStatusLine _status = new();
     private readonly Panel _canvasHost = new() { Dock = DockStyle.Fill };
-    private readonly Label _noCanvas = Label("取不到这个流程的文档，只显示下方的运行数据。");
+    private readonly Label _noCanvas = Label("取不到这个流程的文档，不显示画布。");
     private readonly WorkflowRunStatistics _statistics = new();
     private WorkflowRunCenterFlow? _flow;
     private WorkflowDesignerNavigator? _navigator;
@@ -51,10 +51,9 @@ public sealed class WorkflowRunPage : WorkflowPage
         _documentOf = documentOf ?? (_ => null);
         if (workbench is null) _ownedWorkbench = workbench = new WorkflowFaultWorkbenchModel(center);
         Canvas = new WorkflowDesignerControl { Dock = DockStyle.Fill, ReadOnly = true, AllowDrop = false };
-        Monitor = new WorkflowRuntimeMonitorControl { Dock = DockStyle.Fill };
         Workbench = new WorkflowFaultWorkbenchControl { Dock = DockStyle.Fill, Model = workbench };
 
-        // 左：流程卡 | 中：指标条、画布卡 | 右：故障处理 / 节点耗时卡；下面运行数据卡；最下状态行。卡片之间隔 10。
+        // 左：流程卡 | 中：指标条、画布卡 | 右：故障处理 / 节点耗时卡；最下状态行。卡片之间隔 10。
         _flowsCard = Section("流程", null, _flows, DockStyle.Left, 260);
         _figures.AddTool(_resetStatistics);
         _noCanvas.TextAlign = ContentAlignment.MiddleCenter;
@@ -81,20 +80,12 @@ public sealed class WorkflowRunPage : WorkflowPage
         middle.Controls.Add(Gap(DockStyle.Right));
         middle.Controls.Add(side);
 
-        var split = new ModernSplitter { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, FixedPanel = FixedPanel.Panel2, InitialPanel2Size = 200 };
-        split.SplitterWidth = LogicalToDeviceUnits(10);
-        split.Panel1.Controls.Add(middle);
-        var bottom = new WorkflowCard { Dock = DockStyle.Fill };
-        bottom.Controls.Add(Monitor);
-        split.Panel2.Controls.Add(bottom);
-
-        Controls.Add(split);
+        Controls.Add(middle);
         Controls.Add(_status);
 
         _flows.SelectionChanged += (_, _) => Bind(_flows.SelectedKey as string);
         _flows.ActionClicked += (_, item) => StartOrStop((string)item.Key);
         _resetStatistics.Click += (_, _) => { _statistics.Reset(); _observedSequence = -1; ShowFigures(); };
-        Canvas.NoticesPageRequested += (_, _) => Monitor.Focus();
         Workbench.ActionError += (_, message) => ShowMessage(message);
         Workbench.DecisionRequested += (_, _) => _sideTabs.SelectedTab = _faultPage;
         // 统计和数字跟统一刷新时钟走：每帧看一眼画布会话上的最新快照，序号变了才计数。
@@ -106,9 +97,6 @@ public sealed class WorkflowRunPage : WorkflowPage
 
     /// <summary>只读画布。</summary>
     public WorkflowDesignerControl Canvas { get; }
-
-    /// <summary>下方的运行数据（轨迹、令牌、并行域、子流程、输出、节点耗时）。</summary>
-    public WorkflowRuntimeMonitorControl Monitor { get; }
 
     /// <summary>右栏的故障处理。</summary>
     public WorkflowFaultWorkbenchControl Workbench { get; }
@@ -268,7 +256,6 @@ public sealed class WorkflowRunPage : WorkflowPage
             _navigator = new WorkflowDesignerNavigator(document, _catalog);
             _binding = new WorkflowStudioRuntimeBinding(flow.Host, _navigator);
             Canvas.Session = _navigator.CurrentSession;
-            Monitor.RuntimeBinding = _binding;
             Canvas.Visible = true;
             _noCanvas.Visible = false;
             BeginInvokeFit();
@@ -285,7 +272,6 @@ public sealed class WorkflowRunPage : WorkflowPage
     private void Unbind()
     {
         Canvas.Session = null;
-        Monitor.RuntimeBinding = null;
         _binding?.Dispose();
         _binding = null;
         _navigator = null;
@@ -339,12 +325,14 @@ public sealed class WorkflowRunPage : WorkflowPage
         HeaderOf(_canvasCard).Subtitle = _navigator?.RootSession.RuntimeSnapshot is { } snapshot ? $"只读 · 快照 #{snapshot.Sequence}" : "只读";
 
         var facts = new List<WorkflowFact> { WorkflowFact.Group("本次节点耗时") };
-        var timings = Monitor.TimingTrends;
-        var slowest = timings.Count == 0 ? null : timings.OrderByDescending(item => item.Elapsed).First();
-        foreach (var item in timings.Take(8))
-            facts.Add(new WorkflowFact(NodeTitle(item.NodeId), item.ExecutionCount == 0 ? "—" : WorkflowDesignerInteraction.FormatElapsed(item.Elapsed),
-                Strong: ReferenceEquals(item, slowest)));
-        if (timings.Count == 0) facts.Add(new WorkflowFact("还没有节点执行"));
+        var timings = _navigator?.RootSession.RuntimeSnapshot?.Nodes.Values
+            .Where(node => node.ExecutionCount > 0)
+            .OrderByDescending(node => node.Elapsed)
+            .Take(8)
+            .ToArray() ?? Array.Empty<WorkflowNodeRuntimeInfo>();
+        for (var index = 0; index < timings.Length; index++)
+            facts.Add(new WorkflowFact(NodeTitle(timings[index].NodeId), WorkflowDesignerInteraction.FormatElapsed(timings[index].Elapsed), Strong: index == 0));
+        if (timings.Length == 0) facts.Add(new WorkflowFact("还没有节点执行"));
         facts.Add(WorkflowFact.Group("界面同步", s.DisplayLatency is null ? string.Empty : "正常"));
         facts.Add(new WorkflowFact("拉取周期", $"{interval} ms"));
         facts.Add(new WorkflowFact("最新快照", s.LastSequence < 0 ? "—" : "#" + s.LastSequence.ToString(CultureInfo.InvariantCulture)));

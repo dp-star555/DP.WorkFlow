@@ -6,7 +6,7 @@ namespace DP.WorkFlow.UI.WinForms;
 
 /// <summary>
 /// 运行日志页（只看）：选流程和某一次运行（或“全部流程”：各流程最近一次运行排在一起），把运行按子流程、循环圈、并行分支折叠成树。
-/// 成功结束的层自动收起，连续成功的圈合并成“第 a–b 圈”，有失败、故障、提示的层和正在运行的那一圈保持展开；
+/// 成功结束的层自动收起，连续成功的圈合并成“第 a–b 圈”，只展开最近一次失败所在的层和正在运行的那一圈（更早的失败收起，行首红标）；
 /// 右边是选中记录的详情（位置、节点、结果、时间、令牌、消息和数据）。
 /// </summary>
 /// <remarks>
@@ -328,7 +328,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
             var text = (_all ? $"{info.Runs} 个流程各自最近一次运行共 " : "本次运行 ")
                        + $"{info.Events.ToString("N0", CultureInfo.InvariantCulture)} 条 · 故障会话 {info.FaultSessions}";
             if (info.Truncated) text += $" · 超过 {_book.MaxRowsPerRun.ToString("N0", CultureInfo.InvariantCulture)} 行，后面的不再记";
-            _status.Summary = text + $" · 保留最近 {_book.MaxRuns} 次运行 · 成功的子流程、循环、并行分支自动收起";
+            _status.Summary = text + $" · 每个流程只留最近 {_book.MaxRuns} 次启动的记录（启动到停止算一次，重启软件清空）";
         }
         else
         {
