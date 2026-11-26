@@ -159,7 +159,7 @@ public sealed class ModernDatePicker : ModernValidatedControl
     {
         _picker.AccessibleName = AccessibleName;
         _picker.AccessibleDescription = AccessibleDescription;
-        return _picker.AccessibilityObject!;
+        return new ControlAccessibleObject(this);
     }
     protected override void SynchronizeValidationAccessibility()
     {
