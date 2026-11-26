@@ -10,6 +10,7 @@ public sealed partial class WorkflowToolboxControl : UserControl
 {
     private WorkflowDesignerSession? _session;
     private ImageList? _icons;
+    private Font? _categoryFont;
 
     /// <summary>初始化工作流节点工具箱。</summary>
     public WorkflowToolboxControl()
@@ -38,6 +39,7 @@ public sealed partial class WorkflowToolboxControl : UserControl
             toolboxTreeView.DoDragDrop(item, DragDropEffects.Copy);
         };
         toolboxTreeView.MouseUp += (_, _) => _dragItem = null;
+        toolboxTreeView.FontChanged += (_, _) => RebuildTree();
     }
 
     private WorkflowToolboxItem? _dragItem;
@@ -71,6 +73,7 @@ public sealed partial class WorkflowToolboxControl : UserControl
         toolboxTreeView.BeginUpdate();
         toolboxTreeView.Nodes.Clear();
         EnsureIconList();
+        EnsureCategoryFont();
         if (_session is not null)
         {
             var filter = searchInput.Text.Trim();
@@ -101,7 +104,7 @@ public sealed partial class WorkflowToolboxControl : UserControl
                 category = new TreeNode(segment)
                 {
                     ForeColor = toolboxTreeView.Theme.TextSecondary,
-                    NodeFont = new Font(Font, FontStyle.Bold)
+                    NodeFont = _categoryFont
                 };
                 nodes.Add(category);
             }
@@ -115,6 +118,19 @@ public sealed partial class WorkflowToolboxControl : UserControl
             ImageKey = icon,
             SelectedImageKey = icon
         });
+    }
+
+    /// <summary>
+    /// 分类行用的粗体：以树自己的字体为准（和节点行同一字号），树的字体变了（换 DPI 时）重建。
+    /// 以前取的是工具箱控件的字体，换 DPI 后和树的缩放对不上，分类标题会变得很大。
+    /// </summary>
+    private void EnsureCategoryFont()
+    {
+        var baseFont = toolboxTreeView.Font;
+        if (_categoryFont is { } font && font.Size == baseFont.Size && font.FontFamily.Equals(baseFont.FontFamily) && font.Unit == baseFont.Unit) return;
+        var previous = _categoryFont;
+        _categoryFont = new Font(baseFont, FontStyle.Bold);
+        previous?.Dispose();
     }
 
     /// <summary>按当前 DPI 建立图标列表：节点名称左侧显示与画布节点相同的线框图标；DPI 变化时重建。</summary>

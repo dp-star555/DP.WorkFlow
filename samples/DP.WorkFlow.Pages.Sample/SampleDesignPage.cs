@@ -16,7 +16,7 @@ internal sealed class SampleDesignPage : UserControl
     private readonly WorkflowDraftPublisher _publisher;
     private readonly WorkflowStudioControl _studio = new() { Dock = DockStyle.Fill };
     private readonly WorkflowDocumentWorkspace _workspace;
-    private readonly ModernButton _publish = new() { Text = "发布…" };
+    private readonly ModernButton _publish = new() { Text = "发布…", ButtonType = ModernButtonType.Text };
     private readonly ToolStripMenuItem _open;
     private WorkflowStudioRuntimeBinding? _trial;
     private volatile string _trialLogName = SampleWorkflowHost.TrialRunLogNameOf(null);

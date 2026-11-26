@@ -716,7 +716,7 @@ public sealed partial class WorkflowDesignerControl : Control
         var durationText = WorkflowDesignerInteraction.GetRuntimeDurationText(_session, item);
         using var detailFont = CanvasFont(WorkflowDesignerGeometry.DetailFontPixels * zoom);
         var layout = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(
-            rect, zoom, MeasureText(graphics, orderText, detailFont), MeasureText(graphics, durationText, detailFont));
+            rect, zoom, MeasureText(graphics, orderText, detailFont), MeasureText(graphics, durationText, detailFont), _session.RuntimeSnapshot is not null);
         using (var indicator = new SolidBrush(ToColor(style.Indicator)))
             graphics.FillEllipse(indicator, ToRectangle(layout.IndicatorBounds));
         DrawIcon(graphics, _session.GetNodeIcon(item.Node), ToRectangle(layout.IconBounds), Colors.Icon);

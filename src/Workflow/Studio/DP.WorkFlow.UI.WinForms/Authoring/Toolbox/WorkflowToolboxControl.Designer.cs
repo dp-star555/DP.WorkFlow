@@ -10,6 +10,7 @@ partial class WorkflowToolboxControl
         {
             components?.Dispose();
             _icons?.Dispose();
+            _categoryFont?.Dispose();
         }
         base.Dispose(disposing);
     }

@@ -140,6 +140,14 @@ public sealed class WorkflowDesignerSessionTests
         Assert.True(crowded.TitleBounds.Y + crowded.TitleBounds.Height <= crowded.DurationBounds.Y + 3);
         Assert.Equal(144 - 10, crowded.DurationBounds.X + crowded.DurationBounds.Width, 6);
 
+        // 显示运行状态时宽节点也是两行，和窄节点、还没执行的节点（下半行空着）标题都在同一高度。
+        var wide = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(new WorkflowDesignerRect(0, 0, 400, 48), 1, 20, 40, runtimeShown: true);
+        var notRun = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(new WorkflowDesignerRect(0, 0, 144, 48), 1, 0, 0, runtimeShown: true);
+        Assert.Equal(crowded.TitleBounds.Y, wide.TitleBounds.Y, 6);
+        Assert.Equal(crowded.TitleBounds.Height, wide.TitleBounds.Height, 6);
+        Assert.Equal(crowded.TitleBounds.Y, notRun.TitleBounds.Y, 6);
+        Assert.Equal(crowded.DurationBounds.Y, wide.DurationBounds.Y, 6);
+
         var idle = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(new WorkflowDesignerRect(0, 0, 144, 48), 1, 0, 0);
         Assert.Equal(0, idle.OrderBounds.Width);
         Assert.Equal(144 - 10, idle.TitleBounds.X + idle.TitleBounds.Width, 6);

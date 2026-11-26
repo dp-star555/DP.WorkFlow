@@ -15,14 +15,13 @@ public sealed class NodeEditorTabsTests
             using var dialog = new DP.WorkFlow.UI.WinForms.WorkflowNodeEditorDialog(model);
             dialog.CreateControl();
 
-            // 设计稿“节点编辑页”：左边页签只放参数，运行结果在右栏的卡片里。
+            // 左边页签：参数、运行结果（不再有右栏和“本节点提示”）。
             var tabs = Descendants(dialog).OfType<ModernUI.WinForms.ModernTabControl>().Single();
-            Assert.Equal(new[] { "参数" }, tabs.TabPages.Cast<TabPage>().Select(page => page.Text));
+            Assert.Equal(new[] { "参数", "运行结果" }, tabs.TabPages.Cast<TabPage>().Select(page => page.Text));
             Assert.Equal(0, tabs.SelectedIndex);
             Assert.DoesNotContain(Descendants(dialog), control => control.Name is "nodeIdTextBox" or "titleTextBox" or "headerLayout");
-            var results = Descendants(dialog).OfType<DP.WorkFlow.UI.WinForms.WorkflowCard>()
-                .Single(card => card.Controls.OfType<DP.WorkFlow.UI.WinForms.WorkflowCardHeader>().Any(header => header.Text == "运行结果"));
-            Assert.Contains(Descendants(results), control => control is ModernUI.WinForms.ModernDataGridView);
+            Assert.Contains(Descendants(tabs.TabPages[1]), control => control is ModernUI.WinForms.ModernDataGridView);
+            Assert.DoesNotContain(Descendants(dialog).OfType<DP.WorkFlow.UI.WinForms.WorkflowCardHeader>(), header => header.Text == "本节点提示");
         });
     }
 
@@ -37,7 +36,7 @@ public sealed class NodeEditorTabsTests
             dialog.CreateControl();
 
             var tabs = Assert.Single(Descendants(dialog).OfType<ModernUI.WinForms.ModernTabControl>());
-            Assert.Equal(new[] { "Properties" }, tabs.TabPages.Cast<TabPage>().Select(page => page.Name));
+            Assert.Equal(new[] { "Properties", WorkflowNodeResultPageProvider.PageId }, tabs.TabPages.Cast<TabPage>().Select(page => page.Name));
             Assert.Equal(0, tabs.SelectedIndex);
             Assert.DoesNotContain(Descendants(tabs), control => control is DP.WorkFlow.UI.WinForms.WorkflowCSharpScriptEditorControl);
             Assert.Contains(Descendants(dialog), control => control is DP.WorkFlow.UI.WinForms.WorkflowCSharpScriptEditorControl);

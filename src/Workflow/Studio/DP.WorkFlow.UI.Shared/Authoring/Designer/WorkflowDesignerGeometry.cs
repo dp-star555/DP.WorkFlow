@@ -135,11 +135,14 @@ public static class WorkflowDesignerGeometry
     /// <param name="zoom">当前缩放。</param>
     /// <param name="measuredOrderWidth">序号文字测量宽度；0 表示不显示序号。</param>
     /// <param name="measuredDurationWidth">耗时文字测量宽度；0 表示不显示耗时。</param>
+    /// <param name="runtimeShown">画布在显示运行状态（有运行快照）：所有节点一律两行，标题在上半行、序号和耗时在下半行，
+    /// 节点之间对齐，耗时文字变长变短时标题也不跳动；还没执行的节点下半行留空。</param>
     public static WorkflowNodeHeaderLayout CalculateNodeHeaderLayout(
         WorkflowDesignerRect nodeBounds,
         double zoom,
         double measuredOrderWidth,
-        double measuredDurationWidth = 0)
+        double measuredDurationWidth = 0,
+        bool runtimeShown = false)
     {
         zoom = Math.Max(0.05, zoom);
         var headerHeight = Math.Min(nodeBounds.Height, HeaderHeight * zoom);
@@ -157,9 +160,9 @@ public static class WorkflowDesignerGeometry
         // 量出的宽度留 2 px 余量，避免取整后被省略成“53…”。
         var durationWidth = measuredDurationWidth > 0 ? measuredDurationWidth + 2 * zoom : 0;
         var runtimeWidth = orderWidth + durationWidth + (orderWidth > 0 && durationWidth > 0 ? gap : 0);
-        // 运行信息（序号、耗时）始终完整显示。和标题并排会把标题挤到一半以下时，改为两行：
-        // 标题占上半行全宽，序号和耗时靠右放在下半行。
-        var stacked = runtimeWidth > available * 0.5;
+        // 运行信息（序号、耗时）始终完整显示。显示运行状态时一律两行（标题占上半行全宽，序号和耗时靠右放在下半行），
+        // 不按文字宽度临时切换，否则各节点高低不齐、耗时一变标题就上下跳。
+        var stacked = runtimeShown || runtimeWidth > available * 0.5;
         var half = headerHeight / 2;
         var titleBounds = stacked
             ? new WorkflowDesignerRect(titleLeft, nodeBounds.Y + 2 * zoom, available, half)

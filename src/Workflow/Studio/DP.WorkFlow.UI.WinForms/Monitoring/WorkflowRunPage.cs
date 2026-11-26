@@ -6,7 +6,7 @@ namespace DP.WorkFlow.UI.WinForms;
 /// <summary>
 /// 运行页（原“运行总览”和“运行监视”合成一页，按设计稿“运行”画板）：
 /// 左边流程列表（状态、提示、单独启停），中间是所选流程的指标条和只读画布，
-/// 右边“故障处理 | 节点耗时”（有故障时自动切到故障处理）。轨迹等明细看运行日志页。
+/// 右边“故障处理”只在有故障时出来；节点耗时是指标条上的小工具，点一下看当时的最新数据，不实时刷新。轨迹等明细看运行日志页。
 /// </summary>
 /// <remarks>
 /// 画布挂在流程自己的运行宿主上，按界面节拍拉快照（<see cref="WorkflowStudioRuntimeBinding"/>），不拖慢执行线程。
@@ -21,11 +21,11 @@ public sealed class WorkflowRunPage : WorkflowPage
     private readonly WorkflowItemList _flows = new() { EmptyText = "还没有加载流程" };
     private readonly WorkflowCard _flowsCard;
     private readonly ModernButton _resetStatistics = new() { Text = "统计清零", ButtonType = ModernButtonType.Text };
+    private readonly ModernButton _timingButton = new() { Text = "节点耗时", ButtonType = ModernButtonType.Text, Icon = ModernIconKind.Info };
     private readonly WorkflowMetricStrip _figures = new();
-    private readonly WorkflowFactList _timings = new();
-    private readonly ModernTabControl _sideTabs = new() { Dock = DockStyle.Fill };
-    private readonly TabPage _faultPage = new() { Text = "故障处理" };
-    private readonly TabPage _timingPage = new() { Text = "节点耗时" };
+    private readonly WorkflowCard _faultCard;
+    private readonly WorkflowBlock _faultGap = Gap(DockStyle.Right);
+    private WorkflowTimingWindow? _timingWindow;
     private readonly WorkflowCard _canvasCard;
     private readonly WorkflowStatusLine _status = new();
     private readonly Panel _canvasHost = new() { Dock = DockStyle.Fill };
@@ -53,8 +53,9 @@ public sealed class WorkflowRunPage : WorkflowPage
         Canvas = new WorkflowDesignerControl { Dock = DockStyle.Fill, ReadOnly = true, AllowDrop = false };
         Workbench = new WorkflowFaultWorkbenchControl { Dock = DockStyle.Fill, Model = workbench };
 
-        // 左：流程卡 | 中：指标条、画布卡 | 右：故障处理 / 节点耗时卡；最下状态行。卡片之间隔 10。
+        // 左：流程卡 | 中：指标条、画布卡 | 右：故障处理卡（有故障才出来）；最下状态行。卡片之间隔 10。
         _flowsCard = Section("流程", null, _flows, DockStyle.Left, 260);
+        _figures.AddTool(_timingButton);
         _figures.AddTool(_resetStatistics);
         _noCanvas.TextAlign = ContentAlignment.MiddleCenter;
         _noCanvas.Visible = false;
@@ -66,19 +67,15 @@ public sealed class WorkflowRunPage : WorkflowPage
         column.Controls.Add(Gap(DockStyle.Top));
         column.Controls.Add(_figures);
 
-        _faultPage.Controls.Add(Workbench);
-        _timingPage.Controls.Add(_timings);
-        _sideTabs.TabPages.Add(_faultPage);
-        _sideTabs.TabPages.Add(_timingPage);
-        var side = new WorkflowCard { Dock = DockStyle.Right, LogicalExtent = 320 };
-        side.Controls.Add(_sideTabs);
+        _faultCard = Section("故障处理", null, Workbench, DockStyle.Right, 320);
+        _faultCard.Visible = _faultGap.Visible = false;
 
         var middle = new Panel { Dock = DockStyle.Fill };
         middle.Controls.Add(column);
         middle.Controls.Add(Gap(DockStyle.Left));
         middle.Controls.Add(_flowsCard);
-        middle.Controls.Add(Gap(DockStyle.Right));
-        middle.Controls.Add(side);
+        middle.Controls.Add(_faultGap);
+        middle.Controls.Add(_faultCard);
 
         Controls.Add(middle);
         Controls.Add(_status);
@@ -87,7 +84,8 @@ public sealed class WorkflowRunPage : WorkflowPage
         _flows.ActionClicked += (_, item) => StartOrStop((string)item.Key);
         _resetStatistics.Click += (_, _) => { _statistics.Reset(); _observedSequence = -1; ShowFigures(); };
         Workbench.ActionError += (_, message) => ShowMessage(message);
-        Workbench.DecisionRequested += (_, _) => _sideTabs.SelectedTab = _faultPage;
+        Workbench.DecisionRequested += (_, _) => ShowFaultCard(true);
+        _timingButton.Click += (_, _) => ShowTimings();
         // 统计和数字跟统一刷新时钟走：每帧看一眼画布会话上的最新快照，序号变了才计数。
         WorkflowRefreshClock.Subscribe(this, OnFrame);
         RefreshFlows();
@@ -98,7 +96,7 @@ public sealed class WorkflowRunPage : WorkflowPage
     /// <summary>只读画布。</summary>
     public WorkflowDesignerControl Canvas { get; }
 
-    /// <summary>右栏的故障处理。</summary>
+    /// <summary>右栏的故障处理（有故障时才显示）。</summary>
     public WorkflowFaultWorkbenchControl Workbench { get; }
 
     /// <summary>当前统计。</summary>
@@ -155,6 +153,7 @@ public sealed class WorkflowRunPage : WorkflowPage
         if (disposing)
         {
             Unbind();
+            _timingWindow?.Dispose();
             _ownedWorkbench?.Dispose();
         }
         base.Dispose(disposing);
@@ -183,11 +182,54 @@ public sealed class WorkflowRunPage : WorkflowPage
         if (_flows.SelectedKey is null && rows.Count > 0)
             _flows.SelectedKey = (rows.FirstOrDefault(row => row.InFault) ?? rows[0]).Name;
 
-        // 刚出故障时切到故障处理；故障处理完后切回节点耗时。
+        // 出故障时右边出来故障处理，处理完收起，画布变宽。
         var hasFault = Workbench.HasCurrentFault;
-        if (hasFault != _hadFault) _sideTabs.SelectedTab = hasFault ? _faultPage : _timingPage;
+        if (hasFault != _hadFault) ShowFaultCard(hasFault);
         _hadFault = hasFault;
-        _faultPage.Text = hasFault ? "故障处理 ●" : "故障处理";
+    }
+
+    private void ShowFaultCard(bool visible)
+    {
+        if (_faultCard.Visible == visible) return;
+        _faultCard.Visible = _faultGap.Visible = visible;
+        BeginInvokeFit();
+    }
+
+    // 节点耗时：打开时取一次当时的数据，要看最新的点“刷新”；不跟着运行实时刷新。
+    private void ShowTimings()
+    {
+        if (_timingWindow is null || _timingWindow.IsDisposed)
+        {
+            _timingWindow = new WorkflowTimingWindow(TimingFacts);
+            _timingWindow.Show(FindForm());
+        }
+        else
+        {
+            _timingWindow.Activate();
+        }
+        _timingWindow.Reload();
+    }
+
+    private (string Title, IReadOnlyList<WorkflowFact> Facts) TimingFacts()
+    {
+        var interval = _binding?.FrameIntervalMilliseconds ?? WorkflowUiRefresh.FrameIntervalMilliseconds;
+        var s = _statistics;
+        var snapshot = _navigator?.RootSession.RuntimeSnapshot;
+        var facts = new List<WorkflowFact> { WorkflowFact.Group("本次节点耗时") };
+        var timings = snapshot?.Nodes.Values
+            .Where(node => node.ExecutionCount > 0)
+            .OrderByDescending(node => node.Elapsed)
+            .ToArray() ?? Array.Empty<WorkflowNodeRuntimeInfo>();
+        for (var index = 0; index < timings.Length; index++)
+            facts.Add(new WorkflowFact(NodeTitle(timings[index].NodeId), WorkflowDesignerInteraction.FormatElapsed(timings[index].Elapsed), Strong: index == 0));
+        if (timings.Length == 0) facts.Add(new WorkflowFact(_flow is null ? "未选择流程" : "还没有节点执行"));
+        facts.Add(WorkflowFact.Group("界面同步", s.DisplayLatency is null ? string.Empty : "正常"));
+        facts.Add(new WorkflowFact("拉取周期", $"{interval} ms"));
+        facts.Add(new WorkflowFact("最新快照", s.LastSequence < 0 ? "—" : "#" + s.LastSequence.ToString(CultureInfo.InvariantCulture)));
+        facts.Add(new WorkflowFact("显示延迟", s.DisplayLatency is { } latency ? Milliseconds(latency) : "—"));
+        facts.Add(new WorkflowFact("执行线程等界面", "从不"));
+        var title = _flow is null ? "节点耗时" : $"节点耗时 · {_flow.Name} · {DateTime.Now:HH:mm:ss}";
+        return (title, facts);
     }
 
     private static WorkflowTone StateTone(WorkflowRunCenterFlowRow row) =>
@@ -306,7 +348,6 @@ public sealed class WorkflowRunPage : WorkflowPage
         if (_flow is null)
         {
             _figures.Show(_center.Flows.Count == 0 ? "没有流程" : "未选择流程", "在左边选一个流程", Array.Empty<WorkflowMetric>(), note);
-            _timings.Show(Array.Empty<WorkflowFact>());
             _status.Summary = string.Empty;
             return;
         }
@@ -324,21 +365,6 @@ public sealed class WorkflowRunPage : WorkflowPage
         }, note);
         HeaderOf(_canvasCard).Subtitle = _navigator?.RootSession.RuntimeSnapshot is { } snapshot ? $"只读 · 快照 #{snapshot.Sequence}" : "只读";
 
-        var facts = new List<WorkflowFact> { WorkflowFact.Group("本次节点耗时") };
-        var timings = _navigator?.RootSession.RuntimeSnapshot?.Nodes.Values
-            .Where(node => node.ExecutionCount > 0)
-            .OrderByDescending(node => node.Elapsed)
-            .Take(8)
-            .ToArray() ?? Array.Empty<WorkflowNodeRuntimeInfo>();
-        for (var index = 0; index < timings.Length; index++)
-            facts.Add(new WorkflowFact(NodeTitle(timings[index].NodeId), WorkflowDesignerInteraction.FormatElapsed(timings[index].Elapsed), Strong: index == 0));
-        if (timings.Length == 0) facts.Add(new WorkflowFact("还没有节点执行"));
-        facts.Add(WorkflowFact.Group("界面同步", s.DisplayLatency is null ? string.Empty : "正常"));
-        facts.Add(new WorkflowFact("拉取周期", $"{interval} ms"));
-        facts.Add(new WorkflowFact("最新快照", s.LastSequence < 0 ? "—" : "#" + s.LastSequence.ToString(CultureInfo.InvariantCulture)));
-        facts.Add(new WorkflowFact("显示延迟", s.DisplayLatency is { } latency ? Milliseconds(latency) : "—"));
-        facts.Add(new WorkflowFact("执行线程等界面", "从不"));
-        _timings.Show(facts);
         _status.Summary = $"{_flow.Name} · {stateText} · 成功 {s.Succeeded} · 出错 {s.Failed} · 取消 {s.Canceled}";
     }
 
@@ -351,4 +377,39 @@ public sealed class WorkflowRunPage : WorkflowPage
     private static string Milliseconds(TimeSpan value) =>
         value.TotalSeconds >= 10 ? value.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + " s"
         : value.TotalMilliseconds.ToString("0", CultureInfo.InvariantCulture) + " ms";
+}
+
+/// <summary>节点耗时小窗：不实时刷新，点“刷新”取当时最新的数据。</summary>
+internal sealed class WorkflowTimingWindow : Form
+{
+    private readonly Func<(string Title, IReadOnlyList<WorkflowFact> Facts)> _read;
+    private readonly WorkflowFactList _facts = new();
+
+    public WorkflowTimingWindow(Func<(string Title, IReadOnlyList<WorkflowFact> Facts)> read)
+    {
+        _read = read;
+        Text = "节点耗时";
+        StartPosition = FormStartPosition.CenterParent;
+        Size = new Size(380, 520);
+        MinimumSize = new Size(300, 300);
+        ShowInTaskbar = false;
+        ShowIcon = false;
+        MinimizeBox = false;
+        Padding = new Padding(10);
+        var refresh = WorkflowSizing.Fit(new ModernButton { Text = "刷新", ButtonType = ModernButtonType.Primary, Icon = ModernIconKind.Refresh });
+        refresh.Click += (_, _) => Reload();
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 8, 0, 0) };
+        buttons.Controls.Add(refresh);
+        Controls.Add(_facts);
+        Controls.Add(buttons);
+        WorkflowWinFormsTheme.Follow(this);
+    }
+
+    /// <summary>取一次最新的数据。</summary>
+    public void Reload()
+    {
+        var (title, facts) = _read();
+        Text = title;
+        _facts.Show(facts);
+    }
 }
