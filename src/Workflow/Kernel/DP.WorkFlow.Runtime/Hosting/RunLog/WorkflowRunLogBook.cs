@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace DP.WorkFlow;
 
 /// <summary>一次运行的概要（运行下拉用）。</summary>
@@ -73,10 +75,13 @@ public sealed class WorkflowRunLogBook
     public void Attach(WorkflowRunCenterFlow flow)
     {
         Guard.NotNull(flow);
-        var titles = CollectTitles(flow);
+        var titles = CollectTitles(flow, out var labels);
         var name = flow.Name;
         lock (_sync)
+        {
             Logs(name).Titles = titles;
+            Logs(name).Labels = labels;
+        }
         var previous = flow.Outlet.OnEvent;
         flow.Outlet.OnEvent = item =>
         {
@@ -171,9 +176,47 @@ public sealed class WorkflowRunLogBook
     private static string? Title(IReadOnlyDictionary<string, string> titles, string path, string node) =>
         titles.TryGetValue(path + "|" + node, out var title) ? title : titles.TryGetValue("|" + node, out title) ? title : null;
 
-    private static IReadOnlyDictionary<string, string> CollectTitles(WorkflowRunCenterFlow flow)
+    /// <summary>
+    /// 记录里数据项的显示名称。记录本身只存键（和语言无关，导出、比对都用键），显示时按这里换成名称：
+    /// 先看引擎自己写的常用键，再看节点类型声明的名称（输出类型属性上的 DisplayName、节点属性上的 WorkflowProperty），
+    /// 都没有时显示键本身。以后做多语言，只要把这一步换成按语言取文字即可。
+    /// </summary>
+    /// <param name="flowName">流程名。</param>
+    /// <param name="nodeType">写这条记录的节点类型；流程级记录为空。</param>
+    /// <param name="key">数据键。</param>
+    public string DataLabel(string flowName, string? nodeType, string key)
+    {
+        Guard.NotNull(key);
+        const string output = "OutputValue.";
+        if (key.StartsWith(output, StringComparison.Ordinal))
+            return "输出 · " + DataLabel(flowName, nodeType, key.Substring(output.Length));
+        if (CommonLabels.TryGetValue(key, out var common)) return common;
+        lock (_sync)
+            if (nodeType is not null && _flows.TryGetValue(flowName, out var logs)
+                && logs.Labels.TryGetValue(nodeType + "|" + key, out var label))
+                return label;
+        return key;
+    }
+
+    private static readonly IReadOnlyDictionary<string, string> CommonLabels = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["Message"] = "消息", ["Elapsed"] = "耗时 (ms)", ["SelectedPort"] = "出口", ["Reason"] = "原因", ["Progress"] = "进度",
+        ["State"] = "状态", ["WorkflowName"] = "流程", ["PlanPath"] = "画布", ["NodeCount"] = "节点数", ["EntryNodeId"] = "入口节点",
+        ["Directive"] = "去向", ["Attempt"] = "第几次", ["Position"] = "位置", ["AlarmCode"] = "报警码", ["CanRecoverInPlace"] = "可就地恢复",
+        ["ManualPause"] = "人工暂停", ["HoldReasons"] = "挂起原因", ["Mode"] = "方式", ["NodeId"] = "节点", ["Cycle"] = "第几圈",
+        ["Count"] = "次数", ["Category"] = "类别", ["Branches"] = "分支", ["BranchCount"] = "分支数", ["MergeNodeId"] = "汇聚节点",
+        ["ExceptionType"] = "异常类型", ["InterruptAlarmCode"] = "中断报警码", ["Keys"] = "键", ["OutputKeys"] = "输出项",
+        ["OutputType"] = "输出类型", ["PublicDataKey"] = "公共数据", ["SourceNodeId"] = "来源节点", ["SourceKind"] = "来源",
+        ["InputKey"] = "输入项", ["TargetType"] = "目标类型", ["ResolvedValueSummary"] = "取到的值", ["Port"] = "出口",
+        ["OutputExecutionSequence"] = "输出序号", ["SourceOutputSequence"] = "来源输出序号", ["SourceOutputKey"] = "来源输出项",
+        ["InputMetadataStatus"] = "输入来源方式", ["FromSequence"] = "起始序号"
+    };
+
+    private static IReadOnlyDictionary<string, string> CollectTitles(WorkflowRunCenterFlow flow, out IReadOnlyDictionary<string, string> labels)
     {
         var titles = new Dictionary<string, string>(StringComparer.Ordinal);
+        var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        labels = names;
         WorkflowExecutionPlan plan;
         try
         {
@@ -187,7 +230,9 @@ public sealed class WorkflowRunLogBook
         {
             foreach (var id in current.NodeIds)
             {
-                var title = current.GetNodeOrThrow(id).Title;
+                var node = current.GetNodeOrThrow(id);
+                CollectLabels(node, names);
+                var title = node.Title;
                 if (string.IsNullOrWhiteSpace(title)) continue;
                 titles[path + "|" + id] = title;
                 if (!titles.ContainsKey("|" + id))
@@ -200,8 +245,29 @@ public sealed class WorkflowRunLogBook
         return titles;
     }
 
+    /// <summary>节点类型声明的数据名称：输出类型属性的 DisplayName，节点属性的 WorkflowProperty 名称。</summary>
+    private static void CollectLabels(IWorkflowNodeModel node, Dictionary<string, string> labels)
+    {
+        var type = node.GetType();
+        if (labels.ContainsKey(node.NodeType + "|")) return;
+        labels[node.NodeType + "|"] = string.Empty;
+        void Add(string key, string? label)
+        {
+            if (!string.IsNullOrWhiteSpace(label)) labels[node.NodeType + "|" + key] = label!.Trim();
+        }
+        foreach (var property in type.GetProperties())
+            Add(property.Name, property.GetCustomAttribute<WorkflowPropertyAttribute>()?.DisplayName);
+        if (type.GetCustomAttribute<WorkflowNodeAttribute>()?.OutputType is { } output)
+        {
+            foreach (var property in output.GetProperties())
+                Add(property.Name, property.GetCustomAttribute<System.ComponentModel.DisplayNameAttribute>()?.DisplayName);
+            // 记录类型的 DisplayName 写在主构造参数上（[property: DisplayName]）时也会落到属性上，上面已经取到。
+        }
+    }
+
     private sealed class FlowLogs
     {
+        public IReadOnlyDictionary<string, string> Labels { get; set; } = new Dictionary<string, string>();
         public List<WorkflowRunLog> Runs { get; } = new();
         public IReadOnlyDictionary<string, string> Titles { get; set; } = new Dictionary<string, string>();
     }

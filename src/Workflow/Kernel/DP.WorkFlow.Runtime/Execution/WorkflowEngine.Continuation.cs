@@ -118,7 +118,7 @@ public sealed partial class WorkflowEngine
             : new WorkflowRunRecorder(_runId, _plan.Name, _options.MaxTraceEntries, _options.Recording, _parentRunId, _parentExecution);
         _recorder.HealthChanged += OnRecordingHealthChanged;
         TryRecordRunEvent(
-            WorkflowRunEventDraft.Lifecycle("RunContinued", $"单独运行节点 {node.Id}。",
+            WorkflowRunEventDraft.Lifecycle("RunContinued", $"单独运行节点 {Named(node)}。",
                 new Dictionary<string, object?> { ["NodeId"] = node.Id }),
             WorkflowEventWriteMode.FlushRequested);
     }
