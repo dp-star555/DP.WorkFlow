@@ -255,7 +255,7 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
         FlatStyle = FlatStyle.Flat
     };
 
-    private static ModernDataGridView CreateGrid() => new()
+    private static WorkflowTable CreateGrid() => new()
     {
         Dock = DockStyle.Fill,
         Theme = WorkflowWinFormsTheme.Modern,
