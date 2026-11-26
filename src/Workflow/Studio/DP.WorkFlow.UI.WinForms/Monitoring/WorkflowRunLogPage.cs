@@ -11,7 +11,7 @@ namespace DP.WorkFlow.UI.WinForms;
 /// </summary>
 /// <remarks>
 /// 数据来自 <see cref="WorkflowRunLogBook"/>（挂在流程管理的出口上，每个流程保留最近若干次运行，只在内存里）。
-/// 宿主给了 <see cref="History"/> 时工具条上有“历史”：查外部保存的更早的运行，读回来按同一套规则重建，显示和实时的一样。
+/// 日志本设了存储（<see cref="WorkflowRunLogBook.Store"/>）时工具条上有“历史”：查存下来的更早的运行，读回来按同一套规则重建，显示和实时的一样。
 /// 只记流程控制本身；业务数据只显示节点自己写的消息和数据。
 /// </remarks>
 public sealed class WorkflowRunLogPage : WorkflowPage
@@ -31,7 +31,6 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     private readonly ModernButton _copy = new() { Text = "复制", ButtonType = ModernButtonType.Text };
     private readonly ModernButton _historyButton = new() { Text = "历史", ButtonType = ModernButtonType.Text, Icon = ModernIconKind.Search, Visible = false };
     private readonly ModernButton _backButton = new() { Text = "回到当前", ButtonType = ModernButtonType.Primary, Visible = false };
-    private IWorkflowRunLogHistory? _history;
     private (WorkflowRunLogHistoryEntry Entry, WorkflowRunLog Log)? _historyRun;
     private readonly TreeTable _table = Table<TreeTable>("位置 · 节点 · 消息", "时间", "结果", "耗时");
     private readonly WorkflowFactList _details = new();
@@ -140,18 +139,6 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     /// <summary>运行日志本。</summary>
     public WorkflowRunLogBook Book => _book;
 
-    /// <summary>历史来源（外部保存的更早的运行）；为空时没有“历史”按钮。</summary>
-    public IWorkflowRunLogHistory? History
-    {
-        get => _history;
-        set
-        {
-            _history = value;
-            _historyButton.Visible = value is not null;
-            if (value is null) LeaveHistory();
-        }
-    }
-
     /// <summary>正在看的历史运行；看当前记录时为空。</summary>
     public WorkflowRunLogHistoryEntry? HistoryEntry => _historyRun?.Entry;
 
@@ -159,12 +146,12 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     /// <param name="entry">历史里的一次运行。</param>
     public async Task ShowHistoryAsync(WorkflowRunLogHistoryEntry entry)
     {
-        if (_history is not { } history) throw new InvalidOperationException("没有历史来源。");
+        if (_book.Store is not { } store) throw new InvalidOperationException("运行日志没有设存储。");
         Guard.NotNull(entry);
         ShowMessage("正在读取历史运行……");
-        var events = await history.LoadAsync(entry).ConfigureAwait(true);
+        var lines = await store.ReadAsync(entry).ConfigureAwait(true);
         if (IsDisposed) return;
-        _historyRun = (entry, _book.Replay(entry.FlowName, events));
+        _historyRun = (entry, _book.Replay(entry.FlowName, lines));
         _view.ResetFolding();
         SetHistoryMode(true);
         Rebuild(true);
@@ -173,15 +160,14 @@ public sealed class WorkflowRunLogPage : WorkflowPage
 
     private async Task OpenHistoryAsync()
     {
-        if (_history is null) return;
-        using var dialog = new WorkflowRunLogHistoryDialog(_history, _book.Flows, _flow);
+        if (_book.Store is not { } store) return;
+        using var dialog = new WorkflowRunLogHistoryDialog(store, _book.Flows, _flow);
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK || dialog.Result is not { } entry) return;
         try
         {
             await ShowHistoryAsync(entry);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or FormatException
-                                          or System.Text.Json.JsonException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             ShowMessage("读取历史运行失败：" + exception.Message);
         }
@@ -279,6 +265,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     private void Rebuild(bool force)
     {
         if (IsDisposed) return;
+        _historyButton.Visible = _book.Store is not null;
         var version = _book.Version;
         if (!force)
         {
@@ -435,7 +422,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
             _status.Summary = _historyRun is { } history
                 ? $"历史运行 · {history.Entry.FlowName} · " + text + "（点“回到当前”看最近的运行）"
                 : text + $" · 每个流程只留最近 {_book.MaxRuns} 次启动的记录（启动到停止算一次，重启软件清空"
-                  + (_history is null ? "）" : "；更早的点“历史”查）");
+                  + (_book.Store is null ? "）" : "；更早的点“历史”查）");
         }
         else
         {

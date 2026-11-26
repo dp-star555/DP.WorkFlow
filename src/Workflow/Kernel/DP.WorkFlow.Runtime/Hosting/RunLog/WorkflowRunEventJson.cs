@@ -5,14 +5,15 @@ using System.Text.Json.Serialization;
 namespace DP.WorkFlow;
 
 /// <summary>
-/// 运行事件的 JSON 行格式（可选）：一条事件一行，读回来与原事件一致（含小值的类型），
-/// 交给 <see cref="WorkflowRunLogBook.Replay"/> 重建的结果和实时记录相同。外部也可以用自己的格式。
+/// 运行事件的 JSON 写法（运行日志行尾的回放数据，见 <see cref="WorkflowRunLogLineFormat"/>）：读回来与原事件一致（含小值的类型）。
 /// </summary>
-public static class WorkflowRunEventJson
+internal static class WorkflowRunEventJson
 {
     private static readonly JsonSerializerOptions Options = new()
     {
         PropertyNameCaseInsensitive = true,
+        // 中文原样写（控制字符仍转义，行里不会有原样的制表符和换行）。
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Converters = { new TraceValueConverter() }
     };

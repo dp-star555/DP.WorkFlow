@@ -21,7 +21,7 @@ public sealed record WorkflowRunLogSummary(int Index, Guid RunId, DateTimeOffset
 /// <remarks>
 /// 挂在流程管理的每个流程出口上（<see cref="Attach(WorkflowRunCenter)"/>）；流程管理要用 <see cref="OutletOptions"/> 创建，
 /// 否则出口按默认级别把并行派发 / 汇聚、进度等调试级事件过滤掉。只在内存里，程序重启后清空；
-/// 更早的运行由外部保存，经 <see cref="IWorkflowRunLogHistory"/> 读回后用 <see cref="Replay"/> 重建。
+/// 设了 <see cref="Store"/> 时每条事件同时写成一行文字交给存储，查历史时读回这些行用 <see cref="Replay"/> 重建。
 /// </remarks>
 public sealed class WorkflowRunLogBook
 {
@@ -43,6 +43,12 @@ public sealed class WorkflowRunLogBook
 
     /// <summary>每次运行最多的行数。</summary>
     public int MaxRowsPerRun { get; }
+
+    /// <summary>
+    /// 运行日志存在哪里（由宿主决定）；为空时只记在内存里。设了以后，每条事件写成一行（格式归 Workflow）交给它，
+    /// 运行日志页的“历史”也从它读。
+    /// </summary>
+    public IWorkflowRunLogStore? Store { get; set; }
 
     /// <summary>有变化就加一。</summary>
     public long Version => Interlocked.Read(ref _version);
@@ -166,34 +172,55 @@ public sealed class WorkflowRunLogBook
     {
         Guard.NotNullOrWhiteSpace(flowName);
         Guard.NotNull(runEvent);
+        var store = Store;
+        WorkflowRunLogRecord? record = null;
         lock (_sync)
         {
             var logs = Logs(flowName);
             // 统管层自己的事件（故障、停靠等）不属于某次运行，且可能先于 RunStarted 到达：只挂到已有运行上，不单独开一次运行。
             if (runEvent.RunId == Guid.Empty && logs.Runs.Count == 0) return;
-            if (IsRootStart(runEvent) || logs.Runs.Count == 0)
+            var start = IsRootStart(runEvent) || logs.Runs.Count == 0;
+            if (start)
             {
                 var titles = logs.Titles;
                 logs.Runs.Add(new WorkflowRunLog(flowName, runEvent.Timestamp, (path, node) => Title(titles, path, node), MaxRowsPerRun));
                 while (logs.Runs.Count > MaxRuns)
                     logs.Runs.RemoveAt(0);
             }
-            logs.Runs[logs.Runs.Count - 1].Add(runEvent);
+            var run = logs.Runs[logs.Runs.Count - 1];
+            run.Add(runEvent);
             _version++;
+            if (store is not null)
+            {
+                var title = runEvent.NodeId is { } node ? Title(logs.Titles, string.Empty, node) : null;
+                var ended = run.Root.Ended;
+                record = new WorkflowRunLogRecord(flowName, run.RunId, run.Root.Started, WorkflowRunLogLineFormat.Write(flowName, runEvent, title), start,
+                    ended, ended is null ? null : run.Root.State);
+            }
+        }
+        if (record is null) return;
+        try
+        {
+            store!.Append(record);
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Trace.TraceWarning("运行日志存储失败：" + exception.Message);
         }
     }
 
     /// <summary>
-    /// 用历史事件（外部保存后读回来的）重建一次运行，规则和实时记录完全相同；节点名称按该名字当前的执行计划取。
-    /// 不放进日志本，不影响最近若干次的记录。
+    /// 用存储交回的行（<see cref="IWorkflowRunLogStore.ReadAsync"/>）重建一次运行，规则和实时记录完全相同；
+    /// 节点名称按该名字当前的执行计划取。不是 Workflow 写的行跳过。不放进日志本，不影响最近若干次的记录。
     /// </summary>
     /// <param name="flowName">记在哪个名字下。</param>
-    /// <param name="events">这次运行的事件，按收到的顺序。</param>
-    /// <returns>重建的运行；没有事件时开始时间为当前时间。</returns>
-    public WorkflowRunLog Replay(string flowName, IEnumerable<WorkflowRunEvent> events)
+    /// <param name="lines">这次运行存的行，按存的顺序。</param>
+    /// <returns>重建的运行；没有可读的行时开始时间为当前时间。</returns>
+    public WorkflowRunLog Replay(string flowName, IEnumerable<string> lines)
     {
         Guard.NotNullOrWhiteSpace(flowName);
-        Guard.NotNull(events);
+        Guard.NotNull(lines);
+        var events = lines.Select(WorkflowRunLogLineFormat.Read).OfType<WorkflowRunEvent>();
         IReadOnlyDictionary<string, string> titles;
         lock (_sync)
             titles = _flows.TryGetValue(flowName, out var logs) ? logs.Titles : new Dictionary<string, string>();

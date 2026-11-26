@@ -4,12 +4,12 @@ using ModernUI.WinForms;
 namespace DP.WorkFlow.UI.WinForms;
 
 /// <summary>
-/// 查历史运行：选日期和流程，查外部保存的运行（<see cref="IWorkflowRunLogHistory"/>），双击或“打开”在运行日志页里看。
+/// 查历史运行：选日期和流程，查存下来的运行（<see cref="IWorkflowRunLogStore"/>），双击或“打开”在运行日志页里看。
 /// </summary>
 internal sealed class WorkflowRunLogHistoryDialog : Form
 {
     private const string AllFlows = "全部流程";
-    private readonly IWorkflowRunLogHistory _history;
+    private readonly IWorkflowRunLogStore _store;
     private readonly ModernDatePicker _from = new() { Width = 150 };
     private readonly ModernDatePicker _to = new() { Width = 150 };
     private readonly ModernSelect _flow = new() { Width = 200 };
@@ -19,9 +19,9 @@ internal sealed class WorkflowRunLogHistoryDialog : Form
     private readonly ModernButton _open = new() { Text = "打开", ButtonType = ModernButtonType.Primary };
     private CancellationTokenSource? _finding;
 
-    public WorkflowRunLogHistoryDialog(IWorkflowRunLogHistory history, IEnumerable<string> flows, string? flow)
+    public WorkflowRunLogHistoryDialog(IWorkflowRunLogStore store, IEnumerable<string> flows, string? flow)
     {
-        _history = history;
+        _store = store;
         Text = "历史运行";
         StartPosition = FormStartPosition.CenterParent;
         Size = new Size(760, 520);
@@ -85,7 +85,7 @@ internal sealed class WorkflowRunLogHistoryDialog : Form
         _status.Text = "正在查询……";
         try
         {
-            var entries = await _history.FindAsync(new WorkflowRunLogHistoryQuery(new DateTimeOffset(from), new DateTimeOffset(to), flow), finding.Token).ConfigureAwait(true);
+            var entries = await _store.FindAsync(new WorkflowRunLogHistoryQuery(new DateTimeOffset(from), new DateTimeOffset(to), flow), finding.Token).ConfigureAwait(true);
             if (IsDisposed || finding.IsCancellationRequested) return;
             _list.Rows.Clear();
             foreach (var entry in entries)
@@ -101,7 +101,7 @@ internal sealed class WorkflowRunLogHistoryDialog : Form
         catch (OperationCanceledException)
         {
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or FormatException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             if (!IsDisposed) _status.Text = "查询失败：" + exception.Message;
         }
