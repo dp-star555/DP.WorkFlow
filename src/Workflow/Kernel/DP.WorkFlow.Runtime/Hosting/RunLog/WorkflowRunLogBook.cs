@@ -20,7 +20,8 @@ public sealed record WorkflowRunLogSummary(int Index, Guid RunId, DateTimeOffset
 /// </summary>
 /// <remarks>
 /// 挂在流程管理的每个流程出口上（<see cref="Attach(WorkflowRunCenter)"/>）；流程管理要用 <see cref="OutletOptions"/> 创建，
-/// 否则出口按默认级别把并行派发 / 汇聚、进度等调试级事件过滤掉。只在内存里，程序重启后清空。
+/// 否则出口按默认级别把并行派发 / 汇聚、进度等调试级事件过滤掉。只在内存里，程序重启后清空；
+/// 更早的运行由外部保存，经 <see cref="IWorkflowRunLogHistory"/> 读回后用 <see cref="Replay"/> 重建。
 /// </remarks>
 public sealed class WorkflowRunLogBook
 {
@@ -180,6 +181,29 @@ public sealed class WorkflowRunLogBook
             logs.Runs[logs.Runs.Count - 1].Add(runEvent);
             _version++;
         }
+    }
+
+    /// <summary>
+    /// 用历史事件（外部保存后读回来的）重建一次运行，规则和实时记录完全相同；节点名称按该名字当前的执行计划取。
+    /// 不放进日志本，不影响最近若干次的记录。
+    /// </summary>
+    /// <param name="flowName">记在哪个名字下。</param>
+    /// <param name="events">这次运行的事件，按收到的顺序。</param>
+    /// <returns>重建的运行；没有事件时开始时间为当前时间。</returns>
+    public WorkflowRunLog Replay(string flowName, IEnumerable<WorkflowRunEvent> events)
+    {
+        Guard.NotNullOrWhiteSpace(flowName);
+        Guard.NotNull(events);
+        IReadOnlyDictionary<string, string> titles;
+        lock (_sync)
+            titles = _flows.TryGetValue(flowName, out var logs) ? logs.Titles : new Dictionary<string, string>();
+        WorkflowRunLog? log = null;
+        foreach (var runEvent in events)
+        {
+            log ??= new WorkflowRunLog(flowName, runEvent.Timestamp, (path, node) => Title(titles, path, node), MaxRowsPerRun);
+            log.Add(runEvent);
+        }
+        return log ?? new WorkflowRunLog(flowName, DateTimeOffset.UtcNow, null, MaxRowsPerRun);
     }
 
     /// <summary>有记录的流程名。</summary>

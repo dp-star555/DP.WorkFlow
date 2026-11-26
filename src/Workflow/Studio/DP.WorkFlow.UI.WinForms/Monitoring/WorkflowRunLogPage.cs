@@ -11,6 +11,7 @@ namespace DP.WorkFlow.UI.WinForms;
 /// </summary>
 /// <remarks>
 /// 数据来自 <see cref="WorkflowRunLogBook"/>（挂在流程管理的出口上，每个流程保留最近若干次运行，只在内存里）。
+/// 宿主给了 <see cref="History"/> 时工具条上有“历史”：查外部保存的更早的运行，读回来按同一套规则重建，显示和实时的一样。
 /// 只记流程控制本身；业务数据只显示节点自己写的消息和数据。
 /// </remarks>
 public sealed class WorkflowRunLogPage : WorkflowPage
@@ -28,6 +29,10 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     private readonly ModernButton _expandAll = new() { Text = "全部展开", ButtonType = ModernButtonType.Text };
     private readonly ModernButton _autoFold = new() { Text = "自动折叠", ButtonType = ModernButtonType.Text };
     private readonly ModernButton _copy = new() { Text = "复制", ButtonType = ModernButtonType.Text };
+    private readonly ModernButton _historyButton = new() { Text = "历史", ButtonType = ModernButtonType.Text, Icon = ModernIconKind.Search, Visible = false };
+    private readonly ModernButton _backButton = new() { Text = "回到当前", ButtonType = ModernButtonType.Primary, Visible = false };
+    private IWorkflowRunLogHistory? _history;
+    private (WorkflowRunLogHistoryEntry Entry, WorkflowRunLog Log)? _historyRun;
     private readonly TreeTable _table = Table<TreeTable>("位置 · 节点 · 消息", "时间", "结果", "耗时");
     private readonly WorkflowFactList _details = new();
     private readonly WorkflowCard _tableCard;
@@ -62,6 +67,8 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         bar.Add(_search, 220);
         bar.AddRight(new Label { Text = "跟随最新" });
         bar.AddRight(_follow);
+        bar.AddRight(_backButton);
+        bar.AddRight(_historyButton);
 
         _table.VirtualMode = true;
         // 卡片已经有圆角边框；表格自己再画一圈（150% 缩放下是 1.5 px 的深色线、圆角被裁掉）就成了黑框，这里不画。
@@ -120,6 +127,8 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         _expandAll.Click += (_, _) => { _view.Overrides.Clear(); _view.ExpandAll = true; Rebuild(true); };
         _autoFold.Click += (_, _) => { _view.ResetFolding(); Rebuild(true); };
         _follow.CheckedChanged += (_, _) => { if (_follow.Checked) { _runIndex = -1; Rebuild(true); } };
+        _historyButton.Click += async (_, _) => await OpenHistoryAsync();
+        _backButton.Click += (_, _) => LeaveHistory();
         _copy.Click += (_, _) =>
         {
             if (_detailsText.Length == 0) return;
@@ -130,6 +139,71 @@ public sealed class WorkflowRunLogPage : WorkflowPage
 
     /// <summary>运行日志本。</summary>
     public WorkflowRunLogBook Book => _book;
+
+    /// <summary>历史来源（外部保存的更早的运行）；为空时没有“历史”按钮。</summary>
+    public IWorkflowRunLogHistory? History
+    {
+        get => _history;
+        set
+        {
+            _history = value;
+            _historyButton.Visible = value is not null;
+            if (value is null) LeaveHistory();
+        }
+    }
+
+    /// <summary>正在看的历史运行；看当前记录时为空。</summary>
+    public WorkflowRunLogHistoryEntry? HistoryEntry => _historyRun?.Entry;
+
+    /// <summary>读一次历史运行并显示（和实时记录同一套规则重建）。</summary>
+    /// <param name="entry">历史里的一次运行。</param>
+    public async Task ShowHistoryAsync(WorkflowRunLogHistoryEntry entry)
+    {
+        if (_history is not { } history) throw new InvalidOperationException("没有历史来源。");
+        Guard.NotNull(entry);
+        ShowMessage("正在读取历史运行……");
+        var events = await history.LoadAsync(entry).ConfigureAwait(true);
+        if (IsDisposed) return;
+        _historyRun = (entry, _book.Replay(entry.FlowName, events));
+        _view.ResetFolding();
+        SetHistoryMode(true);
+        Rebuild(true);
+        ShowMessage(string.Empty);
+    }
+
+    private async Task OpenHistoryAsync()
+    {
+        if (_history is null) return;
+        using var dialog = new WorkflowRunLogHistoryDialog(_history, _book.Flows, _flow);
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK || dialog.Result is not { } entry) return;
+        try
+        {
+            await ShowHistoryAsync(entry);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or FormatException
+                                          or System.Text.Json.JsonException)
+        {
+            ShowMessage("读取历史运行失败：" + exception.Message);
+        }
+    }
+
+    private void LeaveHistory()
+    {
+        if (_historyRun is null) return;
+        _historyRun = null;
+        _view.ResetFolding();
+        SetHistoryMode(false);
+        Rebuild(true);
+    }
+
+    // 看历史时流程、运行、跟随最新都不能动；“回到当前”回到之前看的流程。
+    private void SetHistoryMode(bool history)
+    {
+        _flowPicker.Enabled = _runPicker.Enabled = _follow.Enabled = !history;
+        _backButton.Visible = history;
+        if (history) _follow.Checked = false;
+        else _follow.Checked = true;
+    }
 
     /// <summary>当前看的流程名；“全部流程”时为空。</summary>
     public string? FlowName => _flow;
@@ -208,7 +282,8 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         var version = _book.Version;
         if (!force)
         {
-            if (version == _seenVersion && !_running) return;
+            // 看历史时内容不会变，新的运行等“回到当前”再看。
+            if (_historyRun is not null || (version == _seenVersion && !_running)) return;
             // 不跟随最新时界面不动（看的东西不会被刷走）；只提示有新记录。
             if (!_follow.Checked)
             {
@@ -220,6 +295,11 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         _seenVersion = version;
         _pending = false;
         var now = DateTimeOffset.UtcNow;
+        if (_historyRun is { } history)
+        {
+            ShowHistory(history.Entry, history.Log, now);
+            return;
+        }
         var flows = _all ? _book.Flows : _flow is null ? Array.Empty<string>() : new[] { _flow };
         var lines = new List<WorkflowRunLogLine>();
         var info = new RunInfo();
@@ -242,6 +322,26 @@ public sealed class WorkflowRunLogPage : WorkflowPage
             info = new RunInfo(info.Runs + 1, info.Events + snapshot.EventCount, info.Truncated || snapshot.Truncated,
                 info.FaultSessions + snapshot.FaultSessions, info.Failures + runs[index].Failures, info.Notices + runs[index].Notices);
         }
+        RefreshFilterCounts(info);
+        Show(lines, info);
+    }
+
+    private void ShowHistory(WorkflowRunLogHistoryEntry entry, WorkflowRunLog log, DateTimeOffset now)
+    {
+        _updating = true;
+        try
+        {
+            _runPicker.Items.Clear();
+            _runPicker.Items.Add("历史 · " + entry.Started.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + " · " + entry.FlowName);
+            _runPicker.SelectedIndex = 0;
+        }
+        finally
+        {
+            _updating = false;
+        }
+        _running = false;
+        var lines = _view.Build(log, now);
+        var info = new RunInfo(1, log.EventCount, log.Truncated, log.FaultSessions, log.Root.FailureCount, log.Root.NoticeCount);
         RefreshFilterCounts(info);
         Show(lines, info);
     }
@@ -332,7 +432,10 @@ public sealed class WorkflowRunLogPage : WorkflowPage
             var text = (_all ? $"{info.Runs} 个流程共 " : "本次运行 ")
                        + $"{info.Events.ToString("N0", CultureInfo.InvariantCulture)} 条 · 故障会话 {info.FaultSessions}";
             if (info.Truncated) text += $" · 超过 {_book.MaxRowsPerRun.ToString("N0", CultureInfo.InvariantCulture)} 行，后面的不再记";
-            _status.Summary = text + $" · 每个流程只留最近 {_book.MaxRuns} 次启动的记录（启动到停止算一次，重启软件清空）";
+            _status.Summary = _historyRun is { } history
+                ? $"历史运行 · {history.Entry.FlowName} · " + text + "（点“回到当前”看最近的运行）"
+                : text + $" · 每个流程只留最近 {_book.MaxRuns} 次启动的记录（启动到停止算一次，重启软件清空"
+                  + (_history is null ? "）" : "；更早的点“历史”查）");
         }
         else
         {

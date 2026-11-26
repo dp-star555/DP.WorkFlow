@@ -292,6 +292,51 @@ public sealed class WorkflowRunLogTests
         Assert.DoesNotContain(lines, line => line.FlowName != "试运行 · 上料");
     }
 
+    [Fact]
+    public async Task History_SavedAsJsonLines_ReplaysExactlyLikeTheLiveLog()
+    {
+        var book = new WorkflowRunLogBook();
+        WorkflowRuntimeHost? host = null;
+        var saved = new List<string>();
+        var options = new WorkflowExecutionOptions();
+        options.Recording.Sink = new Tee(book.CreateSink("上料", () => host?.Plan), saved);
+        host = new WorkflowRuntimeHost(
+            new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes(),
+            new WorkflowNodeHandlerCatalog().RegisterStandardNodeHandlers().RegisterCompositeNodeHandlers(),
+            options);
+        using var owned = host;
+        var actions = new WorkflowActionRegistry().Register("Work", (_, _) => ValueTask.FromResult<object?>(null));
+        var document = LoopNodeDocument();
+        ((LoopNodeModel)document.Nodes.Single(item => item.Node.Id == "Loop").Node).Iterations = 3;
+        host.Configure(document, new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions)));
+        Assert.True((await host.RunAsync()).Success);
+        await WaitEnded(book, "上料", 1);
+
+        // 外部存的是原始事件（这里一行一条 JSON）；读回来重建，显示和实时记录的一样。
+        var replayed = book.Replay("上料", saved.Select(WorkflowRunEventJson.Read));
+        var view = new WorkflowRunLogView { ExpandAll = true, ControlOnly = false };
+        var now = DateTimeOffset.UtcNow;
+        var live = book.Read("上料", 0, log => view.Build(log, now))!;
+        var restored = view.Build(replayed, now);
+        object Shape(WorkflowRunLogLine line) => (line.Key, line.Depth, line.Kind, line.Title, line.Detail, line.Started, line.Ended, line.Elapsed,
+            line.State, line.NodeId, line.Path, string.Join(";", (line.Data ?? new Dictionary<string, WorkflowTraceValue>())
+                .Select(pair => pair.Key + "=" + pair.Value.Text + "|" + pair.Value.ToObject())));
+        Assert.True(live.Count > 5);
+        Assert.Equal(live.Select(Shape), restored.Select(Shape));
+        Assert.Equal(WorkflowRunLogState.Succeeded, replayed.Root.State);
+    }
+
+    private sealed class Tee(IWorkflowRunEventSink inner, List<string> saved) : IWorkflowRunEventSink
+    {
+        public ValueTask<WorkflowRunEventWriteResult> WriteAsync(IReadOnlyList<WorkflowRunEvent> events, bool requestImmediateFlush, CancellationToken cancellationToken)
+        {
+            lock (saved) saved.AddRange(events.Select(WorkflowRunEventJson.Write));
+            return inner.WriteAsync(events, requestImmediateFlush, cancellationToken);
+        }
+
+        public ValueTask FlushAsync(CancellationToken cancellationToken) => inner.FlushAsync(cancellationToken);
+    }
+
     private static async Task WaitEnded(WorkflowRunLogBook book, string flow, int count)
     {
         var deadline = DateTime.UtcNow.AddSeconds(5);

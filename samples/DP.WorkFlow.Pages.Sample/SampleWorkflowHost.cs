@@ -16,6 +16,7 @@ internal sealed class SampleWorkflowHost : IDisposable
     {
         FlowDirectory = Path.Combine(root, "flows");
         Directory.CreateDirectory(FlowDirectory);
+        LogFiles = new SampleRunLogFiles(root);
         _plugins = new WorkflowRuntimePluginCatalog(new WorkflowNodeCatalog(), new WorkflowNodeHandlerCatalog())
             .Register(new WorkflowStandardRuntimePluginModule())
             .Register(new WorkflowCompositeRuntimePluginModule())
@@ -32,6 +33,9 @@ internal sealed class SampleWorkflowHost : IDisposable
     public WorkflowRunCenterOptions Options { get; } = new() { FlowOutlet = WorkflowRunLogBook.OutletOptions() };
 
     public WorkflowRunLogBook RunLog { get; } = new();
+
+    /// <summary>运行日志存到本地（示例测试用），运行日志页的“历史”从这里读。</summary>
+    public SampleRunLogFiles LogFiles { get; }
 
     public IServiceProvider Services { get; } = new WorkflowServiceProvider();
 
@@ -69,6 +73,7 @@ internal sealed class SampleWorkflowHost : IDisposable
             }
         }
         RunLog.Attach(center);
+        LogFiles.Attach(center);
         var old = Center;
         Center = center;
         LoadIssues = issues;
@@ -121,7 +126,7 @@ internal sealed class SampleWorkflowHost : IDisposable
         // 试运行记进运行日志，按流程记在“试运行 · 流程名”下，和正式流程分开。
         WorkflowRuntimeHost? host = null;
         var options = new WorkflowExecutionOptions();
-        options.Recording.Sink = RunLog.CreateSink(logName, () => host?.Plan);
+        options.Recording.Sink = LogFiles.Wrap(RunLog.CreateSink(logName, () => host?.Plan), logName);
         host = new WorkflowRuntimeHost(_plugins.Nodes, _plugins.Handlers, options);
         _trials.Add(host);
         return host;
@@ -135,5 +140,6 @@ internal sealed class SampleWorkflowHost : IDisposable
             trial.Dispose();
         }
         Center?.Dispose();
+        LogFiles.Dispose();
     }
 }
