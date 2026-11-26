@@ -64,6 +64,8 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         bar.AddRight(_follow);
 
         _table.VirtualMode = true;
+        // 卡片已经有圆角边框；表格自己再画一圈（150% 缩放下是 1.5 px 的深色线、圆角被裁掉）就成了黑框，这里不画。
+        _table.CornerRadius = 0;
         ColumnWidths(_table, 1, 0, 0, 0);
         foreach (DataGridViewColumn column in _table.Columns)
             column.SortMode = DataGridViewColumnSortMode.NotSortable;
@@ -449,13 +451,16 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         if (e.RowIndex < 0 || e.RowIndex >= _lines.Count || e.Graphics is null || e.CellStyle is null) return false;
         var line = _lines[e.RowIndex];
         var colors = WorkflowWinFormsTheme.Palette.Colors;
+        // 选中行只换底色（浅主色），文字、标记、圆点保持原来的颜色；表格的选中前景色就是普通文字色，用了会全变黑。
         var selected = (e.State & DataGridViewElementStates.Selected) != 0;
         var graphics = e.Graphics;
         var bounds = e.CellBounds;
         var font = e.CellStyle.Font!;
-        var text = selected ? e.CellStyle.SelectionForeColor : WorkflowWinFormsTheme.Solid(colors.Text);
-        var muted = selected ? e.CellStyle.SelectionForeColor : WorkflowWinFormsTheme.Solid(colors.TextMuted);
-        var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
+        var text = WorkflowWinFormsTheme.Solid(colors.Text);
+        var muted = WorkflowWinFormsTheme.Solid(colors.TextMuted);
+        // 量宽度不能带省略号标志（不给宽度时会量成 0，后面的文字就叠上去了），画的时候再加。
+        var measure = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
+        var flags = measure | TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis;
         var pad = _table.LogicalToDeviceUnits(6);
         e.PaintBackground(bounds, selected);
         switch (e.ColumnIndex)
@@ -467,7 +472,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
             {
                 // 结果：前面一个彩色圆点，文字同色；没有结果的行（消息、提示）留空。
                 if (line.State == WorkflowRunLogState.None) return true;
-                var color = selected ? e.CellStyle.SelectionForeColor : StateColor(line.State, colors);
+                var color = StateColor(line.State, colors);
                 var dot = _table.LogicalToDeviceUnits(7);
                 graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 using (var brush = new SolidBrush(color))
@@ -481,7 +486,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
             case 3:
                 if (line.Elapsed is { } elapsed)
                     TextRenderer.DrawText(graphics, WorkflowRunLogText.Duration(elapsed), font, Inner(bounds, pad),
-                        line.State == WorkflowRunLogState.Running && !selected ? WorkflowWinFormsTheme.Solid(colors.Accent) : text,
+                        line.State == WorkflowRunLogState.Running ? WorkflowWinFormsTheme.Solid(colors.Accent) : text,
                         (flags & ~TextFormatFlags.Left) | TextFormatFlags.Right);
                 return true;
             case not 0:
@@ -496,7 +501,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         var indent = _table.LogicalToDeviceUnits(Indent);
         var glyph = _table.LogicalToDeviceUnits(16);
         var origin = bounds.Left + _table.LogicalToDeviceUnits(4);
-        using (var guide = new Pen(selected ? Color.FromArgb(90, e.CellStyle.SelectionForeColor) : WorkflowWinFormsTheme.Solid(colors.Line.Mix(colors.Surface, .35))))
+        using (var guide = new Pen(WorkflowWinFormsTheme.Solid(colors.Line.Mix(colors.Surface, .35))))
             for (var level = 1; level <= line.Depth; level++)
             {
                 var guideX = origin + (level - 1) * indent + glyph / 2;
@@ -511,11 +516,10 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         if (tagText is not null)
         {
             var (fore, back) = TagColors(line, colors);
-            if (selected) (fore, back) = (e.CellStyle.SelectionForeColor, Color.FromArgb(50, e.CellStyle.SelectionForeColor));
             using var tagFont = new Font(font.FontFamily, font.Size * .86f, font.Style, font.Unit);
-            var size = TextRenderer.MeasureText(graphics, tagText, tagFont, Size.Empty, flags);
+            var size = TextRenderer.MeasureText(graphics, tagText, tagFont, Size.Empty, measure);
             var height = Math.Min(bounds.Height - _table.LogicalToDeviceUnits(6), size.Height + _table.LogicalToDeviceUnits(2));
-            var pill = new Rectangle(x, bounds.Top + (bounds.Height - height) / 2, size.Width + _table.LogicalToDeviceUnits(8), height);
+            var pill = new Rectangle(x, bounds.Top + (bounds.Height - height) / 2, size.Width + _table.LogicalToDeviceUnits(12), height);
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
             using (var path = Rounded(pill, height / 2))
             using (var brush = new SolidBrush(back))
@@ -531,10 +535,10 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         using (var titleFont = strong ? new Font(font, FontStyle.Bold) : null)
         {
             var useFont = titleFont ?? font;
-            var titleSize = TextRenderer.MeasureText(graphics, line.Title, useFont, Size.Empty, flags);
+            var titleSize = TextRenderer.MeasureText(graphics, line.Title, useFont, Size.Empty, measure);
             TextRenderer.DrawText(graphics, line.Title, useFont, new Rectangle(x, bounds.Top, Math.Max(0, bounds.Right - x - pad), bounds.Height),
                 line.IsGroup ? muted : text, flags);
-            x += titleSize.Width + _table.LogicalToDeviceUnits(10);
+            x += titleSize.Width + _table.LogicalToDeviceUnits(12);
         }
         var detail = line.Detail;
         if (line.NoticeCount > 0 && line.Kind != WorkflowRunLogRowKind.Notice && !line.Expanded && !line.IsGroup)
