@@ -264,7 +264,7 @@ public static class WorkflowRunLogText
     {
         WorkflowRunLogRowKind.Run => "运行",
         WorkflowRunLogRowKind.SubFlow => "子流程",
-        WorkflowRunLogRowKind.LoopBlock => "循环块",
+        WorkflowRunLogRowKind.LoopBlock => "循环",
         WorkflowRunLogRowKind.Parallel => "并行",
         WorkflowRunLogRowKind.Fault => "故障",
         WorkflowRunLogRowKind.Recovery => "恢复",
