@@ -433,16 +433,9 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     /// 运行日志专用表格：第一列（树形缩进、引导线、展开箭头、种类标记）和结果列自己画。
     /// 直接重写 OnCellPainting，不依赖基类是否触发 CellPainting 事件。
     /// </summary>
-    private sealed class TreeTable : ModernDataGridView
+    private sealed class TreeTable : WorkflowTable
     {
         public Func<DataGridViewCellPaintingEventArgs, bool>? PaintCell { get; set; }
-
-        /// <summary>
-        /// 不向无障碍接口（UI 自动化）公开每一行每一格。运行记录有成千上万行、每次刷新都在变，
-        /// 输入法、读屏、翻译等工具一查询就要把所有格子的值取一遍，界面线程被拖住直到无响应。
-        /// 只公开表格本身（名称、位置），内容可以从右边的详情和“复制”取。
-        /// </summary>
-        protected override AccessibleObject CreateAccessibilityInstance() => new ControlAccessibleObject(this);
 
         protected override void OnCellPainting(DataGridViewCellPaintingEventArgs e)
         {

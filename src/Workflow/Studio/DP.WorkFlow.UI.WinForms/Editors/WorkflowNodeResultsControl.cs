@@ -19,7 +19,7 @@ internal sealed class WorkflowNodeResultsControl : UserControl
         Padding = new Padding(8, 6, 8, 6),
         AutoEllipsis = true
     };
-    private readonly ModernDataGridView _grid = new()
+    private readonly WorkflowTable _grid = new()
     {
         Dock = DockStyle.Fill,
         Theme = WorkflowWinFormsTheme.Modern,

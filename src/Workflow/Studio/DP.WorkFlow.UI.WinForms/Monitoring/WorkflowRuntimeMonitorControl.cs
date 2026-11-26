@@ -462,6 +462,9 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
     /// <summary>重建行，保留选中行、滚动位置和用户点列头选的排序。</summary>
     private static void Replace(DataGridView table, IEnumerable<(object Key, string[] Cells)> rows)
     {
+        var items = rows as IReadOnlyList<(object Key, string[] Cells)> ?? rows.ToArray();
+        // 内容没变就不重建：每个节拍清空再加行会让表格整体重建、重新布局（也会让外部工具重新读一遍）。
+        if (Same(table, items)) return;
         var selected = table.SelectedRows.Cast<DataGridViewRow>().Select(row => row.Tag).ToHashSet();
         var top = table.FirstDisplayedScrollingRowIndex;
         var sortColumn = table.SortedColumn;
@@ -470,7 +473,7 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
         try
         {
             table.Rows.Clear();
-            foreach (var row in rows)
+            foreach (var row in items)
             {
                 var index = table.Rows.Add(row.Cells);
                 table.Rows[index].Tag = row.Key;
@@ -483,6 +486,19 @@ public sealed partial class WorkflowRuntimeMonitorControl : UserControl
             if (top > 0) WorkflowPage.ScrollTo(table, Math.Min(top, table.RowCount - 1));
         }
         finally { table.ResumeLayout(); }
+    }
+
+    private static bool Same(DataGridView table, IReadOnlyList<(object Key, string[] Cells)> rows)
+    {
+        if (table.Rows.Count != rows.Count || table.SortedColumn is not null) return false;
+        for (var index = 0; index < rows.Count; index++)
+        {
+            var row = table.Rows[index];
+            if (!Equals(row.Tag, rows[index].Key) || row.Cells.Count < rows[index].Cells.Length) return false;
+            for (var cell = 0; cell < rows[index].Cells.Length; cell++)
+                if (!Equals(row.Cells[cell].Value as string, rows[index].Cells[cell])) return false;
+        }
+        return true;
     }
 
     private void DisposeRuntimeMonitor()
