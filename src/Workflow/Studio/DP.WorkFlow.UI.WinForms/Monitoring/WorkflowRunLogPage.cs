@@ -110,6 +110,8 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         };
         _filter.SelectedIndexChanged += (_, _) =>
         {
+            // 刷新时改选项文字（带上条数）会让下拉重新选中一次；这时不能再重建，否则重建里又改文字，无限递归直到栈溢出。
+            if (_updating) return;
             _view.Filter = _filter.SelectedIndex switch { 1 => WorkflowRunLogFilter.Failures, 2 => WorkflowRunLogFilter.Notices, _ => WorkflowRunLogFilter.All };
             Rebuild(true);
         };
@@ -270,9 +272,12 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         try
         {
             var selected = _filter.SelectedIndex;
-            _filter.Items[1] = info.Failures > 0 ? $"失败与故障 {info.Failures}" : "失败与故障";
-            _filter.Items[2] = info.Notices > 0 ? $"提示 {info.Notices}" : "提示";
-            _filter.SelectedIndex = selected;
+            var failures = info.Failures > 0 ? $"失败与故障 {info.Failures}" : "失败与故障";
+            var notices = info.Notices > 0 ? $"提示 {info.Notices}" : "提示";
+            // 文字没变就不动选项（改选中的那一项会触发重新选中）。
+            if (!Equals(_filter.Items[1], failures)) _filter.Items[1] = failures;
+            if (!Equals(_filter.Items[2], notices)) _filter.Items[2] = notices;
+            if (_filter.SelectedIndex != selected) _filter.SelectedIndex = selected;
         }
         finally
         {
@@ -295,11 +300,9 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         try
         {
             _lines = lines;
+            // 只增减差的行：先清零再加回会让整张表的行全部重建一遍。
             if (_table.RowCount != lines.Count)
-            {
-                _table.RowCount = 0;
                 _table.RowCount = lines.Count;
-            }
             _table.Invalidate();
             var index = selectedKey is null ? -1 : IndexOf(selectedKey);
             _table.ClearSelection();
@@ -433,6 +436,13 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     private sealed class TreeTable : ModernDataGridView
     {
         public Func<DataGridViewCellPaintingEventArgs, bool>? PaintCell { get; set; }
+
+        /// <summary>
+        /// 不向无障碍接口（UI 自动化）公开每一行每一格。运行记录有成千上万行、每次刷新都在变，
+        /// 输入法、读屏、翻译等工具一查询就要把所有格子的值取一遍，界面线程被拖住直到无响应。
+        /// 只公开表格本身（名称、位置），内容可以从右边的详情和“复制”取。
+        /// </summary>
+        protected override AccessibleObject CreateAccessibilityInstance() => new ControlAccessibleObject(this);
 
         protected override void OnCellPainting(DataGridViewCellPaintingEventArgs e)
         {
