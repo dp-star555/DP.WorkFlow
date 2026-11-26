@@ -38,6 +38,7 @@ public enum WorkflowRunLogFilter
 /// <param name="Path">从运行到这一行经过的标题，用“ / ”连接。</param>
 /// <param name="Data">节点写的数据。</param>
 /// <param name="IsGroup">是否是合并的连续成功圈。</param>
+/// <param name="FlowName">所属流程（“全部流程”里多个流程的记录排在一起）。</param>
 public sealed record WorkflowRunLogLine(
     string Key,
     long? RowId,
@@ -60,7 +61,8 @@ public sealed record WorkflowRunLogLine(
     long ParentTokenId,
     string Path,
     IReadOnlyDictionary<string, WorkflowTraceValue>? Data,
-    bool IsGroup);
+    bool IsGroup,
+    string FlowName);
 
 /// <summary>
 /// 把运行日志树按折叠规则展开成列表。
@@ -71,6 +73,8 @@ public sealed record WorkflowRunLogLine(
 /// </remarks>
 public sealed class WorkflowRunLogView
 {
+    private string _flowName = string.Empty;
+
     /// <summary>手动展开（true）/ 收起（false）的行，按 <see cref="WorkflowRunLogLine.Key"/>。</summary>
     public Dictionary<string, bool> Overrides { get; } = new(StringComparer.Ordinal);
 
@@ -108,6 +112,7 @@ public sealed class WorkflowRunLogView
     public IReadOnlyList<WorkflowRunLogLine> Build(WorkflowRunLog log, DateTimeOffset now)
     {
         Guard.NotNull(log);
+        _flowName = log.FlowName;
         var lines = new List<WorkflowRunLogLine>();
         var search = string.IsNullOrWhiteSpace(Search) ? null : Search!.Trim();
         var filtering = Filter != WorkflowRunLogFilter.All || search is not null;
@@ -156,12 +161,12 @@ public sealed class WorkflowRunLogView
     private void Emit(WorkflowRunLogRow row, int depth, string path, DateTimeOffset now, HashSet<WorkflowRunLogRow>? keep, List<WorkflowRunLogLine> lines)
     {
         var children = row.Children.Where(child => Visible(child) && (keep is null || keep.Contains(child))).ToArray();
-        var key = "r" + row.Id.ToString(CultureInfo.InvariantCulture);
+        var key = _flowName + "/r" + row.Id.ToString(CultureInfo.InvariantCulture);
         var expanded = Expanded(key, AutoExpanded(row) || (keep is not null && children.Length > 0), children.Length > 0);
         var linePath = row.Parent is null ? string.Empty : path.Length == 0 ? row.Title : path + " / " + row.Title;
         lines.Add(new WorkflowRunLogLine(key, row.Id, depth, row.Kind, row.Title, Describe(row, children), row.Started, row.Ended,
             Elapsed(row, now), row.State, children.Length > 0, expanded, row.HasFailure, row.NoticeCount, row.NodeId, row.NodeType,
-            row.CanvasPath, row.TokenId, row.ParentTokenId, linePath, row.Data, false));
+            row.CanvasPath, row.TokenId, row.ParentTokenId, linePath, row.Data, false, _flowName));
         if (!expanded) return;
         // 连续成功的圈合并成一行（筛选时不合并，直接列出命中的圈）。
         for (var index = 0; index < children.Length; index++)
@@ -187,7 +192,7 @@ public sealed class WorkflowRunLogView
     {
         var start = children[first];
         var stop = children[last];
-        var key = "g" + parent.Id.ToString(CultureInfo.InvariantCulture) + ":" + start.Id.ToString(CultureInfo.InvariantCulture);
+        var key = _flowName + "/g" + parent.Id.ToString(CultureInfo.InvariantCulture) + ":" + start.Id.ToString(CultureInfo.InvariantCulture);
         var expanded = Expanded(key, false, true);
         var count = last - first + 1;
         var total = TimeSpan.Zero;
@@ -200,7 +205,7 @@ public sealed class WorkflowRunLogView
         var detail = $"全部成功 · 平均 {WorkflowRunLogText.Duration(TimeSpan.FromTicks(total.Ticks / count))} / 圈";
         lines.Add(new WorkflowRunLogLine(key, null, depth, WorkflowRunLogRowKind.Cycle, title, detail, start.Started, stop.Ended,
             stop.Ended is { } ended ? ended - start.Started : null, WorkflowRunLogState.Succeeded, true, expanded, false, notices, null, null,
-            start.CanvasPath, 0, 0, path.Length == 0 ? title : path + " / " + title, null, true));
+            start.CanvasPath, 0, 0, path.Length == 0 ? title : path + " / " + title, null, true, _flowName));
         if (!expanded) return;
         for (var index = first; index <= last; index++)
             Emit(children[index], depth + 1, path, now, null, lines);
@@ -306,13 +311,13 @@ public static class WorkflowRunLogText
         return ((int)span.TotalHours).ToString(CultureInfo.InvariantCulture) + ":" + span.Minutes.ToString("00", CultureInfo.InvariantCulture) + ":" + span.Seconds.ToString("00", CultureInfo.InvariantCulture);
     }
 
-    /// <summary>选中记录的详情，一行一个“名称：值”；名称为空的行是“数据”下的一项（值是“键 = 值”）。</summary>
-    /// <param name="flowName">流程名。</param>
+    /// <summary>选中记录的详情，一行一个“名称：值”；名称为空的行是“数据”下的一项（值是“名称 = 值”）。</summary>
     /// <param name="line">记录。</param>
-    public static IReadOnlyList<(string Label, string Value)> DetailRows(string flowName, WorkflowRunLogLine line)
+    /// <param name="label">数据键换成显示名称（参数：节点类型、键）；为空时直接显示键。</param>
+    public static IReadOnlyList<(string Label, string Value)> DetailRows(WorkflowRunLogLine line, Func<string?, string, string>? label = null)
     {
         Guard.NotNull(line);
-        var rows = new List<(string, string)> { ("位置", line.Path.Length > 0 ? flowName + " / " + line.Path : flowName) };
+        var rows = new List<(string, string)> { ("位置", line.Path.Length > 0 ? line.FlowName + " / " + line.Path : line.FlowName) };
         if (line.NodeId is not null) rows.Add(("节点", $"{line.Title}（{line.NodeType ?? line.NodeId}，ID {line.NodeId}）"));
         if (KindTag(line.Kind) is { } tag) rows.Add(("种类", tag));
         if (line.State != WorkflowRunLogState.None) rows.Add(("结果", State(line.State)));
@@ -326,20 +331,27 @@ public static class WorkflowRunLogText
         if (!string.IsNullOrWhiteSpace(line.Detail)) rows.Add(("消息", line.Detail!));
         if (line.Data is { Count: > 0 } data)
             foreach (var pair in data.Where(pair => pair.Key != "Message"))
-                rows.Add((string.Empty, pair.Key + " = " + (pair.Value?.Text ?? Convert.ToString(pair.Value?.Scalar, CultureInfo.InvariantCulture))));
+                rows.Add((string.Empty, (label?.Invoke(line.NodeType, pair.Key) ?? pair.Key) + " = " + Value(pair.Value)));
         return rows;
     }
 
+    private static string Value(WorkflowTraceValue? value) => value?.Scalar switch
+    {
+        bool flag => flag ? "是" : "否",
+        null => value?.Text ?? string.Empty,
+        var scalar => value.Text ?? Convert.ToString(scalar, CultureInfo.InvariantCulture) ?? string.Empty
+    };
+
     /// <summary>选中记录的详情文字（复制用）。</summary>
-    /// <param name="flowName">流程名。</param>
     /// <param name="line">记录。</param>
-    public static string Details(string flowName, WorkflowRunLogLine line)
+    /// <param name="label">数据键换成显示名称；为空时直接显示键。</param>
+    public static string Details(WorkflowRunLogLine line, Func<string?, string, string>? label = null)
     {
         var text = new System.Text.StringBuilder();
         var data = false;
-        foreach (var (label, value) in DetailRows(flowName, line))
+        foreach (var (name, value) in DetailRows(line, label))
         {
-            if (label.Length > 0) text.Append(label).Append('：').AppendLine(value);
+            if (name.Length > 0) text.Append(name).Append('：').AppendLine(value);
             else
             {
                 if (!data) text.AppendLine("数据：");

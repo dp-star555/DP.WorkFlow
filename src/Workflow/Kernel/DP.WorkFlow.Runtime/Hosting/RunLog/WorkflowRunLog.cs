@@ -16,6 +16,10 @@ public sealed class WorkflowRunLog
     private readonly int _maxRows;
     private readonly Dictionary<string, Canvas> _canvases = new(StringComparer.Ordinal);
     private WorkflowRunLogRow? _lastFailed;
+    // 停点所在的层：停点引起的挂起 / 暂停 / 继续挂到这一层，不散落在最外层。
+    private WorkflowRunLogRow? _stopContainer;
+    // 当前的暂停是外部挂起引起的（挂起行已经说明了，暂停 / 继续不再单独记）。
+    private bool _holdPaused;
     private long _nextId;
 
     /// <summary>创建一次运行的日志。</summary>
@@ -255,10 +259,18 @@ public sealed class WorkflowRunLog
             case "RunCanceled":
             case "RunFaulted":
                 return;
+            case "Paused" when ReadText(runEvent, "ManualPause") != "True" && !string.IsNullOrEmpty(ReadText(runEvent, "HoldReasons")):
+                _holdPaused = true;
+                return;
+            case "Resumed" when _holdPaused:
+                _holdPaused = false;
+                _stopContainer = null;
+                return;
             default:
             {
                 var canvas = Resolve(runEvent);
-                var row = NewRow(canvas.Container, WorkflowRunLogRowKind.Lifecycle, LifecycleTitle(runEvent.EventType), runEvent.Timestamp);
+                var owner = runEvent.EventType is "HoldAdded" or "HoldRemoved" && _stopContainer is not null ? _stopContainer : canvas.Container;
+                var row = NewRow(owner, WorkflowRunLogRowKind.Lifecycle, LifecycleTitle(runEvent.EventType), runEvent.Timestamp);
                 if (row is null) return;
                 row.Detail = Message(runEvent);
                 row.Data = runEvent.Data;
@@ -274,6 +286,8 @@ public sealed class WorkflowRunLog
         var container = _lastFailed?.Parent ?? Root;
         if (runEvent.EventType == "FaultSessionStarted")
             FaultSessions++;
+        if (runEvent.EventType == "StopPointReached")
+            _stopContainer = container;
         var row = NewRow(container, WorkflowRunLogRowKind.Recovery, runEvent.EventType switch
         {
             "FaultRaised" => "故障上报",

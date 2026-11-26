@@ -1,10 +1,11 @@
+using System.Drawing.Drawing2D;
 using System.Globalization;
 using ModernUI.WinForms;
 
 namespace DP.WorkFlow.UI.WinForms;
 
 /// <summary>
-/// 运行日志页（只看）：选流程和某一次运行，把这次运行按子流程、循环圈、并行分支折叠成树。
+/// 运行日志页（只看）：选流程和某一次运行（或“全部流程”：各流程最近一次运行排在一起），把运行按子流程、循环圈、并行分支折叠成树。
 /// 成功结束的层自动收起，连续成功的圈合并成“第 a–b 圈”，有失败、故障、提示的层和正在运行的那一圈保持展开；
 /// 右边是选中记录的详情（位置、节点、结果、时间、令牌、消息和数据）。
 /// </summary>
@@ -15,6 +16,7 @@ namespace DP.WorkFlow.UI.WinForms;
 public sealed class WorkflowRunLogPage : WorkflowPage
 {
     private const int Indent = 18;
+    private const string AllFlows = "全部流程";
     private readonly WorkflowRunLogBook _book;
     private readonly WorkflowRunLogView _view = new() { ControlOnly = true };
     private readonly ModernSelect _flowPicker = new() { PlaceholderText = "流程" };
@@ -38,6 +40,9 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     private string? _flow;
     private int _runIndex = -1;
     private long _seenVersion = -1;
+    private bool _running;
+    private bool _all;
+    private bool _pending;
     private bool _updating;
 
     /// <summary>创建运行日志页。</summary>
@@ -62,6 +67,8 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         ColumnWidths(_table, 1, 0, 0, 0);
         foreach (DataGridViewColumn column in _table.Columns)
             column.SortMode = DataGridViewColumnSortMode.NotSortable;
+        _table.Columns[3].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+        _table.Columns[3].HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleRight;
         _table.CellValueNeeded += OnCellValueNeeded;
         _table.PaintCell = PaintCell;
         // 短列不按内容测列头（列头文字会被截成“结…”），直接按列头文字给够最小宽度。
@@ -93,6 +100,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         _runPicker.SelectedIndexChanged += (_, _) =>
         {
             if (_updating) return;
+            if (_flow is null) return;
             _runIndex = _runPicker.SelectedIndex;
             _follow.Checked = _runIndex == _runs.Count - 1;
             _view.ResetFolding();
@@ -119,7 +127,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     /// <summary>运行日志本。</summary>
     public WorkflowRunLogBook Book => _book;
 
-    /// <summary>当前看的流程名。</summary>
+    /// <summary>当前看的流程名；“全部流程”时为空。</summary>
     public string? FlowName => _flow;
 
     /// <summary>当前显示的行（快照）。</summary>
@@ -163,7 +171,9 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         try
         {
             _flowPicker.Items.Clear();
+            if (names.Count > 1) _flowPicker.Items.Add(AllFlows);
             foreach (var name in names) _flowPicker.Items.Add(name);
+            // 默认看全部流程；之前选了某个流程就留在它上面。
             var index = selected is null ? -1 : _flowPicker.Items.IndexOf(selected);
             if (index < 0 && names.Count > 0) index = 0;
             _flowPicker.SelectedIndex = index;
@@ -177,8 +187,11 @@ public sealed class WorkflowRunLogPage : WorkflowPage
 
     private void SelectFlow(string? name)
     {
-        if (name == _flow && name is not null) return;
+        if (name == AllFlows) name = null;
+        var all = name is null && _flowPicker.SelectedItem as string == AllFlows;
+        if (name == _flow && (name is not null || all == _all)) return;
         _flow = name;
+        _all = all;
         _runIndex = -1;
         _follow.Checked = true;
         _view.ResetFolding();
@@ -189,40 +202,74 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     {
         if (IsDisposed) return;
         var version = _book.Version;
-        var running = _runs.Count > 0 && _runs[Math.Min(Math.Max(_runIndex, 0), _runs.Count - 1)].Ended is null;
-        if (!force && version == _seenVersion && !running) return;
-        _seenVersion = version;
-        if (_flow is null)
+        if (!force)
         {
-            _runs = Array.Empty<WorkflowRunLogSummary>();
-            Show(Array.Empty<WorkflowRunLogLine>(), null);
-            return;
+            if (version == _seenVersion && !_running) return;
+            // 不跟随最新时界面不动（看的东西不会被刷走）；只提示有新记录。
+            if (!_follow.Checked)
+            {
+                if (!_pending && version != _seenVersion) ShowMessage("有新的运行记录；打开“跟随最新”后刷新");
+                _pending |= version != _seenVersion;
+                return;
+            }
         }
-        _runs = _book.Runs(_flow);
+        _seenVersion = version;
+        _pending = false;
+        var now = DateTimeOffset.UtcNow;
+        var flows = _all ? _book.Flows : _flow is null ? Array.Empty<string>() : new[] { _flow };
+        var lines = new List<WorkflowRunLogLine>();
+        var info = new RunInfo();
+        _runs = _flow is null ? Array.Empty<WorkflowRunLogSummary>() : _book.Runs(_flow);
         if (_follow.Checked || _runIndex >= _runs.Count) _runIndex = _runs.Count - 1;
         RefreshRunPicker();
-        var now = DateTimeOffset.UtcNow;
-        var snapshot = _book.Read(_flow, _runIndex, log => (Lines: _view.Build(log, now), log.EventCount, log.Truncated, log.FaultSessions));
-        Show(snapshot.Lines ?? Array.Empty<WorkflowRunLogLine>(), snapshot.Lines is null ? null : snapshot);
+        _running = false;
+        foreach (var flow in flows)
+        {
+            var runs = _all ? _book.Runs(flow) : _runs;
+            var index = _all ? runs.Count - 1 : _runIndex;
+            if (index < 0 || index >= runs.Count) continue;
+            var snapshot = _book.Read(flow, index, log => (Lines: _view.Build(log, now), log.EventCount, log.Truncated, log.FaultSessions));
+            if (snapshot.Lines is null) continue;
+            lines.AddRange(snapshot.Lines);
+            _running |= runs[index].Ended is null;
+            info = new RunInfo(info.Runs + 1, info.Events + snapshot.EventCount, info.Truncated || snapshot.Truncated,
+                info.FaultSessions + snapshot.FaultSessions, info.Failures + runs[index].Failures, info.Notices + runs[index].Notices);
+        }
+        RefreshFilterCounts(info);
+        Show(lines, info);
     }
+
+    /// <summary>正在看的运行（全部流程时是各流程最近一次的合计）。</summary>
+    private readonly record struct RunInfo(int Runs, long Events, bool Truncated, int FaultSessions, int Failures, int Notices);
 
     private void RefreshRunPicker()
     {
         _updating = true;
         try
         {
-            var texts = _runs.Select(Describe).ToArray();
+            var texts = _all ? new[] { "各流程最近一次运行" } : _runs.Select(Describe).ToArray();
             if (_runPicker.Items.Count != texts.Length || !texts.Select((text, index) => Equals(_runPicker.Items[index], text)).All(same => same))
             {
                 _runPicker.Items.Clear();
                 foreach (var text in texts) _runPicker.Items.Add(text);
             }
-            _runPicker.SelectedIndex = _runIndex >= 0 && _runIndex < _runPicker.Items.Count ? _runIndex : -1;
-            var failures = _runIndex >= 0 && _runIndex < _runs.Count ? _runs[_runIndex].Failures : 0;
-            var notices = _runIndex >= 0 && _runIndex < _runs.Count ? _runs[_runIndex].Notices : 0;
+            _runPicker.Enabled = !_all;
+            _runPicker.SelectedIndex = _all ? 0 : _runIndex >= 0 && _runIndex < _runPicker.Items.Count ? _runIndex : -1;
+        }
+        finally
+        {
+            _updating = false;
+        }
+    }
+
+    private void RefreshFilterCounts(RunInfo info)
+    {
+        _updating = true;
+        try
+        {
             var selected = _filter.SelectedIndex;
-            _filter.Items[1] = failures > 0 ? $"失败与故障 {failures}" : "失败与故障";
-            _filter.Items[2] = notices > 0 ? $"提示 {notices}" : "提示";
+            _filter.Items[1] = info.Failures > 0 ? $"失败与故障 {info.Failures}" : "失败与故障";
+            _filter.Items[2] = info.Notices > 0 ? $"提示 {info.Notices}" : "提示";
             _filter.SelectedIndex = selected;
         }
         finally
@@ -238,7 +285,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         return text + " · " + run.Steps.ToString("N0", CultureInfo.InvariantCulture) + " 步";
     }
 
-    private void Show(IReadOnlyList<WorkflowRunLogLine> lines, (IReadOnlyList<WorkflowRunLogLine> Lines, long EventCount, bool Truncated, int FaultSessions)? snapshot)
+    private void Show(IReadOnlyList<WorkflowRunLogLine> lines, RunInfo info)
     {
         var selectedKey = SelectedLine()?.Key;
         var first = _table.RowCount > 0 ? _table.FirstDisplayedScrollingRowIndex : -1;
@@ -270,11 +317,11 @@ public sealed class WorkflowRunLogPage : WorkflowPage
             _updating = false;
         }
         ShowDetails();
-        if (snapshot is { } info)
+        if (info.Runs > 0)
         {
-            var failures = _runIndex >= 0 && _runIndex < _runs.Count ? _runs[_runIndex].Failures : 0;
-            HeaderOf(_tableCard).Subtitle = $"{lines.Count.ToString("N0", CultureInfo.InvariantCulture)} 行 · 失败 {failures}";
-            var text = $"本次运行 {info.EventCount.ToString("N0", CultureInfo.InvariantCulture)} 条 · 故障会话 {info.FaultSessions}";
+            HeaderOf(_tableCard).Subtitle = $"{lines.Count.ToString("N0", CultureInfo.InvariantCulture)} 行 · 失败 {info.Failures}";
+            var text = (_all ? $"{info.Runs} 个流程各自最近一次运行共 " : "本次运行 ")
+                       + $"{info.Events.ToString("N0", CultureInfo.InvariantCulture)} 条 · 故障会话 {info.FaultSessions}";
             if (info.Truncated) text += $" · 超过 {_book.MaxRowsPerRun.ToString("N0", CultureInfo.InvariantCulture)} 行，后面的不再记";
             _status.Summary = text + $" · 保留最近 {_book.MaxRuns} 次运行 · 成功的子流程、循环、并行分支自动收起";
         }
@@ -283,6 +330,8 @@ public sealed class WorkflowRunLogPage : WorkflowPage
             HeaderOf(_tableCard).Subtitle = null;
             _status.Summary = _flow is null ? "还没有流程运行过。" : "这个流程还没有运行记录。";
         }
+        if (!_pending && _status.Message.StartsWith("有新的运行记录", StringComparison.Ordinal))
+            _status.Message = string.Empty;
     }
 
     private int IndexOf(string key)
@@ -301,18 +350,19 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     private void ShowDetails()
     {
         var line = SelectedLine();
-        if (line is null || _flow is null)
+        if (line is null)
         {
             _detailsText = string.Empty;
             HeaderOf(_detailsCard).Subtitle = null;
             _details.Show(new[] { new WorkflowFact("在左边选一条记录查看详情") });
             return;
         }
-        _detailsText = WorkflowRunLogText.Details(_flow, line).Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
+        string Label(string? nodeType, string key) => _book.DataLabel(line.FlowName, nodeType, key);
+        _detailsText = WorkflowRunLogText.Details(line, Label).Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
         HeaderOf(_detailsCard).Subtitle = line.Title;
         var facts = new List<WorkflowFact>();
         var data = false;
-        foreach (var (label, value) in WorkflowRunLogText.DetailRows(_flow, line))
+        foreach (var (label, value) in WorkflowRunLogText.DetailRows(line, Label))
         {
             if (label.Length == 0)
             {
@@ -396,70 +446,133 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     /// <summary>画运行日志的一格；返回是否已画（未画的交给表格默认绘制）。</summary>
     private bool PaintCell(DataGridViewCellPaintingEventArgs e)
     {
-        if (e.RowIndex < 0 || e.RowIndex >= _lines.Count || e.Graphics is null) return false;
+        if (e.RowIndex < 0 || e.RowIndex >= _lines.Count || e.Graphics is null || e.CellStyle is null) return false;
         var line = _lines[e.RowIndex];
         var colors = WorkflowWinFormsTheme.Palette.Colors;
         var selected = (e.State & DataGridViewElementStates.Selected) != 0;
-        if (e.ColumnIndex == 2)
-        {
-            e.PaintBackground(e.CellBounds, selected);
-            var color = selected ? e.CellStyle!.SelectionForeColor : StateColor(line.State, colors);
-            TextRenderer.DrawText(e.Graphics, WorkflowRunLogText.State(line.State), e.CellStyle!.Font, e.CellBounds, color,
-                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
-            return true;
-        }
-        if (e.ColumnIndex != 0) return false;
-        e.PaintBackground(e.CellBounds, selected);
+        var graphics = e.Graphics;
         var bounds = e.CellBounds;
-        var font = e.CellStyle!.Font;
+        var font = e.CellStyle.Font!;
         var text = selected ? e.CellStyle.SelectionForeColor : WorkflowWinFormsTheme.Solid(colors.Text);
         var muted = selected ? e.CellStyle.SelectionForeColor : WorkflowWinFormsTheme.Solid(colors.TextMuted);
+        var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
+        var pad = _table.LogicalToDeviceUnits(6);
+        e.PaintBackground(bounds, selected);
+        switch (e.ColumnIndex)
+        {
+            case 1:
+                TextRenderer.DrawText(graphics, WorkflowRunLogText.Time(line.Started), font, Inner(bounds, pad), muted, flags);
+                return true;
+            case 2:
+            {
+                // 结果：前面一个彩色圆点，文字同色；没有结果的行（消息、提示）留空。
+                if (line.State == WorkflowRunLogState.None) return true;
+                var color = selected ? e.CellStyle.SelectionForeColor : StateColor(line.State, colors);
+                var dot = _table.LogicalToDeviceUnits(7);
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var brush = new SolidBrush(color))
+                    graphics.FillEllipse(brush, bounds.Left + pad, bounds.Top + (bounds.Height - dot) / 2f, dot, dot);
+                graphics.SmoothingMode = SmoothingMode.Default;
+                var left = pad + dot + _table.LogicalToDeviceUnits(5);
+                TextRenderer.DrawText(graphics, WorkflowRunLogText.State(line.State), font,
+                    new Rectangle(bounds.Left + left, bounds.Top, Math.Max(0, bounds.Width - left - pad), bounds.Height), color, flags);
+                return true;
+            }
+            case 3:
+                if (line.Elapsed is { } elapsed)
+                    TextRenderer.DrawText(graphics, WorkflowRunLogText.Duration(elapsed), font, Inner(bounds, pad),
+                        line.State == WorkflowRunLogState.Running && !selected ? WorkflowWinFormsTheme.Solid(colors.Accent) : text,
+                        (flags & ~TextFormatFlags.Left) | TextFormatFlags.Right);
+                return true;
+            case not 0:
+                return false;
+        }
+
+        // 失败所在的各层：最左边一条红色竖条。
         if (line.HasFailure)
             using (var bar = new SolidBrush(WorkflowWinFormsTheme.Solid(colors.Error)))
-                e.Graphics.FillRectangle(bar, bounds.Left, bounds.Top + 2, 3, bounds.Height - 4);
-        // 每一层一条竖向引导线，层级一眼能看出来；有下一层的行画展开 / 收起箭头。
+                graphics.FillRectangle(bar, bounds.Left, bounds.Top, _table.LogicalToDeviceUnits(3), bounds.Height - 1);
+        // 每一层一条浅色竖向引导线，层级一眼能看出来。
         var indent = _table.LogicalToDeviceUnits(Indent);
-        var glyphSize = _table.LogicalToDeviceUnits(16);
-        using (var guide = new Pen(WorkflowWinFormsTheme.Solid(colors.Line)))
+        var glyph = _table.LogicalToDeviceUnits(16);
+        var origin = bounds.Left + _table.LogicalToDeviceUnits(4);
+        using (var guide = new Pen(selected ? Color.FromArgb(90, e.CellStyle.SelectionForeColor) : WorkflowWinFormsTheme.Solid(colors.Line.Mix(colors.Surface, .35))))
             for (var level = 1; level <= line.Depth; level++)
             {
-                var guideX = bounds.Left + _table.LogicalToDeviceUnits(4) + (level - 1) * indent + glyphSize / 2;
-                e.Graphics.DrawLine(guide, guideX, bounds.Top, guideX, bounds.Bottom);
+                var guideX = origin + (level - 1) * indent + glyph / 2;
+                graphics.DrawLine(guide, guideX, bounds.Top, guideX, bounds.Bottom);
             }
-        var x = bounds.Left + _table.LogicalToDeviceUnits(4) + line.Depth * indent;
-        var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
-        if (line.HasChildren)
-            TextRenderer.DrawText(e.Graphics, line.Expanded ? "▾" : "▸", font, new Rectangle(x, bounds.Top, glyphSize, bounds.Height), text,
-                flags | TextFormatFlags.HorizontalCenter);
-        x += glyphSize + _table.LogicalToDeviceUnits(2);
+        var x = origin + line.Depth * indent;
+        if (line.HasChildren) DrawChevron(graphics, new Rectangle(x, bounds.Top, glyph, bounds.Height), line.Expanded, muted);
+        x += glyph + _table.LogicalToDeviceUnits(4);
+
+        // 种类标记：圆角浅底胶囊（失败红、恢复 / 提示黄、合并 / 消息灰、其余主色）。
         var tagText = line.IsGroup ? "已合并" : line.Kind == WorkflowRunLogRowKind.Run ? null : WorkflowRunLogText.KindTag(line.Kind);
         if (tagText is not null)
         {
-            var size = TextRenderer.MeasureText(e.Graphics, tagText, font, Size.Empty, flags);
-            var tagColor = selected ? e.CellStyle.SelectionForeColor : TagColor(line, colors);
-            using (var pen = new Pen(tagColor))
-                e.Graphics.DrawRectangle(pen, x, bounds.Top + 4, size.Width + 6, bounds.Height - 9);
-            TextRenderer.DrawText(e.Graphics, tagText, font, new Rectangle(x + 3, bounds.Top, size.Width + 2, bounds.Height), tagColor, flags);
-            x += size.Width + 14;
+            var (fore, back) = TagColors(line, colors);
+            if (selected) (fore, back) = (e.CellStyle.SelectionForeColor, Color.FromArgb(50, e.CellStyle.SelectionForeColor));
+            using var tagFont = new Font(font.FontFamily, font.Size * .86f, font.Style, font.Unit);
+            var size = TextRenderer.MeasureText(graphics, tagText, tagFont, Size.Empty, flags);
+            var height = Math.Min(bounds.Height - _table.LogicalToDeviceUnits(6), size.Height + _table.LogicalToDeviceUnits(2));
+            var pill = new Rectangle(x, bounds.Top + (bounds.Height - height) / 2, size.Width + _table.LogicalToDeviceUnits(8), height);
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var path = Rounded(pill, height / 2))
+            using (var brush = new SolidBrush(back))
+                graphics.FillPath(brush, path);
+            graphics.SmoothingMode = SmoothingMode.Default;
+            TextRenderer.DrawText(graphics, tagText, tagFont, pill, fore,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+            x = pill.Right + _table.LogicalToDeviceUnits(6);
         }
-        var titleFont = line.Kind is WorkflowRunLogRowKind.Run or WorkflowRunLogRowKind.SubFlow or WorkflowRunLogRowKind.LoopBlock or WorkflowRunLogRowKind.Parallel
-            ? new Font(font!, FontStyle.Bold) : font!;
-        try
+
+        // 标题：结构层（运行、子流程、循环、并行）加粗；合并的圈用浅色。
+        var strong = line.Kind is WorkflowRunLogRowKind.Run or WorkflowRunLogRowKind.SubFlow or WorkflowRunLogRowKind.LoopBlock or WorkflowRunLogRowKind.Parallel;
+        using (var titleFont = strong ? new Font(font, FontStyle.Bold) : null)
         {
-            var titleSize = TextRenderer.MeasureText(e.Graphics, line.Title, titleFont, Size.Empty, flags);
-            TextRenderer.DrawText(e.Graphics, line.Title, titleFont, new Rectangle(x, bounds.Top, Math.Max(0, bounds.Right - x), bounds.Height), text, flags | TextFormatFlags.EndEllipsis);
-            x += titleSize.Width + 8;
-        }
-        finally
-        {
-            if (!ReferenceEquals(titleFont, font)) titleFont.Dispose();
+            var useFont = titleFont ?? font;
+            var titleSize = TextRenderer.MeasureText(graphics, line.Title, useFont, Size.Empty, flags);
+            TextRenderer.DrawText(graphics, line.Title, useFont, new Rectangle(x, bounds.Top, Math.Max(0, bounds.Right - x - pad), bounds.Height),
+                line.IsGroup ? muted : text, flags);
+            x += titleSize.Width + _table.LogicalToDeviceUnits(10);
         }
         var detail = line.Detail;
-        if (line.NoticeCount > 0 && line.Kind != WorkflowRunLogRowKind.Notice && !line.Expanded)
+        if (line.NoticeCount > 0 && line.Kind != WorkflowRunLogRowKind.Notice && !line.Expanded && !line.IsGroup)
             detail = (string.IsNullOrEmpty(detail) ? string.Empty : detail + " · ") + $"提示 {line.NoticeCount}";
-        if (!string.IsNullOrEmpty(detail) && x < bounds.Right - 20)
-            TextRenderer.DrawText(e.Graphics, detail, font, new Rectangle(x, bounds.Top, bounds.Right - x - 4, bounds.Height), muted, flags | TextFormatFlags.EndEllipsis);
+        else if (line.IsGroup && line.NoticeCount > 0)
+            detail += $" · 提示 {line.NoticeCount}";
+        if (!string.IsNullOrEmpty(detail) && x < bounds.Right - pad * 3)
+            TextRenderer.DrawText(graphics, detail, font, new Rectangle(x, bounds.Top, bounds.Right - x - pad, bounds.Height), muted, flags);
         return true;
+    }
+
+    private static Rectangle Inner(Rectangle bounds, int pad) => new(bounds.Left + pad, bounds.Top, Math.Max(0, bounds.Width - pad * 2), bounds.Height);
+
+    /// <summary>展开 / 收起箭头：抗锯齿的折线（收起朝右，展开朝下）。</summary>
+    private void DrawChevron(Graphics graphics, Rectangle box, bool expanded, Color color)
+    {
+        var half = _table.LogicalToDeviceUnits(4) / 1f;
+        var cx = box.Left + box.Width / 2f;
+        var cy = box.Top + box.Height / 2f;
+        var points = expanded
+            ? new[] { new PointF(cx - half, cy - half / 2), new PointF(cx, cy + half / 2), new PointF(cx + half, cy - half / 2) }
+            : new[] { new PointF(cx - half / 2, cy - half), new PointF(cx + half / 2, cy), new PointF(cx - half / 2, cy + half) };
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using (var pen = new Pen(color, _table.LogicalToDeviceUnits(2) * .8f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+            graphics.DrawLines(pen, points);
+        graphics.SmoothingMode = SmoothingMode.Default;
+    }
+
+    private static GraphicsPath Rounded(Rectangle bounds, int radius)
+    {
+        var path = new GraphicsPath();
+        var d = Math.Max(1, Math.Min(radius * 2, Math.Min(bounds.Width, bounds.Height)));
+        path.AddArc(bounds.Left, bounds.Top, d, d, 180, 90);
+        path.AddArc(bounds.Right - d, bounds.Top, d, d, 270, 90);
+        path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
+        path.AddArc(bounds.Left, bounds.Bottom - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
     }
 
     private static Color StateColor(WorkflowRunLogState state, WorkflowThemeColors colors) => WorkflowWinFormsTheme.Solid(state switch
@@ -471,12 +584,16 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         _ => colors.TextMuted
     });
 
-    private static Color TagColor(WorkflowRunLogLine line, WorkflowThemeColors colors) => WorkflowWinFormsTheme.Solid(line.Kind switch
+    private static (Color Fore, Color Back) TagColors(WorkflowRunLogLine line, WorkflowThemeColors colors)
     {
-        WorkflowRunLogRowKind.Fault => colors.Error,
-        WorkflowRunLogRowKind.Recovery or WorkflowRunLogRowKind.Notice => colors.Warning,
-        WorkflowRunLogRowKind.Message or WorkflowRunLogRowKind.Lifecycle => colors.TextMuted,
-        _ when line.IsGroup => colors.TextMuted,
-        _ => colors.Accent
-    });
+        var (fore, back) = line.Kind switch
+        {
+            WorkflowRunLogRowKind.Fault => (colors.Error, colors.ErrorSurface),
+            WorkflowRunLogRowKind.Recovery or WorkflowRunLogRowKind.Notice => (colors.Warning, colors.WarningSurface),
+            WorkflowRunLogRowKind.Message or WorkflowRunLogRowKind.Lifecycle => (colors.TextMuted, colors.SurfaceAlt),
+            _ when line.IsGroup => (colors.TextMuted, colors.SurfaceAlt),
+            _ => (colors.Accent, colors.AccentSoft)
+        };
+        return (WorkflowWinFormsTheme.Solid(fore), WorkflowWinFormsTheme.Solid(back));
+    }
 }

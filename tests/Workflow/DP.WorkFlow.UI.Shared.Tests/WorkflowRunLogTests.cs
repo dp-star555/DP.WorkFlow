@@ -162,6 +162,41 @@ public sealed class WorkflowRunLogTests
     }
 
     [Fact]
+    public async Task Details_ShowDataNames_AndLinesCarryTheirFlow()
+    {
+        var book = new WorkflowRunLogBook();
+        using var center = CreateCenter(failOnCycle: 3);
+        var flow = center.AddFlow(LoopNodeDocument());
+        book.Attach(center);
+
+        await flow.RunAsync();
+        Assert.True(flow.Outlet.WaitIdle(TimeSpan.FromSeconds(5)));
+
+        var loopType = new LoopNodeModel().NodeType;
+        Assert.Equal("循环次数", book.DataLabel("循环节点", loopType, "Iterations"));
+        Assert.Equal("耗时 (ms)", book.DataLabel("循环节点", loopType, "Elapsed"));
+        Assert.Equal("输出 · 循环次数", book.DataLabel("循环节点", loopType, "OutputValue.Iterations"));
+        Assert.Equal("没有名称的键", book.DataLabel("循环节点", loopType, "没有名称的键"));
+
+        var lines = book.Read("循环节点", 0, log => new WorkflowRunLogView { ExpandAll = true }.Build(log, DateTimeOffset.UtcNow))!;
+        Assert.All(lines, line => Assert.Equal("循环节点", line.FlowName));
+        Assert.All(lines, line => Assert.StartsWith("循环节点/", line.Key, StringComparison.Ordinal));
+
+        var line = lines[0] with
+        {
+            Data = new Dictionary<string, WorkflowTraceValue>
+            {
+                ["CanRecoverInPlace"] = new(WorkflowTraceValueKind.Scalar, "Boolean", "True", true),
+                ["Custom"] = new(WorkflowTraceValueKind.Scalar, "Int32", "7", 7)
+            }
+        };
+        var rows = WorkflowRunLogText.DetailRows(line, (type, key) => book.DataLabel(line.FlowName, type, key));
+        Assert.Equal("循环节点", rows[0].Value);
+        Assert.Contains((string.Empty, "可就地恢复 = 是"), rows);
+        Assert.Contains((string.Empty, "Custom = 7"), rows);
+    }
+
+    [Fact]
     public void Book_KeepsOnlyTheLatestRuns()
     {
         var book = new WorkflowRunLogBook(maxRuns: 2);

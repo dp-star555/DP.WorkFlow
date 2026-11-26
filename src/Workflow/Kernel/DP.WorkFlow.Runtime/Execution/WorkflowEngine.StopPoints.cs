@@ -137,7 +137,8 @@ public sealed partial class WorkflowEngine
         var root = Root;
         token.SeenStopEpoch = CurrentStopEpoch;
         var id = Guid.NewGuid();
-        var hold = $"停点 {node.Id}（{id.ToString("N").Substring(0, 8)}）";
+        // 挂起原因带节点名称（日志、界面里直接能认出是哪个节点），后面跟节点 ID 和这次停点的短号。
+        var hold = $"停点 {Named(node)} #{id.ToString("N").Substring(0, 8)}";
         var canRecoverInPlace = _boundPlan.GetHandler(node.Id) is IWorkflowInPlaceRecoveryNodeHandler;
         var position = PositionOf(node.Id, token);
         RecordRunEvent(new WorkflowRunEventDraft(
@@ -445,4 +446,8 @@ public sealed partial class WorkflowEngine
             }
         }
     }
+
+    /// <summary>给人看的节点名：“名称（ID）”，没有名称时就是 ID。</summary>
+    private static string Named(IWorkflowNodeModel node) =>
+        string.IsNullOrWhiteSpace(node.Title) ? node.Id : $"{node.Title}（{node.Id}）";
 }
