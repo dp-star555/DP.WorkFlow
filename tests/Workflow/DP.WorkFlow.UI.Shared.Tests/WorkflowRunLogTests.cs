@@ -260,6 +260,35 @@ public sealed class WorkflowRunLogTests
     }
 
     [Fact]
+    public async Task Sink_RecordsHostsOutsideTheRunCenter_WithNodeTitles()
+    {
+        var book = new WorkflowRunLogBook();
+        WorkflowRuntimeHost? host = null;
+        var options = new WorkflowExecutionOptions();
+        options.Recording.Sink = book.CreateSink("试运行", () => host?.Plan);
+        host = new WorkflowRuntimeHost(
+            new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes(),
+            new WorkflowNodeHandlerCatalog().RegisterStandardNodeHandlers().RegisterCompositeNodeHandlers(),
+            options);
+        using var owned = host;
+        var actions = new WorkflowActionRegistry().Register("Work", (_, _) => ValueTask.FromResult<object?>(null));
+        var document = LoopNodeDocument();
+        ((LoopNodeModel)document.Nodes.Single(item => item.Node.Id == "Loop").Node).Iterations = 2;
+        host.Configure(document, new WorkflowContext(new WorkflowServiceProvider().Add<IWorkflowActionRegistry>(actions)));
+
+        Assert.True((await host.RunAsync()).Success);
+        Assert.True((await host.RunAsync()).Success);
+
+        // 两次启动各记一次；节点名称取自宿主当时的执行计划。
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (book.Runs("试运行").Count(run => run.Ended is not null) < 2 && DateTime.UtcNow < deadline) await Task.Delay(20);
+        Assert.Equal(2, book.Runs("试运行").Count);
+        var lines = book.Read("试运行", 1, log => new WorkflowRunLogView { ExpandAll = true }.Build(log, DateTimeOffset.UtcNow))!;
+        Assert.Contains(lines, line => line.NodeId == "Work" && line.Title == "扫描");
+        Assert.DoesNotContain(lines, line => line.FlowName != "试运行");
+    }
+
+    [Fact]
     public void Book_KeepsOnlyTheLatestRuns()
     {
         var book = new WorkflowRunLogBook(maxRuns: 2);

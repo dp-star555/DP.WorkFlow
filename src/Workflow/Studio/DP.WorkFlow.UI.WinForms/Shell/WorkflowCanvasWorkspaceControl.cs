@@ -7,9 +7,9 @@ namespace DP.WorkFlow.UI.WinForms;
 /// 画布工作区（设计页的主体，按设计稿排成卡片）：
 /// 上面一条命令卡（宿主的“文件”等条目、撤销、重做、路径和“已修改”标记；右边适合画布、自动布局、对齐、校验、调试运行），
 /// 中间左边工具箱卡、中间画布卡、右边可选的检查器卡（<see cref="Inspector"/>，默认隐藏，可浮出或固定，见 <see cref="InspectorPinned"/>），
-/// 下面页签卡“诊断 | 节点提示 | 运行监视 | 公共数据”（默认收起成一条页签名，见 <see cref="BottomExpanded"/>），最下面一行状态（节点数、连线数、选中节点、宿主消息）。
+/// 下面页签卡“诊断 | 节点提示 | 公共数据”（默认收起成一条页签名，见 <see cref="BottomExpanded"/>），最下面一行状态（节点数、连线数、选中节点、宿主消息）。
 /// 工作台主画布和节点窗口的子画布共用这一个控件；两者的差别只在运行命令（<see cref="RunCommands"/>）、
-/// 监视来源（<see cref="WorkflowRuntimeMonitorControl.Source"/>）、检查器和宿主加入的条目。
+/// 检查器和宿主加入的条目。运行明细看运行日志页。
 /// </summary>
 public sealed class WorkflowCanvasWorkspaceControl : UserControl
 {
@@ -51,7 +51,6 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     private readonly ModernTabControl _bottomTabs = new();
     private readonly TabPage _diagnosticsPage = new() { Name = "diagnosticsPage", Text = "诊断", Padding = new Padding(6) };
     private readonly TabPage _noticesPage = new() { Name = "noticesPage", Text = "节点提示", Padding = new Padding(6) };
-    private readonly TabPage _runtimePage = new() { Name = "runtimePage", Text = "运行监视", Padding = new Padding(6) };
     private readonly TabPage _publicDataPage = new() { Name = "publicDataPage", Text = "公共数据", Padding = new Padding(6) };
     private readonly WorkflowStatusLine _status = new();
     private readonly WorkflowCardHeader _inspectorHeader = new("节点属性");
@@ -86,10 +85,8 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
       };
         Toolbox = new WorkflowToolboxControl { Dock = DockStyle.Fill };
         Diagnostics = new WorkflowDiagnosticsControl { Dock = DockStyle.Fill };
-        RuntimeMonitor = new WorkflowRuntimeMonitorControl { Dock = DockStyle.Fill };
         Notices = new WorkflowNoticesControl { Dock = DockStyle.Fill };
         _diagnosticsPage.Controls.Add(Diagnostics);
-        _runtimePage.Controls.Add(RuntimeMonitor);
         _noticesPage.Controls.Add(Notices);
         PublicData = new WorkflowPublicDataPage { Dock = DockStyle.Fill };
         _publicDataPage.Controls.Add(PublicData);
@@ -97,7 +94,6 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         PublicData.EditError += (_, message) => InteractionError?.Invoke(this, message);
         _bottomTabs.TabPages.Add(_diagnosticsPage);
         _bottomTabs.TabPages.Add(_noticesPage);
-        _bottomTabs.TabPages.Add(_runtimePage);
         _bottomTabs.TabPages.Add(_publicDataPage);
         _bottomTabs.Dock = DockStyle.Fill;
         Notices.CountChanged += (_, _) => SetTabText(_noticesPage, Notices.NoticeCount == 0 ? "节点提示" : $"节点提示 ({Notices.NoticeCount})");
@@ -349,9 +345,6 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     /// <summary>诊断面板。</summary>
     public WorkflowDiagnosticsControl Diagnostics { get; }
 
-    /// <summary>运行监视。</summary>
-    public WorkflowRuntimeMonitorControl RuntimeMonitor { get; }
-
     /// <summary>提示页：全部节点提示与画布级提示，提示板取自画布会话（运行绑定设置）。</summary>
     public WorkflowNoticesControl Notices { get; }
 
@@ -425,10 +418,10 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     /// <summary>画布交互或运行入口报错时发生。</summary>
     public event EventHandler<string>? InteractionError;
 
-    /// <summary>运行以故障结束时发生（故障详情已写入运行监视）。</summary>
+    /// <summary>运行以故障结束时发生（故障详情在运行日志里）。</summary>
     public event EventHandler<string>? RunFaulted;
 
-    /// <summary>运行前检查诊断，再执行运行命令；故障时切到运行监视。</summary>
+    /// <summary>运行前检查诊断，再执行运行命令；故障时通知宿主。</summary>
     public async Task RunAsync()
     {
         if (RunCommands is not { } commands) return;
@@ -443,8 +436,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             var result = await commands.RunAsync();
             if (!result.Success && result.State == E_WorkflowExecutionState.Faulted)
             {
-                // 运行失败只记录：失败节点标红、故障写入运行监视轨迹，切到运行监视查看，不弹窗。
-                ShowBottom(_runtimePage);
+                // 运行失败只记录：失败节点标红、故障写进运行日志，不弹窗。
                 RunFaulted?.Invoke(this, $"流程运行失败：{result.Message}");
             }
         }
@@ -455,11 +447,8 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         }
     }
 
-    /// <summary>切到运行监视页。</summary>
-    public void ShowRuntimeMonitor() => ShowBottom(_runtimePage);
-
     /// <summary>
-    /// 底部页签（诊断、节点提示、运行监视、公共数据）是否展开。默认收起成一条页签名，画布占满中间；
+    /// 底部页签（诊断、节点提示、公共数据）是否展开。默认收起成一条页签名，画布占满中间；
     /// 校验、运行失败、定位提示等会自动展开到对应页。
     /// </summary>
     public bool BottomExpanded

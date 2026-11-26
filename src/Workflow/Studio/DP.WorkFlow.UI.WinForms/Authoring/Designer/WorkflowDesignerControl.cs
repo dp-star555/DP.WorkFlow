@@ -94,7 +94,7 @@ public sealed partial class WorkflowDesignerControl : Control
 
     /// <summary>
     /// 只读：只能平移、缩放、选中和看提示，不能拖动、连线、删除、粘贴、拖入节点，双击也不打开节点编辑。
-    /// 运行监视页的画布用它。
+    /// 运行页的画布用它。
     /// </summary>
     [System.ComponentModel.DefaultValue(false)]
     public bool ReadOnly { get; set; }

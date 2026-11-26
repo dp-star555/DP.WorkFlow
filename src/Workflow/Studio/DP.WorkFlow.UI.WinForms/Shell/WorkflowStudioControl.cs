@@ -4,7 +4,7 @@ using ModernUI.WinForms;
 namespace DP.WorkFlow.UI.WinForms;
 
 /// <summary>
-/// WinForms 工作流综合工作台，组合工具箱、画布、参数、诊断、运行监视和文档命令。
+/// WinForms 工作流综合工作台，组合工具箱、画布、参数、诊断和文档命令。
 /// 固定分栏及工具栏位于同名 Designer.cs，Session/Runtime 绑定行为保留在本文件。
 /// </summary>
 public sealed partial class WorkflowStudioControl : UserControl
@@ -23,7 +23,7 @@ public sealed partial class WorkflowStudioControl : UserControl
     {
         InitializeComponent();
 
-        // 画布工具栏、工具箱、诊断与运行监视来自共用的画布工作区；这里只加工作台自己的文档命令和右侧检查器。
+        // 画布工具栏、工具箱、诊断来自共用的画布工作区；这里只加工作台自己的文档命令和右侧检查器。
         AddMenuItem(fileMenu, "新建", ModernIconKind.FileNew, NewDocument);
         AddMenuItem(fileMenu, "打开…", ModernIconKind.FolderOpen, OpenDocument);
         AddMenuItem(fileMenu, "保存", ModernIconKind.Save, () => SaveDocument(false));
@@ -51,7 +51,7 @@ public sealed partial class WorkflowStudioControl : UserControl
         menu.DropDownItems.Add(item);
     }
 
-    /// <summary>获取共用的画布工作区（工具栏、工具箱、画布、诊断、运行监视）。</summary>
+    /// <summary>获取共用的画布工作区（工具栏、工具箱、画布、诊断）。</summary>
     public WorkflowCanvasWorkspaceControl CanvasWorkspace => canvasWorkspace;
 
     /// <summary>获取画布控件。</summary>
@@ -137,9 +137,6 @@ public sealed partial class WorkflowStudioControl : UserControl
 
     private bool _hasToolWindows;
 
-    /// <summary>获取运行监视器。</summary>
-    public WorkflowRuntimeMonitorControl RuntimeMonitor => canvasWorkspace.RuntimeMonitor;
-
     /// <summary>获取或设置文档工作区。</summary>
     public WorkflowDocumentWorkspace? Workspace
     {
@@ -180,7 +177,6 @@ public sealed partial class WorkflowStudioControl : UserControl
             if (_runtimeBinding is not null) _runtimeBinding.OperationFailed -= OnBindingOperationFailed;
             _runtimeBinding = value;
             if (_runtimeBinding is not null) _runtimeBinding.OperationFailed += OnBindingOperationFailed;
-            RuntimeMonitor.RuntimeBinding = value;
             if (_runtimeBinding is not null)
             {
                 if (_navigator is not null)

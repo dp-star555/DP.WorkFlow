@@ -2,7 +2,7 @@ namespace DP.WorkFlow.UI.WinForms;
 
 /// <summary>
 /// 统一刷新时钟（R4-b）：整个界面只用一个界面线程定时器，按 <see cref="WorkflowUiRefresh.FramesPerSecond"/> 走帧，
-/// 每帧只通知看得见的页面。画布动画、运行监视、视觉预览都挂在这里，不再各开定时器。
+/// 每帧只通知看得见的页面。画布动画、视觉预览都挂在这里，不再各开定时器。
 /// </summary>
 /// <remarks>
 /// 只在界面线程使用。没有订阅者时定时器停止。控件释放时自动取消订阅。

@@ -5,7 +5,7 @@ using ModernUI.WinForms;
 namespace DP.WorkFlow.UI.WinForms;
 
 /// <summary>
-/// 运行日志页（只看）：选流程和某一次运行（或“全部流程”：各流程最近一次运行排在一起），把运行按子流程、循环圈、并行分支折叠成树。
+/// 运行日志页（只看）：选流程和某一次运行（或“全部流程”：各流程同一次序的运行排在一起，默认最近一次，也能选倒数第几次），把运行按子流程、循环圈、并行分支折叠成树。
 /// 成功结束的层自动收起，连续成功的圈合并成“第 a–b 圈”，只展开最近一次失败所在的层和正在运行的那一圈（更早的失败收起，行首红标）；
 /// 右边是选中记录的详情（位置、节点、结果、时间、令牌、消息和数据）。
 /// </summary>
@@ -102,9 +102,9 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         _runPicker.SelectedIndexChanged += (_, _) =>
         {
             if (_updating) return;
-            if (_flow is null) return;
+            if (_flow is null && !_all) return;
             _runIndex = _runPicker.SelectedIndex;
-            _follow.Checked = _runIndex == _runs.Count - 1;
+            _follow.Checked = _runIndex == _runPicker.Items.Count - 1;
             _view.ResetFolding();
             Rebuild(true);
         };
@@ -224,13 +224,16 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         var lines = new List<WorkflowRunLogLine>();
         var info = new RunInfo();
         _runs = _flow is null ? Array.Empty<WorkflowRunLogSummary>() : _book.Runs(_flow);
-        if (_follow.Checked || _runIndex >= _runs.Count) _runIndex = _runs.Count - 1;
-        RefreshRunPicker();
+        // 全部流程：按各流程自己的启动次序对齐，选“倒数第几次”。
+        var count = _all ? flows.Select(flow => _book.Runs(flow).Count).DefaultIfEmpty(0).Max() : _runs.Count;
+        if (_follow.Checked || _runIndex >= count) _runIndex = count - 1;
+        var back = count - 1 - _runIndex;
+        RefreshRunPicker(count);
         _running = false;
         foreach (var flow in flows)
         {
             var runs = _all ? _book.Runs(flow) : _runs;
-            var index = _all ? runs.Count - 1 : _runIndex;
+            var index = _all ? runs.Count - 1 - back : _runIndex;
             if (index < 0 || index >= runs.Count) continue;
             var snapshot = _book.Read(flow, index, log => (Lines: _view.Build(log, now), log.EventCount, log.Truncated, log.FaultSessions));
             if (snapshot.Lines is null) continue;
@@ -243,22 +246,23 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         Show(lines, info);
     }
 
-    /// <summary>正在看的运行（全部流程时是各流程最近一次的合计）。</summary>
+    /// <summary>正在看的运行（全部流程时是各流程同一次序那次运行的合计）。</summary>
     private readonly record struct RunInfo(int Runs, long Events, bool Truncated, int FaultSessions, int Failures, int Notices);
 
-    private void RefreshRunPicker()
+    private void RefreshRunPicker(int count)
     {
         _updating = true;
         try
         {
-            var texts = _all ? new[] { "各流程最近一次运行" } : _runs.Select(Describe).ToArray();
+            var texts = _all
+                ? Enumerable.Range(0, count).Select(index => count - 1 - index).Select(back => back == 0 ? "各流程最近一次" : $"各流程倒数第 {back + 1} 次").ToArray()
+                : _runs.Select(Describe).ToArray();
             if (_runPicker.Items.Count != texts.Length || !texts.Select((text, index) => Equals(_runPicker.Items[index], text)).All(same => same))
             {
                 _runPicker.Items.Clear();
                 foreach (var text in texts) _runPicker.Items.Add(text);
             }
-            _runPicker.Enabled = !_all;
-            _runPicker.SelectedIndex = _all ? 0 : _runIndex >= 0 && _runIndex < _runPicker.Items.Count ? _runIndex : -1;
+            _runPicker.SelectedIndex = _runIndex >= 0 && _runIndex < _runPicker.Items.Count ? _runIndex : -1;
         }
         finally
         {
@@ -325,7 +329,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         if (info.Runs > 0)
         {
             HeaderOf(_tableCard).Subtitle = $"{lines.Count.ToString("N0", CultureInfo.InvariantCulture)} 行 · 失败 {info.Failures}";
-            var text = (_all ? $"{info.Runs} 个流程各自最近一次运行共 " : "本次运行 ")
+            var text = (_all ? $"{info.Runs} 个流程共 " : "本次运行 ")
                        + $"{info.Events.ToString("N0", CultureInfo.InvariantCulture)} 条 · 故障会话 {info.FaultSessions}";
             if (info.Truncated) text += $" · 超过 {_book.MaxRowsPerRun.ToString("N0", CultureInfo.InvariantCulture)} 行，后面的不再记";
             _status.Summary = text + $" · 每个流程只留最近 {_book.MaxRuns} 次启动的记录（启动到停止算一次，重启软件清空）";

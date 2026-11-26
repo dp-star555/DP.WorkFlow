@@ -15,8 +15,6 @@
     <Compile Update="Designer\WorkflowDesignerControl.Designer.cs"><DependentUpon>WorkflowDesignerControl.cs</DependentUpon></Compile>
     <Compile Update="Diagnostics\WorkflowDiagnosticsControl.cs"><SubType>UserControl</SubType></Compile>
     <Compile Update="Diagnostics\WorkflowDiagnosticsControl.Designer.cs"><DependentUpon>WorkflowDiagnosticsControl.cs</DependentUpon></Compile>
-    <Compile Update="Runtime\WorkflowRuntimeMonitorControl.cs"><SubType>UserControl</SubType></Compile>
-    <Compile Update="Runtime\WorkflowRuntimeMonitorControl.Designer.cs"><DependentUpon>WorkflowRuntimeMonitorControl.cs</DependentUpon></Compile>
     <Compile Update="Studio\WorkflowStudioControl.cs"><SubType>UserControl</SubType></Compile>
     <Compile Update="Studio\WorkflowStudioControl.Designer.cs"><DependentUpon>WorkflowStudioControl.cs</DependentUpon></Compile>
     <Compile Update="Toolbox\WorkflowToolboxControl.cs"><SubType>UserControl</SubType></Compile>

@@ -306,58 +306,6 @@ public sealed class LocalizationClosureTests
     }
 
     [Fact]
-    public void RuntimeMonitor_LocaleSwitchPreservesFiltersTabAndDateValidation()
-    {
-        Exception? failure = null;
-        var thread = UiTestThread.Create(() =>
-        {
-            try
-            {
-                var localizationManager = WorkflowUiLocalization.CreateManager(CultureInfo.GetCultureInfo("zh-CN"));
-                using var managerLifetime = (IDisposable)localizationManager;
-                using var host = new Form { ClientSize = new Size(980, 360) };
-                using var monitor = new WorkflowRuntimeMonitorControl
-                {
-                    Dock = DockStyle.Fill,
-                    LocalizationContext = localizationManager.Context
-                };
-                host.Controls.Add(monitor);
-                host.Show();
-                Application.DoEvents();
-
-                var tabs = Descendants(monitor).OfType<ModernTabControl>().Single();
-                var filter = Descendants(monitor).OfType<ModernInput>().Single();
-                tabs.SelectedIndex = 3;
-                monitor.TraceFilter = "Node-A";
-                monitor.TraceStartDate = DateTime.Today.AddDays(-100);
-                monitor.TraceEndDate = DateTime.Today;
-                Application.DoEvents();
-                Assert.False(monitor.TraceRangeIsValid);
-
-                localizationManager.ChangeLocaleAsync(CultureInfo.GetCultureInfo("en-US")).GetAwaiter().GetResult();
-                Application.DoEvents();
-
-                Assert.Equal(3, tabs.SelectedIndex);
-                Assert.Equal("Node-A", monitor.TraceFilter);
-                Assert.Equal(DateTime.Today.AddDays(-100), monitor.TraceStartDate);
-                Assert.False(monitor.TraceRangeIsValid);
-                Assert.Equal("No runtime data", monitor.SummaryText);
-                Assert.Equal("Filter node, token, scope, step, or message", filter.PlaceholderText);
-                Assert.DoesNotContain(Descendants(monitor), control => control is ModernCommandBar or ModernAlert);
-                Assert.Equal(6, Descendants(monitor).OfType<ModernDataGridView>().Count());
-                Assert.All(Descendants(monitor).OfType<ModernDataGridView>(), list =>
-                    Assert.Contains(Assert.IsType<ModernContextMenu>(list.ContextMenuStrip).Items.Cast<ToolStripItem>(),
-                        item => item.Text == "Export CSV"));
-            }
-            catch (Exception exception) { failure = exception; }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        Assert.True(thread.Join(TimeSpan.FromSeconds(8)), "Runtime monitor localization test timed out.");
-        Assert.Null(failure);
-    }
-
-    [Fact]
     public void RuntimeMonitorModel_NormalizesOpenDateRangeWithoutChangingBusinessData()
     {
         var model = new WorkflowRuntimeMonitorModel();
