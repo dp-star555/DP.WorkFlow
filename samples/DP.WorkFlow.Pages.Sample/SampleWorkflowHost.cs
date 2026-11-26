@@ -106,9 +106,16 @@ internal sealed class SampleWorkflowHost : IDisposable
 
     public Task StopAllAsync() => Center?.StopAllAsync() ?? Task.CompletedTask;
 
+    /// <summary>设计页试运行记进运行日志的名字。</summary>
+    public const string TrialRunLogName = "试运行";
+
     public WorkflowRuntimeHost CreateTrialHost()
     {
-        var host = new WorkflowRuntimeHost(_plugins.Nodes, _plugins.Handlers);
+        // 试运行记进运行日志，单独记在“试运行”名下，和正式流程分开。
+        WorkflowRuntimeHost? host = null;
+        var options = new WorkflowExecutionOptions();
+        options.Recording.Sink = RunLog.CreateSink(TrialRunLogName, () => host?.Plan);
+        host = new WorkflowRuntimeHost(_plugins.Nodes, _plugins.Handlers, options);
         _trials.Add(host);
         return host;
     }
