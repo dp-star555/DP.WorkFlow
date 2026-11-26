@@ -75,19 +75,69 @@ public sealed class WorkflowRunLogBook
     public void Attach(WorkflowRunCenterFlow flow)
     {
         Guard.NotNull(flow);
-        var titles = CollectTitles(flow, out var labels);
         var name = flow.Name;
-        lock (_sync)
+        WorkflowExecutionPlan? plan;
+        try
         {
-            Logs(name).Titles = titles;
-            Logs(name).Labels = labels;
+            plan = flow.Plan;
         }
+        catch (InvalidOperationException)
+        {
+            plan = null;
+        }
+        UsePlan(name, plan);
         var previous = flow.Outlet.OnEvent;
         flow.Outlet.OnEvent = item =>
         {
             previous?.Invoke(item);
             Add(name, item.Event);
         };
+    }
+
+    /// <summary>
+    /// 不归流程管理的运行宿主（例如设计页的试运行）用的记录器：放进宿主的 <c>WorkflowExecutionOptions.Recording.Sink</c>，
+    /// 事件按 <see cref="OutletOptions"/> 同样的级别和类别过滤后记在 <paramref name="flowName"/> 名下；每次启动时按当时的执行计划取节点名称。
+    /// </summary>
+    /// <param name="flowName">记在哪个名字下。</param>
+    /// <param name="plan">取宿主当前的执行计划。</param>
+    public IWorkflowRunEventSink CreateSink(string flowName, Func<WorkflowExecutionPlan?> plan)
+    {
+        Guard.NotNullOrWhiteSpace(flowName);
+        Guard.NotNull(plan);
+        return new Sink(this, flowName.Trim(), plan);
+    }
+
+    private sealed class Sink(WorkflowRunLogBook book, string flowName, Func<WorkflowExecutionPlan?> plan) : IWorkflowRunEventSink
+    {
+        private static readonly WorkflowOutletOptions Filter = OutletOptions();
+
+        public ValueTask<WorkflowRunEventWriteResult> WriteAsync(IReadOnlyList<WorkflowRunEvent> events, bool requestImmediateFlush,
+            CancellationToken cancellationToken)
+        {
+            foreach (var runEvent in events)
+            {
+                if (WorkflowOutlet.GetLevel(runEvent) < Filter.MinimumLevel || Filter.Categories?.Contains(runEvent.Category) == false) continue;
+                if (IsRootStart(runEvent)) book.UsePlan(flowName, plan());
+                book.Add(flowName, runEvent);
+            }
+            return new ValueTask<WorkflowRunEventWriteResult>(WorkflowRunEventWriteResult.Success);
+        }
+
+        public ValueTask FlushAsync(CancellationToken cancellationToken) => default;
+    }
+
+    private static bool IsRootStart(WorkflowRunEvent runEvent) =>
+        runEvent.EventType == "RunStarted" && runEvent.Parents is not { Count: > 0 } && runEvent.ParentRunId is null;
+
+    private void UsePlan(string flowName, WorkflowExecutionPlan? plan)
+    {
+        var labels = new Dictionary<string, string>(StringComparer.Ordinal);
+        var titles = plan is null ? new Dictionary<string, string>(StringComparer.Ordinal) : CollectTitles(plan, labels);
+        lock (_sync)
+        {
+            Logs(flowName).Titles = titles;
+            Logs(flowName).Labels = labels;
+        }
     }
 
     /// <summary>加一条事件：根运行的 RunStarted 开始新的一次运行，其余加到该流程最近一次运行里；还没有运行时丢掉统管层事件。</summary>
@@ -102,8 +152,7 @@ public sealed class WorkflowRunLogBook
             var logs = Logs(flowName);
             // 统管层自己的事件（故障、停靠等）不属于某次运行，且可能先于 RunStarted 到达：只挂到已有运行上，不单独开一次运行。
             if (runEvent.RunId == Guid.Empty && logs.Runs.Count == 0) return;
-            var starts = runEvent.EventType == "RunStarted" && runEvent.Parents is not { Count: > 0 } && runEvent.ParentRunId is null;
-            if (starts || logs.Runs.Count == 0)
+            if (IsRootStart(runEvent) || logs.Runs.Count == 0)
             {
                 var titles = logs.Titles;
                 logs.Runs.Add(new WorkflowRunLog(flowName, runEvent.Timestamp, (path, node) => Title(titles, path, node), MaxRowsPerRun));
@@ -212,20 +261,9 @@ public sealed class WorkflowRunLogBook
         ["InputMetadataStatus"] = "输入来源方式", ["FromSequence"] = "起始序号"
     };
 
-    private static IReadOnlyDictionary<string, string> CollectTitles(WorkflowRunCenterFlow flow, out IReadOnlyDictionary<string, string> labels)
+    private static Dictionary<string, string> CollectTitles(WorkflowExecutionPlan plan, Dictionary<string, string> names)
     {
         var titles = new Dictionary<string, string>(StringComparer.Ordinal);
-        var names = new Dictionary<string, string>(StringComparer.Ordinal);
-        labels = names;
-        WorkflowExecutionPlan plan;
-        try
-        {
-            plan = flow.Plan;
-        }
-        catch (InvalidOperationException)
-        {
-            return titles;
-        }
         void Visit(WorkflowExecutionPlan current, string path)
         {
             foreach (var id in current.NodeIds)

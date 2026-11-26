@@ -34,6 +34,13 @@ public sealed partial class WorkflowDesignerControl : Control
     // 提示：上次重画时的提示板版本，以及画布级提示胶囊的位置（没有时为空）。
     private long _shownNoticeVersion = -1;
     private RectangleF? _canvasNoticeBounds;
+    // 诊断：按节点分组的问题、不属于本画布节点的问题，和画布级诊断胶囊的位置；悬停时用提示框说明原因。
+    private IReadOnlyList<WorkflowDiagnosticItem> _diagnostics = Array.Empty<WorkflowDiagnosticItem>();
+    private Dictionary<string, List<WorkflowDiagnosticItem>> _nodeDiagnostics = new(StringComparer.Ordinal);
+    private List<WorkflowDiagnosticItem> _canvasDiagnostics = new();
+    private RectangleF? _canvasDiagnosticBounds;
+    private readonly ToolTip _diagnosticTip = new() { ShowAlways = true };
+    private string? _diagnosticTipText;
     private (WorkflowCanvasNode Node, WorkflowOutputMember Member, WorkflowPoint Point)? _dataLinkStart;
     private InteractionMode _mode;
     private WorkflowDesignerRect? _overviewAnchorViewport;
@@ -88,16 +95,54 @@ public sealed partial class WorkflowDesignerControl : Control
             _session = value;
             if (_session is not null)
                 _session.Changed += OnSessionChanged;
+            GroupDiagnostics();
             Invalidate();
         }
     }
 
     /// <summary>
     /// 只读：只能平移、缩放、选中和看提示，不能拖动、连线、删除、粘贴、拖入节点，双击也不打开节点编辑。
-    /// 运行监视页的画布用它。
+    /// 运行页的画布用它。
     /// </summary>
     [System.ComponentModel.DefaultValue(false)]
     public bool ReadOnly { get; set; }
+
+    /// <summary>
+    /// 当前画布的诊断结果：有错误的节点边框标红并在左上角带红色角标（只有警告时为警告色），
+    /// 悬停节点显示原因；不属于本画布节点的问题显示在画布左上角的胶囊里。
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public IReadOnlyList<WorkflowDiagnosticItem> Diagnostics
+    {
+        get => _diagnostics;
+        set
+        {
+            _diagnostics = value ?? Array.Empty<WorkflowDiagnosticItem>();
+            GroupDiagnostics();
+            _diagnosticTipText = null;
+            Invalidate();
+        }
+    }
+
+    private void GroupDiagnostics()
+    {
+        var ids = new HashSet<string>(_session?.Document.Nodes.Select(node => node.Node.Id) ?? Enumerable.Empty<string>(), StringComparer.Ordinal);
+        _nodeDiagnostics = new Dictionary<string, List<WorkflowDiagnosticItem>>(StringComparer.Ordinal);
+        _canvasDiagnostics = new List<WorkflowDiagnosticItem>();
+        foreach (var item in _diagnostics)
+        {
+            if (item.PlanPath == "$" && item.NodeId is { } id && ids.Contains(id))
+            {
+                if (!_nodeDiagnostics.TryGetValue(id, out var list)) _nodeDiagnostics[id] = list = new List<WorkflowDiagnosticItem>();
+                list.Add(item);
+            }
+            else _canvasDiagnostics.Add(item);
+        }
+    }
+
+    private bool HasDiagnosticError(string nodeId) =>
+        _nodeDiagnostics.TryGetValue(nodeId, out var list) && list.Any(item => item.Severity == WorkflowValidationSeverity.Error);
 
     /// <summary>获取当前是否因节点超出可视区域而显示右上角概览窗口。</summary>
     public bool IsOverviewMapVisible => TryCreateOverviewMapLayout(out _);
@@ -108,9 +153,6 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>交互产生无法创建的连接时发生。</summary>
     public event EventHandler<string>? InteractionError;
 
-    /// <summary>在提示弹层中点“查看全部提示”时发生，由宿主切到提示页。</summary>
-    public event EventHandler? NoticesPageRequested;
-
     /// <inheritdoc />
     protected override void Dispose(bool disposing)
     {
@@ -119,6 +161,7 @@ public sealed partial class WorkflowDesignerControl : Control
             if (_session is not null)
                 _session.Changed -= OnSessionChanged;
             WorkflowWinFormsTheme.Changed -= OnThemeChanged;
+            _diagnosticTip.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -138,11 +181,13 @@ public sealed partial class WorkflowDesignerControl : Control
             DrawNode(e.Graphics, node);
         _shownNoticeVersion = _session.NoticeVersion;
         DrawNoticeBadges(e.Graphics);
+        DrawDiagnosticBadges(e.Graphics);
         DrawPendingConnection(e.Graphics);
         DrawPendingDataLink(e.Graphics);
         DrawMarquee(e.Graphics);
         DrawOverviewMap(e.Graphics);
         DrawCanvasNotices(e.Graphics);
+        DrawCanvasDiagnostics(e.Graphics);
     }
 
     /// <inheritdoc />
@@ -395,6 +440,7 @@ public sealed partial class WorkflowDesignerControl : Control
         else if (_mode == InteractionMode.None)
         {
             SetHoverNode(WorkflowDesignerInteraction.HitHoverNode(_session, e.X, e.Y)?.Node.Id);
+            UpdateDiagnosticTip(e.Location);
         }
     }
 
@@ -403,6 +449,7 @@ public sealed partial class WorkflowDesignerControl : Control
     {
         base.OnMouseLeave(e);
         SetHoverNode(null);
+        HideDiagnosticTip();
     }
 
     /// <summary>记录鼠标所在节点；悬停节点的端口放大显示，便于拖线。</summary>
@@ -638,7 +685,11 @@ public sealed partial class WorkflowDesignerControl : Control
         var rect = WorkflowDesignerGeometry.GetNodeScreenRect(_session, item);
         var bounds = ToRectangle(rect);
         var selected = _session.SelectedNodeIds.Contains(item.Node.Id);
-        var style = Colors.GetNodeStyle(_session.GetNodeVisualState(item.Node.Id), selected);
+        // 运行中、暂停以运行状态为准；其余时候配置有错误的节点按异常（红色）画。
+        var state = _session.GetNodeVisualState(item.Node.Id);
+        if (state is not (WorkflowNodeVisualState.Running or WorkflowNodeVisualState.Paused) && HasDiagnosticError(item.Node.Id))
+            state = WorkflowNodeVisualState.Failed;
+        var style = Colors.GetNodeStyle(state, selected);
         var radius = (float)WorkflowDesignerGeometry.NodeCornerRadius(zoom);
         using var path = RoundedRectangle(bounds, radius);
         if (style.Glow.A > 0)
@@ -905,6 +956,93 @@ public sealed partial class WorkflowDesignerControl : Control
         }
     }
 
+    /// <summary>诊断角标：错误为红色、只有警告时为警告色的“!”圆点，跨在节点左上角外沿。</summary>
+    private void DrawDiagnosticBadges(Graphics graphics)
+    {
+        if (_session is null || _nodeDiagnostics.Count == 0) return;
+        foreach (var node in _session.Document.Nodes)
+        {
+            if (!_nodeDiagnostics.ContainsKey(node.Node.Id)) continue;
+            var error = HasDiagnosticError(node.Node.Id);
+            var bounds = ToRectangle(WorkflowDesignerGeometry.DiagnosticBadgeBounds(
+                WorkflowDesignerGeometry.GetNodeScreenRect(_session, node), _session.Zoom));
+            var color = error ? Colors.Failed : Colors.Notice;
+            using (var fill = new SolidBrush(ToColor(color)))
+                graphics.FillEllipse(fill, bounds);
+            using (var ring = new Pen(ToColor(Colors.Canvas), Math.Max(1.5f, (float)(2 * _session.Zoom))))
+                graphics.DrawEllipse(ring, bounds);
+            using var font = CanvasFont(Math.Max(9, 12 * _session.Zoom), FontStyle.Bold);
+            using var text = new SolidBrush(ToColor(color.ReadableOn()));
+            using var format = TextFormat(StringAlignment.Center);
+            graphics.DrawString("!", font, text, bounds, format);
+        }
+    }
+
+    /// <summary>不属于本画布节点的诊断（例如缺少入口、宿主检查失败）：画布左上角一个胶囊，悬停看原因。</summary>
+    private void DrawCanvasDiagnostics(Graphics graphics)
+    {
+        _canvasDiagnosticBounds = null;
+        if (_session is null || _canvasDiagnostics.Count == 0) return;
+        var error = _canvasDiagnostics.Any(item => item.Severity == WorkflowValidationSeverity.Error);
+        var color = error ? Colors.Failed : Colors.Notice;
+        var text = $"{(error ? "流程错误" : "流程警告")} {WorkflowDesignerGeometry.NoticeBadgeText(_canvasDiagnostics.Count)}";
+        using var font = new Font(Font.FontFamily, 12f, FontStyle.Regular, GraphicsUnit.Pixel);
+        var size = graphics.MeasureString(text, font);
+        var dot = 8f;
+        var width = size.Width + dot + 28;
+        var height = Math.Max(26f, size.Height + 10);
+        var bounds = new RectangleF(12, 12, width, height);
+        using var path = RoundedRectangle(bounds, height / 2);
+        using (var fill = new SolidBrush(ToColor(Colors.Overlay.WithAlpha(240))))
+            graphics.FillPath(fill, path);
+        using (var border = new Pen(ToColor(color), 1.5f))
+            graphics.DrawPath(border, path);
+        using (var dotBrush = new SolidBrush(ToColor(color)))
+            graphics.FillEllipse(dotBrush, bounds.X + 12, bounds.Y + (height - dot) / 2, dot, dot);
+        using var brush = new SolidBrush(ToColor(Colors.OverlayText));
+        using var format = TextFormat(StringAlignment.Near);
+        graphics.DrawString(text, font, brush, new RectangleF(bounds.X + 12 + dot + 6, bounds.Y, width - dot - 18, height), format);
+        _canvasDiagnosticBounds = bounds;
+    }
+
+    /// <summary>悬停在有诊断的节点（含角标）或画布级诊断胶囊上时，用提示框列出问题。</summary>
+    private void UpdateDiagnosticTip(Point location)
+    {
+        if (_session is null) { HideDiagnosticTip(); return; }
+        IReadOnlyList<WorkflowDiagnosticItem>? items = null;
+        if (_canvasDiagnosticBounds is { } chip && chip.Contains(location))
+            items = _canvasDiagnostics;
+        else
+        {
+            for (var i = _session.Document.Nodes.Count - 1; i >= 0 && items is null; i--)
+            {
+                var node = _session.Document.Nodes[i];
+                if (!_nodeDiagnostics.TryGetValue(node.Node.Id, out var list)) continue;
+                var rect = WorkflowDesignerGeometry.GetNodeScreenRect(_session, node);
+                var badge = WorkflowDesignerGeometry.DiagnosticBadgeBounds(rect, _session.Zoom);
+                if (Contains(rect, location) || Contains(badge, location)) items = list;
+            }
+        }
+        if (items is null) { HideDiagnosticTip(); return; }
+        var text = string.Join(Environment.NewLine, items.Take(10).Select(item =>
+            $"{(item.Severity == WorkflowValidationSeverity.Error ? "错误" : "警告")}：{item.Message}"
+            + (string.IsNullOrWhiteSpace(item.Detail) || item.Detail == item.Message ? string.Empty : Environment.NewLine + "    " + item.Detail!.Replace(Environment.NewLine, Environment.NewLine + "    "))));
+        if (items.Count > 10) text += Environment.NewLine + $"……共 {items.Count} 条";
+        if (text == _diagnosticTipText) return;
+        _diagnosticTipText = text;
+        _diagnosticTip.Show(text, this, location.X + 16, location.Y + 20);
+    }
+
+    private static bool Contains(WorkflowDesignerRect rect, Point point) =>
+        point.X >= rect.X && point.X <= rect.X + rect.Width && point.Y >= rect.Y && point.Y <= rect.Y + rect.Height;
+
+    private void HideDiagnosticTip()
+    {
+        if (_diagnosticTipText is null) return;
+        _diagnosticTipText = null;
+        _diagnosticTip.Hide(this);
+    }
+
     /// <summary>
     /// 画布级提示（无法归属到节点，例如记录丢失）：右上角一个浮层胶囊，概览图出现时排在它下面。
     /// </summary>
@@ -952,8 +1090,7 @@ public sealed partial class WorkflowDesignerControl : Control
                 if (node is null) session.AcknowledgeCanvasNotices();
                 else session.AcknowledgeNodeNotices(node.Node.Id);
                 Invalidate();
-            },
-            NoticesPageRequested is null ? null : () => NoticesPageRequested?.Invoke(this, EventArgs.Empty));
+            });
         popup.Closed += (_, _) => BeginInvoke(new Action(popup.Dispose));
         popup.Show(this, location);
     }
@@ -1373,7 +1510,10 @@ public sealed partial class WorkflowDesignerControl : Control
     private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
     {
         if (e.Kind == WorkflowDesignerChangeKind.Document)
+        {
             _overviewAnchorViewport = null;
+            GroupDiagnostics();
+        }
         if (IsDisposed)
             return;
         if (InvokeRequired)

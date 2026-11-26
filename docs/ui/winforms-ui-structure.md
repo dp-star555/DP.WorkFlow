@@ -76,11 +76,7 @@ WorkflowStudioControl
 │
 └─ toolboxAndEditor 左右 ModernSplitter（固定左侧宽度）
    ├─ 左侧：WorkflowToolboxControl
-   └─ 右侧：canvasAndDiagnostics 上下 ModernSplitter（固定底部高度）
-      ├─ 上方：WorkflowDesignerControl
-      └─ 下方：ModernTabControl
-         ├─ 诊断：WorkflowDiagnosticsControl
-         └─ 运行监视：WorkflowRuntimeMonitorControl
+   └─ 右侧：WorkflowDesignerControl（诊断直接画在画布上，没有底部页签）
 ```
 
 示意图：
@@ -93,8 +89,6 @@ WorkflowStudioControl
 │ 工具箱       │              工作流画布                     │
 │              │                                             │
 │ 分类树       │                                             │
-│              ├─────────────────────────────────────────────┤
-│              │ 诊断 | 运行监视                             │
 │              │                                             │
 └──────────────┴─────────────────────────────────────────────┘
 ```
@@ -211,86 +205,13 @@ Designer 文件负责：
 
 ---
 
-## 5. 诊断区域
+## 5. 诊断
 
-文件：
+文件：`src/Workflow/Studio/DP.WorkFlow.UI.WinForms/Diagnostics/WorkflowCanvasDiagnostics.cs`（不是控件）。
 
-```text
-src/Workflow/Studio/DP.WorkFlow.UI.WinForms/Diagnostics/
-├─ WorkflowDiagnosticsControl.cs
-├─ WorkflowDiagnosticsControl.Designer.cs
-└─ WorkflowDiagnosticsControl.resx
-```
-
-结构：
-
-```text
-WorkflowDiagnosticsControl
-└─ ListView
-   ├─ 级别
-   ├─ 代码
-   ├─ 节点
-   └─ 消息
-```
-
-职责：
-
-- 显示编译和设计期诊断。
-- 区分错误和警告颜色。
-- 双击诊断定位节点。
-- 通过 `WorkflowDiagnosticsModel` 读取 UI 无关诊断结果。
-
----
-
-## 6. 运行监视区域
-
-文件：
-
-```text
-src/Workflow/Studio/DP.WorkFlow.UI.WinForms/Runtime/
-├─ WorkflowRuntimeMonitorControl.cs
-├─ WorkflowRuntimeMonitorControl.Designer.cs
-└─ WorkflowRuntimeMonitorControl.resx
-```
-
-当前结构：
-
-```text
-WorkflowRuntimeMonitorControl
-└─ TabControl
-   ├─ Tokens
-   ├─ Parallel
-   ├─ Children
-   ├─ Trace
-   │  ├─ 筛选框
-   │  ├─ 暂停滚动
-   │  └─ Trace ListView
-   ├─ 输出
-   └─ Timing
-```
-
-每张表格右键菜单提供“导出 CSV”（轨迹表按完整轨迹字段导出，Ctrl+Shift+E 同样导出轨迹）。
-领域工具（如“插件与算法”）通过 `AddToolWindow` 挂到“文件”菜单，点击后在弹出窗口中打开。
-
-Designer 文件负责：
-
-- 页签。
-- ListView。
-- 固定列。
-- Trace 工具栏。
-- 筛选框和按钮布局。
-
-普通 `.cs` 负责：
-
-- 绑定 `WorkflowStudioRuntimeBinding`。
-- 接收运行快照。
-- 刷新 Token。
-- 刷新 ParallelScope。
-- 刷新子流程。
-- 刷新 Trace。
-- 刷新输出。
-- 刷新耗时趋势。
-- CSV 导出。
+- 通过 `WorkflowDiagnosticsModel` 读取 UI 无关诊断结果，编辑时持续检查。
+- 结果交给 `WorkflowDesignerControl.Diagnostics` 画在画布上：有错误的节点标红、左上角红色“!”角标，悬停看原因；不属于本画布节点的问题在画布左上角胶囊里。
+- 运行前由画布工作区刷新并按 `CanRun` 拦截。设计页没有底部诊断列表，也没有运行监视；运行明细看运行日志页。
 
 ---
 

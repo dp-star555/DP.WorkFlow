@@ -334,8 +334,8 @@ public sealed partial class WorkflowNodeEditorDialog : Form
     }
 
     /// <summary>
-    /// 子画布页与工作台主画布共用画布工作区：同一套工具栏、工具箱、诊断和运行监视。
-    /// 监视的是该复合节点的子运行；“运行”在最近一次运行的基础上单独再执行这个节点。
+    /// 子画布页与工作台主画布共用画布工作区：同一套工具栏、工具箱和诊断。
+    /// “运行”在最近一次运行的基础上单独再执行这个节点，过程记在运行日志里。
     /// </summary>
     private Control CreateSubWorkflow(WorkflowSubWorkflowEditorPageModel page)
     {
@@ -343,16 +343,12 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         // 子画布自己的诊断：检查正在编辑的草稿，可能稍后才放入启动节点。
         workspace.Diagnostics.FollowsDocumentEntry = true;
         workspace.Session = page.Session;
-        var monitor = new WorkflowSessionRuntimeMonitorSource(page.Session);
         var commands = new WorkflowSubWorkflowRunCommands(page);
-        workspace.RuntimeMonitor.Source = monitor;
         workspace.RunCommands = commands;
         workspace.Disposed += (_, _) =>
         {
             workspace.RunCommands = null;
-            workspace.RuntimeMonitor.Source = null;
             commands.Dispose();
-            monitor.Dispose();
         };
         // 子画布与主工作台一致：双击节点打开其节点窗口。
         workspace.Designer.NodeEditRequested += (_, node) => OpenSubWorkflowNode(page, node);
