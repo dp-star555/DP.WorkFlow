@@ -138,6 +138,11 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _stopButton.Click += (_, _) => RunCommands?.Cancel();
         Toolbox.NodeTypeActivated += OnNodeTypeActivated;
         Designer.InteractionError += (_, message) => InteractionError?.Invoke(this, message);
+        // 点进展开区后，检查器跟着展开区里的选择走。
+        Designer.ActiveSessionChanged += (_, _) =>
+        {
+            if (_inspector is WorkflowNodeInspectorControl inspector) inspector.Session = Designer.ActiveSession ?? _session;
+        };
         Designer.SizeChanged += (_, _) => QueueAutoFit();
         Load += (_, _) => QueueAutoFit();
         UpdateCommands();

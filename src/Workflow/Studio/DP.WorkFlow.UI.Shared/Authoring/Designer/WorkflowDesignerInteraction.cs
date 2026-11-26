@@ -170,8 +170,8 @@ public static class WorkflowDesignerInteraction
             return null;
         for (var index = 0; index < connection.Waypoints.Count; index++)
         {
-            var point = WorkflowDesignerGeometry.CanvasToScreen(
-                session, connection.Waypoints[index].X, connection.Waypoints[index].Y);
+            var display = session.ToDisplayPoint(connection.Waypoints[index]);
+            var point = WorkflowDesignerGeometry.CanvasToScreen(session, display.X, display.Y);
             if (Math.Abs(point.X - x) <= WaypointHitHalfSize && Math.Abs(point.Y - y) <= WaypointHitHalfSize)
                 return (connection, index);
         }
@@ -254,7 +254,8 @@ public static class WorkflowDesignerInteraction
             Math.Abs(canvasEnd.Y - canvasStart.Y) + ObstacleSearchMargin * 2);
         var obstacles = session.Document.Nodes
             .Where(node => node.Node.Id != connection.FromNodeId && node.Node.Id != connection.ToNodeId)
-            .Select(node => new WorkflowDesignerRect(node.X - grid, node.Y - grid, node.Width + grid * 2, node.Height + grid * 2))
+            .Select(node => session.GetNodeDisplayRect(node))
+            .Select(rect => new WorkflowDesignerRect(rect.X - grid, rect.Y - grid, rect.Width + grid * 2, rect.Height + grid * 2))
             .Where(rect => rect.X <= search.X + search.Width && rect.X + rect.Width >= search.X
                 && rect.Y <= search.Y + search.Height && rect.Y + rect.Height >= search.Y)
             .ToArray();
@@ -263,7 +264,7 @@ public static class WorkflowDesignerInteraction
             canvasEnd,
             connection.FromSide ?? FindPortSide(session, connection.FromNodeId, connection.FromPort, WorkflowPortDirection.Output),
             connection.ToSide ?? FindPortSide(session, connection.ToNodeId, connection.ToPort, WorkflowPortDirection.Input),
-            connection.Waypoints.ToArray(),
+            connection.Waypoints.Select(session.ToDisplayPoint).ToArray(),
             obstacles,
             grid);
         return route.Select(point => WorkflowDesignerGeometry.CanvasToScreen(session, point.X, point.Y)).ToArray();

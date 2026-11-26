@@ -296,10 +296,10 @@ public sealed partial class WorkflowDesignerSession
     public WorkflowRuntimeSnapshot? RuntimeSnapshot => _runtimeSnapshot;
 
     /// <summary>获取是否可以撤销。</summary>
-    public bool CanUndo => _undo.Count > 0;
+    public bool CanUndo => UndoOwner._undo.Count > 0;
 
     /// <summary>获取是否可以重做。</summary>
-    public bool CanRedo => _redo.Count > 0;
+    public bool CanRedo => UndoOwner._redo.Count > 0;
 
     /// <summary>设计状态变化时发生。</summary>
     public event EventHandler<WorkflowDesignerChangedEventArgs>? Changed;
@@ -982,10 +982,11 @@ public sealed partial class WorkflowDesignerSession
     {
         if (viewportWidth <= 0 || viewportHeight <= 0 || Document.Nodes.Count == 0)
             return;
-        var left = Document.Nodes.Min(node => node.X);
-        var top = Document.Nodes.Min(node => node.Y);
-        var right = Document.Nodes.Max(node => node.X + node.Width);
-        var bottom = Document.Nodes.Max(node => node.Y + node.Height);
+        var bounds = GetDisplayBounds()!.Value;
+        var left = bounds.X;
+        var top = bounds.Y;
+        var right = bounds.X + bounds.Width;
+        var bottom = bounds.Y + bounds.Height;
         var contentWidth = Math.Max(1, right - left);
         var contentHeight = Math.Max(1, bottom - top);
         var zoom = Polyfill.Clamp(
@@ -1258,6 +1259,7 @@ public sealed partial class WorkflowDesignerSession
     /// <summary>撤销最近一次文档操作。</summary>
     public bool Undo()
     {
+        if (_owner is not null) return UndoOwner.Undo();
         if (!_undo.TryPop(out var operation))
             return false;
         operation.Undo();
@@ -1269,6 +1271,7 @@ public sealed partial class WorkflowDesignerSession
     /// <summary>重做最近一次撤销操作。</summary>
     public bool Redo()
     {
+        if (_owner is not null) return UndoOwner.Redo();
         if (!_redo.TryPop(out var operation))
             return false;
         operation.Do();
@@ -1339,6 +1342,14 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="operation">要执行并登记的设计器操作。</param>
     private void Execute(DesignerOperation operation)
     {
+        // 展开区里的编辑记到最外层画布的撤销栈；撤销时也通知展开区自己刷新。
+        if (_owner is not null)
+        {
+            UndoOwner.Execute(new DesignerOperation(
+                () => { operation.Do(); RaiseChanged(WorkflowDesignerChangeKind.Document); },
+                () => { operation.Undo(); RaiseChanged(WorkflowDesignerChangeKind.Document); }));
+            return;
+        }
         operation.Do();
         _undo.Push(operation);
         _redo.Clear();
@@ -1581,8 +1592,14 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="kind">节点、页面或变更类型。</param>
     private void RaiseChanged(WorkflowDesignerChangeKind kind)
     {
-        if (kind == WorkflowDesignerChangeKind.Document) _dataLinks = null;
+        if (kind == WorkflowDesignerChangeKind.Document)
+        {
+            _dataLinks = null;
+            InvalidateExpansion();
+        }
         Changed?.Invoke(this, new WorkflowDesignerChangedEventArgs(kind));
+        // 展开区的文档变化也是上层文档的变化（标记修改、重画、重算展开大小）。
+        if (kind == WorkflowDesignerChangeKind.Document) _owner?.RaiseChanged(kind);
     }
 
     private sealed record ConfigurationState(

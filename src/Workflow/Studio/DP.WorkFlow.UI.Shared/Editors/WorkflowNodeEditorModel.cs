@@ -125,7 +125,10 @@ public sealed class WorkflowSubWorkflowEditorPageModel : IDisposable
         Node = node;
         // 子画布启动节点的输入成员来自复合节点的接口，打开前按父画布解析并注入。
         WorkflowSubflowInterfaces.Refresh(parentSession.Document, parentSession.Catalog);
-        Session = new WorkflowDesignerSession(node.SubDocument, parentSession.Catalog, parentSession.PublicData);
+        Session = new WorkflowDesignerSession(node.SubDocument, parentSession.Catalog, parentSession.PublicData)
+        {
+            ExpansionScope = parentSession.ExpansionScope + "/" + node.Id
+        };
         Session.Changed += OnChildSessionChanged;
         EntryNodeId = ResolveEntryNodeId();
         RuntimeSession = runtimeSession;
