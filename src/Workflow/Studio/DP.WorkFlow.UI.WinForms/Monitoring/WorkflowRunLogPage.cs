@@ -26,7 +26,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
     private readonly ModernButton _expandAll = new() { Text = "全部展开", ButtonType = ModernButtonType.Text };
     private readonly ModernButton _autoFold = new() { Text = "自动折叠", ButtonType = ModernButtonType.Text };
     private readonly ModernButton _copy = new() { Text = "复制", ButtonType = ModernButtonType.Text };
-    private readonly ModernDataGridView _table = Table("位置 · 节点 · 消息", "时间", "结果", "耗时");
+    private readonly TreeTable _table = Table<TreeTable>("位置 · 节点 · 消息", "时间", "结果", "耗时");
     private readonly WorkflowFactList _details = new();
     private readonly WorkflowCard _tableCard;
     private readonly WorkflowCard _detailsCard;
@@ -63,7 +63,10 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         foreach (DataGridViewColumn column in _table.Columns)
             column.SortMode = DataGridViewColumnSortMode.NotSortable;
         _table.CellValueNeeded += OnCellValueNeeded;
-        _table.CellPainting += OnCellPainting;
+        _table.PaintCell = PaintCell;
+        // 短列不按内容测列头（列头文字会被截成“结…”），直接按列头文字给够最小宽度。
+        for (var index = 1; index < _table.Columns.Count; index++)
+            _table.Columns[index].MinimumWidth = TextRenderer.MeasureText(_table.Columns[index].HeaderText, _table.Font).Width + _table.LogicalToDeviceUnits(28);
         _table.CellMouseClick += OnCellMouseClick;
         _table.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) Toggle(e.RowIndex); };
         _table.KeyDown += OnTableKeyDown;
@@ -371,9 +374,29 @@ public sealed class WorkflowRunLogPage : WorkflowPage
         };
     }
 
-    private void OnCellPainting(object? sender, DataGridViewCellPaintingEventArgs e)
+    /// <summary>
+    /// 运行日志专用表格：第一列（树形缩进、引导线、展开箭头、种类标记）和结果列自己画。
+    /// 直接重写 OnCellPainting，不依赖基类是否触发 CellPainting 事件。
+    /// </summary>
+    private sealed class TreeTable : ModernDataGridView
     {
-        if (e.RowIndex < 0 || e.RowIndex >= _lines.Count || e.Graphics is null) return;
+        public Func<DataGridViewCellPaintingEventArgs, bool>? PaintCell { get; set; }
+
+        protected override void OnCellPainting(DataGridViewCellPaintingEventArgs e)
+        {
+            if (PaintCell?.Invoke(e) == true)
+            {
+                e.Handled = true;
+                return;
+            }
+            base.OnCellPainting(e);
+        }
+    }
+
+    /// <summary>画运行日志的一格；返回是否已画（未画的交给表格默认绘制）。</summary>
+    private bool PaintCell(DataGridViewCellPaintingEventArgs e)
+    {
+        if (e.RowIndex < 0 || e.RowIndex >= _lines.Count || e.Graphics is null) return false;
         var line = _lines[e.RowIndex];
         var colors = WorkflowWinFormsTheme.Palette.Colors;
         var selected = (e.State & DataGridViewElementStates.Selected) != 0;
@@ -383,10 +406,9 @@ public sealed class WorkflowRunLogPage : WorkflowPage
             var color = selected ? e.CellStyle!.SelectionForeColor : StateColor(line.State, colors);
             TextRenderer.DrawText(e.Graphics, WorkflowRunLogText.State(line.State), e.CellStyle!.Font, e.CellBounds, color,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
-            e.Handled = true;
-            return;
+            return true;
         }
-        if (e.ColumnIndex != 0) return;
+        if (e.ColumnIndex != 0) return false;
         e.PaintBackground(e.CellBounds, selected);
         var bounds = e.CellBounds;
         var font = e.CellStyle!.Font;
@@ -437,7 +459,7 @@ public sealed class WorkflowRunLogPage : WorkflowPage
             detail = (string.IsNullOrEmpty(detail) ? string.Empty : detail + " · ") + $"提示 {line.NoticeCount}";
         if (!string.IsNullOrEmpty(detail) && x < bounds.Right - 20)
             TextRenderer.DrawText(e.Graphics, detail, font, new Rectangle(x, bounds.Top, bounds.Right - x - 4, bounds.Height), muted, flags | TextFormatFlags.EndEllipsis);
-        e.Handled = true;
+        return true;
     }
 
     private static Color StateColor(WorkflowRunLogState state, WorkflowThemeColors colors) => WorkflowWinFormsTheme.Solid(state switch
