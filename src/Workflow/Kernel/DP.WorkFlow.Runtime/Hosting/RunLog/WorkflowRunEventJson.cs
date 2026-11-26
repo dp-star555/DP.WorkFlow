@@ -5,14 +5,14 @@ using System.Text.Json.Serialization;
 namespace DP.WorkFlow;
 
 /// <summary>
-/// 运行事件的 JSON 写法（运行日志行尾的回放数据，见 <see cref="WorkflowRunLogLineFormat"/>）：读回来与原事件一致（含小值的类型）。
+/// 运行事件的 JSON 写法（运行日志交给存储的回放数据 <see cref="WorkflowRunLogRecord.Data"/>）：一行，读回来与原事件一致（含小值的类型）。
 /// </summary>
 internal static class WorkflowRunEventJson
 {
     private static readonly JsonSerializerOptions Options = new()
     {
         PropertyNameCaseInsensitive = true,
-        // 中文原样写（控制字符仍转义，行里不会有原样的制表符和换行）。
+        // 中文原样写（控制字符仍转义，不会有原样的换行）。
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Converters = { new TraceValueConverter() }
@@ -28,11 +28,18 @@ internal static class WorkflowRunEventJson
 
     /// <summary>读回一行 JSON。</summary>
     /// <param name="line">一行 JSON。</param>
-    /// <exception cref="JsonException">不是运行事件。</exception>
-    public static WorkflowRunEvent Read(string line)
+    /// <returns>事件；不是 Workflow 写的运行事件（空行、外部加的注释、损坏的行）时为空。</returns>
+    public static WorkflowRunEvent? Read(string? line)
     {
-        Guard.NotNullOrWhiteSpace(line);
-        return JsonSerializer.Deserialize<WorkflowRunEvent>(line, Options) ?? throw new JsonException("空的运行事件。");
+        if (string.IsNullOrWhiteSpace(line) || line!.TrimStart()[0] != '{') return null;
+        try
+        {
+            return JsonSerializer.Deserialize<WorkflowRunEvent>(line, Options);
+        }
+        catch (Exception exception) when (exception is JsonException or FormatException or InvalidOperationException or OverflowException)
+        {
+            return null;
+        }
     }
 
     // 小值按类型写：读回来仍是原来的类型（耗时是 TimeSpan、计数是 long），日志的耗时和数据显示才和实时一样。

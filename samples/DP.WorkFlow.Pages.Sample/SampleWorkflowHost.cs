@@ -11,13 +11,22 @@ internal sealed class SampleWorkflowHost : IDisposable
     private readonly WorkflowRuntimePluginCatalog _plugins;
     private readonly Dictionary<string, string> _sources = new(StringComparer.Ordinal);
     private readonly HashSet<WorkflowRuntimeHost> _trials = new();
+    private readonly string _storageFile;
+    private string _runLogStorage = string.Empty;
+
+    /// <summary>运行日志保存方式：不保存（只在内存）。</summary>
+    public const string NoStorage = "不保存";
+
+    /// <summary>运行日志保存方式：文本文件（<see cref="SampleRunLogFiles"/>）。</summary>
+    public const string TextStorage = "文本文件";
 
     public SampleWorkflowHost(string root)
     {
         FlowDirectory = Path.Combine(root, "flows");
         Directory.CreateDirectory(FlowDirectory);
         LogFiles = new SampleRunLogFiles(root);
-        RunLog.Store = LogFiles;
+        _storageFile = Path.Combine(root, "runlog-storage.txt");
+        RunLogStorage = File.Exists(_storageFile) && File.ReadAllText(_storageFile).Trim() == NoStorage ? NoStorage : TextStorage;
         _plugins = new WorkflowRuntimePluginCatalog(new WorkflowNodeCatalog(), new WorkflowNodeHandlerCatalog())
             .Register(new WorkflowStandardRuntimePluginModule())
             .Register(new WorkflowCompositeRuntimePluginModule())
@@ -35,8 +44,23 @@ internal sealed class SampleWorkflowHost : IDisposable
 
     public WorkflowRunLogBook RunLog { get; } = new();
 
-    /// <summary>运行日志存到本地（示例测试用，设在 <see cref="RunLog"/> 上），运行日志页的“历史”从这里读。</summary>
+    /// <summary>“文本文件”方式的存储（示例测试用），运行日志页的“历史”从这里读。</summary>
     public SampleRunLogFiles LogFiles { get; }
+
+    /// <summary>
+    /// 运行日志保存方式（相当于功能包的设置，存在 sample-data\runlog-storage.txt）：选了哪种就把哪种存储设到 <see cref="RunLog"/> 上；
+    /// “不保存”时只在内存里，运行日志页也没有“历史”。给人看的 Trace 和这个无关。
+    /// </summary>
+    public string RunLogStorage
+    {
+        get => _runLogStorage;
+        set
+        {
+            _runLogStorage = value == NoStorage ? NoStorage : TextStorage;
+            RunLog.Store = _runLogStorage == TextStorage ? LogFiles : null;
+            File.WriteAllText(_storageFile, _runLogStorage);
+        }
+    }
 
     public IServiceProvider Services { get; } = new WorkflowServiceProvider();
 

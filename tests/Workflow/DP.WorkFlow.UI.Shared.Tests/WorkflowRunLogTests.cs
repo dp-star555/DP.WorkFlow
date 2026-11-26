@@ -293,7 +293,7 @@ public sealed class WorkflowRunLogTests
     }
 
     [Fact]
-    public async Task Store_GetsReadableLines_AndReplaysExactlyLikeTheLiveLog()
+    public async Task Store_GetsEveryEvent_AndReplaysExactlyLikeTheLiveLog()
     {
         var store = new MemoryStore();
         var book = new WorkflowRunLogBook { Store = store };
@@ -312,18 +312,17 @@ public sealed class WorkflowRunLogTests
         Assert.True((await host.RunAsync()).Success);
         await WaitEnded(book, "上料", 1);
 
-        // 存储收到的是给人看的文字行（和流程出口推送的一样），一次运行的第一行标了开始，结束后带上结果。
+        // 一次运行的第一条标了开始，让运行结束的那一条带上结果，其余都不带；数据是一行。
         var records = store.Records;
         Assert.True(records[0].IsRunStart);
         Assert.Single(records, record => record.IsRunStart);
         Assert.All(records, record => Assert.Equal(records[0].RunId, record.RunId));
-        Assert.Equal(WorkflowRunLogState.Succeeded, records[^1].RunState);
-        Assert.Contains(records, record => record.Line.Contains(" INFO [上料") && record.Line.Contains("节点 扫描#1"));
-        Assert.All(records, record => Assert.DoesNotContain('\n', record.Line));
+        Assert.Equal(WorkflowRunLogState.Succeeded, Assert.Single(records, record => record.EndState is not null).EndState);
+        Assert.All(records, record => Assert.DoesNotContain('\n', record.Data));
 
-        // 原样交回这些行（夹杂外部加的空行、注释也不要紧），重建出来和实时记录的一样。
-        var lines = records.Select(record => record.Line).Prepend("# 外部加的注释").Append(string.Empty).ToArray();
-        var replayed = book.Replay("上料", lines);
+        // 原样交回这些数据（夹杂外部加的空行、注释、坏行也不要紧），重建出来和实时记录的一样。
+        var data = records.Select(record => record.Data).Prepend("# 外部加的注释").Append(string.Empty).Append("{坏的").ToArray();
+        var replayed = book.Replay("上料", data);
         var view = new WorkflowRunLogView { ExpandAll = true, ControlOnly = false };
         var now = DateTimeOffset.UtcNow;
         var live = book.Read("上料", 0, log => view.Build(log, now))!;

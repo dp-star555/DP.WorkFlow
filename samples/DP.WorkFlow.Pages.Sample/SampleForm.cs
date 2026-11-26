@@ -6,7 +6,7 @@ using ModernUI.WinForms;
 namespace DP.WorkFlow.Samples.Pages;
 
 /// <summary>
-/// 示例主窗口：上面一条工具条（标题、主题、全部启动 / 停止），左边页面导航，右边当前页面。
+/// 示例主窗口：上面一条工具条（标题、主题、运行日志保存方式、全部启动 / 停止），左边页面导航，右边当前页面。
 /// 运行页和节点提示页跟着流程管理走：发布后流程管理重建，这两页也重建。
 /// </summary>
 internal sealed class SampleForm : Form
@@ -15,6 +15,7 @@ internal sealed class SampleForm : Form
     private readonly Panel _content = new() { Dock = DockStyle.Fill };
     private readonly WorkflowItemList _nav = new();
     private readonly ModernSelect _theme = new();
+    private readonly ModernSelect _storage = new();
     private readonly ModernButton _startAll = new() { Text = "全部启动", ButtonType = ModernButtonType.Primary, Icon = ModernIconKind.Play };
     private readonly ModernButton _stopAll = new() { Text = "全部停止", Icon = ModernIconKind.Stop };
     private readonly Label _summary = new();
@@ -86,6 +87,13 @@ internal sealed class SampleForm : Form
         _theme.SelectedIndex = 0;
         _theme.SelectedIndexChanged += (_, _) => { if (_theme.SelectedItem is PaletteChoice choice) WorkflowWinFormsTheme.Use(choice.Palette); };
         bar.Add(_theme, 150);
+        bar.AddSeparator();
+        bar.Add(new Label { Text = "运行日志保存" });
+        _storage.Items.Add(SampleWorkflowHost.NoStorage);
+        _storage.Items.Add(SampleWorkflowHost.TextStorage);
+        _storage.SelectedItem = _host.RunLogStorage;
+        _storage.SelectedIndexChanged += (_, _) => { if (_storage.SelectedItem is string storage) _host.RunLogStorage = storage; };
+        bar.Add(_storage, 120);
         bar.AddSeparator();
         bar.Add(_summary, 260);
         bar.AddRight(_startAll);
