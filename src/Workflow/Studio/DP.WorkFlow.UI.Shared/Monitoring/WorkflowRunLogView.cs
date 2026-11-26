@@ -69,11 +69,13 @@ public sealed record WorkflowRunLogLine(
 /// </summary>
 /// <remarks>
 /// 自动折叠：成功结束的子流程、循环圈、并行分支收起；连续成功的圈合并成一行“第 a–b 圈”（只有提示的圈也合并，行上标出提示条数）；
-/// 有失败、故障的层级保持展开，正在运行的层级也展开。手动展开 / 收起（<see cref="Overrides"/>）优先于自动规则。
+/// 只自动展开通往最近一次失败 / 故障的那一条路径（更早的失败层收起，行首有红标），正在运行的层级也展开。
+/// 手动展开 / 收起（<see cref="Overrides"/>）优先于自动规则。
 /// </remarks>
 public sealed class WorkflowRunLogView
 {
     private string _flowName = string.Empty;
+    private readonly HashSet<WorkflowRunLogRow> _latestFailure = new();
 
     /// <summary>手动展开（true）/ 收起（false）的行，按 <see cref="WorkflowRunLogLine.Key"/>。</summary>
     public Dictionary<string, bool> Overrides { get; } = new(StringComparer.Ordinal);
@@ -113,6 +115,9 @@ public sealed class WorkflowRunLogView
     {
         Guard.NotNull(log);
         _flowName = log.FlowName;
+        _latestFailure.Clear();
+        for (var row = log.Root; row is not null; row = row.Children.LastOrDefault(child => child.HasFailure))
+            if (row.HasFailure) _latestFailure.Add(row);
         var lines = new List<WorkflowRunLogLine>();
         var search = string.IsNullOrWhiteSpace(Search) ? null : Search!.Trim();
         var filtering = Filter != WorkflowRunLogFilter.All || search is not null;
@@ -221,9 +226,9 @@ public sealed class WorkflowRunLogView
     private static bool Quiet(WorkflowRunLogRow row) =>
         row.Kind == WorkflowRunLogRowKind.Cycle && row.State == WorkflowRunLogState.Succeeded && !row.HasFailure;
 
-    private static bool AutoExpanded(WorkflowRunLogRow row) =>
+    private bool AutoExpanded(WorkflowRunLogRow row) =>
         row.Kind == WorkflowRunLogRowKind.Run
-        || row.HasFailure
+        || _latestFailure.Contains(row)
         || (row.IsContainer && row.State == WorkflowRunLogState.Running);
 
     private static TimeSpan? Elapsed(WorkflowRunLogRow row, DateTimeOffset now)

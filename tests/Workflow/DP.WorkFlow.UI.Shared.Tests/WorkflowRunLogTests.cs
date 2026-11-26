@@ -119,6 +119,69 @@ public sealed class WorkflowRunLogTests
     }
 
     [Fact]
+    public async Task OnlyTheLatestFailure_IsExpandedAutomatically()
+    {
+        // 开始 → 循环节点（5 圈）→ 检查（第 2、4 次失败，走失败出口回到循环）→ 回到循环节点。
+        var document = new WorkflowDocument { Name = "多次失败", EntryNodeId = "Start" };
+        IWorkflowNodeModel[] nodes =
+        {
+            new StartNodeModel { Id = "Start", Title = "开始" },
+            new LoopNodeModel { Id = "Loop", Title = "循环生产", Iterations = 5 },
+            new CheckNode { Id = "Check", Title = "检查" },
+            new EndNodeModel { Id = "End", Title = "结束" }
+        };
+        foreach (var node in nodes)
+            document.Nodes.Add(new WorkflowCanvasNode { Node = node });
+        document.Connections.Add(Connect("Start", WorkflowPorts.Success, "Loop"));
+        document.Connections.Add(Connect("Loop", WorkflowPorts.Loop, "Check"));
+        document.Connections.Add(Connect("Check", WorkflowPorts.Success, "Loop"));
+        document.Connections.Add(Connect("Check", WorkflowPorts.Failed, "Loop"));
+        document.Connections.Add(Connect("Loop", WorkflowPorts.Completed, "End"));
+        using var center = new WorkflowRunCenter(
+            new WorkflowNodeCatalog().RegisterStandardNodes().RegisterCompositeNodes()
+                .Register<CheckNode>(1, WorkflowPortDescriptor.Input(maxConnections: int.MaxValue), WorkflowPortDescriptor.Output(), WorkflowPortDescriptor.Failure()),
+            new WorkflowNodeHandlerCatalog().RegisterStandardNodeHandlers().RegisterCompositeNodeHandlers().Register(new CheckHandler()),
+            new WorkflowRunCenterOptions { FlowOutlet = WorkflowRunLogBook.OutletOptions() },
+            new WorkflowServiceProvider());
+        var book = new WorkflowRunLogBook();
+        var flow = center.AddFlow(document);
+        book.Attach(center);
+
+        Assert.True((await flow.RunAsync()).Success);
+        Assert.True(flow.Outlet.WaitIdle(TimeSpan.FromSeconds(5)));
+
+        book.Read("多次失败", 0, log =>
+        {
+            var lines = new WorkflowRunLogView().Build(log, DateTimeOffset.UtcNow);
+            // 第 2、4 圈都出过错：只有最近的第 4 圈自动展开，第 2 圈收起但仍标着失败。
+            var second = Assert.Single(lines, line => line.Title == "第 2 圈");
+            Assert.True(second.HasFailure);
+            Assert.False(second.Expanded);
+            Assert.True(Assert.Single(lines, line => line.Title == "第 4 圈").Expanded);
+            Assert.Single(lines, line => line.NodeId == "Check" && line.HasFailure);
+            return 0;
+        });
+    }
+
+    [WorkflowNode("RunLogCheck")]
+    private sealed class CheckNode : WorkflowNodeModel
+    {
+        public override string NodeType => "RunLogCheck";
+    }
+
+    private sealed class CheckHandler : WorkflowNodeHandler<CheckNode>
+    {
+        private int _count;
+
+        protected override ValueTask<NodeExecutionResult> ExecuteAsync(CheckNode node, IWorkflowNodeExecutionContext context, CancellationToken cancellationToken)
+        {
+            var count = Interlocked.Increment(ref _count);
+            if (count is 2 or 4) throw new InvalidOperationException($"第 {count} 次检查不合格");
+            return ValueTask.FromResult(NodeExecutionResult.Continue());
+        }
+    }
+
+    [Fact]
     public async Task NestedStructures_BelongToTheirCycleSubflowAndBranch()
     {
         var book = new WorkflowRunLogBook();

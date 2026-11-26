@@ -122,7 +122,7 @@ public sealed record WorkflowFact(string Label, string Value = "", bool Heading 
 
 /// <summary>
 /// 侧栏的“名称 …… 值”列表（设计稿的节点耗时、界面同步、流程详情、提示详情）：分组标题加粗，
-/// 名称左对齐、值右对齐，行高 28；放不下的行不画。
+/// 名称左对齐、值右对齐，行高 28；一行放不下的值在名称右边换行显示全，行跟着变高；列表放不下的行不画。
 /// </summary>
 public sealed class WorkflowFactList : Control
 {
@@ -157,22 +157,40 @@ public sealed class WorkflowFactList : Control
         using var bold = new Font(Font, FontStyle.Bold);
         var left = S(16);
         var width = Math.Max(0, Width - S(32));
+        var gap = S(8);
         var y = S(8);
         var flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter;
+        var wrap = TextFormatFlags.NoPrefix | TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl;
         for (var index = 0; index < _facts.Count; index++)
         {
             var fact = _facts[index];
+            var labelFont = fact.Heading || fact.Strong ? bold : Font;
+            var valueFont = fact.Strong ? bold : Font;
             var height = S(fact.Heading ? 34 : 28);
             if (fact.Heading && index > 0) y += S(10);
+            var valueWidth = string.IsNullOrEmpty(fact.Value) ? 0 : WorkflowText.Width(e.Graphics, fact.Value, valueFont);
+            var labelWidth = Math.Min(width / 3, WorkflowText.Width(e.Graphics, fact.Label, labelFont));
+            // 值一行放不下：名称占左边一列，值在右边换行写全（行高跟着内容走），不再截成省略号。
+            if (!fact.Heading && valueWidth > width - labelWidth - gap)
+            {
+                var area = Math.Max(1, width - labelWidth - gap);
+                var textHeight = TextRenderer.MeasureText(e.Graphics, fact.Value, valueFont, new Size(area, int.MaxValue), wrap).Height;
+                var tall = Math.Max(height, textHeight + S(10));
+                if (y + tall > Height) break;
+                var pad = (height - labelFont.Height) / 2;
+                TextRenderer.DrawText(e.Graphics, fact.Label, labelFont, new Rectangle(left, y + pad, labelWidth, labelFont.Height), theme.Text,
+                    TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+                TextRenderer.DrawText(e.Graphics, fact.Value, valueFont, new Rectangle(left + labelWidth + gap, y + pad, area, tall - pad), fact.ValueColor ?? theme.Text, wrap);
+                y += tall;
+                continue;
+            }
             if (y + height > Height) break;
             var row = new Rectangle(left, y, width, height);
-            var valueWidth = string.IsNullOrEmpty(fact.Value) ? 0
-                : Math.Min(width * 2 / 3, WorkflowText.Width(e.Graphics, fact.Value, fact.Strong ? bold : Font));
-            var labelFont = fact.Heading || fact.Strong ? bold : Font;
-            TextRenderer.DrawText(e.Graphics, fact.Label, labelFont, new Rectangle(row.X, row.Y, Math.Max(0, row.Width - valueWidth - S(8)), row.Height),
+            valueWidth = Math.Min(width * 2 / 3, valueWidth);
+            TextRenderer.DrawText(e.Graphics, fact.Label, labelFont, new Rectangle(row.X, row.Y, Math.Max(0, row.Width - valueWidth - gap), row.Height),
                 theme.Text, flags);
             if (valueWidth > 0)
-                TextRenderer.DrawText(e.Graphics, fact.Value, fact.Strong ? bold : Font, new Rectangle(row.Right - valueWidth, row.Y, valueWidth, row.Height),
+                TextRenderer.DrawText(e.Graphics, fact.Value, valueFont, new Rectangle(row.Right - valueWidth, row.Y, valueWidth, row.Height),
                     fact.Heading ? theme.TextSecondary : fact.ValueColor ?? theme.Text, flags | TextFormatFlags.Right);
             y += height;
         }
