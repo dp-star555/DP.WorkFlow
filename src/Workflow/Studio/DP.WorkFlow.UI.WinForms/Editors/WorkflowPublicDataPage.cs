@@ -40,7 +40,7 @@ public sealed class WorkflowPublicDataPage : UserControl
         _remove.Click += (_, _) => RemoveSelected();
         _declareMissing.Click += (_, _) => Guarded(() => _model?.DeclareMissing());
 
-        // 一行操作（左概况，右按钮），下面左清单、右“使用它的节点”：底部页签矮，所以左右排而不是上下排。
+        // 一行操作（左概况，右按钮），下面左清单、右“使用它的节点”。
         var bar = new WorkflowBlock { Dock = DockStyle.Top, LogicalExtent = 40, LogicalPadding = new Padding(4, 0, 0, 6) };
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.RightToLeft, BackColor = Color.Transparent };
         foreach (var button in new[] { _declareMissing, _remove, _edit, _add })
@@ -189,6 +189,27 @@ public sealed class WorkflowPublicDataPage : UserControl
     {
         if (disposing && _model is not null) _model.Changed -= OnModelChanged;
         base.Dispose(disposing);
+    }
+}
+
+/// <summary>
+/// 公共数据窗口：设计页命令卡上“公共数据”打开，不挡住画布（双击“使用它的节点”可以在画布上定位）。
+/// </summary>
+internal sealed class WorkflowPublicDataWindow : Form
+{
+    public WorkflowPublicDataWindow(WorkflowPublicDataPage page)
+    {
+        Text = "公共数据";
+        StartPosition = FormStartPosition.CenterParent;
+        Size = new Size(1080, 560);
+        MinimumSize = new Size(760, 360);
+        ShowInTaskbar = false;
+        ShowIcon = false;
+        MinimizeBox = false;
+        Padding = new Padding(10);
+        page.Dock = DockStyle.Fill;
+        Controls.Add(page);
+        WorkflowWinFormsTheme.Follow(this);
     }
 }
 

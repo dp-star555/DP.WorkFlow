@@ -87,8 +87,8 @@ public sealed partial class WorkflowStudioControl : UserControl
     /// <summary>保存当前文件（还没有路径时询问保存位置）。</summary>
     public void Save() => SaveDocument(false);
 
-    /// <summary>获取编译诊断面板。</summary>
-    public WorkflowDiagnosticsControl Diagnostics => canvasWorkspace.Diagnostics;
+    /// <summary>画布诊断（结果画在画布上）。</summary>
+    public WorkflowCanvasDiagnostics Diagnostics => canvasWorkspace.Diagnostics;
     /// <summary>
     /// 为领域工具添加弹出窗口入口：在“文件”菜单末尾出现同名菜单项，点击打开窗口。
     /// 关闭窗口只隐藏，面板状态与正在进行的检查都会保留。

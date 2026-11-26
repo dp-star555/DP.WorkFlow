@@ -53,7 +53,7 @@ public sealed class VisionAlgorithmDiagnosticsTests
                 using var forms = new DP.WorkFlow.Vision.UI.WinForms.WorkflowVisionAlgorithmPanel(diagnostics, () => document, () => session);
                 var wpf = new DP.WorkFlow.Vision.UI.Wpf.WorkflowVisionAlgorithmPanel(diagnostics, () => document, () => session);
                 Assert.NotNull(wpf.Content); Assert.Equal(3, forms.Controls.Count);
-                using var formsDiagnostics = new DP.WorkFlow.UI.WinForms.WorkflowDiagnosticsControl { Session = session, EntryNodeId = "start", Provider = diagnostics };
+                using var formsDiagnostics = new DP.WorkFlow.UI.WinForms.WorkflowCanvasDiagnostics { Session = session, EntryNodeId = "start", Provider = diagnostics };
                 var wpfDiagnostics = new DP.WorkFlow.UI.Wpf.WorkflowDiagnosticsControl { Session = session, EntryNodeId = "start", Provider = diagnostics };
                 Assert.True(formsDiagnostics.CanRun); Assert.True(wpfDiagnostics.CanRun);
                 wpfDiagnostics.Provider = null;

@@ -243,6 +243,17 @@ public static class WorkflowDesignerGeometry
             node.Height * session.Zoom);
 
     /// <summary>
+    /// 节点诊断角标（“!”）的屏幕矩形：圆心在节点左上角外沿，和右上角的提示角标左右分开。
+    /// </summary>
+    /// <param name="nodeRect">节点屏幕矩形。</param>
+    /// <param name="zoom">当前缩放。</param>
+    public static WorkflowDesignerRect DiagnosticBadgeBounds(WorkflowDesignerRect nodeRect, double zoom)
+    {
+        var size = Math.Max(14, 18 * zoom);
+        return new WorkflowDesignerRect(nodeRect.X - size / 2 + 2 * zoom, nodeRect.Y - size / 2, size, size);
+    }
+
+    /// <summary>
     /// 节点提示角标的屏幕矩形：圆心在节点右上角外沿（跨在边框上），不占标题行空间，和执行序号、耗时不重叠。
     /// 数字超过一位时横向拉长为胶囊。
     /// </summary>

@@ -2746,25 +2746,6 @@ public sealed class ModernControlBehaviorTests
     }
 
     [Fact]
-    public void DiagnosticsPilotSwitchesBusinessTextWithoutRecreatingControl()
-    {
-        RunInSta(() =>
-        {
-            var manager = WorkflowUiLocalization.CreateManager(CultureInfo.GetCultureInfo("zh-CN"));
-            using var managerLease = (IDisposable)manager;
-            using var diagnostics = new WorkflowDiagnosticsControl { LocalizationContext = manager.Context };
-            Assert.Equal("未发现诊断问题", diagnostics.SummaryText);
-
-            var change = manager.ChangeLocaleAsync(CultureInfo.GetCultureInfo("en-US"));
-            while (!change.IsCompleted) { Application.DoEvents(); Thread.Sleep(2); }
-            change.GetAwaiter().GetResult();
-
-            Assert.Equal("No diagnostics found", diagnostics.SummaryText);
-            Assert.Equal("DP.WorkFlow diagnostics", diagnostics.AccessibleName);
-        });
-    }
-
-    [Fact]
     public void LocalizationManagerKeepsPreviousSnapshotWhenLoadingFails()
     {
         RunInSta(() =>

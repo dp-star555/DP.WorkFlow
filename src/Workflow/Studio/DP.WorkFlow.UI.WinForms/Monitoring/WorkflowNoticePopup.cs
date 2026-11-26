@@ -4,22 +4,19 @@ using ModernUI.WinForms;
 namespace DP.WorkFlow.UI.WinForms;
 
 /// <summary>
-/// 节点（或画布级）提示的小弹层：点画布上的提示角标打开，列出这个位置的提示，可以确认清除或转到提示页。
+/// 节点（或画布级）提示的小弹层：点画布上的提示角标打开，列出这个位置的提示，可以确认清除。
 /// </summary>
 internal sealed class WorkflowNoticePopup : ToolStripDropDown
 {
     private readonly Action _acknowledge;
-    private readonly Action? _showAll;
 
     /// <summary>初始化弹层。</summary>
     /// <param name="title">标题，例如节点名称。</param>
     /// <param name="notices">要显示的提示。</param>
     /// <param name="acknowledge">确认清除。</param>
-    /// <param name="showAll">转到提示页；为空时不显示该按钮。</param>
-    public WorkflowNoticePopup(string title, IReadOnlyList<WorkflowNotice> notices, Action acknowledge, Action? showAll)
+    public WorkflowNoticePopup(string title, IReadOnlyList<WorkflowNotice> notices, Action acknowledge)
     {
         _acknowledge = acknowledge;
-        _showAll = showAll;
         AutoClose = true;
         Padding = Padding.Empty;
         DropShadowEnabled = true;
@@ -76,16 +73,6 @@ internal sealed class WorkflowNoticePopup : ToolStripDropDown
             _acknowledge();
         };
         buttons.Controls.Add(acknowledgeButton);
-        if (_showAll is not null)
-        {
-            var showAllButton = WorkflowSizing.Fit(new ModernButton { Text = "查看全部提示" });
-            showAllButton.Click += (_, _) =>
-            {
-                Close(ToolStripDropDownCloseReason.ItemClicked);
-                _showAll();
-            };
-            buttons.Controls.Add(showAllButton);
-        }
         panel.Controls.Add(buttons, 0, 2);
 
         WorkflowWinFormsTheme.Apply(panel);
