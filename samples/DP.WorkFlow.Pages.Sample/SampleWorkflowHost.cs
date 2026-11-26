@@ -16,6 +16,7 @@ internal sealed class SampleWorkflowHost : IDisposable
     {
         FlowDirectory = Path.Combine(root, "flows");
         Directory.CreateDirectory(FlowDirectory);
+        LogFiles = new SampleRunLogFiles(root);
         _plugins = new WorkflowRuntimePluginCatalog(new WorkflowNodeCatalog(), new WorkflowNodeHandlerCatalog())
             .Register(new WorkflowStandardRuntimePluginModule())
             .Register(new WorkflowCompositeRuntimePluginModule())
@@ -32,6 +33,9 @@ internal sealed class SampleWorkflowHost : IDisposable
     public WorkflowRunCenterOptions Options { get; } = new() { FlowOutlet = WorkflowRunLogBook.OutletOptions() };
 
     public WorkflowRunLogBook RunLog { get; } = new();
+
+    /// <summary>运行日志存到本地（示例测试用），运行日志页的“历史”从这里读。</summary>
+    public SampleRunLogFiles LogFiles { get; }
 
     public IServiceProvider Services { get; } = new WorkflowServiceProvider();
 
@@ -69,6 +73,7 @@ internal sealed class SampleWorkflowHost : IDisposable
             }
         }
         RunLog.Attach(center);
+        LogFiles.Attach(center);
         var old = Center;
         Center = center;
         LoadIssues = issues;
@@ -106,15 +111,22 @@ internal sealed class SampleWorkflowHost : IDisposable
 
     public Task StopAllAsync() => Center?.StopAllAsync() ?? Task.CompletedTask;
 
-    /// <summary>设计页试运行记进运行日志的名字。</summary>
+    /// <summary>设计页试运行在运行日志里的名字前缀，后面接流程名，例如“试运行 · 上料”。</summary>
     public const string TrialRunLogName = "试运行";
 
-    public WorkflowRuntimeHost CreateTrialHost()
+    /// <summary>试运行在运行日志里的名字。</summary>
+    /// <param name="flowName">流程名；还没保存的流程为空。</param>
+    public static string TrialRunLogNameOf(string? flowName) =>
+        TrialRunLogName + " · " + (string.IsNullOrWhiteSpace(flowName) ? "未保存的流程" : flowName);
+
+    /// <summary>创建设计页试运行的宿主。</summary>
+    /// <param name="logName">每次启动时取运行日志里的名字（按流程分开记，见 <see cref="TrialRunLogNameOf"/>）。</param>
+    public WorkflowRuntimeHost CreateTrialHost(Func<string> logName)
     {
-        // 试运行记进运行日志，单独记在“试运行”名下，和正式流程分开。
+        // 试运行记进运行日志，按流程记在“试运行 · 流程名”下，和正式流程分开。
         WorkflowRuntimeHost? host = null;
         var options = new WorkflowExecutionOptions();
-        options.Recording.Sink = RunLog.CreateSink(TrialRunLogName, () => host?.Plan);
+        options.Recording.Sink = LogFiles.Wrap(RunLog.CreateSink(logName, () => host?.Plan), logName);
         host = new WorkflowRuntimeHost(_plugins.Nodes, _plugins.Handlers, options);
         _trials.Add(host);
         return host;
@@ -128,5 +140,6 @@ internal sealed class SampleWorkflowHost : IDisposable
             trial.Dispose();
         }
         Center?.Dispose();
+        LogFiles.Dispose();
     }
 }

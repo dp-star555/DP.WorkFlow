@@ -42,7 +42,7 @@ internal sealed class SampleForm : Form
         Padding = new Padding(10);
 
         _design = new SampleDesignPage(host) { Dock = DockStyle.Fill };
-        _log = new WorkflowRunLogPage(host.RunLog);
+        _log = new WorkflowRunLogPage(host.RunLog) { History = host.LogFiles };
         _library = new WorkflowFlowLibraryPage(new WorkflowFlowLibrary(host.FlowDirectory))
         {
             StatusOf = entry => entry.FilePath is null ? null

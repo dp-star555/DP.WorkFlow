@@ -20,7 +20,8 @@ public sealed record WorkflowRunLogSummary(int Index, Guid RunId, DateTimeOffset
 /// </summary>
 /// <remarks>
 /// 挂在流程管理的每个流程出口上（<see cref="Attach(WorkflowRunCenter)"/>）；流程管理要用 <see cref="OutletOptions"/> 创建，
-/// 否则出口按默认级别把并行派发 / 汇聚、进度等调试级事件过滤掉。只在内存里，程序重启后清空。
+/// 否则出口按默认级别把并行派发 / 汇聚、进度等调试级事件过滤掉。只在内存里，程序重启后清空；
+/// 更早的运行由外部保存，经 <see cref="IWorkflowRunLogHistory"/> 读回后用 <see cref="Replay"/> 重建。
 /// </remarks>
 public sealed class WorkflowRunLogBook
 {
@@ -103,13 +104,26 @@ public sealed class WorkflowRunLogBook
     public IWorkflowRunEventSink CreateSink(string flowName, Func<WorkflowExecutionPlan?> plan)
     {
         Guard.NotNullOrWhiteSpace(flowName);
-        Guard.NotNull(plan);
-        return new Sink(this, flowName.Trim(), plan);
+        var name = flowName.Trim();
+        return CreateSink(() => name, plan);
     }
 
-    private sealed class Sink(WorkflowRunLogBook book, string flowName, Func<WorkflowExecutionPlan?> plan) : IWorkflowRunEventSink
+    /// <summary>
+    /// 同上，但名字在每次启动时取一次（例如“试运行 · 上料”，按设计页当前打开的流程分开记）；这次运行后面的事件都记在这个名字下。
+    /// </summary>
+    /// <param name="flowName">每次启动时取名字；在记录线程上调用，不要访问界面。</param>
+    /// <param name="plan">取宿主当前的执行计划。</param>
+    public IWorkflowRunEventSink CreateSink(Func<string> flowName, Func<WorkflowExecutionPlan?> plan)
+    {
+        Guard.NotNull(flowName);
+        Guard.NotNull(plan);
+        return new Sink(this, flowName, plan);
+    }
+
+    private sealed class Sink(WorkflowRunLogBook book, Func<string> flowName, Func<WorkflowExecutionPlan?> plan) : IWorkflowRunEventSink
     {
         private static readonly WorkflowOutletOptions Filter = OutletOptions();
+        private string? _current;
 
         public ValueTask<WorkflowRunEventWriteResult> WriteAsync(IReadOnlyList<WorkflowRunEvent> events, bool requestImmediateFlush,
             CancellationToken cancellationToken)
@@ -117,8 +131,13 @@ public sealed class WorkflowRunLogBook
             foreach (var runEvent in events)
             {
                 if (WorkflowOutlet.GetLevel(runEvent) < Filter.MinimumLevel || Filter.Categories?.Contains(runEvent.Category) == false) continue;
-                if (IsRootStart(runEvent)) book.UsePlan(flowName, plan());
-                book.Add(flowName, runEvent);
+                if (IsRootStart(runEvent) || _current is null)
+                {
+                    var name = flowName()?.Trim();
+                    _current = string.IsNullOrEmpty(name) ? "试运行" : name;
+                    if (IsRootStart(runEvent)) book.UsePlan(_current, plan());
+                }
+                book.Add(_current, runEvent);
             }
             return new ValueTask<WorkflowRunEventWriteResult>(WorkflowRunEventWriteResult.Success);
         }
@@ -162,6 +181,29 @@ public sealed class WorkflowRunLogBook
             logs.Runs[logs.Runs.Count - 1].Add(runEvent);
             _version++;
         }
+    }
+
+    /// <summary>
+    /// 用历史事件（外部保存后读回来的）重建一次运行，规则和实时记录完全相同；节点名称按该名字当前的执行计划取。
+    /// 不放进日志本，不影响最近若干次的记录。
+    /// </summary>
+    /// <param name="flowName">记在哪个名字下。</param>
+    /// <param name="events">这次运行的事件，按收到的顺序。</param>
+    /// <returns>重建的运行；没有事件时开始时间为当前时间。</returns>
+    public WorkflowRunLog Replay(string flowName, IEnumerable<WorkflowRunEvent> events)
+    {
+        Guard.NotNullOrWhiteSpace(flowName);
+        Guard.NotNull(events);
+        IReadOnlyDictionary<string, string> titles;
+        lock (_sync)
+            titles = _flows.TryGetValue(flowName, out var logs) ? logs.Titles : new Dictionary<string, string>();
+        WorkflowRunLog? log = null;
+        foreach (var runEvent in events)
+        {
+            log ??= new WorkflowRunLog(flowName, runEvent.Timestamp, (path, node) => Title(titles, path, node), MaxRowsPerRun);
+            log.Add(runEvent);
+        }
+        return log ?? new WorkflowRunLog(flowName, DateTimeOffset.UtcNow, null, MaxRowsPerRun);
     }
 
     /// <summary>有记录的流程名。</summary>
