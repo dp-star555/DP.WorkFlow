@@ -56,6 +56,16 @@ internal sealed class SampleDesignPage : UserControl
     /// <summary>是否有没保存的修改。</summary>
     public bool IsDirty => _workspace.IsDirty;
 
+    /// <summary>在命令卡最左边（“文件”前面）加一个返回按钮，例如“‹ 流程库”。</summary>
+    public void AddBackButton(string text, Action back)
+    {
+        var toolbar = _studio.CanvasWorkspace.Toolbar;
+        var button = new ToolStripButton("‹  " + text) { Name = "backButton" };
+        button.Click += (_, _) => back();
+        toolbar.Items.Insert(0, button);
+        toolbar.Items.Insert(1, new ToolStripSeparator());
+    }
+
     public void ShowMessage(string message) => _studio.CanvasWorkspace.StatusMessage = message;
 
     /// <summary>打开流程库里的一个流程（参数是正式文件或草稿路径）。</summary>

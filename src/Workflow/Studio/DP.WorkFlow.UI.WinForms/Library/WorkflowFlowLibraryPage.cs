@@ -24,7 +24,7 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
     private readonly WorkflowFactList _detail = new();
     private readonly WorkflowCard _tableCard;
     private readonly WorkflowCard _detailCard;
-    private readonly WorkflowStatusLine _status = new();
+    private readonly Label _message = new() { AutoSize = true, UseMnemonic = false, Anchor = AnchorStyles.Right };
     private readonly ModernButton _open = new() { Text = "打开设计", ButtonType = ModernButtonType.Primary };
     private readonly ModernButton _new = new() { Text = "新建流程", ButtonType = ModernButtonType.Primary, Icon = ModernIconKind.Plus };
     private readonly ModernButton _import = new() { Text = "导入…" };
@@ -79,6 +79,8 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         detailBody.Controls.Add(_detail);
         detailBody.Controls.Add(actionRow);
         _tableCard = Section("流程", null, _table);
+        // 概况和目录写在列表标题行里，操作提示放在标题行右边；页面底下不再单独占一行。
+        HeaderOf(_tableCard).AddAction(_message);
         _detailCard = Section("详情", null, detailBody, DockStyle.Right, 380);
         var middle = new Panel { Dock = DockStyle.Fill };
         middle.Controls.Add(_tableCard);
@@ -88,7 +90,6 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         Controls.Add(middle);
         Controls.Add(Gap(DockStyle.Top));
         Controls.Add(bar);
-        Controls.Add(_status);
         _more.Click += (_, _) => _moreMenu.Show(_more, new Point(0, _more.Height));
         WorkflowWinFormsTheme.Follow(this, () => _moreMenu.Theme = WorkflowWinFormsTheme.Modern);
         _filter.SelectedIndexChanged += (_, _) => ShowRows();
@@ -175,7 +176,9 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
     {
         if (IsDisposed) return;
         if (InvokeRequired) { BeginInvoke(new Action(() => ShowMessage(message))); return; }
-        _status.Message = message;
+        _message.Text = message;
+        _message.ForeColor = WorkflowWinFormsTheme.Modern.TextSecondary;
+        WorkflowSizing.Fit(_message);
     }
 
     /// <inheritdoc />
@@ -247,9 +250,8 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         SetFilterText(1, $"已发布 {published}");
         SetFilterText(2, $"草稿 {drafts}");
         SetFilterText(3, $"有诊断 {issues}");
-        HeaderOf(_tableCard).Subtitle = $"{shown.Length} 个";
-        _status.Summary = (keyword.Length == 0
-            ? $"流程 {live} 个" + (drafts > 0 ? $" · {drafts} 个有没发布的修改" : string.Empty)
+        HeaderOf(_tableCard).Subtitle = (keyword.Length == 0
+            ? $"{live} 个" + (drafts > 0 ? $" · {drafts} 个有没发布的修改" : string.Empty)
             : $"找到 {shown.Length} 个（共 {_entries.Count} 个）") + " · 目录 " + _library.Directory;
         UpdateCommands();
     }

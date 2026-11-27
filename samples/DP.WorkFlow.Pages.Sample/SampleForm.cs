@@ -182,7 +182,6 @@ internal sealed class SampleForm : Form
         _stopAll.Enabled = running > 0;
         _library.CanEdit = !_host.IsRunning && !_host.IsTrialRunning;
         _design.RefreshRunCommands();
-        _flows.RefreshTitle();
     }
 
     private async void Guard(Func<Task> action)

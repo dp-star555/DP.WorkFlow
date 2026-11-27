@@ -7,7 +7,7 @@ namespace DP.WorkFlow.UI.WinForms;
 /// 画布工作区（设计页的主体，按设计稿排成卡片）：
 /// 上面一条命令卡（宿主的“文件”等条目、撤销、重做、路径和“已修改”标记；右边适合画布、自动布局、对齐、公共数据、校验、调试运行），
 /// 中间左边工具箱卡、中间画布卡、右边可选的检查器卡（<see cref="Inspector"/>，默认隐藏，可浮出或固定，见 <see cref="InspectorPinned"/>），
-/// 最下面一行状态（节点数、连线数、选中节点、宿主消息）。没有底部页签：诊断直接画在画布上（出错节点标红带角标，悬停看原因），
+/// 宿主消息（保存、发布结果）跟在命令卡的路径后面，页面底下不再占一行。没有底部页签：诊断直接画在画布上（出错节点标红带角标，悬停看原因），
 /// 节点提示和运行页一样用画布角标，公共数据在命令卡上的“公共数据”窗口里编辑，运行明细看运行日志页。
 /// 工作台主画布和节点窗口的子画布共用这一个控件；两者的差别只在运行命令（<see cref="RunCommands"/>）、
 /// 检查器和宿主加入的条目。
@@ -20,6 +20,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     private readonly ToolStripSeparator _editSeparator = new();
     private readonly ToolStripLabel _breadcrumbLabel = new() { Name = "_breadcrumbLabel" };
     private readonly ToolStripLabel _stateLabel = new() { Name = "_stateLabel", Visible = false };
+    private readonly ToolStripLabel _messageLabel = new() { Name = "_messageLabel", Visible = false };
     private readonly List<(ToolStripItem Item, ModernIconKind Icon, Func<ModernTheme, Color> Color)> _icons = new();
     private readonly FlowLayoutPanel _commands = new()
     {
@@ -48,7 +49,6 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     private readonly WorkflowCard _canvasCard = new() { Dock = DockStyle.Fill };
     private readonly WorkflowCard _inspectorCard = new() { Dock = DockStyle.Right, Visible = false };
     private readonly WorkflowBlock _inspectorGap = new() { Dock = DockStyle.Right, LogicalExtent = 10, Visible = false };
-    private readonly WorkflowStatusLine _status = new();
     private readonly WorkflowCardHeader _inspectorHeader = new("节点属性");
     private Panel _middle = null!;
     private WorkflowPublicDataManifestModel? _publicDataModel;
@@ -67,7 +67,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _toolbar.GripStyle = ToolStripGripStyle.Hidden;
         _toolbar.Dock = DockStyle.Fill;
         WorkflowBorderlessToolStrip.Attach(_toolbar);
-        _toolbar.Items.AddRange(new ToolStripItem[] { _undoButton, _redoButton, _editSeparator, _breadcrumbLabel, _stateLabel });
+        _toolbar.Items.AddRange(new ToolStripItem[] { _undoButton, _redoButton, _editSeparator, _breadcrumbLabel, _stateLabel, _messageLabel });
         _toolbar.ItemAdded += (_, e) => { if (e.Item is { } item) SpaceToolbarItem(item); };
         BreadcrumbText = null;
 
@@ -107,8 +107,6 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         Controls.Add(middle);
         Controls.Add(new WorkflowBlock { Dock = DockStyle.Top, LogicalExtent = 10 });
         Controls.Add(_commandCard);
-        Controls.Add(new WorkflowBlock { Dock = DockStyle.Bottom, LogicalExtent = 10 });
-        Controls.Add(_status);
         Size = new Size(1180, 720);
         ResumeLayout(false);
 
@@ -269,11 +267,17 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         }
     }
 
-    /// <summary>状态行右边的消息（宿主的保存、发布结果等）；为空时清除。</summary>
+    /// <summary>命令卡上路径后面的一句提示（宿主的保存、发布结果等）；为空时清除。鼠标停留看全文。</summary>
     public string? StatusMessage
     {
-        get => _status.Message;
-        set => _status.Message = value ?? string.Empty;
+        get => _messageLabel.Visible ? _messageLabel.ToolTipText : null;
+        set
+        {
+            var text = value ?? string.Empty;
+            _messageLabel.ToolTipText = text;
+            _messageLabel.Text = text.Length > 60 ? text.Substring(0, 60) + "…" : text;
+            _messageLabel.Visible = text.Length > 0;
+        }
     }
 
     /// <summary>在命令卡右边、“校验”左边加一个宿主按钮（例如“发布”）。</summary>
@@ -353,7 +357,6 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
             oldPublicData?.Dispose();
             _autoFitPending = value is not null;
             QueueAutoFit();
-            UpdateStatus();
             UpdateCommands();
         }
     }
@@ -481,6 +484,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _breadcrumbLabel.ForeColor = theme.Text;
         _stateLabel.ForeColor = theme.TextSecondary;
         _stateLabel.BackColor = theme.Control;
+        _messageLabel.ForeColor = theme.TextSecondary;
         foreach (Control control in _commands.Controls)
             if (Equals(control.Tag, "separator")) control.BackColor = theme.BorderSecondary;
         _alignMenu.Theme = theme;
@@ -525,28 +529,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         Session.AddNode(item.NodeType, center.X - 90, center.Y - 30);
     }
 
-    private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
-    {
-        if (e.Kind is WorkflowDesignerChangeKind.Document or WorkflowDesignerChangeKind.Selection) UpdateStatus();
-        UpdateCommands();
-    }
-
-    /// <summary>状态行：节点数、连线数、选中的节点。</summary>
-    private void UpdateStatus()
-    {
-        if (_session is not { } session)
-        {
-            _status.Summary = string.Empty;
-            return;
-        }
-        var text = $"节点 {session.Document.Nodes.Count} · 连线 {session.Document.Connections.Count}";
-        var selected = session.SelectedNodeIds.Count;
-        if (selected == 1 && session.Document.Nodes.FirstOrDefault(item => item.Node.Id == session.SelectedNodeId) is { } node)
-            text += " · 选中：" + node.Node.Title;
-        else if (selected > 1)
-            text += $" · 选中 {selected} 个节点";
-        _status.Summary = text;
-    }
+    private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e) => UpdateCommands();
 
     /// <summary>诊断结果画到画布上，“校验”按钮显示问题条数（有错误为红色）。</summary>
     private void ShowDiagnostics()
