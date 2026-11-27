@@ -39,6 +39,21 @@ public sealed class WorkflowDesignerExpansionTests
     }
 
     [Fact]
+    public void Expand_MovesNodeThatAlreadyOverlapsWideCardClearOfFrame()
+    {
+        // 示例“组装”：块卡片比间距宽，右边的“检查”本来就压着卡片右侧一点。
+        var (session, block, right, below, _) = CreateRoot("宽卡片");
+        right.X = block.X + block.Width - 48;
+
+        session.SetExpanded(block.Node.Id, true);
+
+        var frame = session.GetNodeDisplayRect(block);
+        var moved = session.GetNodeDisplayRect(right);
+        Assert.True(moved.X >= frame.X + frame.Width, $"右边节点 {moved.X} 仍压着展开区（右边缘 {frame.X + frame.Width}）");
+        Assert.True(session.GetNodeDisplayRect(below).Y >= frame.Y + frame.Height);
+    }
+
+    [Fact]
     public void ExpandedSession_DrawsInsideFrameAndFollowsViewport()
     {
         var (session, block, _, _, _) = CreateRoot("展开同步");
