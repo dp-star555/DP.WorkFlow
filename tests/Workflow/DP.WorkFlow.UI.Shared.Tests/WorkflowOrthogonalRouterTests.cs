@@ -23,6 +23,37 @@ public sealed class WorkflowOrthogonalRouterTests
     }
 
     [Fact]
+    public void Route_AlignsGridWaypointNextToOffGridSidePort()
+    {
+        // 右边的端口在正文行中间（离栅格线半格）；拖动线段后拐点吸附到栅格线上，最后一段不能再多出半格的小台阶。
+        var route = WorkflowOrthogonalRouter.Route(
+            new WorkflowPoint(1008, 408),
+            new WorkflowPoint(240, 156),
+            WorkflowPortSide.Top,
+            WorkflowPortSide.Right,
+            new[] { new WorkflowPoint(1008, 168), new WorkflowPoint(408, 168) },
+            Array.Empty<WorkflowDesignerRect>(),
+            24);
+
+        Assert.Equal(new[] { new WorkflowPoint(1008, 408), new WorkflowPoint(1008, 156), new WorkflowPoint(240, 156) }, route);
+    }
+
+    [Fact]
+    public void Route_KeepsWaypointFarFromPortLine()
+    {
+        var route = WorkflowOrthogonalRouter.Route(
+            new WorkflowPoint(0, 0),
+            new WorkflowPoint(400, 12),
+            WorkflowPortSide.Right,
+            WorkflowPortSide.Left,
+            new[] { new WorkflowPoint(200, 96), new WorkflowPoint(300, 96) },
+            Array.Empty<WorkflowDesignerRect>(),
+            24);
+
+        Assert.Contains(route, point => point.Y == 96);
+    }
+
+    [Fact]
     public void Route_RemovesRedundantCollinearPoints()
     {
         var route = WorkflowOrthogonalRouter.Route(

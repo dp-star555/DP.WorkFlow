@@ -30,6 +30,11 @@ public static class WorkflowOrthogonalRouter
         if (waypoints is not null)
             anchors.AddRange(waypoints);
         anchors.Add(endLead);
+        // 左右边的端口在正文行中间，离栅格线差半格；拐点是吸附到栅格线上的。紧挨端点的拐点只差不到半格时，
+        // 把它（和与它同一条线上的后续拐点）对齐到端口这条线上，否则最后一段会多出一个半格的小台阶。
+        var snap = leadDistance / 2 + Epsilon;
+        AlignToLead(anchors, 1, 1, startLead, DirectionOf(startSide), snap);
+        AlignToLead(anchors, anchors.Count - 2, -1, endLead, DirectionOf(endSide), snap);
         var result = new List<WorkflowPoint> { start };
         for (var index = 0; index < anchors.Count - 1; index++)
         {
@@ -44,6 +49,25 @@ public static class WorkflowOrthogonalRouter
         }
         AddDistinct(result, end);
         return Compact(result);
+    }
+
+    /// <summary>
+    /// 把紧挨引线端点的手工拐点对齐到端点所在的线：水平引出的端点对齐纵坐标，竖直引出的对齐横坐标；
+    /// 与它在同一条线上的后续拐点一起移动，保持原来的直角走向。偏差超过 <paramref name="tolerance"/> 时不动。
+    /// </summary>
+    private static void AlignToLead(List<WorkflowPoint> anchors, int index, int step, WorkflowPoint lead, TravelDirection direction, double tolerance)
+    {
+        if (anchors.Count < 3 || index <= 0 || index >= anchors.Count - 1) return;
+        var horizontal = direction == TravelDirection.Horizontal;
+        var original = horizontal ? anchors[index].Y : anchors[index].X;
+        var target = horizontal ? lead.Y : lead.X;
+        if (NearlyEqual(original, target) || Math.Abs(original - target) > tolerance) return;
+        for (var i = index; i > 0 && i < anchors.Count - 1; i += step)
+        {
+            var point = anchors[i];
+            if (!NearlyEqual(horizontal ? point.Y : point.X, original)) break;
+            anchors[i] = horizontal ? new WorkflowPoint(point.X, target) : new WorkflowPoint(target, point.Y);
+        }
     }
 
     /// <summary>在两个锚点之间搜索转弯数优先、距离次优的正交路径。</summary>
