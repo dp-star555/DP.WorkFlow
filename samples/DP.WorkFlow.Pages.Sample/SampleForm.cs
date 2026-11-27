@@ -24,6 +24,7 @@ internal sealed class SampleForm : Form
     private readonly SampleDesignPage _design;
     private readonly WorkflowRunLogPage _log;
     private readonly WorkflowFlowLibraryPage _library;
+    private readonly SampleFlowPage _flows;
     private readonly Dictionary<string, Control> _pages = new();
     private WorkflowRunPage? _run;
     private WorkflowNoticeCenterPage? _notices;
@@ -53,16 +54,16 @@ internal sealed class SampleForm : Form
         };
         _library.Publisher.CheckDraft = host.CheckDraft;
         _library.Publisher.BlockedReason = () => host.IsRunning ? "有流程在运行，先停止再发布。" : null;
-        _library.OpenRequested += (_, file) => { _design.OpenFile(file); Navigate("design"); };
-        _library.NewRequested += (_, _) => { _design.CreateNew(); Navigate("design"); };
+        _flows = new SampleFlowPage(_library, _design);
+        _library.OpenRequested += (_, file) => { _design.OpenFile(file); _flows.ShowDesign(); };
+        _library.NewRequested += (_, _) => { _design.CreateNew(); _flows.ShowDesign(); };
         _library.FilesChanged += (_, _) =>
         {
             _design.LibraryChanged();
             if (!host.IsRunning) host.Load();
         };
-        _pages["design"] = _design;
+        _pages["flows"] = _flows;
         _pages["log"] = _log;
-        _pages["library"] = _library;
 
         Controls.Add(_content);
         Controls.Add(new WorkflowBlock { Dock = DockStyle.Left, LogicalExtent = 10 });
@@ -76,7 +77,7 @@ internal sealed class SampleForm : Form
         _clock.Start();
         WorkflowWinFormsTheme.Follow(this, () => BackColor = WorkflowWinFormsTheme.Modern.Background);
         Navigate("run");
-        if (host.LoadIssues.Count > 0) _design.ShowMessage("有流程读不出：" + string.Join("；", host.LoadIssues));
+        if (host.LoadIssues.Count > 0) _library.ShowMessage("有流程读不出：" + string.Join("；", host.LoadIssues));
     }
 
     private Control BuildHeader()
@@ -119,11 +120,10 @@ internal sealed class SampleForm : Form
         card.Controls.Add(new WorkflowCardHeader("页面"));
         _nav.Show(new[]
         {
-            new WorkflowListItem("design", "流程设计", "画布、工具箱、节点属性"),
+            new WorkflowListItem("flows", "流程", "流程库、设计、发布、版本"),
             new WorkflowListItem("run", "运行", "启停、画布、故障处理"),
             new WorkflowListItem("notices", "节点提示", "按节点汇总的提示"),
-            new WorkflowListItem("log", "运行日志", "每一步的记录"),
-            new WorkflowListItem("library", "流程库", "草稿、发布、版本")
+            new WorkflowListItem("log", "运行日志", "每一步的记录")
         });
         _nav.SelectionChanged += (_, _) => { if (_nav.SelectedKey is string key) Navigate(key); };
         return card;
@@ -182,6 +182,7 @@ internal sealed class SampleForm : Form
         _stopAll.Enabled = running > 0;
         _library.CanEdit = !_host.IsRunning && !_host.IsTrialRunning;
         _design.RefreshRunCommands();
+        _flows.RefreshTitle();
     }
 
     private async void Guard(Func<Task> action)
