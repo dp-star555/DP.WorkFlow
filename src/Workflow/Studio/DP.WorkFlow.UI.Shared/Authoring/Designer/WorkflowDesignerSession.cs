@@ -749,44 +749,107 @@ public sealed partial class WorkflowDesignerSession
         return MoveNodes(positions);
     }
 
-    /// <summary>按连接方向执行稳定的分层自动布局。</summary>
-    /// <param name="layerSpacing">自动布局的层间距。</param>
-    /// <param name="nodeSpacing">同层节点间距。</param>
-    public bool AutoLayout(double layerSpacing = 260, double nodeSpacing = 110)
+    /// <summary>
+    /// 自动布局：从左到右分层，紧凑排列。
+    /// <list type="bullet">
+    /// <item>从入口节点开始按输出端口的声明顺序深度优先走一遍（例如循环节点先走“循环体”再走“完成”）；
+    /// 指回正在走的路径上的连线（循环回边）不参与分层，所以循环体不会被拉成一长排。</item>
+    /// <item>每个节点放在所有前驱的下一层（最长路径）；同一层里尽量和最先走到它的前驱放在同一行，
+    /// 主线保持一条直线，分支依次往下排。</item>
+    /// <item>层宽按这一层最宽的节点、行高按这一行最高的节点，间距 3 格 / 2 格；整体保持原来的左上角位置，坐标对齐栅格。</item>
+    /// </list>
+    /// </summary>
+    public bool AutoLayout()
     {
         if (Document.Nodes.Count == 0)
             return false;
-        var nodeIds = Document.Nodes.Select(item => item.Node.Id).ToArray();
-        var incoming = nodeIds.ToDictionary(
-            id => id,
-            id => Document.Connections.Count(connection => connection.ToNodeId == id),
-            StringComparer.Ordinal);
-        var layers = new Dictionary<string, int>(StringComparer.Ordinal);
-        var roots = nodeIds.Where(id => incoming[id] == 0).OrderBy(id => id, StringComparer.Ordinal).ToArray();
-        foreach (var root in roots)
-            layers[root] = 0;
-        var queue = new Queue<string>(roots);
-        while (queue.Count > 0)
+        const double columnGap = WorkflowDesignerGeometry.GridSize * 3;
+        const double rowGap = WorkflowDesignerGeometry.GridSize * 2;
+        var nodes = Document.Nodes.ToDictionary(item => item.Node.Id, StringComparer.Ordinal);
+        var outgoing = nodes.Keys.ToDictionary(id => id, id =>
         {
-            var current = queue.Dequeue();
-            var layer = layers.GetValueOrDefault(current);
-            foreach (var target in Document.Connections.Where(connection => connection.FromNodeId == current).Select(connection => connection.ToNodeId).Distinct(StringComparer.Ordinal))
+            var ports = GetDeclaredPorts(id, WorkflowPortDirection.Output).Select(port => port.Key).ToList();
+            return Document.Connections
+                .Where(connection => connection.FromNodeId == id && nodes.ContainsKey(connection.ToNodeId) && connection.ToNodeId != id)
+                .OrderBy(connection => ports.IndexOf(connection.FromPort) is var index && index >= 0 ? index : int.MaxValue)
+                .ToArray();
+        }, StringComparer.Ordinal);
+
+        // 深度优先：记下发现顺序、第一个走到它的前驱、回边。
+        var state = new Dictionary<string, int>(StringComparer.Ordinal);
+        var discovery = new Dictionary<string, int>(StringComparer.Ordinal);
+        var parent = new Dictionary<string, string>(StringComparer.Ordinal);
+        var back = new HashSet<WorkflowConnectionModel>();
+        var postOrder = new List<string>();
+        var componentRoots = new List<string>();
+        void Visit(string id)
+        {
+            state[id] = 1;
+            discovery[id] = discovery.Count;
+            foreach (var connection in outgoing[id])
             {
-                layers[target] = Math.Max(layers.GetValueOrDefault(target), layer + 1);
-                incoming[target]--;
-                if (incoming[target] == 0) queue.Enqueue(target);
+                var target = connection.ToNodeId;
+                switch (state.GetValueOrDefault(target))
+                {
+                    case 1:
+                        back.Add(connection);
+                        break;
+                    case 0:
+                        parent[target] = id;
+                        Visit(target);
+                        break;
+                }
             }
+            state[id] = 2;
+            postOrder.Add(id);
         }
-        var fallbackLayer = layers.Count == 0 ? 0 : layers.Values.Max() + 1;
-        foreach (var id in nodeIds.Where(id => !layers.ContainsKey(id)).OrderBy(id => id, StringComparer.Ordinal))
-            layers[id] = fallbackLayer++;
-        var positions = new Dictionary<string, WorkflowPoint>(StringComparer.Ordinal);
-        foreach (var group in Document.Nodes.GroupBy(node => layers[node.Node.Id]).OrderBy(group => group.Key))
+        var hasIncoming = new HashSet<string>(Document.Connections.Where(connection => connection.FromNodeId != connection.ToNodeId).Select(connection => connection.ToNodeId), StringComparer.Ordinal);
+        var roots = new[] { Document.EntryNodeId }
+            .Concat(Document.Nodes.Where(item => !hasIncoming.Contains(item.Node.Id)).Select(item => item.Node.Id))
+            .Concat(Document.Nodes.Select(item => item.Node.Id));
+        foreach (var root in roots)
         {
-            var row = 0;
-            foreach (var node in group.OrderBy(item => item.Node.Id, StringComparer.Ordinal))
-                positions[node.Node.Id] = new WorkflowPoint(group.Key * layerSpacing, row++ * nodeSpacing);
+            if (root is null || !nodes.ContainsKey(root) || state.ContainsKey(root)) continue;
+            componentRoots.Add(root);
+            Visit(root);
         }
+
+        // 最长路径分层（不算回边）。
+        var layer = nodes.Keys.ToDictionary(id => id, _ => 0, StringComparer.Ordinal);
+        for (var index = postOrder.Count - 1; index >= 0; index--)
+        {
+            var id = postOrder[index];
+            foreach (var connection in outgoing[id])
+                if (!back.Contains(connection))
+                    layer[connection.ToNodeId] = Math.Max(layer[connection.ToNodeId], layer[id] + 1);
+        }
+
+        // 行：和第一个走到它的前驱同一行；被占了就往下。新的一组（不连通的部分）从已有的最下面一行之后开始。
+        var row = new Dictionary<string, int>(StringComparer.Ordinal);
+        var nextFree = new Dictionary<int, int>();
+        var maxRow = -1;
+        foreach (var id in nodes.Keys.OrderBy(id => layer[id]).ThenBy(id => discovery[id]))
+        {
+            var desired = parent.TryGetValue(id, out var from) && row.TryGetValue(from, out var fromRow) ? fromRow
+                : componentRoots.Contains(id) ? maxRow + 1 : 0;
+            var value = Math.Max(desired, nextFree.GetValueOrDefault(layer[id]));
+            row[id] = value;
+            nextFree[layer[id]] = value + 1;
+            maxRow = Math.Max(maxRow, value);
+        }
+
+        var columnWidth = nodes.Values.GroupBy(node => layer[node.Node.Id]).ToDictionary(group => group.Key, group => group.Max(node => node.Width));
+        var rowHeight = nodes.Values.GroupBy(node => row[node.Node.Id]).ToDictionary(group => group.Key, group => group.Max(node => node.Height));
+        var originX = WorkflowDesignerGeometry.SnapToGrid(nodes.Values.Min(node => node.X));
+        var originY = WorkflowDesignerGeometry.SnapToGrid(nodes.Values.Min(node => node.Y));
+        double Offset(Dictionary<int, double> sizes, int index, double gap) =>
+            Enumerable.Range(0, index).Sum(item => sizes.TryGetValue(item, out var size) ? size + gap : 0);
+        var positions = nodes.Values.ToDictionary(
+            node => node.Node.Id,
+            node => new WorkflowPoint(
+                WorkflowDesignerGeometry.SnapToGrid(originX + Offset(columnWidth, layer[node.Node.Id], columnGap)),
+                WorkflowDesignerGeometry.SnapToGrid(originY + Offset(rowHeight, row[node.Node.Id], rowGap))),
+            StringComparer.Ordinal);
         return MoveNodes(positions);
     }
 

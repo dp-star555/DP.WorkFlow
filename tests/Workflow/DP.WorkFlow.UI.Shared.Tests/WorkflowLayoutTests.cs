@@ -48,6 +48,36 @@ public sealed class WorkflowLayoutTests
         Assert.Equal(0, end.Y);
     }
 
+    [Fact]
+    public void AutoLayout_KeepsLoopBodyOnTheMainRowAndPutsCompletedBranchBelow()
+    {
+        // 开始 → 循环 →（循环体）A → B → 回到循环；循环“完成” → 结束。
+        var session = CreateSession();
+        var start = session.AddNode("Start", 900, 900);
+        var loop = session.AddNode("Loop", 0, 0);
+        var end = session.AddNode("End", 300, 0);
+        var a = session.AddNode("Action", 600, 0);
+        var b = session.AddNode("Action", 900, 0);
+        session.Document.EntryNodeId = start.Node.Id;
+        session.Connect(start.Node.Id, WorkflowPorts.Success, loop.Node.Id);
+        session.Connect(loop.Node.Id, WorkflowPorts.Loop, a.Node.Id);
+        session.Connect(a.Node.Id, WorkflowPorts.Success, b.Node.Id);
+        session.Connect(b.Node.Id, WorkflowPorts.Success, loop.Node.Id);
+        session.Connect(loop.Node.Id, WorkflowPorts.Completed, end.Node.Id);
+
+        Assert.True(session.AutoLayout());
+
+        // 主线一行：开始、循环、A、B 从左到右，间距紧凑（不超过 3 格）。
+        Assert.All(new[] { loop, a, b }, node => Assert.Equal(start.Y, node.Y));
+        Assert.True(start.X < loop.X && loop.X < a.X && a.X < b.X);
+        Assert.True(a.X - (loop.X + loop.Width) <= WorkflowDesignerGeometry.GridSize * 3 + 0.01);
+        // “完成”分支和循环体第一个节点同一层，放在下一行。
+        Assert.Equal(a.X, end.X);
+        Assert.True(end.Y > a.Y);
+        var rowHeight = new[] { start, loop, a, b }.Max(node => node.Height);
+        Assert.True(end.Y - (a.Y + rowHeight) <= WorkflowDesignerGeometry.GridSize * 2 + 0.01);
+    }
+
     private static WorkflowDesignerSession CreateSession() => new(
         new WorkflowDocument { Name = "Layout" },
         new WorkflowNodeCatalog().RegisterStandardNodes());

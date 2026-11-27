@@ -111,8 +111,10 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         ResumeLayout(false);
 
         AddMenuItem(_alignMenu, "左对齐", ModernIconKind.AlignLeft, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Left));
+        AddMenuItem(_alignMenu, "水平居中", null, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.HorizontalCenter));
         AddMenuItem(_alignMenu, "右对齐", ModernIconKind.AlignRight, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Right));
         AddMenuItem(_alignMenu, "顶端对齐", ModernIconKind.AlignTop, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Top));
+        AddMenuItem(_alignMenu, "垂直居中", null, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.VerticalCenter));
         AddMenuItem(_alignMenu, "底端对齐", ModernIconKind.AlignBottom, () => Session?.AlignSelectedNodes(WorkflowNodeAlignment.Bottom));
         AddMenuItem(_alignMenu, "水平分布", ModernIconKind.DistributeHorizontal, () => Session?.DistributeSelectedNodes(WorkflowNodeDistribution.Horizontal));
         AddMenuItem(_alignMenu, "垂直分布", ModernIconKind.DistributeVertical, () => Session?.DistributeSelectedNodes(WorkflowNodeDistribution.Vertical));
@@ -449,10 +451,11 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         base.Dispose(disposing);
     }
 
-    private void AddMenuItem(ToolStrip menu, string text, ModernIconKind icon, Action action)
+    // 没有合适图标（例如居中对齐）时 icon 为空，只显示文字。
+    private void AddMenuItem(ToolStrip menu, string text, ModernIconKind? icon, Action action)
     {
         var item = new ToolStripMenuItem(text, null, (_, _) => action());
-        _icons.Add((item, icon, theme => theme.Text));
+        if (icon is { } kind) _icons.Add((item, kind, theme => theme.Text));
         menu.Items.Add(item);
     }
 
