@@ -566,7 +566,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             ScrollBars = ScrollBars.Both,
             WordWrap = false,
             Dock = DockStyle.Fill,
-            Font = new Font(FontFamily.GenericMonospace, 9),
+            Font = new Font(FontFamily.GenericMonospace, Font.Size),
             Text = entry.GetStructuredJson()
         };
         using var dialog = new Form

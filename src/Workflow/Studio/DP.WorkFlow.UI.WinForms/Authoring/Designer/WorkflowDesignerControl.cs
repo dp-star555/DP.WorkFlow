@@ -1171,7 +1171,7 @@ public sealed partial class WorkflowDesignerControl : Control
         var error = _canvasDiagnostics.Any(item => item.Severity == WorkflowValidationSeverity.Error);
         var color = error ? Colors.Failed : Colors.Notice;
         var text = $"{(error ? "流程错误" : "流程警告")} {WorkflowDesignerGeometry.NoticeBadgeText(_canvasDiagnostics.Count)}";
-        using var font = new Font(Font.FontFamily, 12f, FontStyle.Regular, GraphicsUnit.Pixel);
+        using var font = new Font(Font.FontFamily, 12f * DeviceDpi / 96f, FontStyle.Regular, GraphicsUnit.Pixel);
         var size = graphics.MeasureString(text, font);
         var dot = 8f;
         var width = size.Width + dot + 28;
@@ -1238,7 +1238,7 @@ public sealed partial class WorkflowDesignerControl : Control
         var notices = _session.GetCanvasNotices();
         if (notices.Count == 0) return;
         var text = $"画布提示 {WorkflowDesignerGeometry.NoticeBadgeText(notices.Count)}";
-        using var font = new Font(Font.FontFamily, 12f, FontStyle.Regular, GraphicsUnit.Pixel);
+        using var font = new Font(Font.FontFamily, 12f * DeviceDpi / 96f, FontStyle.Regular, GraphicsUnit.Pixel);
         var size = graphics.MeasureString(text, font);
         var dot = 8f;
         var width = size.Width + dot + 28;
@@ -1268,6 +1268,7 @@ public sealed partial class WorkflowDesignerControl : Control
         if (notices.Count == 0) return;
         var title = node is null ? "画布" : node.Node.Title;
         var popup = new WorkflowNoticePopup(
+            this,
             title,
             notices,
             () =>

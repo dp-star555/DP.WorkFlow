@@ -212,8 +212,7 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             _chevron = new Label { AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = WorkflowWinFormsTheme.Modern.TextSecondary, Margin = new Padding(0, 8, 4, 8) };
-            _title = new Label { AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 8, 10, 8) };
-            _title.Font = new Font(owner.Font, FontStyle.Bold);
+            _title = new WorkflowLabel { Bold = true, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 8, 10, 8) };
             _summary = new Label
             {
                 AutoSize = false,
@@ -464,8 +463,7 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        var label = new Label { Text = title, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) };
-        label.Font = new Font(Font, FontStyle.Bold);
+        var label = new WorkflowLabel { Text = title, Bold = true, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) };
         var button = WorkflowSizing.Fit(new ModernButton
         {
             Text = addText,

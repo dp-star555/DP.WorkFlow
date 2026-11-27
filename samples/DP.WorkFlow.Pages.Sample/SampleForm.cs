@@ -83,8 +83,7 @@ internal sealed class SampleForm : Form
     private Control BuildHeader()
     {
         var bar = new WorkflowToolbar();
-        var title = new Label { Text = "Workflow 页面示例" };
-        title.Font = new Font(Font.FontFamily, Font.Size * 1.15f, FontStyle.Bold);
+        var title = new WorkflowLabel { Text = "Workflow 页面示例", Bold = true, FontScale = 1.15f };
         bar.Add(title);
         bar.AddSeparator();
         bar.Add(new Label { Text = "主题" });
