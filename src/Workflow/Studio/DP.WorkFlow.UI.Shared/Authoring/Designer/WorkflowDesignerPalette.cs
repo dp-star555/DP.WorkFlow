@@ -79,15 +79,11 @@ public static class WorkflowDesignerPalette
     public static readonly WorkflowColor PortLabel = WorkflowColor.FromRgb(0xa1a1aa);
     /// <summary>失败端口名称文字。</summary>
     public static readonly WorkflowColor FailedPortLabel = WorkflowColor.FromRgb(0xfca5a5);
-    /// <summary>外置数据成员名称文字。</summary>
-    public static readonly WorkflowColor DataLabel = WorkflowColor.FromRgb(0xc4b5fd);
 
     /// <summary>控制流端口圆点。</summary>
     public static readonly WorkflowColor Port = WorkflowColor.FromRgb(0x9a9aa6);
     /// <summary>失败端口圆点。</summary>
     public static readonly WorkflowColor FailedPort = WorkflowColor.FromRgb(0xf87171);
-    /// <summary>数据端口空心菱形与数据连线。</summary>
-    public static readonly WorkflowColor DataPort = WorkflowColor.FromRgb(0xc4b5fd);
     /// <summary>拖线时可接入的输入端点、悬停端口的高亮色。</summary>
     public static readonly WorkflowColor PortHighlight = WorkflowColor.FromRgb(0xe4e4e7);
 

@@ -223,8 +223,7 @@ public sealed class WorkflowNodeEditorWindow : Window
     }
 
     /// <summary>
-    /// 创建运行结果页：顶部一行运行状态，下方表格列出标准输出全部成员（未运行时也列出），
-    /// 勾选“数据端口”后该成员显示在节点上，可直接拖线绑定到下游参数。运行快照变化时在 UI 线程刷新。
+    /// 创建输出页：顶部一行运行状态，下方表格列出标准输出全部成员（未运行时也列出）。运行快照变化时在 UI 线程刷新。
     /// </summary>
     private static FrameworkElement CreateResults(WorkflowNodeResultPageModel model)
     {
@@ -239,12 +238,6 @@ public sealed class WorkflowNodeEditorWindow : Window
             SelectionMode = DataGridSelectionMode.Single,
             Margin = new Thickness(4)
         };
-        grid.Columns.Add(new DataGridCheckBoxColumn
-        {
-            Header = "数据端口",
-            Binding = new System.Windows.Data.Binding(nameof(ResultRow.Exposed)) { UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged },
-            Width = new DataGridLength(80)
-        });
         grid.Columns.Add(new DataGridTextColumn { Header = "名称", Binding = new System.Windows.Data.Binding(nameof(ResultRow.Name)), IsReadOnly = true, Width = new DataGridLength(180) });
         grid.Columns.Add(new DataGridTextColumn { Header = "值", Binding = new System.Windows.Data.Binding(nameof(ResultRow.Value)), IsReadOnly = true, Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
         void Refresh()
@@ -253,12 +246,11 @@ public sealed class WorkflowNodeEditorWindow : Window
             state.Text = string.Join("    ", items.Where(item => item.Category == WorkflowNodeResultPageModel.StateCategory)
                 .Select(item => item.Name == "状态" ? item.Value : $"{item.Name}：{item.Value}"));
             grid.ItemsSource = model.GetMembers()
-                .Select(member => new ResultRow(model, member.Name, member.DisplayName, member.Value, member.Exposed))
+                .Select(member => new ResultRow(member.DisplayName, member.Value))
                 .Concat(items.Where(item => item.Category != WorkflowNodeResultPageModel.StateCategory)
-                    .Select(item => new ResultRow(model, null, item.Name, item.Value, false)))
+                    .Select(item => new ResultRow(item.Name, item.Value)))
                 .ToArray();
         }
-        // 勾选提交本身会触发 Changed；推迟到当前编辑事务结束后再替换数据源。
         void OnChanged(object? sender, EventArgs e) => _ = grid.Dispatcher.BeginInvoke(Refresh);
         model.Changed += OnChanged;
         grid.Unloaded += (_, _) => model.Changed -= OnChanged;
@@ -271,23 +263,8 @@ public sealed class WorkflowNodeEditorWindow : Window
         return layout;
     }
 
-    /// <summary>结果表一行；勾选“数据端口”时写回编辑副本。未声明输出类型时展开的实际输出没有成员键，不能勾选。</summary>
-    private sealed class ResultRow(WorkflowNodeResultPageModel model, string? member, string name, string value, bool exposed)
-    {
-        private bool _exposed = exposed;
-        public string Name { get; } = name;
-        public string Value { get; } = value;
-        public bool Exposed
-        {
-            get => _exposed;
-            set
-            {
-                if (member is null || _exposed == value) return;
-                _exposed = value;
-                model.SetMemberExposed(member, value);
-            }
-        }
-    }
+    /// <summary>结果表一行。</summary>
+    private sealed record ResultRow(string Name, string Value);
 
     /// <summary>创建Properties。</summary>
     private FrameworkElement CreateProperties(WorkflowPropertyEditorPageModel page)

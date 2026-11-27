@@ -33,7 +33,6 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     private WorkflowPortSide? _portDropSide;
     private Point _pointer;
     private string? _hoverNodeId;
-    private (WorkflowCanvasNode Node, WorkflowOutputMember Member, WorkflowPoint Point)? _dataLinkStart;
     private InteractionMode _mode;
     private readonly System.Windows.Threading.DispatcherTimer _runtimeTimer;
 
@@ -96,11 +95,8 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         if (_session is null)
             return;
         DrawConnections(drawingContext);
-        DrawDataLinks(drawingContext);
         foreach (var node in _session.Document.Nodes)
             DrawNode(drawingContext, node);
-        if (_mode == InteractionMode.DataLink && _dataLinkStart is { } dataLink)
-            DrawDataCurve(drawingContext, new Pen(DataPortBrush, 2) { DashStyle = DashStyles.Dash }, dataLink.Point, new WorkflowPoint(_pointer.X, _pointer.Y));
         if (_connectionStart.HasValue)
         {
             DrawOrthogonalPath(
@@ -200,16 +196,6 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             CaptureMouse();
             return;
         }
-        if (WorkflowDesignerInteraction.HitDataPort(_session, _pointer.X, _pointer.Y) is { } dataPort)
-        {
-            _session.SelectNode(dataPort.Node.Node.Id);
-            _dataLinkStart = dataPort;
-            _mode = InteractionMode.DataLink;
-            Cursor = Cursors.Cross;
-            CaptureMouse();
-            InvalidateVisual();
-            return;
-        }
         var portHit = WorkflowDesignerInteraction.HitSingleOutputSideTarget(_session, _pointer.X, _pointer.Y)
             ?? HitPort(_pointer.X, _pointer.Y, WorkflowPortDirection.Output)
             ?? HitPort(_pointer.X, _pointer.Y, WorkflowPortDirection.Input);
@@ -298,7 +284,7 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             Cursor = _mode == InteractionMode.MovePort ? Cursors.SizeAll : Cursors.Cross;
             InvalidateVisual();
         }
-        else if (_mode is InteractionMode.Connect or InteractionMode.DataLink)
+        else if (_mode == InteractionMode.Connect)
         {
             InvalidateVisual();
         }
@@ -388,11 +374,6 @@ public sealed class WorkflowDesignerControl : FrameworkElement
                 }
             }
         }
-        else if (_mode == InteractionMode.DataLink && _dataLinkStart is { } dataLink)
-        {
-            CompleteDataLink(dataLink.Node, dataLink.Member, position);
-        }
-        _dataLinkStart = null;
         _nodeDrag = null;
         _dragConnection = null;
         _dragLabelConnection = null;
@@ -593,26 +574,19 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         var emphasized = _hoverNodeId == item.Node.Id || _mode is InteractionMode.Connect or InteractionMode.MovePort;
         DrawPorts(context, item, WorkflowPortDirection.Input, emphasized);
         DrawPorts(context, item, WorkflowPortDirection.Output, emphasized);
-        DrawDataPorts(context, item, rect);
         DrawConnectionOverrideEndpoints(context, item);
         DrawConnectionInputTargets(context, item);
         if (selected)
             DrawPortSideTargets(context, item, bounds);
     }
 
-    /// <summary>标题行与正文之间、侧边端口行与外置数据行之间的分隔线。</summary>
+    /// <summary>标题行与正文之间的分隔线。</summary>
     private static void DrawRowSeparators(DrawingContext context, WorkflowDesignerRect rect, WorkflowNodeRows rows, double zoom)
     {
         if (rows.Count == 0) return;
         var pen = Freeze(new Pen(Brush(WorkflowDesignerPalette.RowSeparator), 1));
         var headerBottom = rect.Y + WorkflowDesignerGeometry.HeaderHeight * zoom;
         context.DrawLine(pen, new Point(rect.X + 1, headerBottom), new Point(rect.X + rect.Width - 1, headerBottom));
-        if (rows.DataRows > 0 && rows.TopLabelRows + rows.SideRows > 0)
-        {
-            var (top, _) = WorkflowDesignerGeometry.GetDataBand(rect, zoom, rows);
-            var inset = 8 * zoom;
-            context.DrawLine(pen, new Point(rect.X + inset, top), new Point(rect.X + rect.Width - inset, top));
-        }
     }
 
     /// <summary>以线框描边绘制 24×24 视图框的矢量图标，缩放到目标区域。</summary>
@@ -650,113 +624,6 @@ public sealed class WorkflowDesignerControl : FrameworkElement
     {
         StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round
     });
-
-    /// <summary>
-    /// 在节点右边缘对应行绘制外置数据成员：成员名称右对齐，端口为淡紫空心菱形。
-    /// </summary>
-    private void DrawDataPorts(DrawingContext context, WorkflowCanvasNode node, WorkflowDesignerRect rect)
-    {
-        if (_session is null || node.ExposedOutputMembers.Count == 0) return;
-        var ports = WorkflowDesignerGeometry.GetDataPortPoints(_session, node);
-        if (ports.Count == 0) return;
-        var zoom = _session.Zoom;
-        var size = Math.Max(2.5, 4.5 * zoom);
-        var rowHeight = WorkflowDesignerGeometry.RowHeight * zoom;
-        var border = Freeze(new Pen(Brush(WorkflowDesignerPalette.DataPort), Math.Max(1, 1.5 * Math.Min(1, zoom))));
-        var fill = Brush(WorkflowDesignerPalette.NodeBody);
-        var text = Brush(WorkflowDesignerPalette.DataLabel);
-        foreach (var (member, point) in ports)
-        {
-            var left = rect.X + 10 * zoom;
-            DrawTextClipped(context, member.DisplayName, left, point.Y - rowHeight / 2,
-                Math.Max(0, point.X - left - size - 6 * zoom), rowHeight,
-                Math.Max(3, WorkflowDesignerGeometry.DetailFontPixels * zoom), FontWeights.Normal, text, TextAlignment.Right);
-            var geometry = new StreamGeometry();
-            using (var figure = geometry.Open())
-            {
-                figure.BeginFigure(new Point(point.X, point.Y - size), true, true);
-                figure.PolyLineTo(new[] { new Point(point.X + size, point.Y), new Point(point.X, point.Y + size), new Point(point.X - size, point.Y) }, true, true);
-            }
-            geometry.Freeze();
-            context.DrawGeometry(fill, border, geometry);
-        }
-    }
-
-    private static Brush DataPortBrush => Brush(WorkflowDesignerPalette.DataPort);
-
-    /// <summary>绘制数据端口到下游节点的虚线数据连线，表示该参数绑定到了这个输出成员。</summary>
-    private void DrawDataLinks(DrawingContext context)
-    {
-        if (_session is null) return;
-        var links = _session.GetDataLinks();
-        if (links.Count == 0) return;
-        var nodes = _session.Document.Nodes.ToDictionary(node => node.Node.Id, StringComparer.Ordinal);
-        var pen = new Pen(Brush(WorkflowDesignerPalette.DataPort.WithAlpha(170)), 1.5) { DashStyle = DashStyles.Dash };
-        foreach (var link in links.DistinctBy(link => (link.SourceNodeId, link.Member, link.ConsumerNodeId)))
-        {
-            if (!nodes.TryGetValue(link.SourceNodeId, out var source) || !nodes.TryGetValue(link.ConsumerNodeId, out var consumer)) continue;
-            var from = WorkflowDesignerGeometry.GetDataPortPoints(_session, source).FirstOrDefault(port => port.Member.Name == link.Member);
-            if (from.Member is null) continue;
-            var to = WorkflowDesignerInteraction.GetSideCenter(
-                WorkflowDesignerGeometry.GetNodeScreenRect(_session, consumer), WorkflowPortSide.Left, _session.Zoom,
-                WorkflowDesignerGeometry.GetNodeRows(_session, consumer));
-            DrawDataCurve(context, pen, from.Point, to);
-            var radius = Math.Max(2, 3 * _session.Zoom);
-            context.DrawEllipse(DataPortBrush, null, new Point(to.X, to.Y), radius, radius);
-        }
-    }
-
-    private static void DrawDataCurve(DrawingContext context, Pen pen, WorkflowPoint from, WorkflowPoint to)
-    {
-        var offset = Math.Max(30, Math.Abs(to.X - from.X) / 2);
-        var geometry = new StreamGeometry();
-        using (var figure = geometry.Open())
-        {
-            figure.BeginFigure(new Point(from.X, from.Y), false, false);
-            figure.BezierTo(new Point(from.X + offset, from.Y), new Point(to.X - offset, to.Y), new Point(to.X, to.Y), true, false);
-        }
-        geometry.Freeze();
-        context.DrawGeometry(null, pen, geometry);
-    }
-
-    /// <summary>
-    /// 松开数据端口拖线：落在可接收该数据的节点上时建立绑定；目标节点有多个兼容参数时弹出菜单选择。
-    /// </summary>
-    private void CompleteDataLink(WorkflowCanvasNode source, WorkflowOutputMember member, Point location)
-    {
-        if (_session is null) return;
-        var target = WorkflowDesignerInteraction.HitNode(_session, location.X, location.Y);
-        if (target is null || ReferenceEquals(target, source)) return;
-        var targets = _session.GetDataPortTargets(source.Node.Id, member.Name, target.Node.Id);
-        void Bind(WorkflowDataPortTarget item)
-        {
-            try { _session.BindDataPort(source.Node.Id, member.Name, item); }
-            catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
-            {
-                InteractionError?.Invoke(this, exception.Message);
-            }
-        }
-        if (targets.Count == 0)
-        {
-            InteractionError?.Invoke(this,
-                $"“{target.Node.Title}”没有可绑定“{member.DisplayName}”的参数：类型不兼容，或该节点不在“{source.Node.Title}”之后执行。");
-            return;
-        }
-        if (targets.Count == 1)
-        {
-            Bind(targets[0]);
-            return;
-        }
-        var menu = new System.Windows.Controls.ContextMenu { PlacementTarget = this, Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
-        menu.Items.Add(new System.Windows.Controls.MenuItem { Header = $"将“{member.DisplayName}”绑定到：", IsEnabled = false });
-        foreach (var item in targets)
-        {
-            var entry = new System.Windows.Controls.MenuItem { Header = item.DisplayName };
-            entry.Click += (_, _) => Bind(item);
-            menu.Items.Add(entry);
-        }
-        menu.IsOpen = true;
-    }
 
     // 连线右键菜单：编辑备注、启用/停用并行分支、删除连线。
     private void ShowConnectionMenu(WorkflowConnectionModel connection)
@@ -1286,8 +1153,6 @@ public sealed class WorkflowDesignerControl : FrameworkElement
         Pan,
         /// <summary>正在从输出端口拖动并创建连接。</summary>
         Connect,
-        /// <summary>正在从数据端口拖线，松开时把下游参数绑定到该输出成员。</summary>
-        DataLink,
         /// <summary>正在调整端口默认所在边。</summary>
         MovePort,
         /// <summary>正在移动连接的手工拐点。</summary>

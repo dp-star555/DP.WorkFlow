@@ -48,7 +48,6 @@ public sealed partial class WorkflowDesignerControl : Control
     private RectangleF? _canvasDiagnosticBounds;
     private readonly ToolTip _diagnosticTip = new() { ShowAlways = true };
     private string? _diagnosticTipText;
-    private (WorkflowCanvasNode Node, WorkflowOutputMember Member, WorkflowPoint Point)? _dataLinkStart;
     private InteractionMode _mode;
     private WorkflowDesignerRect? _overviewAnchorViewport;
     private double _overviewAnchorZoom;
@@ -265,7 +264,6 @@ public sealed partial class WorkflowDesignerControl : Control
             // 拖线、框选等跟随鼠标的预览用屏幕坐标，画在最上层。
             _session = active;
             DrawPendingConnection(e.Graphics);
-            DrawPendingDataLink(e.Graphics);
             DrawMarquee(e.Graphics);
             _session = _root;
             DrawOverviewMap(e.Graphics);
@@ -283,7 +281,6 @@ public sealed partial class WorkflowDesignerControl : Control
     private void DrawCanvasContent(Graphics graphics)
     {
         DrawConnections(graphics);
-        DrawDataLinks(graphics);
         foreach (var node in _session!.Document.Nodes)
             DrawNode(graphics, node);
         DrawExpandToggles(graphics);
@@ -472,16 +469,6 @@ public sealed partial class WorkflowDesignerControl : Control
             Capture = true;
             return;
         }
-        if (WorkflowDesignerInteraction.HitDataPort(_session, e.X, e.Y) is { } dataPort)
-        {
-            _session.SelectNode(dataPort.Node.Node.Id);
-            _dataLinkStart = dataPort;
-            _mode = InteractionMode.DataLink;
-            Capture = true;
-            Cursor = Cursors.Cross;
-            Invalidate();
-            return;
-        }
         var portHit = WorkflowDesignerInteraction.HitSingleOutputSideTarget(_session, e.X, e.Y)
             ?? HitPort(e.X, e.Y, WorkflowPortDirection.Output)
             ?? HitPort(e.X, e.Y, WorkflowPortDirection.Input);
@@ -592,7 +579,7 @@ public sealed partial class WorkflowDesignerControl : Control
             Cursor = _mode == InteractionMode.MovePort ? Cursors.SizeAll : Cursors.Cross;
             Invalidate();
         }
-        else if (_mode is InteractionMode.Connect or InteractionMode.DataLink)
+        else if (_mode == InteractionMode.Connect)
         {
             Invalidate();
         }
@@ -691,11 +678,6 @@ public sealed partial class WorkflowDesignerControl : Control
                 }
             }
         }
-        else if (_mode == InteractionMode.DataLink && _dataLinkStart is { } dataLink)
-        {
-            CompleteDataLink(dataLink.Node, dataLink.Member, e.Location);
-        }
-        _dataLinkStart = null;
         _nodeDrag = null;
         _dragConnection = null;
         _dragLabelConnection = null;
@@ -912,7 +894,6 @@ public sealed partial class WorkflowDesignerControl : Control
             || _mode is InteractionMode.Connect or InteractionMode.MovePort && ReferenceEquals(_paintActive, _session);
         DrawPorts(graphics, item, WorkflowPortDirection.Input, emphasized);
         DrawPorts(graphics, item, WorkflowPortDirection.Output, emphasized);
-        DrawDataPorts(graphics, item, rect);
         DrawConnectionOverrideEndpoints(graphics, item);
         DrawConnectionInputTargets(graphics, item);
         if (selected)
@@ -921,19 +902,13 @@ public sealed partial class WorkflowDesignerControl : Control
             DrawExpandedContent(graphics, item, frame);
     }
 
-    /// <summary>标题行与正文之间、侧边端口行与外置数据行之间的分隔线。</summary>
+    /// <summary>标题行与正文之间的分隔线。</summary>
     private static void DrawRowSeparators(Graphics graphics, WorkflowDesignerRect rect, WorkflowNodeRows rows, double zoom)
     {
         if (rows.Count == 0) return;
         using var pen = new Pen(ToColor(Colors.RowSeparator), 1);
         var headerBottom = (float)(rect.Y + WorkflowDesignerGeometry.HeaderHeight * zoom);
         graphics.DrawLine(pen, (float)rect.X + 1, headerBottom, (float)(rect.X + rect.Width) - 1, headerBottom);
-        if (rows.DataRows > 0 && rows.TopLabelRows + rows.SideRows > 0)
-        {
-            var (top, _) = WorkflowDesignerGeometry.GetDataBand(rect, zoom, rows);
-            var inset = (float)(8 * zoom);
-            graphics.DrawLine(pen, (float)rect.X + inset, (float)top, (float)(rect.X + rect.Width) - inset, (float)top);
-        }
     }
 
     /// <summary>以线框描边绘制 24×24 视图框的矢量图标，缩放到目标区域。</summary>
@@ -976,112 +951,6 @@ public sealed partial class WorkflowDesignerControl : Control
     };
 
     private static Color ToColor(WorkflowColor color) => Color.FromArgb(color.A, color.R, color.G, color.B);
-
-    /// <summary>
-    /// 在节点右边缘对应行绘制外置数据成员：成员名称右对齐，端口为淡紫空心菱形。
-    /// </summary>
-    private void DrawDataPorts(Graphics graphics, WorkflowCanvasNode node, WorkflowDesignerRect rect)
-    {
-        if (_session is null || node.ExposedOutputMembers.Count == 0) return;
-        var ports = WorkflowDesignerGeometry.GetDataPortPoints(_session, node);
-        if (ports.Count == 0) return;
-        var zoom = (float)_session.Zoom;
-        using var font = CanvasFont(WorkflowDesignerGeometry.DetailFontPixels * _session.Zoom);
-        using var text = new SolidBrush(ToColor(Colors.DataLabel));
-        using var fill = new SolidBrush(ToColor(Colors.NodeBody));
-        using var border = new Pen(ToColor(Colors.DataPort), Math.Max(1f, 1.5f * Math.Min(1f, zoom)));
-        using var format = TextFormat(StringAlignment.Far);
-        var size = Math.Max(2.5f, 4.5f * zoom);
-        var rowHeight = (float)(WorkflowDesignerGeometry.RowHeight * _session.Zoom);
-        foreach (var (member, point) in ports)
-        {
-            var x = (float)point.X;
-            var y = (float)point.Y;
-            var left = (float)rect.X + 10 * zoom;
-            graphics.DrawString(member.DisplayName, font, text,
-                new RectangleF(left, y - rowHeight / 2, Math.Max(0, x - left - size - 6 * zoom), rowHeight), format);
-            var diamond = new[] { new PointF(x, y - size), new PointF(x + size, y), new PointF(x, y + size), new PointF(x - size, y) };
-            graphics.FillPolygon(fill, diamond);
-            graphics.DrawPolygon(border, diamond);
-        }
-    }
-
-    /// <summary>绘制数据端口到下游节点的虚线数据连线，表示该参数绑定到了这个输出成员。</summary>
-    private void DrawDataLinks(Graphics graphics)
-    {
-        if (_session is null) return;
-        var links = _session.GetDataLinks();
-        if (links.Count == 0) return;
-        var nodes = _session.Document.Nodes.ToDictionary(node => node.Node.Id, StringComparer.Ordinal);
-        var color = ToColor(Colors.DataPort);
-        using var pen = new Pen(Color.FromArgb(170, color), 1.5f) { DashStyle = DashStyle.Dash };
-        using var end = new SolidBrush(color);
-        foreach (var link in links.DistinctBy(link => (link.SourceNodeId, link.Member, link.ConsumerNodeId)))
-        {
-            if (!nodes.TryGetValue(link.SourceNodeId, out var source) || !nodes.TryGetValue(link.ConsumerNodeId, out var consumer)) continue;
-            var from = WorkflowDesignerGeometry.GetDataPortPoints(_session, source).FirstOrDefault(port => port.Member.Name == link.Member);
-            if (from.Member is null) continue;
-            var target = WorkflowDesignerGeometry.GetNodeScreenRect(_session, consumer);
-            var to = WorkflowDesignerInteraction.GetSideCenter(target, WorkflowPortSide.Left, _session.Zoom, WorkflowDesignerGeometry.GetNodeRows(_session, consumer));
-            DrawDataCurve(graphics, pen, from.Point, to);
-            var radius = (float)Math.Max(2, 3 * _session.Zoom);
-            graphics.FillEllipse(end, (float)to.X - radius, (float)to.Y - radius, radius * 2, radius * 2);
-        }
-    }
-
-    /// <summary>拖动数据端口时绘制跟随鼠标的虚线预览。</summary>
-    private void DrawPendingDataLink(Graphics graphics)
-    {
-        if (_mode != InteractionMode.DataLink || _dataLinkStart is not { } start) return;
-        using var pen = new Pen(ToColor(Colors.DataPort), 2) { DashStyle = DashStyle.Dash };
-        DrawDataCurve(graphics, pen, start.Point, new WorkflowPoint(_pointer.X, _pointer.Y));
-    }
-
-    private void DrawDataCurve(Graphics graphics, Pen pen, WorkflowPoint from, WorkflowPoint to)
-    {
-        var offset = (float)Math.Max(30, Math.Abs(to.X - from.X) / 2);
-        graphics.DrawBezier(pen,
-            (float)from.X, (float)from.Y,
-            (float)from.X + offset, (float)from.Y,
-            (float)to.X - offset, (float)to.Y,
-            (float)to.X, (float)to.Y);
-    }
-
-    /// <summary>
-    /// 松开数据端口拖线：落在可接收该数据的节点上时建立绑定；目标节点有多个兼容参数时弹出菜单选择。
-    /// </summary>
-    private void CompleteDataLink(WorkflowCanvasNode source, WorkflowOutputMember member, Point location)
-    {
-        if (_session is null) return;
-        var target = WorkflowDesignerInteraction.HitNode(_session, location.X, location.Y);
-        if (target is null || ReferenceEquals(target, source)) return;
-        var targets = _session.GetDataPortTargets(source.Node.Id, member.Name, target.Node.Id);
-        void Bind(WorkflowDataPortTarget item)
-        {
-            try { _session.BindDataPort(source.Node.Id, member.Name, item); }
-            catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
-            {
-                InteractionError?.Invoke(this, exception.Message);
-            }
-        }
-        if (targets.Count == 0)
-        {
-            InteractionError?.Invoke(this,
-                $"“{target.Node.Title}”没有可绑定“{member.DisplayName}”的参数：类型不兼容，或该节点不在“{source.Node.Title}”之后执行。");
-            return;
-        }
-        if (targets.Count == 1)
-        {
-            Bind(targets[0]);
-            return;
-        }
-        var menu = new ModernUI.WinForms.ModernContextMenu { Theme = WorkflowWinFormsTheme.Modern };
-        menu.Items.Add(new ToolStripLabel($"将“{member.DisplayName}”绑定到：") { Enabled = false });
-        foreach (var item in targets)
-            menu.Items.Add(item.DisplayName, null, (_, _) => Bind(item));
-        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
-        menu.Show(this, location);
-    }
 
     // 连线右键菜单：编辑备注、启用/停用并行分支、删除连线。
     private void ShowConnectionMenu(WorkflowConnectionModel connection, Point location)
@@ -1908,8 +1777,6 @@ public sealed partial class WorkflowDesignerControl : Control
         Pan,
         /// <summary>正在从输出端口拖动并创建连接。</summary>
         Connect,
-        /// <summary>正在从数据端口拖线，松开时把下游参数绑定到该输出成员。</summary>
-        DataLink,
         /// <summary>正在调整端口默认所在边。</summary>
         MovePort,
         /// <summary>正在移动连接的手工拐点。</summary>

@@ -30,7 +30,6 @@ internal sealed class SampleWorkflowHost : IDisposable
         _plugins = new WorkflowRuntimePluginCatalog(new WorkflowNodeCatalog(), new WorkflowNodeHandlerCatalog())
             .Register(new WorkflowStandardRuntimePluginModule())
             .Register(new WorkflowCompositeRuntimePluginModule())
-            .Register(new WorkflowProcessRuntimePluginModule())
             .Register(new SampleNodesModule())
             .Freeze();
     }

@@ -18,7 +18,8 @@ internal static class WorkflowWinFormsStyle
         Color Accent,
         Color Selection,
         Color SelectionText,
-        Color Grid);
+        Color Grid,
+        bool InCard = false);
 
     /// <summary>调色板取自当前工作台主题，使原生宿主控件与 Modern 控件颜色一致。</summary>
     internal static Palette Get()
@@ -27,6 +28,13 @@ internal static class WorkflowWinFormsStyle
         return new(theme.Background, theme.Container, theme.Control, theme.Border, theme.Text, theme.TextSecondary,
             theme.Primary, theme.Primary, Color.White, theme.BorderSecondary);
     }
+
+    /// <summary>
+    /// Modern 控件的主题：卡片里的控件把页面底色换成卡片底色，树、标签栏、输入框圆角外侧等
+    /// 用页面底色画的部分不再在白卡片上露出一块灰底。
+    /// </summary>
+    private static ModernUI.WinForms.ModernTheme ModernTheme(Palette palette) =>
+        palette.InCard ? WorkflowWinFormsTheme.Modern with { Background = WorkflowWinFormsTheme.Modern.Container } : WorkflowWinFormsTheme.Modern;
 
     // 已挂接过自绘事件的原生控件，避免重复订阅；Following 记录已跟随动态子控件的容器。
     private static readonly ConditionalWeakTable<Control, object> Hooked = new();
@@ -48,19 +56,26 @@ internal static class WorkflowWinFormsStyle
         if (follow && !Following.TryGetValue(control, out _))
         {
             Following.Add(control, new object());
-            control.ControlAdded += (_, e) => { if (e.Control is { } child) ApplyControl(child, Get(), true); };
+            var inCard = palette.InCard;
+            control.ControlAdded += (_, e) =>
+            {
+                if (e.Control is not { } child) return;
+                var current = Get();
+                ApplyControl(child, inCard ? current with { Window = current.Surface, InCard = true } : current, true);
+            };
         }
         // 自绘现代控件拥有自己的完整主题树，外层宿主不能再递归改写其内部原生控件。
         // 特别是 ModernPropertyGrid 的圆角行背景依赖 Background/Container 精确一致。
         if (control is ModernPropertyGrid.WinForms.ModernPropertyGrid propertyGrid)
         {
             propertyGrid.Theme = WorkflowWinFormsTheme.Modern;
+            propertyGrid.Surface = palette.InCard ? ModernPropertyGrid.WinForms.ModernPropertyGridSurface.Container : propertyGrid.Surface;
             return;
         }
         // 标签页外壳自绘，只设置主题；各页内容仍按普通宿主控件继续着色。
         if (control is ModernUI.WinForms.ModernTabControl tabs)
         {
-            tabs.Theme = WorkflowWinFormsTheme.Modern;
+            tabs.Theme = ModernTheme(palette);
             foreach (TabPage page in tabs.TabPages)
                 foreach (Control child in page.Controls)
                     ApplyControl(child, palette, follow);
@@ -83,7 +98,7 @@ internal static class WorkflowWinFormsStyle
         {
             card.BackColor = palette.Surface;
             card.ApplyInset();
-            var inner = palette with { Window = palette.Surface };
+            var inner = palette with { Window = palette.Surface, InCard = true };
             foreach (Control child in card.Controls)
                 ApplyControl(child, inner, follow);
             return;
@@ -91,7 +106,7 @@ internal static class WorkflowWinFormsStyle
         // 其余 Modern 控件（树、列表、输入框、工具栏等）自带完整主题树。
         if (control.GetType().Namespace == typeof(ModernUI.WinForms.ModernTheme).Namespace)
         {
-            ModernUI.WinForms.ModernUiSettings.ApplyTheme(control, WorkflowWinFormsTheme.Modern);
+            ModernUI.WinForms.ModernUiSettings.ApplyTheme(control, ModernTheme(palette));
             return;
         }
 

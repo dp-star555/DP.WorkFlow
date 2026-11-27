@@ -695,7 +695,10 @@ public sealed partial class WorkflowDesignerSession
         return nodes;
     }
 
-    /// <summary>按指定方式对齐选中节点。</summary>
+    /// <summary>
+    /// 按指定方式对齐选中节点。对齐后会叠在一起的节点（例如同一行的节点做水平居中）沿另一个方向按原来的先后依次让开，
+    /// 间距 1 格，让开后的位置对齐栅格。
+    /// </summary>
     /// <param name="alignment">对齐方式。</param>
     public bool AlignSelectedNodes(WorkflowNodeAlignment alignment)
     {
@@ -706,6 +709,8 @@ public sealed partial class WorkflowDesignerSession
         var right = nodes.Max(node => node.X + node.Width);
         var top = nodes.Min(node => node.Y);
         var bottom = nodes.Max(node => node.Y + node.Height);
+        var centerX = WorkflowDesignerGeometry.SnapToGrid((left + right) / 2);
+        var centerY = WorkflowDesignerGeometry.SnapToGrid((top + bottom) / 2);
         var positions = nodes.ToDictionary(
             node => node.Node.Id,
             node => alignment switch
@@ -714,15 +719,35 @@ public sealed partial class WorkflowDesignerSession
                 WorkflowNodeAlignment.Right => new WorkflowPoint(right - node.Width, node.Y),
                 WorkflowNodeAlignment.Top => new WorkflowPoint(node.X, top),
                 WorkflowNodeAlignment.Bottom => new WorkflowPoint(node.X, bottom - node.Height),
-                WorkflowNodeAlignment.HorizontalCenter => new WorkflowPoint((left + right - node.Width) / 2, node.Y),
-                WorkflowNodeAlignment.VerticalCenter => new WorkflowPoint(node.X, (top + bottom - node.Height) / 2),
+                WorkflowNodeAlignment.HorizontalCenter => new WorkflowPoint(centerX - node.Width / 2, node.Y),
+                WorkflowNodeAlignment.VerticalCenter => new WorkflowPoint(node.X, centerY - node.Height / 2),
                 _ => throw new NotSupportedException($"不支持的对齐方式：{alignment}。")
             },
             StringComparer.Ordinal);
+        // 左、右、水平居中改的是 X，叠住时沿 Y 让开；上、下、垂直居中反过来。
+        var alongY = alignment is WorkflowNodeAlignment.Left or WorkflowNodeAlignment.Right or WorkflowNodeAlignment.HorizontalCenter;
+        var gap = WorkflowDesignerGeometry.GridSize;
+        var placed = new List<WorkflowDesignerRect>();
+        foreach (var node in nodes.OrderBy(node => alongY ? node.Y : node.X).ThenBy(node => alongY ? node.X : node.Y))
+        {
+            var point = positions[node.Node.Id];
+            var rect = new WorkflowDesignerRect(point.X, point.Y, node.Width, node.Height);
+            bool Overlaps(WorkflowDesignerRect other) => alongY
+                ? rect.X < other.X + other.Width && other.X < rect.X + rect.Width && rect.Y < other.Y + other.Height + gap
+                : rect.Y < other.Y + other.Height && other.Y < rect.Y + rect.Height && rect.X < other.X + other.Width + gap;
+            while (placed.FirstOrDefault(Overlaps) is { Width: > 0 } blocker)
+                rect = alongY
+                    ? rect with { Y = SnapUp(blocker.Y + blocker.Height + gap) }
+                    : rect with { X = SnapUp(blocker.X + blocker.Width + gap) };
+            positions[node.Node.Id] = new WorkflowPoint(rect.X, rect.Y);
+            placed.Add(rect);
+        }
         return MoveNodes(positions);
     }
 
-    /// <summary>在首尾节点之间等距分布选中节点。</summary>
+    private static double SnapUp(double value) => Math.Ceiling(value / WorkflowDesignerGeometry.GridSize - 1e-9) * WorkflowDesignerGeometry.GridSize;
+
+    /// <summary>在首尾节点之间等距分布选中节点；中间节点的位置对齐栅格。</summary>
     /// <param name="distribution">分布方向。</param>
     public bool DistributeSelectedNodes(WorkflowNodeDistribution distribution)
     {
@@ -730,13 +755,14 @@ public sealed partial class WorkflowDesignerSession
         if (nodes.Length < 3)
             return false;
         var positions = nodes.ToDictionary(node => node.Node.Id, node => new WorkflowPoint(node.X, node.Y), StringComparer.Ordinal);
+        var snap = WorkflowDesignerGeometry.SnapToGrid;
         if (distribution == WorkflowNodeDistribution.Horizontal)
         {
             var ordered = nodes.OrderBy(node => node.X + node.Width / 2).ToArray();
             var first = ordered[0].X + ordered[0].Width / 2;
             var last = ordered[^1].X + ordered[^1].Width / 2;
             for (var index = 1; index < ordered.Length - 1; index++)
-                positions[ordered[index].Node.Id] = new WorkflowPoint(first + (last - first) * index / (ordered.Length - 1) - ordered[index].Width / 2, ordered[index].Y);
+                positions[ordered[index].Node.Id] = new WorkflowPoint(snap(first + (last - first) * index / (ordered.Length - 1) - ordered[index].Width / 2), ordered[index].Y);
         }
         else
         {
@@ -744,27 +770,25 @@ public sealed partial class WorkflowDesignerSession
             var first = ordered[0].Y + ordered[0].Height / 2;
             var last = ordered[^1].Y + ordered[^1].Height / 2;
             for (var index = 1; index < ordered.Length - 1; index++)
-                positions[ordered[index].Node.Id] = new WorkflowPoint(ordered[index].X, first + (last - first) * index / (ordered.Length - 1) - ordered[index].Height / 2);
+                positions[ordered[index].Node.Id] = new WorkflowPoint(ordered[index].X, snap(first + (last - first) * index / (ordered.Length - 1) - ordered[index].Height / 2));
         }
         return MoveNodes(positions);
     }
 
     /// <summary>
-    /// 自动布局：从左到右分层，紧凑排列。
+    /// 自动布局：按连线走向分层，紧凑排列。
     /// <list type="bullet">
+    /// <item>走向看连线从哪条边出：多数从下边出就自上而下分层，否则从左到右。</item>
     /// <item>从入口节点开始按输出端口的声明顺序深度优先走一遍（例如循环节点先走“循环体”再走“完成”）；
     /// 指回正在走的路径上的连线（循环回边）不参与分层，所以循环体不会被拉成一长排。</item>
-    /// <item>每个节点放在所有前驱的下一层（最长路径）；同一层里尽量和最先走到它的前驱放在同一行，
-    /// 主线保持一条直线，分支依次往下排。</item>
-    /// <item>层宽按这一层最宽的节点、行高按这一行最高的节点，间距 3 格 / 2 格；整体保持原来的左上角位置，坐标对齐栅格。</item>
+    /// <item>每个节点放在所有前驱的下一层（最长路径）；横向让输入端口对准最先走到它的前驱的输出端口，连线是直线；
+    /// 同一层重叠就往后让 2 格。层间 3 格，整体保持原来的左上角位置，层的位置对齐栅格。</item>
     /// </list>
     /// </summary>
     public bool AutoLayout()
     {
         if (Document.Nodes.Count == 0)
             return false;
-        const double columnGap = WorkflowDesignerGeometry.GridSize * 3;
-        const double rowGap = WorkflowDesignerGeometry.GridSize * 2;
         var nodes = Document.Nodes.ToDictionary(item => item.Node.Id, StringComparer.Ordinal);
         var outgoing = nodes.Keys.ToDictionary(id => id, id =>
         {
@@ -824,31 +848,73 @@ public sealed partial class WorkflowDesignerSession
                     layer[connection.ToNodeId] = Math.Max(layer[connection.ToNodeId], layer[id] + 1);
         }
 
-        // 行：和第一个走到它的前驱同一行；被占了就往下。新的一组（不连通的部分）从已有的最下面一行之后开始。
-        var row = new Dictionary<string, int>(StringComparer.Ordinal);
-        var nextFree = new Dictionary<int, int>();
-        var maxRow = -1;
-        foreach (var id in nodes.Keys.OrderBy(id => layer[id]).ThenBy(id => discovery[id]))
+        // 走向：连线多数从下边出就自上而下分层，否则从左到右。
+        var sides = Document.Connections.Where(connection => !back.Contains(connection) && nodes.ContainsKey(connection.FromNodeId))
+            .Select(connection => connection.FromSide
+                ?? WorkflowDesignerInteraction.FindPortSide(this, connection.FromNodeId, connection.FromPort, WorkflowPortDirection.Output))
+            .ToArray();
+        var vertical = sides.Count(side => side is WorkflowPortSide.Bottom or WorkflowPortSide.Top)
+            > sides.Count(side => side is WorkflowPortSide.Right or WorkflowPortSide.Left);
+        double Main(WorkflowCanvasNode node) => vertical ? node.Height : node.Width;
+        double Cross(WorkflowCanvasNode node) => vertical ? node.Width : node.Height;
+        // 端口在节点上沿横向（自上而下时是 X，从左到右时是 Y）的位置，用画布单位。
+        double PortOffset(string nodeId, string port, WorkflowPortDirection direction, WorkflowPortSide? side)
         {
-            var desired = parent.TryGetValue(id, out var from) && row.TryGetValue(from, out var fromRow) ? fromRow
-                : componentRoots.Contains(id) ? maxRow + 1 : 0;
-            var value = Math.Max(desired, nextFree.GetValueOrDefault(layer[id]));
-            row[id] = value;
-            nextFree[layer[id]] = value + 1;
-            maxRow = Math.Max(maxRow, value);
+            var node = nodes[nodeId];
+            var rect = WorkflowDesignerGeometry.GetNodeScreenRect(this, node);
+            return WorkflowDesignerInteraction.FindPortPoint(this, nodeId, port, direction, side) is { } point
+                ? (vertical ? point.X - rect.X : point.Y - rect.Y) / Zoom
+                : Cross(node) / 2;
         }
 
-        var columnWidth = nodes.Values.GroupBy(node => layer[node.Node.Id]).ToDictionary(group => group.Key, group => group.Max(node => node.Width));
-        var rowHeight = nodes.Values.GroupBy(node => row[node.Node.Id]).ToDictionary(group => group.Key, group => group.Max(node => node.Height));
+        // 横向位置：一层一层排，每个节点让自己的输入端口对准第一个走到它的前驱的输出端口（连线走直线）；
+        // 同一层按想要的位置从前往后排，重叠就往后让，间距 2 格。不连通的部分接在已排部分的后面。
+        var grid = WorkflowDesignerGeometry.GridSize;
+        var crossGap = grid * 2;
+        var cross = new Dictionary<string, double>(StringComparer.Ordinal);
+        var crossEnd = double.NegativeInfinity;
+        foreach (var group in nodes.Keys.GroupBy(id => layer[id]).OrderBy(group => group.Key))
+        {
+            var wanted = group.Select(id =>
+            {
+                var tree = parent.TryGetValue(id, out var from)
+                    ? outgoing[from].FirstOrDefault(connection => connection.ToNodeId == id && !back.Contains(connection))
+                    : null;
+                double? desired = tree is null || !cross.TryGetValue(tree.FromNodeId, out var parentCross)
+                    ? null
+                    : parentCross + PortOffset(tree.FromNodeId, tree.FromPort, WorkflowPortDirection.Output, tree.FromSide)
+                      - PortOffset(id, tree.ToPort, WorkflowPortDirection.Input, tree.ToSide);
+                return (Id: id, Desired: desired);
+            }).ToArray();
+            var previousEnd = double.NegativeInfinity;
+            foreach (var item in wanted.OrderBy(item => item.Desired ?? double.MaxValue).ThenBy(item => discovery[item.Id]))
+            {
+                var start = item.Desired ?? (double.IsNegativeInfinity(crossEnd) ? 0 : SnapUp(crossEnd + crossGap));
+                if (start < previousEnd + crossGap) start = SnapUp(previousEnd + crossGap);
+                cross[item.Id] = start;
+                previousEnd = start + Cross(nodes[item.Id]);
+                crossEnd = Math.Max(crossEnd, previousEnd);
+            }
+        }
+
+        // 纵向：每层占这一层最大的节点尺寸，层间 3 格；整体保持原来的左上角位置。
+        const double mainGap = WorkflowDesignerGeometry.GridSize * 3;
+        var bandSize = nodes.Values.GroupBy(node => layer[node.Node.Id]).ToDictionary(group => group.Key, group => group.Max(Main));
+        double BandOffset(int index) => Enumerable.Range(0, index).Sum(item => bandSize.TryGetValue(item, out var size) ? size + mainGap : 0);
+        // 整体平移时保持栅格相位：对齐端口的节点可能不在整格上，平移整数格不破坏对齐。
+        var shift = Math.Floor(cross.Values.Min() / grid) * grid;
         var originX = WorkflowDesignerGeometry.SnapToGrid(nodes.Values.Min(node => node.X));
         var originY = WorkflowDesignerGeometry.SnapToGrid(nodes.Values.Min(node => node.Y));
-        double Offset(Dictionary<int, double> sizes, int index, double gap) =>
-            Enumerable.Range(0, index).Sum(item => sizes.TryGetValue(item, out var size) ? size + gap : 0);
         var positions = nodes.Values.ToDictionary(
             node => node.Node.Id,
-            node => new WorkflowPoint(
-                WorkflowDesignerGeometry.SnapToGrid(originX + Offset(columnWidth, layer[node.Node.Id], columnGap)),
-                WorkflowDesignerGeometry.SnapToGrid(originY + Offset(rowHeight, row[node.Node.Id], rowGap))),
+            node =>
+            {
+                var main = WorkflowDesignerGeometry.SnapToGrid(BandOffset(layer[node.Node.Id]));
+                var side = cross[node.Node.Id] - shift;
+                return vertical
+                    ? new WorkflowPoint(originX + side, originY + main)
+                    : new WorkflowPoint(originX + main, originY + side);
+            },
             StringComparer.Ordinal);
         return MoveNodes(positions);
     }
@@ -1085,12 +1151,10 @@ public sealed partial class WorkflowDesignerSession
     /// <param name="nodeId">要修改的节点 ID。</param>
     /// <param name="change">针对现有节点实例执行的配置修改。</param>
     /// <param name="hiddenOutputPorts">可选的设计器隐藏端口集合；为空时保持现状。</param>
-    /// <param name="exposedOutputMembers">可选的数据端口成员集合；为空时保持现状。</param>
     public void ExecuteNodeConfigurationChange(
         string nodeId,
         Action<IWorkflowNodeModel> change,
-        IReadOnlyCollection<string>? hiddenOutputPorts = null,
-        IReadOnlyCollection<string>? exposedOutputMembers = null)
+        IReadOnlyCollection<string>? hiddenOutputPorts = null)
     {
         Guard.NotNull(change);
         var canvasNode = GetCanvasNodeOrThrow(nodeId);
@@ -1106,12 +1170,6 @@ public sealed partial class WorkflowDesignerSession
                 canvasNode.HiddenOutputPorts.Clear();
                 foreach (var portKey in hiddenOutputPorts)
                     canvasNode.HiddenOutputPorts.Add(portKey);
-            }
-            if (exposedOutputMembers is not null)
-            {
-                canvasNode.ExposedOutputMembers.Clear();
-                foreach (var member in exposedOutputMembers)
-                    canvasNode.ExposedOutputMembers.Add(member);
             }
             EnsureNodeDisplaySize(canvasNode);
             RefreshConnectionStates();
@@ -1495,7 +1553,6 @@ public sealed partial class WorkflowDesignerSession
         WorkflowNodeConfigurationSnapshotter.Capture(node.Node),
         new NodeLayoutState(node.X, node.Y, node.Width, node.Height),
         node.HiddenOutputPorts.OrderBy(key => key, StringComparer.Ordinal).ToArray(),
-        node.ExposedOutputMembers.OrderBy(key => key, StringComparer.Ordinal).ToArray(),
         Document.Connections.ToDictionary(
             connection => connection,
             connection => new ConnectionContractState(connection.State, connection.Diagnostic)));
@@ -1510,9 +1567,6 @@ public sealed partial class WorkflowDesignerSession
         node.HiddenOutputPorts.Clear();
         foreach (var portKey in state.HiddenOutputPorts)
             node.HiddenOutputPorts.Add(portKey);
-        node.ExposedOutputMembers.Clear();
-        foreach (var member in state.ExposedOutputMembers)
-            node.ExposedOutputMembers.Add(member);
         foreach (var pair in state.ConnectionStates)
         {
             pair.Key.State = pair.Value.State;
@@ -1679,14 +1733,10 @@ public sealed partial class WorkflowDesignerSession
             .Select(port => TextWidth(WorkflowPorts.GetDisplayName(port.Key)))
             .DefaultIfEmpty(0)
             .Max();
-        var exposed = GetExposedOutputMembers(node);
-        var dataLabelWidth = exposed.Count == 0
-            ? 0
-            : exposed.Select(member => TextWidth(member.DisplayName)).DefaultIfEmpty(0).Max() + 40;
         // 标题行：左右内边距、状态点、图标与间距约 60，右侧执行序号徽标与耗时约 90。
-        var requiredWidth = Math.Max(Math.Max(WorkflowDesignerGeometry.DefaultNodeWidth, dataLabelWidth + sideLabelWidth + 24),
+        var requiredWidth = Math.Max(Math.Max(WorkflowDesignerGeometry.DefaultNodeWidth, sideLabelWidth + 24),
             Math.Max(titleWidth + 150, Math.Max(horizontalPortWidth + 20, titleWidth + sideLabelWidth * 2 + 72)));
-        var rows = WorkflowDesignerGeometry.GetNodeRows(ports.Select(port => (port, node.GetPortSide(port))), exposed.Count);
+        var rows = WorkflowDesignerGeometry.GetNodeRows(ports.Select(port => (port, node.GetPortSide(port))));
         var requiredHeight = rows.NodeHeight;
         // 尺寸始终取整格（与是否吸附无关），切换吸附不会改变节点大小。
         requiredWidth = WorkflowDesignerGeometry.QuantizeNodeWidth(requiredWidth);
@@ -1728,10 +1778,7 @@ public sealed partial class WorkflowDesignerSession
     private void RaiseChanged(WorkflowDesignerChangeKind kind)
     {
         if (kind == WorkflowDesignerChangeKind.Document)
-        {
-            _dataLinks = null;
             InvalidateExpansion();
-        }
         Changed?.Invoke(this, new WorkflowDesignerChangedEventArgs(kind));
         // 展开区的文档变化也是上层文档的变化（标记修改、重画、重算展开大小）。
         if (kind == WorkflowDesignerChangeKind.Document) _owner?.RaiseChanged(kind);
@@ -1741,7 +1788,6 @@ public sealed partial class WorkflowDesignerSession
         IWorkflowNodeModel NodeSnapshot,
         NodeLayoutState Layout,
         IReadOnlyList<string> HiddenOutputPorts,
-        IReadOnlyList<string> ExposedOutputMembers,
         IReadOnlyDictionary<WorkflowConnectionModel, ConnectionContractState> ConnectionStates);
 
     private readonly record struct NodeLayoutState(double X, double Y, double Width, double Height);

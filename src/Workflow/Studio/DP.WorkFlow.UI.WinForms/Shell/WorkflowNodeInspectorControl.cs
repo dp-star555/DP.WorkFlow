@@ -10,7 +10,7 @@ namespace DP.WorkFlow.UI.WinForms;
 /// </summary>
 /// <remarks>
 /// 参数改动立即写进流程（和画布上的其他编辑一样能撤销），不另设“应用”。
-/// “输出”页上面是多输出节点的输出端口开关（显示哪些输出，例如“失败”），下面是上次运行的输出结果。
+/// “输出”页和节点窗口的“输出”页是同一个控件：多输出节点的输出端口开关，加上次运行的输出结果。
 /// 没选节点或选了多个时显示说明文字。
 /// </remarks>
 public sealed class WorkflowNodeInspectorControl : UserControl
@@ -19,17 +19,6 @@ public sealed class WorkflowNodeInspectorControl : UserControl
     private readonly ModernTabControl _tabs = new() { Dock = DockStyle.Fill };
     private readonly TabPage _parametersPage = new() { Text = "参数" };
     private readonly TabPage _resultsPage = new() { Text = "输出" };
-    private readonly FlowLayoutPanel _ports = new()
-    {
-        Dock = DockStyle.Top,
-        AutoSize = true,
-        WrapContents = true,
-        Padding = new Padding(4, 6, 4, 6),
-        Visible = false
-    };
-    private readonly WorkflowLabel _portsTitle = new() { Text = "输出端口", Bold = true, AutoSize = true, Margin = new Padding(4, 6, 12, 4) };
-    private string? _portsKey;
-    private bool _syncingPorts;
     private readonly TabPage _noticesPage = new() { Text = "提示" };
     private readonly ModernDataGridView _notices = WorkflowPage.Table("类别", "说明", "次数");
     private readonly ModernButton _clearNotices = new() { Text = "确认并清除", ButtonType = ModernButtonType.Text };
@@ -53,9 +42,6 @@ public sealed class WorkflowNodeInspectorControl : UserControl
     {
         Properties = properties ?? throw new ArgumentNullException(nameof(properties));
         Properties.Dock = DockStyle.Fill;
-        Properties.UseCompactLayout();
-        Properties.ShowOutputPorts = false;
-        _resultsPage.Controls.Add(_ports);
         _parametersPage.Controls.Add(Properties);
         WorkflowPage.ColumnWidths(_notices, 0, 1, 0);
         var noticeBar = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 4, 0, 0) };
@@ -146,7 +132,6 @@ public sealed class WorkflowNodeInspectorControl : UserControl
                 ShowNode();
                 break;
             case WorkflowDesignerChangeKind.Document:
-                ShowPorts();
                 _header.Invalidate();
                 RefreshNotices(force: false);
                 break;
@@ -181,60 +166,7 @@ public sealed class WorkflowNodeInspectorControl : UserControl
                 WorkflowWinFormsTheme.Apply(_resultControl);
             }
         }
-        ShowPorts();
         RefreshNotices(force: true);
-    }
-
-    // 输出端口开关：只有多个输出的节点才有。换节点或端口列表变了才重建；勾选状态变了（含撤销）只改勾。
-    private void ShowPorts()
-    {
-        var node = _session is not null && _nodeId is not null ? _session.Document.Nodes.FirstOrDefault(item => item.Node.Id == _nodeId) : null;
-        var outputs = node is null ? Array.Empty<WorkflowPortDescriptor>() : _session!.GetDeclaredPorts(node.Node.Id, WorkflowPortDirection.Output);
-        var key = node is null || outputs.Count <= 1 ? null : node.Node.Id + "|" + string.Join(",", outputs.Select(port => port.Key));
-        _syncingPorts = true;
-        try
-        {
-            if (key != _portsKey)
-            {
-                _portsKey = key;
-                _ports.SuspendLayout();
-                foreach (Control control in _ports.Controls.Cast<Control>().ToArray())
-                    if (!ReferenceEquals(control, _portsTitle)) control.Dispose();
-                _ports.Controls.Clear();
-                _ports.Visible = key is not null;
-                if (key is not null)
-                {
-                    _ports.Controls.Add(_portsTitle);
-                    foreach (var port in outputs)
-                    {
-                        var check = WorkflowSizing.Fit(new ModernCheckbox
-                        {
-                            Text = WorkflowPorts.GetDisplayName(port.Key),
-                            Theme = WorkflowWinFormsTheme.Modern,
-                            Margin = new Padding(4, 2, 8, 2),
-                            Tag = port
-                        });
-                        var nodeId = node!.Node.Id;
-                        var portKey = port.Key;
-                        check.CheckedChanged += (_, _) =>
-                        {
-                            if (_syncingPorts || _session is not { } session) return;
-                            // 改不了（例如只剩一个显示的输出）时把勾恢复成实际状态。
-                            if (!session.SetOutputPortVisible(nodeId, portKey, check.Checked) && IsHandleCreated) BeginInvoke(new Action(ShowPorts));
-                        };
-                        _ports.Controls.Add(check);
-                    }
-                }
-                _ports.ResumeLayout(true);
-            }
-            if (node is null) return;
-            foreach (var check in _ports.Controls.OfType<ModernCheckbox>())
-                if (check.Tag is WorkflowPortDescriptor port) check.Checked = !node.IsOutputPortHidden(port);
-        }
-        finally
-        {
-            _syncingPorts = false;
-        }
     }
 
     private void DisposeResults()

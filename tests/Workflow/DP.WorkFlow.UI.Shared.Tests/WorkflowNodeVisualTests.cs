@@ -12,20 +12,20 @@ public sealed class WorkflowNodeVisualTests
         var failed = new WorkflowPortDescriptor(WorkflowPorts.Failed, WorkflowPortDirection.Output);
 
         // 上进下出、单出口：没有正文，节点只有 48 高的标题行。
-        var plain = WorkflowDesignerGeometry.GetNodeRows(new[] { (input, WorkflowPortSide.Top), (success, WorkflowPortSide.Bottom) }, 0);
+        var plain = WorkflowDesignerGeometry.GetNodeRows(new[] { (input, WorkflowPortSide.Top), (success, WorkflowPortSide.Bottom) });
         Assert.Equal(0, plain.Count);
         Assert.Equal(WorkflowDesignerGeometry.HeaderHeight, plain.NodeHeight);
 
-        // 下边两个出口要显示名称：一行名称行；两个外置数据成员各一行。
+        // 下边两个出口要显示名称：一行名称行。
         var rows = WorkflowDesignerGeometry.GetNodeRows(
-            new[] { (input, WorkflowPortSide.Top), (success, WorkflowPortSide.Bottom), (failed, WorkflowPortSide.Bottom) }, 2);
-        Assert.Equal(new WorkflowNodeRows(0, 0, 2, 1), rows);
-        Assert.Equal(48 + 3 * 24, rows.NodeHeight);
+            new[] { (input, WorkflowPortSide.Top), (success, WorkflowPortSide.Bottom), (failed, WorkflowPortSide.Bottom) });
+        Assert.Equal(new WorkflowNodeRows(0, 0, 1), rows);
+        Assert.Equal(48 + 24, rows.NodeHeight);
 
         // 侧边端口逐行排列，行数取两边的较大者。
         var side = WorkflowDesignerGeometry.GetNodeRows(
-            new[] { (input, WorkflowPortSide.Left), (success, WorkflowPortSide.Right), (failed, WorkflowPortSide.Right) }, 0);
-        Assert.Equal(new WorkflowNodeRows(0, 2, 0, 0), side);
+            new[] { (input, WorkflowPortSide.Left), (success, WorkflowPortSide.Right), (failed, WorkflowPortSide.Right) });
+        Assert.Equal(new WorkflowNodeRows(0, 2, 0), side);
     }
 
     [Fact]
