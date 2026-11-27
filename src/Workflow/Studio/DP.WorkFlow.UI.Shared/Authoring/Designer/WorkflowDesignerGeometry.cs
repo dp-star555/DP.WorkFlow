@@ -30,16 +30,15 @@ public readonly record struct WorkflowNodeHeaderLayout(
 
 /// <summary>
 /// 节点正文的行结构（每行一格 <see cref="WorkflowDesignerGeometry.RowHeight"/>），自上而下：
-/// 上边多端口名称行、左右侧端口行、外置数据成员行、下边多端口名称行。没有正文内容时整行数为 0，节点只有标题行。
+/// 上边多端口名称行、左右侧端口行、下边多端口名称行。没有正文内容时整行数为 0，节点只有标题行。
 /// </summary>
 /// <param name="TopLabelRows">上边多端口名称行（0 或 1）。</param>
 /// <param name="SideRows">左右两边端口行数（取两边端口数的较大者）。</param>
-/// <param name="DataRows">外置数据成员行数。</param>
 /// <param name="BottomLabelRows">下边多端口名称行（0 或 1）。</param>
-public readonly record struct WorkflowNodeRows(int TopLabelRows, int SideRows, int DataRows, int BottomLabelRows)
+public readonly record struct WorkflowNodeRows(int TopLabelRows, int SideRows, int BottomLabelRows)
 {
     /// <summary>正文总行数。</summary>
-    public int Count => TopLabelRows + SideRows + DataRows + BottomLabelRows;
+    public int Count => TopLabelRows + SideRows + BottomLabelRows;
 
     /// <summary>节点设计高度：标题行加正文各行。</summary>
     public double NodeHeight => WorkflowDesignerGeometry.HeaderHeight + Count * WorkflowDesignerGeometry.RowHeight;
@@ -186,12 +185,11 @@ public static class WorkflowDesignerGeometry
     }
 
     /// <summary>
-    /// 由端口所在边和外置数据成员数确定正文行结构：左右边各端口一行；某方向端口多于一个时，上/下边要显示端口名称，各占一行；
-    /// 每个外置数据成员一行。设计器尺寸计算与绘制共用这一规则。
+    /// 由端口所在边确定正文行结构：左右边各端口一行；某方向端口多于一个时，上/下边要显示端口名称，各占一行。
+    /// 设计器尺寸计算与绘制共用这一规则。
     /// </summary>
     /// <param name="ports">节点显示的端口及其所在边。</param>
-    /// <param name="dataMembers">外置数据成员数。</param>
-    public static WorkflowNodeRows GetNodeRows(IEnumerable<(WorkflowPortDescriptor Port, WorkflowPortSide Side)> ports, int dataMembers)
+    public static WorkflowNodeRows GetNodeRows(IEnumerable<(WorkflowPortDescriptor Port, WorkflowPortSide Side)> ports)
     {
         var list = ports.ToArray();
         bool Labeled(WorkflowPortDirection direction) => list.Count(item => item.Port.Direction == direction) > 1;
@@ -199,11 +197,10 @@ public static class WorkflowDesignerGeometry
         return new WorkflowNodeRows(
             list.Any(item => item.Side == WorkflowPortSide.Top && Labeled(item.Port.Direction)) ? 1 : 0,
             Math.Max(left, right),
-            Math.Max(0, dataMembers),
             list.Any(item => item.Side == WorkflowPortSide.Bottom && Labeled(item.Port.Direction)) ? 1 : 0);
     }
 
-    /// <summary>按会话中节点当前显示的端口和外置成员计算正文行结构。</summary>
+    /// <summary>按会话中节点当前显示的端口计算正文行结构。</summary>
     /// <param name="session">设计器会话。</param>
     /// <param name="node">画布节点。</param>
     public static WorkflowNodeRows GetNodeRows(WorkflowDesignerSession session, WorkflowCanvasNode node)
@@ -211,7 +208,7 @@ public static class WorkflowDesignerGeometry
         var ports = session.GetPorts(node.Node.Id, WorkflowPortDirection.Input)
             .Concat(session.GetPorts(node.Node.Id, WorkflowPortDirection.Output))
             .Select(port => (port, node.GetPortSide(port)));
-        return GetNodeRows(ports, session.GetExposedOutputMembers(node).Count);
+        return GetNodeRows(ports);
     }
 
     /// <summary>第 <paramref name="index"/> 个正文行（从 0 起，不含标题行）中心相对节点顶边的屏幕偏移。</summary>
@@ -415,35 +412,6 @@ public static class WorkflowDesignerGeometry
         if (rows.SideRows == 0) return (rect.Y, Math.Max(1, rect.Height));
         zoom = Math.Max(0.05, zoom);
         return (rect.Y + (HeaderHeight + rows.TopLabelRows * RowHeight) * zoom, rows.SideRows * RowHeight * zoom);
-    }
-
-    /// <summary>外置数据成员行所在区间（屏幕坐标）；没有数据成员时高度为 0。</summary>
-    /// <param name="rect">节点屏幕矩形。</param>
-    /// <param name="zoom">当前缩放。</param>
-    /// <param name="rows">节点正文行结构。</param>
-    public static (double Top, double Height) GetDataBand(WorkflowDesignerRect rect, double zoom, WorkflowNodeRows rows)
-    {
-        zoom = Math.Max(0.05, zoom);
-        return (rect.Y + (HeaderHeight + (rows.TopLabelRows + rows.SideRows) * RowHeight) * zoom, rows.DataRows * RowHeight * zoom);
-    }
-
-    /// <summary>
-    /// 计算节点右边缘各数据端口的屏幕坐标：每个外置成员一行，位于侧边端口行之后、下边名称行之前。
-    /// </summary>
-    /// <param name="session">设计器会话。</param>
-    /// <param name="node">目标画布节点。</param>
-    public static IReadOnlyList<(WorkflowOutputMember Member, WorkflowPoint Point)> GetDataPortPoints(
-        WorkflowDesignerSession session,
-        WorkflowCanvasNode node)
-    {
-        var members = session.GetExposedOutputMembers(node);
-        if (members.Count == 0) return Array.Empty<(WorkflowOutputMember, WorkflowPoint)>();
-        var rect = GetNodeScreenRect(session, node);
-        var rows = GetNodeRows(session, node);
-        return members
-            .Select((member, index) => (member, new WorkflowPoint(rect.X + rect.Width,
-                rect.Y + RowCenterOffset(rows.TopLabelRows + rows.SideRows + index, session.Zoom))))
-            .ToArray();
     }
 
     /// <summary>使用默认上输入、下输出的简化几何调用。</summary>

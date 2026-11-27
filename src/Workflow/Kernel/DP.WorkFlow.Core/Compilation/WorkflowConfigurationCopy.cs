@@ -63,8 +63,6 @@ public static class WorkflowConfigurationCopy
                     node.PortSides[pair.Key] = pair.Value;
                 foreach (var key in item.HiddenOutputPorts)
                     node.HiddenOutputPorts.Add(key);
-                foreach (var member in item.ExposedOutputMembers)
-                    node.ExposedOutputMembers.Add(member);
                 copy.Nodes.Add(node);
             }
             foreach (var connection in source.Connections)

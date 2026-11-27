@@ -72,22 +72,6 @@ public static class WorkflowDesignerInteraction
         return null;
     }
 
-    /// <summary>命中节点右边缘的数据端口；返回节点、成员与端口屏幕坐标。</summary>
-    public static (WorkflowCanvasNode Node, WorkflowOutputMember Member, WorkflowPoint Point)? HitDataPort(
-        WorkflowDesignerSession session, double x, double y)
-    {
-        Guard.NotNull(session);
-        for (var index = session.Document.Nodes.Count - 1; index >= 0; index--)
-        {
-            var node = session.Document.Nodes[index];
-            if (node.ExposedOutputMembers.Count == 0) continue;
-            foreach (var (member, point) in WorkflowDesignerGeometry.GetDataPortPoints(session, node))
-                if (Distance(point, x, y) <= PortHitRadius)
-                    return (node, member, point);
-        }
-        return null;
-    }
-
     /// <summary>命中唯一选中且只有一个输出端口的节点四边快捷连接目标。</summary>
     public static WorkflowPortHit? HitSingleOutputSideTarget(WorkflowDesignerSession session, double x, double y)
     {

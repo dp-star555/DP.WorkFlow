@@ -31,14 +31,10 @@ public sealed record WorkflowCanvasPalette
     public WorkflowColor PortLabel { get; init; }
     /// <summary>失败端口名称文字。</summary>
     public WorkflowColor FailedPortLabel { get; init; }
-    /// <summary>外置数据成员名称文字。</summary>
-    public WorkflowColor DataLabel { get; init; }
     /// <summary>控制流端口圆点。</summary>
     public WorkflowColor Port { get; init; }
     /// <summary>失败端口圆点。</summary>
     public WorkflowColor FailedPort { get; init; }
-    /// <summary>数据端口与数据连线。</summary>
-    public WorkflowColor DataPort { get; init; }
     /// <summary>拖线时可接入的端点、悬停端口的高亮色。</summary>
     public WorkflowColor PortHighlight { get; init; }
     /// <summary>连线。</summary>
@@ -102,10 +98,8 @@ public sealed record WorkflowCanvasPalette
         Duration = WorkflowDesignerPalette.Duration,
         PortLabel = WorkflowDesignerPalette.PortLabel,
         FailedPortLabel = WorkflowDesignerPalette.FailedPortLabel,
-        DataLabel = WorkflowDesignerPalette.DataLabel,
         Port = WorkflowDesignerPalette.Port,
         FailedPort = WorkflowDesignerPalette.FailedPort,
-        DataPort = WorkflowDesignerPalette.DataPort,
         PortHighlight = WorkflowDesignerPalette.PortHighlight,
         Connection = WorkflowDesignerPalette.Connection,
         DisabledConnection = WorkflowDesignerPalette.DisabledConnection,
@@ -155,10 +149,8 @@ public sealed record WorkflowCanvasPalette
             Duration = c.TextMuted,
             PortLabel = c.TextMuted,
             FailedPortLabel = c.Error,
-            DataLabel = c.Accent,
             Port = c.TextMuted.Mix(canvas, .15),
             FailedPort = c.Error,
-            DataPort = c.Accent,
             PortHighlight = c.Text,
             Connection = c.TextMuted.Mix(canvas, dark ? .2 : .1),
             DisabledConnection = border,

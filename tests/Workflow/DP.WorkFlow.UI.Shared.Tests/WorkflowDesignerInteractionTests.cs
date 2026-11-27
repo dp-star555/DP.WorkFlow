@@ -66,7 +66,7 @@ public sealed class WorkflowDesignerInteractionTests
         // 没有侧边端口行时左右锚点取节点竖直中点；有侧边行时取这些行的中点。
         Assert.Equal(new WorkflowPoint(100, 25), WorkflowDesignerInteraction.GetSideCenter(rect, WorkflowPortSide.Right, 1));
         var tall = new WorkflowDesignerRect(0, 0, 96, 120);
-        Assert.Equal(new WorkflowPoint(0, 48 + 24 + 24), WorkflowDesignerInteraction.GetSideCenter(tall, WorkflowPortSide.Left, 1, new WorkflowNodeRows(1, 2, 0, 0)));
+        Assert.Equal(new WorkflowPoint(0, 48 + 24 + 24), WorkflowDesignerInteraction.GetSideCenter(tall, WorkflowPortSide.Left, 1, new WorkflowNodeRows(1, 2, 0)));
         Assert.Equal(new WorkflowPoint(50, 0), WorkflowDesignerInteraction.GetSideCenter(rect, WorkflowPortSide.Top, 1));
     }
 

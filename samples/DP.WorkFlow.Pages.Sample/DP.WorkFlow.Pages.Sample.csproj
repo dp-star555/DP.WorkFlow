@@ -17,7 +17,6 @@
     <ProjectReference Include="..\..\src\Workflow\Kernel\DP.WorkFlow.Runtime\DP.WorkFlow.Runtime.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Standard\DP.WorkFlow.Nodes.Standard.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Composite\DP.WorkFlow.Nodes.Composite.csproj" />
-    <ProjectReference Include="..\..\src\Workflow\Nodes\DP.WorkFlow.Nodes.Process\DP.WorkFlow.Nodes.Process.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Persistence\DP.WorkFlow.Persistence.Json\DP.WorkFlow.Persistence.Json.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Studio\DP.WorkFlow.UI.Shared\DP.WorkFlow.UI.Shared.csproj" />
     <ProjectReference Include="..\..\src\Workflow\Studio\DP.WorkFlow.UI.WinForms\DP.WorkFlow.UI.WinForms.csproj" />

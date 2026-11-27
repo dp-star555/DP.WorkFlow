@@ -131,33 +131,46 @@ public sealed class WorkflowNodeResultPageTests
     }
 
     [Fact]
-    public async Task OutputMembers_AreListedBeforeRunAndExposureIsCommittedWithNode()
+    public async Task OutputMembers_AreListedBeforeRun()
     {
         var (session, start) = CreateSession();
         var compare = session.AddNode("StringCompare", 200, 0);
 
         await using var editor = new WorkflowNodeEditorModel(session, start.Id, compare.Node.Id);
-        var results = Assert.IsType<WorkflowNodeResultPageModel>(
-            Assert.Single(editor.Pages, page => page.PageId == WorkflowNodeResultPageProvider.PageId).Model);
+        var page = Assert.Single(editor.Pages, page => page.PageId == WorkflowNodeResultPageProvider.PageId);
+        Assert.Equal("输出", page.Title);
+        var results = Assert.IsType<WorkflowNodeResultPageModel>(page.Model);
         var members = results.GetMembers();
-        // 尚未运行也列出标准输出的全部成员，值为占位符，开关默认关闭。
+        // 尚未运行也列出标准输出的全部成员，值为占位符。
         Assert.Contains(members, member => member.Name == nameof(CompareNodeResult.Value) && member.DisplayName == "比较结果");
         Assert.All(members, member => Assert.Equal(WorkflowNodeResultPageModel.PendingValue, member.Value));
-        Assert.All(members, member => Assert.False(member.Exposed));
         Assert.DoesNotContain(results.GetItems(), item => item.Category == WorkflowNodeResultPageModel.OutputCategory);
+    }
+
+    [Fact]
+    public async Task OutputPortSwitches_EditTheCopyAndCommitWithNode()
+    {
+        var (session, start) = CreateSession();
+        var decision = session.AddNode("Decision", 200, 0);
+
+        await using var editor = new WorkflowNodeEditorModel(session, start.Id, decision.Node.Id);
+        var results = Assert.IsType<WorkflowNodeResultPageModel>(
+            Assert.Single(editor.Pages, page => page.PageId == WorkflowNodeResultPageProvider.PageId).Model);
+        var ports = results.GetOutputPorts();
+        Assert.True(ports.Count > 1);
+        Assert.All(ports, item => Assert.True(item.Visible));
         var changes = 0;
         results.Changed += (_, _) => changes++;
 
-        Assert.True(results.SetMemberExposed(nameof(CompareNodeResult.Value), true));
-        Assert.False(results.SetMemberExposed(nameof(CompareNodeResult.Value), true));
-        Assert.False(results.SetMemberExposed("Missing", true));
-        Assert.True(results.GetMembers().Single(member => member.Name == nameof(CompareNodeResult.Value)).Exposed);
-        Assert.Equal(1, changes);
+        Assert.True(results.SetOutputPortVisible("False", false));
+        Assert.False(results.SetOutputPortVisible("False", false));
+        Assert.False(results.GetOutputPorts().Single(item => item.Port.Key == "False").Visible);
+        Assert.True(changes > 0);
         // 编辑副本上的改动在“应用/确定”前不影响正式文档。
-        Assert.Empty(compare.ExposedOutputMembers);
+        Assert.Contains(session.GetPorts(decision.Node.Id, WorkflowPortDirection.Output), port => port.Key == "False");
 
         editor.ApplyChanges();
-        Assert.Contains(nameof(CompareNodeResult.Value), compare.ExposedOutputMembers);
+        Assert.DoesNotContain(session.GetPorts(decision.Node.Id, WorkflowPortDirection.Output), port => port.Key == "False");
     }
 
     [Fact]

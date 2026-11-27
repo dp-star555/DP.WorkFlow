@@ -30,8 +30,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     private int _inputEditorGeneration;
     private bool _hideScriptProperty;
     private readonly ModernPropertyGrid.WinForms.ModernPropertyGrid _modernGrid;
-    private readonly FlowLayoutPanel _modernActions;
-    private readonly TableLayoutPanel _modernHost;
     private WorkflowPropertyObjectAdapter? _modernAdapter;
     private string? _modernSchemaKey;
     // 各输入属性当前的来源/绑定形态；只有它变化时只重建该行编辑器，不重建整张表格。
@@ -62,23 +60,8 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             Dock = DockStyle.Fill,
             Theme = WorkflowWinFormsTheme.Modern
         };
-        _modernActions = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            AutoSize = true,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = true,
-            Padding = new Padding(8, 5, 8, 3),
-            Visible = false
-        };
-        _modernHost = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
-        _modernHost.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        _modernHost.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        _modernHost.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        _modernHost.Controls.Add(_modernActions, 0, 0);
-        _modernHost.Controls.Add(_modernGrid, 0, 1);
-        Controls.Add(_modernHost);
-        _modernHost.BringToFront();
+        Controls.Add(_modernGrid);
+        _modernGrid.BringToFront();
         _modernGrid.ValidationFailed += (_, eventArgs) => EditError?.Invoke(this, eventArgs.Exception.Message);
         _modernGrid.RegisterEditor(new WorkflowEditorProvider(
             entry => entry.EditorKind == WorkflowPropertyEditorKind.WorkflowInput,
@@ -230,20 +213,15 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         _building = true;
         try
         {
-            _modernActions.SuspendLayout();
-            _modernActions.Controls.Clear();
             if (_model?.SelectedNode is null)
             {
                 _modernAdapter = null;
                 _modernSchemaKey = null;
                 _inputEditorGeneration++;
                 _modernGrid.SelectedObject = null;
-                _modernActions.Visible = false;
                 return;
             }
 
-            AddModernOutputPortEditors();
-            _modernActions.Visible = _modernActions.Controls.Count > 0;
             var schemaKey = CreateModernSchemaKey();
             if (_modernAdapter is null)
             {
@@ -286,8 +264,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         }
         finally
         {
-            _modernActions.ResumeLayout();
-            ApplyFixedStyle(_modernActions);
             _building = false;
         }
     }
@@ -349,36 +325,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             BeginInvoke(Rebuild);
         else
             Rebuild();
-    }
-
-    /// <summary>
-    /// 是否在参数上方显示“启用输出”开关（多输出节点）。设计页检查器把它放到“输出”页，这里设为 false。
-    /// </summary>
-    public bool ShowOutputPorts { get; set; } = true;
-
-    private void AddModernOutputPortEditors()
-    {
-        if (!ShowOutputPorts || _session is null || _model?.SelectedNode is null) return;
-        var outputs = _session.GetDeclaredPorts(_model.SelectedNode.Id, WorkflowPortDirection.Output);
-        if (outputs.Count <= 1) return;
-        var canvasNode = _session.Document.Nodes.First(item => item.Node.Id == _model.SelectedNode.Id);
-        foreach (var port in outputs)
-        {
-            var text = $"启用输出 {WorkflowPorts.GetDisplayName(port.Key)}";
-            var check = new ModernCheckbox
-            {
-                Text = text,
-                Checked = !canvasNode.IsOutputPortHidden(port),
-                Theme = _modernGrid.Theme,
-                Size = new Size(TextRenderer.MeasureText(text, Font).Width + 32, 28),
-                Margin = new Padding(8, 2, 4, 2)
-            };
-            check.CheckedChanged += (_, _) =>
-            {
-                if (!_building) _session.SetOutputPortVisible(canvasNode.Node.Id, port.Key, check.Checked);
-            };
-            _modernActions.Controls.Add(check);
-        }
     }
 
     private Control CreateScriptLauncher(WorkflowPropertyEntry entry)

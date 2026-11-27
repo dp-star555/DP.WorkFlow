@@ -31,7 +31,7 @@ public interface IWorkflowResultRows
 public sealed record WorkflowBindableMember(string Path, Type Type, string DisplayName);
 
 /// <summary>
-/// 输出成员随配置变化的节点（例如测量组：每个测量项都有自己的成员）。编译期绑定校验、绑定候选和设计器数据端口
+/// 输出成员随配置变化的节点（例如测量组：每个测量项都有自己的成员）。编译期绑定校验、绑定候选和输出页
 /// 以 <see cref="DescribeOutputs"/> 为准；未实现此接口的节点按描述器的静态输出类型反射。
 /// </summary>
 public interface IWorkflowDynamicOutputNode

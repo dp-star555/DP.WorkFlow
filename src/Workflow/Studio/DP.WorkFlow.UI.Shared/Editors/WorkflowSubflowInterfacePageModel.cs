@@ -239,7 +239,7 @@ public sealed class WorkflowSubflowInterfacePageModel : IDisposable
 
     /// <summary>
     /// 接口修改后：按父画布重新解析类型并注入子画布启动节点，再通知父画布和子画布刷新
-    /// （绑定候选、数据端口、诊断）。
+    /// （绑定候选、诊断）。
     /// </summary>
     private void Commit()
     {

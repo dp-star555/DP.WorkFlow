@@ -132,7 +132,6 @@ public sealed class WorkflowDocumentJsonStore
                 Height = item.Height,
                 PortSides = new Dictionary<string, WorkflowPortSide>(item.PortSides, StringComparer.Ordinal),
                 HiddenOutputPorts = item.HiddenOutputPorts.OrderBy(key => key, StringComparer.Ordinal).ToList(),
-                ExposedOutputMembers = item.ExposedOutputMembers.OrderBy(key => key, StringComparer.Ordinal).ToList(),
                 Config = node is UnknownWorkflowNodeModel unknownNode
                     ? unknownNode.RawConfig.Clone()
                     : JsonSerializer.SerializeToElement(node, descriptor!.ModelType, _options),
@@ -205,8 +204,6 @@ public sealed class WorkflowDocumentJsonStore
                 canvasNode.PortSides[pair.Key] = pair.Value;
             foreach (var portKey in source.HiddenOutputPorts)
                 canvasNode.HiddenOutputPorts.Add(portKey);
-            foreach (var member in source.ExposedOutputMembers ?? new List<string>())
-                canvasNode.ExposedOutputMembers.Add(member);
             canvas.Nodes.Add(canvasNode);
         }
         AppendConnections(canvas, document.Connections);

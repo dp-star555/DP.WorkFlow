@@ -11,14 +11,13 @@ namespace DP.WorkFlow.UI;
 /// <param name="Value">格式化后的值。</param>
 public sealed record WorkflowNodeResultItem(string Category, string Name, string Value);
 
-/// <summary>结果页中的一个标准输出成员：未运行时值为空占位，开关决定是否在节点上显示为数据端口。</summary>
+/// <summary>结果页中的一个标准输出成员：未运行时值为空占位。下游节点通过参数“选来源”引用这些成员。</summary>
 /// <param name="Name">成员路径；标准输出为简单值时为 <c>$</c>。</param>
 /// <param name="DisplayName">中文显示名称。</param>
 /// <param name="Value">最近一次运行的格式化值；尚未运行时为 <see cref="WorkflowNodeResultPageModel.PendingValue"/>。</param>
-/// <param name="Exposed">是否在节点上显示为数据端口，可直接拖线绑定到下游参数。</param>
-public sealed record WorkflowNodeResultMember(string Name, string DisplayName, string Value, bool Exposed);
+public sealed record WorkflowNodeResultMember(string Name, string DisplayName, string Value);
 
-/// <summary>为每个节点提供通用“运行结果”页：最近一次执行状态与标准输出。</summary>
+/// <summary>为每个节点提供通用“输出”页：多输出节点的输出端口开关、最近一次执行状态与标准输出。</summary>
 public sealed class WorkflowNodeResultPageProvider : IWorkflowNodeEditorPageProvider
 {
     /// <summary>结果页稳定标识。</summary>
@@ -34,13 +33,13 @@ public sealed class WorkflowNodeResultPageProvider : IWorkflowNodeEditorPageProv
     public IEnumerable<WorkflowNodeEditorPageDescriptor> CreatePages(WorkflowNodeEditorContext context)
     {
         yield return new WorkflowNodeEditorPageDescriptor(
-            PageId, "运行结果", WorkflowNodeEditorPageKind.Results, 900,
+            PageId, "输出", WorkflowNodeEditorPageKind.Results, 900,
             new WorkflowNodeResultPageModel(context.RuntimeSession, context.Node.Id, context.Session), "Results");
     }
 }
 
 /// <summary>
-/// 运行结果页模型：从接收运行快照的原始会话读取节点最近一次执行信息和输出，只读且与 UI 技术无关。
+/// 输出页模型：输出端口开关写在编辑会话上；运行状态和输出从接收运行快照的原始会话读取，与 UI 技术无关。
 /// </summary>
 public sealed class WorkflowNodeResultPageModel : IDisposable
 {
@@ -60,7 +59,7 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
     /// <summary>为指定节点创建结果页模型。</summary>
     /// <param name="session">接收运行快照的设计会话；为空时只显示“尚未运行”。</param>
     /// <param name="nodeId">节点标识。</param>
-    /// <param name="portSession">编辑数据端口开关的会话（节点窗口的隔离编辑副本，确定后才提交）；为空时开关只读。</param>
+    /// <param name="portSession">编辑输出端口开关的会话（节点窗口里是隔离编辑副本，确定后才提交）；为空时不显示开关。</param>
     public WorkflowNodeResultPageModel(WorkflowDesignerSession? session, string nodeId, WorkflowDesignerSession? portSession = null)
     {
         Guard.NotNullOrWhiteSpace(nodeId);
@@ -68,6 +67,7 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
         _portSession = portSession;
         NodeId = nodeId;
         if (_session is not null) _session.Changed += OnSessionChanged;
+        if (_portSession is not null && !ReferenceEquals(_portSession, _session)) _portSession.Changed += OnSessionChanged;
     }
 
     /// <summary>节点标识。</summary>
@@ -126,13 +126,12 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
 
     /// <summary>
     /// 按输出类型声明顺序列出节点标准输出的全部成员。尚未运行时也全部列出，值显示为占位符；
-    /// 开关为打开的成员在节点上显示为数据端口。输出类型未声明时返回空集合，结果改由 <see cref="GetItems"/> 展开实际输出。
+    /// 输出类型未声明时返回空集合，结果改由 <see cref="GetItems"/> 展开实际输出。
     /// </summary>
     public IReadOnlyList<WorkflowNodeResultMember> GetMembers()
     {
         var session = _portSession ?? _session;
-        if (session?.Document.Nodes.FirstOrDefault(node => node.Node.Id == NodeId) is not { } canvasNode)
-            return Array.Empty<WorkflowNodeResultMember>();
+        if (session is null) return Array.Empty<WorkflowNodeResultMember>();
         var members = session.GetOutputMembers(NodeId);
         if (members.Count == 0) return Array.Empty<WorkflowNodeResultMember>();
         var hasOutput = _session?.GetLatestNodeOutput(NodeId) is not null;
@@ -140,20 +139,23 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
         return members.Select(member => new WorkflowNodeResultMember(
             member.Name,
             member.DisplayName,
-            hasOutput ? ReadMember(output, member.Name) : PendingValue,
-            canvasNode.ExposedOutputMembers.Contains(member.Name))).ToArray();
+            hasOutput ? ReadMember(output, member.Name) : PendingValue)).ToArray();
     }
 
-    /// <summary>打开或关闭某个输出成员的数据端口；变化记录在编辑副本中，随节点窗口“应用/确定”提交。</summary>
-    /// <param name="name">成员名。</param>
-    /// <param name="exposed">是否在节点上显示为数据端口。</param>
-    /// <returns>状态发生变化时返回 <see langword="true"/>。</returns>
-    public bool SetMemberExposed(string name, bool exposed)
+    /// <summary>多输出节点的输出端口及是否显示；只有一个输出或没有编辑会话时为空。</summary>
+    public IReadOnlyList<(WorkflowPortDescriptor Port, bool Visible)> GetOutputPorts()
     {
-        if (_portSession is null || !_portSession.SetOutputMemberExposed(NodeId, name, exposed)) return false;
-        Changed?.Invoke(this, EventArgs.Empty);
-        return true;
+        if (_portSession?.Document.Nodes.FirstOrDefault(node => node.Node.Id == NodeId) is not { } canvasNode)
+            return Array.Empty<(WorkflowPortDescriptor, bool)>();
+        var outputs = _portSession.GetDeclaredPorts(NodeId, WorkflowPortDirection.Output);
+        return outputs.Count <= 1
+            ? Array.Empty<(WorkflowPortDescriptor, bool)>()
+            : outputs.Select(port => (port, !canvasNode.IsOutputPortHidden(port))).ToArray();
     }
+
+    /// <summary>显示或隐藏一个输出端口；改不了（例如只剩一个显示的输出）时返回 <see langword="false"/>。</summary>
+    public bool SetOutputPortVisible(string portKey, bool visible) =>
+        _portSession is not null && _portSession.SetOutputPortVisible(NodeId, portKey, visible);
 
     private static string ReadMember(object? output, string name)
     {
@@ -175,6 +177,7 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
         if (_disposed) return;
         _disposed = true;
         if (_session is not null) _session.Changed -= OnSessionChanged;
+        if (_portSession is not null) _portSession.Changed -= OnSessionChanged;
     }
 
     /// <summary>将输出值展开为一层公开属性，名称取自属性特性或节点包登记的中文名称；简单值直接显示。标记为不可浏览的诊断成员不显示，但仍可绑定。</summary>
@@ -257,6 +260,6 @@ public sealed class WorkflowNodeResultPageModel : IDisposable
 
     private void OnSessionChanged(object? sender, WorkflowDesignerChangedEventArgs e)
     {
-        if (e.Kind == WorkflowDesignerChangeKind.Runtime) Changed?.Invoke(this, EventArgs.Empty);
+        if (e.Kind is WorkflowDesignerChangeKind.Runtime or WorkflowDesignerChangeKind.Document) Changed?.Invoke(this, EventArgs.Empty);
     }
 }
