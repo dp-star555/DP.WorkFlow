@@ -543,3 +543,64 @@ public sealed class WorkflowItemList : Control
         base.Dispose(disposing);
     }
 }
+
+/// <summary>
+/// 加粗 / 放大的文字标签：字体每次从继承来的字体派生，不单独设字体。
+/// 单独 new 出来的字体不会跟着换 DPI 一起缩放，同一页面里就会一些字大一些字小；派生的字体跟着窗口字体走，不会这样。
+/// </summary>
+public class WorkflowLabel : Label
+{
+    private Font? _derived;
+    private Font? _source;
+    private bool _bold;
+    private float _scale = 1f;
+
+    /// <summary>创建标签（不自动处理 &amp; 助记符）。</summary>
+    public WorkflowLabel() => UseMnemonic = false;
+
+    /// <summary>是否加粗。</summary>
+    public bool Bold
+    {
+        get => _bold;
+        set { _bold = value; Reset(); }
+    }
+
+    /// <summary>相对继承字体的字号倍数，例如 1.15。</summary>
+    public float FontScale
+    {
+        get => _scale;
+        set { _scale = value <= 0 ? 1f : value; Reset(); }
+    }
+
+    /// <inheritdoc />
+    [System.Diagnostics.CodeAnalysis.AllowNull]
+    public override Font Font
+    {
+        get
+        {
+            var source = base.Font;
+            if (!_bold && Math.Abs(_scale - 1f) < 0.001f) return source;
+            if (_derived is null || !ReferenceEquals(_source, source))
+            {
+                _derived?.Dispose();
+                _source = source;
+                _derived = new Font(source.FontFamily, source.Size * _scale, _bold ? source.Style | FontStyle.Bold : source.Style, source.Unit);
+            }
+            return _derived;
+        }
+        set => base.Font = value;
+    }
+
+    private void Reset()
+    {
+        _source = null;
+        OnFontChanged(EventArgs.Empty);
+    }
+
+    /// <inheritdoc />
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _derived?.Dispose();
+        base.Dispose(disposing);
+    }
+}

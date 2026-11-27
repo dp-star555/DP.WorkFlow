@@ -70,8 +70,7 @@ public class WorkflowPage : UserControl
         Guard.NotNull(body);
         var palette = WorkflowWinFormsTheme.Palette;
         var card = new ModernPanel { Dock = DockStyle.Fill, Margin = new Padding(6), Padding = new Padding(16), Radius = palette.Radius, ShowBorder = true };
-        var heading = Label(title);
-        heading.Font = new Font(Font.FontFamily, Font.Size + 1.5f, FontStyle.Bold);
+        var heading = new WorkflowLabel { Text = title, Bold = true, FontScale = 1.15f, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
         heading.Dock = DockStyle.Top;
         heading.Height = 30;
         body.Dock = DockStyle.Fill;
@@ -120,7 +119,7 @@ public class WorkflowPage : UserControl
     /// <summary>单行文字（过长省略）。</summary>
     /// <param name="text">文字。</param>
     public static Label Label(string text = "") =>
-        new() { Text = text, Dock = DockStyle.Fill, Margin = Padding.Empty, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false };
+        new WorkflowLabel { Text = text, Dock = DockStyle.Fill, Margin = Padding.Empty, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false };
 
     /// <summary>只读表格（整行选择、列宽填满），表头与隔行取次一级表面色。</summary>
     /// <param name="captions">列标题。</param>

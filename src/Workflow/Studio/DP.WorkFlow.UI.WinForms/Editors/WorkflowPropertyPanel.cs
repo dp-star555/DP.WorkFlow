@@ -40,12 +40,13 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     private readonly ToolTip _sourceTips = new() { InitialDelay = 400 };
 
     /// <summary>
-    /// 窄栏（设计页右侧检查器）用：属性表放在卡片里，说明直接写在每行名称下面，不再占底部说明区。
+    /// 窄栏（设计页右侧检查器）用：属性表放在卡片里，和普通属性表一样一行一个属性（名称 | 值），
+    /// 说明统一放在底部说明框里显示选中属性的说明，行高不被说明撑高。
     /// </summary>
     public void UseCompactLayout()
     {
         _modernGrid.Surface = ModernPropertyGridSurface.Container;
-        _modernGrid.DescriptionPlacement = ModernPropertyDescriptionPlacement.Inline;
+        _modernGrid.DescriptionPlacement = ModernPropertyDescriptionPlacement.Panel;
     }
 
     /// <summary>初始化节点属性编辑面板。</summary>
@@ -350,9 +351,14 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             Rebuild();
     }
 
+    /// <summary>
+    /// 是否在参数上方显示“启用输出”开关（多输出节点）。设计页检查器把它放到“输出”页，这里设为 false。
+    /// </summary>
+    public bool ShowOutputPorts { get; set; } = true;
+
     private void AddModernOutputPortEditors()
     {
-        if (_session is null || _model?.SelectedNode is null) return;
+        if (!ShowOutputPorts || _session is null || _model?.SelectedNode is null) return;
         var outputs = _session.GetDeclaredPorts(_model.SelectedNode.Id, WorkflowPortDirection.Output);
         if (outputs.Count <= 1) return;
         var canvasNode = _session.Document.Nodes.First(item => item.Node.Id == _model.SelectedNode.Id);
@@ -566,7 +572,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             ScrollBars = ScrollBars.Both,
             WordWrap = false,
             Dock = DockStyle.Fill,
-            Font = new Font(FontFamily.GenericMonospace, 9),
+            Font = new Font(FontFamily.GenericMonospace, Font.Size),
             Text = entry.GetStructuredJson()
         };
         using var dialog = new Form

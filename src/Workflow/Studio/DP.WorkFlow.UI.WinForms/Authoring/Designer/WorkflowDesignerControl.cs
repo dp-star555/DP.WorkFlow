@@ -1171,7 +1171,7 @@ public sealed partial class WorkflowDesignerControl : Control
         var error = _canvasDiagnostics.Any(item => item.Severity == WorkflowValidationSeverity.Error);
         var color = error ? Colors.Failed : Colors.Notice;
         var text = $"{(error ? "流程错误" : "流程警告")} {WorkflowDesignerGeometry.NoticeBadgeText(_canvasDiagnostics.Count)}";
-        using var font = new Font(Font.FontFamily, 12f, FontStyle.Regular, GraphicsUnit.Pixel);
+        using var font = new Font(Font.FontFamily, 12f * DeviceDpi / 96f, FontStyle.Regular, GraphicsUnit.Pixel);
         var size = graphics.MeasureString(text, font);
         var dot = 8f;
         var width = size.Width + dot + 28;
@@ -1238,7 +1238,7 @@ public sealed partial class WorkflowDesignerControl : Control
         var notices = _session.GetCanvasNotices();
         if (notices.Count == 0) return;
         var text = $"画布提示 {WorkflowDesignerGeometry.NoticeBadgeText(notices.Count)}";
-        using var font = new Font(Font.FontFamily, 12f, FontStyle.Regular, GraphicsUnit.Pixel);
+        using var font = new Font(Font.FontFamily, 12f * DeviceDpi / 96f, FontStyle.Regular, GraphicsUnit.Pixel);
         var size = graphics.MeasureString(text, font);
         var dot = 8f;
         var width = size.Width + dot + 28;
@@ -1268,6 +1268,7 @@ public sealed partial class WorkflowDesignerControl : Control
         if (notices.Count == 0) return;
         var title = node is null ? "画布" : node.Node.Title;
         var popup = new WorkflowNoticePopup(
+            this,
             title,
             notices,
             () =>
@@ -1448,20 +1449,16 @@ public sealed partial class WorkflowDesignerControl : Control
         graphics.DrawRectangle(border, layout.MapBounds.X, layout.MapBounds.Y, layout.MapBounds.Width, layout.MapBounds.Height);
         graphics.DrawString("概览", titleFont, titleBrush, layout.MapBounds.X + 7, layout.MapBounds.Y + 4);
 
-        var nodes = _root.Document.Nodes.ToDictionary(item => item.Node.Id, item => _root.GetNodeDisplayRect(item), StringComparer.Ordinal);
+        // 连线按画布上实际的走线（端口、拐点、绕开节点）缩小画出，和画布一致。
         foreach (var connection in _root.Document.Connections)
         {
-            if (!nodes.TryGetValue(connection.FromNodeId, out var source)
-                || !nodes.TryGetValue(connection.ToNodeId, out var target))
-                continue;
-            var points = new List<WorkflowPoint>
+            var path = WorkflowDesignerInteraction.GetConnectionPath(_root, connection);
+            if (path.Count < 2) continue;
+            graphics.DrawLines(connectionPen, path.Select(point =>
             {
-                new(source.X + source.Width / 2d, source.Y + source.Height / 2d)
-            };
-            points.AddRange(connection.Waypoints.Select(_root.ToDisplayPoint));
-            points.Add(new WorkflowPoint(target.X + target.Width / 2d, target.Y + target.Height / 2d));
-            if (points.Count > 1)
-                graphics.DrawLines(connectionPen, points.Select(point => OverviewPoint(layout, point.X, point.Y)).ToArray());
+                var canvas = WorkflowDesignerGeometry.ScreenToCanvas(_root, point.X, point.Y);
+                return OverviewPoint(layout, canvas.X, canvas.Y);
+            }).ToArray());
         }
 
         foreach (var node in _root.Document.Nodes)

@@ -47,7 +47,6 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
         _options.Dock = DockStyle.Fill;
         _hint.Height = S(26);
         _stopsTitle.Height = _optionsTitle.Height = S(30);
-        OnFontChanged(EventArgs.Empty);
         foreach (var button in new[] { _stopAll, _rerun, _release })
         {
             button.Height = S(32);
@@ -310,24 +309,16 @@ public sealed class WorkflowFaultWorkbenchControl : UserControl
         _hint.ForeColor = missing.Length > 0 ? WorkflowWinFormsTheme.Modern.Warning : WorkflowWinFormsTheme.Modern.TextSecondary;
     }
 
-    private static Label Heading(string text) => new()
+    private static Label Heading(string text) => new WorkflowLabel
     {
         Text = text,
+        Bold = true,
         Dock = DockStyle.Top,
         Height = 30,
         TextAlign = ContentAlignment.BottomLeft,
         UseMnemonic = false,
         AutoEllipsis = true
     };
-
-    /// <inheritdoc />
-    protected override void OnFontChanged(EventArgs e)
-    {
-        base.OnFontChanged(e);
-        var bold = new Font(Font, FontStyle.Bold);
-        _stopsTitle.Font = bold;
-        _optionsTitle.Font = bold;
-    }
 
     // 经过宿主的准入：拒绝或出错时显示消息；完成后刷新。
     private async void Gated(WorkflowOperation operation, Action action)
