@@ -42,7 +42,6 @@ public sealed class WorkflowNodeInspectorControl : UserControl
     {
         Properties = properties ?? throw new ArgumentNullException(nameof(properties));
         Properties.Dock = DockStyle.Fill;
-        Properties.UseCompactLayout();
         _parametersPage.Controls.Add(Properties);
         WorkflowPage.ColumnWidths(_notices, 0, 1, 0);
         var noticeBar = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 4, 0, 0) };

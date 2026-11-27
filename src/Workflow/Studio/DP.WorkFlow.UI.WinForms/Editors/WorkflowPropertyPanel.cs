@@ -37,16 +37,6 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     // 输入来源图标按钮的悬停说明。
     private readonly ToolTip _sourceTips = new() { InitialDelay = 400 };
 
-    /// <summary>
-    /// 窄栏（设计页右侧检查器）用：属性表放在卡片里，和普通属性表一样一行一个属性（名称 | 值），
-    /// 说明统一放在底部说明框里显示选中属性的说明，行高不被说明撑高。
-    /// </summary>
-    public void UseCompactLayout()
-    {
-        _modernGrid.Surface = ModernPropertyGridSurface.Container;
-        _modernGrid.DescriptionPlacement = ModernPropertyDescriptionPlacement.Panel;
-    }
-
     /// <summary>初始化节点属性编辑面板。</summary>
     public WorkflowPropertyPanel()
     {
@@ -429,7 +419,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
             shown = text.Text;
             TryEdit(() => _model!.SetValue(entry, text.Text));
         };
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+        var layout = new EditorLayout { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 36));
@@ -586,7 +576,7 @@ public sealed partial class WorkflowPropertyPanel : UserControl
         var generation = _inputEditorGeneration;
         var model = _model!;
         var node = model.SelectedNode;
-        var panel = new TableLayoutPanel
+        var panel = new EditorLayout
         {
             Dock = DockStyle.Fill,
             RowCount = 1,
@@ -851,4 +841,14 @@ public sealed partial class WorkflowPropertyPanel : UserControl
     }
 
     private static void ApplyFixedStyle(Control root) => WorkflowWinFormsStyle.Apply(root);
+
+    /// <summary>
+    /// 组合编辑器（来源按钮 + 值、路径 + 浏览）的外层：属性行的单元格按子控件的首选高度定高，
+    /// 普通 TableLayoutPanel 会报出默认尺寸（约 100 像素）把那一行撑高、名称和编辑器被裁掉。这里只报一行控件的高度。
+    /// </summary>
+    private sealed class EditorLayout : TableLayoutPanel
+    {
+        public override Size GetPreferredSize(Size proposedSize) =>
+            new(Math.Max(0, Math.Min(proposedSize.Width, Width)), LogicalToDeviceUnits(24));
+    }
 }

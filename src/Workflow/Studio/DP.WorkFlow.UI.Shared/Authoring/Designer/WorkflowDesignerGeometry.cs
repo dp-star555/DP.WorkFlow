@@ -145,13 +145,10 @@ public static class WorkflowDesignerGeometry
     {
         zoom = Math.Max(0.05, zoom);
         var headerHeight = Math.Min(nodeBounds.Height, HeaderHeight * zoom);
-        double Center(double size) => nodeBounds.Y + (headerHeight - size) / 2;
         var indicator = 7 * zoom;
         var icon = HeaderIconSize * zoom;
         var left = nodeBounds.X + 10 * zoom;
-        var indicatorBounds = new WorkflowDesignerRect(left, Center(indicator), indicator, indicator);
-        var iconBounds = new WorkflowDesignerRect(left + indicator + 8 * zoom, Center(icon), icon, icon);
-        var titleLeft = iconBounds.X + icon + 8 * zoom;
+        var titleLeft = left + indicator + 8 * zoom + icon + 8 * zoom;
         var right = nodeBounds.X + nodeBounds.Width - 10 * zoom;
         var available = Math.Max(0, right - titleLeft);
         var gap = 6 * zoom;
@@ -166,6 +163,10 @@ public static class WorkflowDesignerGeometry
         var titleBounds = stacked
             ? new WorkflowDesignerRect(titleLeft, nodeBounds.Y + 2 * zoom, available, half)
             : new WorkflowDesignerRect(titleLeft, nodeBounds.Y, Math.Max(0, available - runtimeWidth - (runtimeWidth > 0 ? 8 * zoom : 0)), headerHeight);
+        // 状态点、图标和标题始终在同一行垂直居中（两行时就是上半行）。
+        double Center(double size) => titleBounds.Y + (titleBounds.Height - size) / 2;
+        var indicatorBounds = new WorkflowDesignerRect(left, Center(indicator), indicator, indicator);
+        var iconBounds = new WorkflowDesignerRect(left + indicator + 8 * zoom, Center(icon), icon, icon);
         var rowTop = stacked ? nodeBounds.Y + half - 1 * zoom : nodeBounds.Y;
         var rowHeight = stacked ? half : headerHeight;
         var badgeHeight = Math.Min(rowHeight, (stacked ? 16 : 18) * zoom);

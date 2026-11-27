@@ -138,6 +138,10 @@ public sealed class WorkflowDesignerSessionTests
         Assert.Equal(144 - 10, crowded.TitleBounds.X + crowded.TitleBounds.Width, 6);
         Assert.True(crowded.TitleBounds.Y + crowded.TitleBounds.Height <= crowded.OrderBounds.Y + 1);
         Assert.True(crowded.TitleBounds.Y + crowded.TitleBounds.Height <= crowded.DurationBounds.Y + 3);
+        // 两行时状态点、图标仍和标题在同一行垂直居中。
+        var titleCenter = crowded.TitleBounds.Y + crowded.TitleBounds.Height / 2;
+        Assert.Equal(titleCenter, crowded.IndicatorBounds.Y + crowded.IndicatorBounds.Height / 2, 6);
+        Assert.Equal(titleCenter, crowded.IconBounds.Y + crowded.IconBounds.Height / 2, 6);
         Assert.Equal(144 - 10, crowded.DurationBounds.X + crowded.DurationBounds.Width, 6);
 
         // 显示运行状态时宽节点也是两行，和窄节点、还没执行的节点（下半行空着）标题都在同一高度。

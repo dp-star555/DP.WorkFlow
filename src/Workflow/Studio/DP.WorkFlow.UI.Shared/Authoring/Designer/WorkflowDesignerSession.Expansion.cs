@@ -161,7 +161,7 @@ public sealed partial class WorkflowDesignerSession
         return stored;
     }
 
-    /// <summary>全部节点（含展开区）和连线拐点的显示范围（画布坐标）；没有节点时为空。</summary>
+    /// <summary>全部节点（含展开区）和连线实际走线的显示范围（画布坐标）；没有节点时为空。</summary>
     public WorkflowDesignerRect? GetDisplayBounds()
     {
         if (Document.Nodes.Count == 0) return null;
@@ -176,10 +176,14 @@ public sealed partial class WorkflowDesignerSession
             var rect = GetNodeDisplayRect(node);
             Include(rect.X, rect.Y, rect.Width, rect.Height);
         }
-        foreach (var point in Document.Connections.SelectMany(connection => connection.Waypoints))
+        // 连线按实际走线计入（绕行、回边会伸出节点范围），路径点含拐点；端点缺失的连线只算拐点。
+        foreach (var connection in Document.Connections)
         {
-            var display = ToDisplayPoint(point);
-            Include(display.X, display.Y, 0, 0);
+            var path = WorkflowDesignerInteraction.GetConnectionPath(this, connection);
+            foreach (var point in path.Count > 0
+                         ? path.Select(point => WorkflowDesignerGeometry.ScreenToCanvas(this, point.X, point.Y))
+                         : connection.Waypoints.Select(ToDisplayPoint))
+                Include(point.X, point.Y, 0, 0);
         }
         return new WorkflowDesignerRect(left, top, right - left, bottom - top);
     }
