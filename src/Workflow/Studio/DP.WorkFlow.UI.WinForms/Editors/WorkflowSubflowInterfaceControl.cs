@@ -9,8 +9,9 @@ namespace DP.WorkFlow.UI.WinForms;
 /// 子画布中通过“启动节点.名称”读取。输出的来源选子画布中的节点输出，父画布中通过“本节点.名称”读取。
 /// </summary>
 /// <remarks>
-/// 页面在节点窗口左边的窄栏里，表格放不下名称、来源、类型、值几列。所以每一项画成一张小卡片，
-/// 一行一个字段（名称 / 来源 / 类型 / 值），来源文字放不下时换行，整页竖向滚动。
+/// 页面在节点窗口左边的窄栏里，表格放不下名称、来源、类型、值几列。所以每一项是可展开收起的一行：
+/// 收起时显示名称和一句摘要，展开后一行一个字段（名称 / 来源 / 类型 / 值），整页竖向滚动。
+/// 修改后不重建控件：按位置复用已有的行、只更新文字，增删项时只加 / 减末尾的行，避免闪烁。
 /// </remarks>
 internal sealed class WorkflowSubflowInterfaceControl : UserControl
 {
@@ -20,14 +21,18 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
     private readonly WorkflowSubflowInterfacePageModel _model;
     private readonly TableLayoutPanel _inputs = List();
     private readonly TableLayoutPanel _outputs = List();
+    private readonly Label _noInputs = Hint("还没有输入。");
+    private readonly Label _noOutputs = Hint("还没有输出。");
     private readonly ToolTip _tips = new();
-    private string? _shape;
+    private readonly Panel _scroller = new BufferedPanel { Dock = DockStyle.Fill, AutoScroll = true };
     private bool _refreshQueued;
+    private bool _loaded;
 
     public WorkflowSubflowInterfaceControl(WorkflowSubflowInterfacePageModel model)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
-        var body = new TableLayoutPanel
+        DoubleBuffered = true;
+        var body = new BufferedTable
         {
             Dock = DockStyle.Top,
             AutoSize = true,
@@ -39,17 +44,19 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
         body.Controls.Add(Header("输入", "添加输入",
             "来源选父画布中本节点之前的节点输出，类型自动跟随来源；不选来源时使用手动值。子画布中绑定“启动节点.名称”读取。",
             () => _model.AddInput()));
+        body.Controls.Add(_noInputs);
         body.Controls.Add(_inputs);
         body.Controls.Add(Header("输出", "添加输出",
             "来源选子画布中的节点输出，类型自动跟随来源。父画布中绑定“本节点.名称”读取。",
             () => _model.AddOutput()));
+        body.Controls.Add(_noOutputs);
         body.Controls.Add(_outputs);
-        var scroller = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
-        scroller.Controls.Add(body);
-        Controls.Add(scroller);
+        _scroller.Controls.Add(body);
+        Controls.Add(_scroller);
 
         _model.Changed += OnModelChanged;
         RefreshRows();
+        _loaded = true;
     }
 
     protected override void Dispose(bool disposing)
@@ -64,7 +71,7 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
 
     private void OnModelChanged(object? sender, EventArgs e)
     {
-        // 修改常由卡片里的输入框提交触发，推迟到事件结束后刷新，避免在事件里释放正在用的控件。
+        // 修改常由行里的输入框提交触发，推迟到事件结束后刷新，避免在事件里释放正在用的控件。
         if (IsDisposed || _refreshQueued) return;
         _refreshQueued = true;
         if (IsHandleCreated) BeginInvoke(RefreshRows);
@@ -75,155 +82,147 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
     {
         _refreshQueued = false;
         if (IsDisposed) return;
-        // 只有增删项、或输入在“绑定 / 手动值”之间切换时才重建卡片；改名、改值只更新文字，焦点不丢。
-        var shape = string.Join(",", _model.Inputs.Select(input => input.IsBound ? "b" : "m")) + "|" + _model.Outputs.Count;
-        if (shape != _shape)
-        {
-            _shape = shape;
-            Rebuild();
-        }
-        else UpdateTexts();
-    }
-
-    private void Rebuild()
-    {
-        SuspendLayout();
+        _scroller.SuspendLayout();
         try
         {
-            Fill(_inputs, _model.Inputs.Count, "还没有输入。", index => InputCard(_model.Inputs[index]));
-            Fill(_outputs, _model.Outputs.Count, "还没有输出。", index => OutputCard(_model.Outputs[index]));
+            Sync(_inputs, _noInputs, _model.Inputs.Count, () => new Item(this, input: true));
+            Sync(_outputs, _noOutputs, _model.Outputs.Count, () => new Item(this, input: false));
+            for (var i = 0; i < _model.Inputs.Count; i++) ItemAt(_inputs, i).Show(_model.Inputs[i]);
+            for (var i = 0; i < _model.Outputs.Count; i++) ItemAt(_outputs, i).Show(_model.Outputs[i]);
         }
         finally
         {
-            ResumeLayout(true);
+            _scroller.ResumeLayout(true);
         }
     }
 
-    private void Fill(TableLayoutPanel list, int count, string empty, Func<int, Control> card)
-    {
-        var old = list.Controls.Cast<Control>().ToArray();
-        list.Controls.Clear();
-        foreach (var control in old) control.Dispose();
-        list.RowStyles.Clear();
-        if (count == 0)
-        {
-            list.Controls.Add(Hint(empty));
-            return;
-        }
-        for (var i = 0; i < count; i++)
-        {
-            list.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            list.Controls.Add(card(i));
-        }
-    }
+    private static Item ItemAt(TableLayoutPanel list, int index) => (Item)list.Controls[index].Tag!;
 
-    private void UpdateTexts()
+    // 行数和模型对齐：多了去掉末尾的，少了在末尾加（新加的一项展开，方便直接填写）。
+    private void Sync(TableLayoutPanel list, Label empty, int count, Func<Item> create)
     {
-        for (var i = 0; i < _model.Inputs.Count && i < _inputs.Controls.Count; i++)
+        list.SuspendLayout();
+        try
         {
-            if (_inputs.Controls[i].Tag is not Card card) continue;
-            var input = _model.Inputs[i];
-            card.SetName(input.Name);
-            card.Source.Text = input.SourceText + Drop;
-            card.Type.Text = input.IsBound ? input.TypeText + "（跟随来源）" : WorkflowSubflowInput.DisplayName(input.ValueType) + Drop;
-            card.SetValue(input.ValueText);
-        }
-        for (var i = 0; i < _model.Outputs.Count && i < _outputs.Controls.Count; i++)
-        {
-            if (_outputs.Controls[i].Tag is not Card card) continue;
-            var output = _model.Outputs[i];
-            card.SetName(output.Name);
-            card.Source.Text = output.SourceText + Drop;
-            card.Type.Text = output.TypeText;
-        }
-    }
-
-    private Control InputCard(WorkflowSubflowInputRow input)
-    {
-        var index = input.Index;
-        var card = new Card(this, input.Name, name => _model.RenameInput(index, name), () => _model.RemoveInput(index));
-        card.Source.Text = input.SourceText + Drop;
-        card.Source.Click += (_, _) => ShowMenu(card.Source, menu =>
-        {
-            Add(menu, "选择父画布中的来源…", () =>
+            while (list.Controls.Count > count)
             {
-                using var dialog = new WorkflowBindingSelectorDialog(_model.GetInputCandidates(), _model.Inputs[index].Source);
-                if (dialog.ShowDialog(FindForm()) == DialogResult.OK && dialog.SelectedCandidate is { } candidate)
-                    _model.SetInputSource(index, candidate.ToBindingKey());
-            });
-            Add(menu, "使用手动值", () => _model.SetInputSource(index, null));
-        });
-        if (input.IsBound)
-        {
-            // 绑定来源时类型跟随来源，不能修改，也没有手动值。
-            card.Type.Text = input.TypeText + "（跟随来源）";
-            card.Type.ForeColor = WorkflowWinFormsTheme.Modern.TextSecondary;
-            card.Type.Cursor = Cursors.Default;
-        }
-        else
-        {
-            card.Type.Text = WorkflowSubflowInput.DisplayName(input.ValueType) + Drop;
-            card.Type.Click += (_, _) => ShowMenu(card.Type, menu =>
+                var last = list.Controls[list.Controls.Count - 1];
+                list.Controls.Remove(last);
+                last.Dispose();
+                list.RowStyles.RemoveAt(list.RowStyles.Count - 1);
+            }
+            while (list.Controls.Count < count)
             {
-                foreach (var type in ValueTypes)
-                    Add(menu, WorkflowSubflowInput.DisplayName(type), () => _model.SetInputValueType(index, type), type == _model.Inputs[index].ValueType);
-            });
-            card.AddValue(input.ValueText, text => _model.SetInputValue(index, text));
+                var item = create();
+                item.Index = list.Controls.Count;
+                item.SetOpen(_loaded);
+                list.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                list.Controls.Add(item.Root);
+            }
+            empty.Visible = count == 0;
+            list.Visible = count > 0;
         }
-        return card.Root;
+        finally
+        {
+            list.ResumeLayout(true);
+        }
     }
 
-    private Control OutputCard(WorkflowSubflowOutputRow output)
+    private void ChooseInputSource(Item item) => ShowMenu(item.Source, menu =>
     {
-        var index = output.Index;
-        var card = new Card(this, output.Name, name => _model.RenameOutput(index, name), () => _model.RemoveOutput(index));
-        card.Source.Text = output.SourceText + Drop;
-        card.Source.Click += (_, _) =>
+        var index = item.Index;
+        Add(menu, "选择父画布中的来源…", () =>
         {
-            using var dialog = new WorkflowBindingSelectorDialog(_model.GetOutputCandidates(), _model.Outputs[index].Source);
+            using var dialog = new WorkflowBindingSelectorDialog(_model.GetInputCandidates(), _model.Inputs[index].Source);
             if (dialog.ShowDialog(FindForm()) == DialogResult.OK && dialog.SelectedCandidate is { } candidate)
-                _model.SetOutputSource(index, candidate.ToBindingKey());
-        };
-        card.Type.Text = output.TypeText;
-        card.Type.ForeColor = WorkflowWinFormsTheme.Modern.TextSecondary;
-        card.Type.Cursor = Cursors.Default;
-        return card.Root;
+                _model.SetInputSource(index, candidate.ToBindingKey());
+        });
+        Add(menu, "使用手动值", () => _model.SetInputSource(index, null));
+    });
+
+    private void ChooseInputType(Item item)
+    {
+        var index = item.Index;
+        if (_model.Inputs[index].IsBound) return;
+        ShowMenu(item.Type, menu =>
+        {
+            foreach (var type in ValueTypes)
+                Add(menu, WorkflowSubflowInput.DisplayName(type), () => _model.SetInputValueType(index, type), type == _model.Inputs[index].ValueType);
+        });
+    }
+
+    private void ChooseOutputSource(Item item)
+    {
+        var index = item.Index;
+        using var dialog = new WorkflowBindingSelectorDialog(_model.GetOutputCandidates(), _model.Outputs[index].Source);
+        if (dialog.ShowDialog(FindForm()) == DialogResult.OK && dialog.SelectedCandidate is { } candidate)
+            _model.SetOutputSource(index, candidate.ToBindingKey());
     }
 
     /// <summary>
-    /// 一项输入或输出：带边框的小卡片，左列是字段名，右列是内容。
-    /// 名称、值是输入框（回车或离开时提交）；来源、类型是可点的文字（带 ▾），点开菜单或选择窗口。
+    /// 一项输入或输出：可展开收起的一行。收起时只有标题行（▸ 名称  摘要，右边删除），
+    /// 点标题行展开下面的字段：名称、值是输入框（回车或离开时提交）；来源、类型是可点的文字（带 ▾）。
+    /// 项与项之间只画一条分隔线。
     /// </summary>
-    private sealed class Card
+    private sealed class Item
     {
         private readonly WorkflowSubflowInterfaceControl _owner;
+        private readonly bool _input;
+        private readonly TableLayoutPanel _details;
+        private readonly Label _chevron;
+        private readonly Label _title;
+        private readonly Label _summary;
         private readonly ModernInput _name;
-        private ModernInput? _value;
+        private readonly ModernInput _value;
+        private readonly Label _valueCaption;
 
-        public Card(WorkflowSubflowInterfaceControl owner, string name, Action<string> rename, Action remove)
+        public Item(WorkflowSubflowInterfaceControl owner, bool input)
         {
             _owner = owner;
-            Root = new TableLayoutPanel
+            _input = input;
+            Root = new BufferedTable
             {
                 Dock = DockStyle.Fill,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                ColumnCount = 3,
-                Padding = new Padding(10, 8, 6, 8),
-                Margin = new Padding(0, 0, 0, 6),
+                ColumnCount = 1,
+                Margin = new Padding(0),
+                Padding = new Padding(0, 0, 0, 1),
                 Tag = this
             };
-            Root.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             Root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            Root.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             Root.Paint += (_, e) =>
             {
                 using var pen = new Pen(WorkflowWinFormsTheme.Modern.BorderSecondary);
-                e.Graphics.DrawRectangle(pen, 0, 0, Root.Width - 1, Root.Height - 1);
+                e.Graphics.DrawLine(pen, 0, Root.Height - 1, Root.Width, Root.Height - 1);
             };
-            Root.Resize += (_, _) => Root.Invalidate();
 
-            _name = Input(name, rename);
+            var header = new BufferedTable
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 4,
+                RowCount = 1,
+                Margin = new Padding(0),
+                Cursor = Cursors.Hand
+            };
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            _chevron = new Label { AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = WorkflowWinFormsTheme.Modern.TextSecondary, Margin = new Padding(0, 8, 4, 8) };
+            _title = new Label { AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 8, 10, 8) };
+            _title.Font = new Font(owner.Font, FontStyle.Bold);
+            _summary = new Label
+            {
+                AutoSize = false,
+                AutoEllipsis = true,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = WorkflowWinFormsTheme.Modern.TextSecondary,
+                Margin = new Padding(0)
+            };
             var delete = WorkflowSizing.Fit(new ModernButton
             {
                 Text = "删除",
@@ -231,12 +230,53 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
                 ButtonType = ModernButtonType.Text,
                 Anchor = AnchorStyles.Right
             });
-            delete.Click += (_, _) => remove();
+            delete.Click += (_, _) =>
+            {
+                if (_input) owner._model.RemoveInput(Index);
+                else owner._model.RemoveOutput(Index);
+            };
+            header.Controls.Add(_chevron, 0, 0);
+            header.Controls.Add(_title, 1, 0);
+            header.Controls.Add(_summary, 2, 0);
+            header.Controls.Add(delete, 3, 0);
+
+            _details = new BufferedTable
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 2,
+                Margin = new Padding(0),
+                Padding = new Padding(18, 0, 4, 8)
+            };
+            _details.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            _details.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            _name = Input(text =>
+            {
+                if (_input) owner._model.RenameInput(Index, text);
+                else owner._model.RenameOutput(Index, text);
+            });
             Source = Link();
+            Source.Click += (_, _) =>
+            {
+                if (_input) owner.ChooseInputSource(this);
+                else owner.ChooseOutputSource(this);
+            };
             Type = Link();
-            AddRow("名称", _name, delete);
+            if (_input) Type.Click += (_, _) => owner.ChooseInputType(this);
+            _value = Input(text => owner._model.SetInputValue(Index, text));
+            AddRow("名称", _name);
             AddRow("来源", Source);
             AddRow("类型", Type);
+            _valueCaption = AddRow("值", _value);
+
+            Root.Controls.Add(header, 0, 0);
+            Root.Controls.Add(_details, 0, 1);
+            void Toggle(object? sender, EventArgs e) => SetOpen(!_details.Visible);
+            header.Click += Toggle;
+            _chevron.Click += Toggle;
+            _title.Click += Toggle;
+            _summary.Click += Toggle;
         }
 
         public TableLayoutPanel Root { get; }
@@ -245,29 +285,79 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
 
         public Label Type { get; }
 
-        public void AddValue(string text, Action<string> commit)
+        /// <summary>在列表中的位置，也是模型里这一项的序号。</summary>
+        public int Index { get; set; }
+
+        public void SetOpen(bool open)
         {
-            _value = Input(text, commit);
-            AddRow("值", _value);
+            _details.Visible = open;
+            SetText(_chevron, open ? "▾" : "▸");
         }
 
-        public void SetName(string text) => SetText(_name, text);
-
-        public void SetValue(string text)
+        public void Show(WorkflowSubflowInputRow input)
         {
-            if (_value is not null) SetText(_value, text);
+            SetName(input.Name);
+            SetText(Source, input.SourceText + Drop);
+            if (input.IsBound)
+            {
+                // 绑定来源时类型跟随来源，不能修改，也没有手动值。
+                SetSummary($"{input.SourceText} · {input.TypeText}");
+                SetText(Type, input.TypeText + "（跟随来源）");
+                Type.ForeColor = WorkflowWinFormsTheme.Modern.TextSecondary;
+                Type.Cursor = Cursors.Default;
+            }
+            else
+            {
+                var type = WorkflowSubflowInput.DisplayName(input.ValueType);
+                SetSummary($"{type} = {input.ValueText}");
+                SetText(Type, type + Drop);
+                Type.ForeColor = WorkflowWinFormsTheme.Modern.Primary;
+                Type.Cursor = Cursors.Hand;
+                SetInput(_value, input.ValueText);
+            }
+            _value.Visible = _valueCaption.Visible = !input.IsBound;
+        }
+
+        public void Show(WorkflowSubflowOutputRow output)
+        {
+            SetName(output.Name);
+            SetSummary(output.Source.HasValue ? $"{output.SourceText} · {output.TypeText}" : "未选择来源");
+            SetText(Source, output.SourceText + Drop);
+            SetText(Type, output.TypeText);
+            Type.ForeColor = WorkflowWinFormsTheme.Modern.TextSecondary;
+            Type.Cursor = Cursors.Default;
+            _value.Visible = _valueCaption.Visible = false;
+        }
+
+        private void SetName(string text)
+        {
+            SetText(_title, text);
+            SetInput(_name, text);
+        }
+
+        private void SetSummary(string text)
+        {
+            if (SetText(_summary, text)) _owner._tips.SetToolTip(_summary, text);
+        }
+
+        // 文字没变就不赋值，免得重新排版引起闪动。
+        private static bool SetText(Control control, string text)
+        {
+            if (control.Text == text) return false;
+            control.Text = text;
+            return true;
         }
 
         // 正在编辑的框不覆盖，免得打字时被刷新打断。
-        private static void SetText(ModernInput input, string text)
+        private static void SetInput(ModernInput input, string text)
         {
-            if (!input.ContainsFocus && input.Text != text) input.Text = text;
+            if (!input.ContainsFocus) SetText(input, text);
         }
 
-        private void AddRow(string caption, Control content, Control? trailing = null)
+        private Label AddRow(string caption, Control content)
         {
-            var row = Root.RowCount++;
-            Root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            var row = _details.RowCount++;
+            _details.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             var label = new Label
             {
                 Text = caption,
@@ -276,17 +366,15 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
                 ForeColor = WorkflowWinFormsTheme.Modern.TextSecondary,
                 Margin = new Padding(0, 6, 10, 6)
             };
-            Root.Controls.Add(label, 0, row);
-            Root.Controls.Add(content, 1, row);
-            if (trailing is null) Root.SetColumnSpan(content, 2);
-            else Root.Controls.Add(trailing, 2, row);
+            _details.Controls.Add(label, 0, row);
+            _details.Controls.Add(content, 1, row);
+            return label;
         }
 
-        private ModernInput Input(string text, Action<string> commit)
+        private ModernInput Input(Action<string> commit)
         {
             var input = new ModernInput
             {
-                Text = text,
                 Theme = WorkflowWinFormsTheme.Modern,
                 Anchor = AnchorStyles.Left | AnchorStyles.Right,
                 Height = _owner.LogicalToDeviceUnits(32),
@@ -312,6 +400,21 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
         }
     }
 
+    /// <summary>双缓冲的表格布局，增删行、改文字时不闪。</summary>
+    private sealed class BufferedTable : TableLayoutPanel
+    {
+        public BufferedTable()
+        {
+            DoubleBuffered = true;
+            ResizeRedraw = true;
+        }
+    }
+
+    private sealed class BufferedPanel : Panel
+    {
+        public BufferedPanel() => DoubleBuffered = true;
+    }
+
     // 在被点的文字下面弹出主题菜单。
     private void ShowMenu(Control anchor, Action<ModernContextMenu> fill)
     {
@@ -326,7 +429,7 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
 
     private static TableLayoutPanel List()
     {
-        var list = new TableLayoutPanel
+        var list = new BufferedTable
         {
             Dock = DockStyle.Fill,
             AutoSize = true,

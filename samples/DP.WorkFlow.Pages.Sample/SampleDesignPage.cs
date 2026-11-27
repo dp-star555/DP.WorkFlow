@@ -7,6 +7,7 @@ namespace DP.WorkFlow.Samples.Pages;
 
 /// <summary>
 /// 流程设计页：工作台 + 流程库的草稿 / 发布（和 Foundation 的设计页同一套做法，去掉了权限和审计）。
+/// 放在“流程”页里，从流程库打开（见 <see cref="SampleFlowPage"/>），所以文件菜单里没有新建、打开。
 /// 保存只写草稿；“发布…”检查通过后写成正式文件并重新加载流程管理。“调试运行”在单独的运行宿主里跑草稿。
 /// </summary>
 internal sealed class SampleDesignPage : UserControl
@@ -17,7 +18,6 @@ internal sealed class SampleDesignPage : UserControl
     private readonly WorkflowStudioControl _studio = new() { Dock = DockStyle.Fill };
     private readonly WorkflowDocumentWorkspace _workspace;
     private readonly ModernButton _publish = new() { Text = "发布…", ButtonType = ModernButtonType.Text };
-    private readonly ToolStripMenuItem _open;
     private WorkflowStudioRuntimeBinding? _trial;
     private volatile string _trialLogName = SampleWorkflowHost.TrialRunLogNameOf(null);
 
@@ -35,12 +35,9 @@ internal sealed class SampleDesignPage : UserControl
         _workspace.Saved += (_, path) => { if (_library.NameOf(path) is { } name) ShowMessage($"{name} 的草稿已保存。发布后运行页才会用新版本。"); };
 
         _studio.FileMenu.DropDownItems.Clear();
-        _studio.AddFileMenuItem("新建流程", ModernIconKind.FileNew, CreateNew);
-        _open = _studio.AddFileMenuItem("打开", ModernIconKind.FolderOpen, () => { });
         _studio.AddFileMenuItem("保存草稿", ModernIconKind.Save, _studio.Save);
         _studio.FileMenu.DropDownItems.Add(new ToolStripSeparator());
         _studio.AddFileMenuItem("放弃草稿", ModernIconKind.Undo, () => _ = DiscardAsync());
-        _studio.FileMenu.DropDownOpening += (_, _) => FillOpenMenu();
         _studio.CanvasWorkspace.AddCommand(_publish);
         _publish.Click += async (_, _) => await PublishAsync();
         _studio.ConfirmDiscardChanges = () => MessageBox.Show(FindForm(), "当前流程还没保存，放弃修改？", "流程设计", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes;
@@ -52,6 +49,12 @@ internal sealed class SampleDesignPage : UserControl
         if (_library.List().FirstOrDefault() is { } first) OpenFlow(first.Name);
         else CreateNew();
     }
+
+    /// <summary>正在编辑的流程名。</summary>
+    public string? FlowName => CurrentName();
+
+    /// <summary>是否有没保存的修改。</summary>
+    public bool IsDirty => _workspace.IsDirty;
 
     public void ShowMessage(string message) => _studio.CanvasWorkspace.StatusMessage = message;
 
@@ -79,7 +82,7 @@ internal sealed class SampleDesignPage : UserControl
     {
         if (_trial?.State is E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused)
         {
-            ShowMessage("流程库有变动；调试运行结束后从“打开”重新打开流程即可看到。");
+            ShowMessage("流程库有变动；调试运行结束后回到流程库重新打开流程即可看到。");
             return;
         }
         if (CurrentName() is not { } name || _library.List().All(entry => !string.Equals(entry.Name, name, StringComparison.OrdinalIgnoreCase)))
@@ -116,22 +119,6 @@ internal sealed class SampleDesignPage : UserControl
         {
             ShowMessage(exception.Message);
         }
-    }
-
-    private void FillOpenMenu()
-    {
-        _open.DropDownItems.Clear();
-        var current = CurrentName();
-        foreach (var entry in _library.List())
-        {
-            var name = entry.Name;
-            var mark = !entry.IsPublished ? "（未发布）" : entry.HasDraft ? "（有改动）" : string.Empty;
-            _open.DropDownItems.Add(new ToolStripMenuItem(name + mark, null, (_, _) => OpenFlow(name))
-            {
-                Checked = string.Equals(name, current, StringComparison.OrdinalIgnoreCase)
-            });
-        }
-        if (_open.DropDownItems.Count == 0) _open.DropDownItems.Add(new ToolStripMenuItem("流程库是空的") { Enabled = false });
     }
 
     // 调试运行：一个运行宿主跟着设计页走；每次运行换一份新的上下文。
