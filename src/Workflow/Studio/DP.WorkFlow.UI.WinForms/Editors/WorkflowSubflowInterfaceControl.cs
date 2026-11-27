@@ -26,34 +26,25 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
     public WorkflowSubflowInterfaceControl(WorkflowSubflowInterfacePageModel model)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
-        _inputs.Columns.Add(new DataGridViewTextBoxColumn { Name = NameColumn, HeaderText = "名称", FillWeight = 30 });
-        _inputs.Columns.Add(new DataGridViewButtonColumn { Name = SourceColumn, HeaderText = "来源", FillWeight = 50, FlatStyle = FlatStyle.Flat });
-        _inputs.Columns.Add(new DataGridViewComboBoxColumn
-        {
-            Name = TypeColumn,
-            HeaderText = "类型",
-            FillWeight = 22,
-            FlatStyle = FlatStyle.Flat,
-            DataSource = ValueTypes.Select(WorkflowSubflowInput.DisplayName).ToArray()
-        });
-        _inputs.Columns.Add(new DataGridViewTextBoxColumn { Name = ValueColumn, HeaderText = "值", FillWeight = 28 });
-        _inputs.Columns.Add(RemoveButtonColumn());
-        _outputs.Columns.Add(new DataGridViewTextBoxColumn { Name = NameColumn, HeaderText = "名称", FillWeight = 30 });
-        _outputs.Columns.Add(new DataGridViewButtonColumn { Name = SourceColumn, HeaderText = "来源", FillWeight = 60, FlatStyle = FlatStyle.Flat });
-        _outputs.Columns.Add(new DataGridViewTextBoxColumn { Name = TypeColumn, HeaderText = "类型", FillWeight = 22, ReadOnly = true });
-        _outputs.Columns.Add(RemoveButtonColumn());
+        // 全部是普通文字格：名称、值直接改；来源、类型点一下弹出菜单（带 ▾）；删除是红字。
+        // 不用原生的下拉框和按钮列，样式和其他表格一致。
+        _inputs.Columns.Add(TextColumn(NameColumn, "名称"));
+        _inputs.Columns.Add(TextColumn(SourceColumn, "来源", readOnly: true));
+        _inputs.Columns.Add(TextColumn(TypeColumn, "类型", readOnly: true));
+        _inputs.Columns.Add(TextColumn(ValueColumn, "值"));
+        _inputs.Columns.Add(RemoveColumnOf());
+        WorkflowPage.ColumnWidths(_inputs, 1, 1, 0, 1, 0);
+        _outputs.Columns.Add(TextColumn(NameColumn, "名称"));
+        _outputs.Columns.Add(TextColumn(SourceColumn, "来源", readOnly: true));
+        _outputs.Columns.Add(TextColumn(TypeColumn, "类型", readOnly: true));
+        _outputs.Columns.Add(RemoveColumnOf());
+        WorkflowPage.ColumnWidths(_outputs, 1, 2, 0, 0);
 
         _inputs.CellEndEdit += OnInputEdited;
-        _inputs.CurrentCellDirtyStateChanged += (_, _) =>
-        {
-            if (_inputs.IsCurrentCellDirty && _inputs.CurrentCell?.OwningColumn.Name == TypeColumn)
-                _inputs.CommitEdit(DataGridViewDataErrorContexts.Commit);
-        };
-        _inputs.CellValueChanged += OnInputTypeChanged;
-        _inputs.CellContentClick += OnInputButtonClicked;
+        _inputs.CellClick += OnInputCellClicked;
         _inputs.DataError += (_, e) => e.ThrowException = false;
         _outputs.CellEndEdit += OnOutputEdited;
-        _outputs.CellContentClick += OnOutputButtonClicked;
+        _outputs.CellClick += OnOutputCellClicked;
 
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Padding = new Padding(4) };
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -103,18 +94,17 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
                 var row = _inputs.Rows[index];
                 row.Tag = input.Index;
                 row.Cells[NameColumn].Value = input.Name;
-                row.Cells[SourceColumn].Value = input.SourceText;
+                row.Cells[SourceColumn].Value = input.SourceText + Drop;
                 if (input.IsBound)
                 {
                     // 绑定来源时类型跟随来源，不能修改，也没有手动值。
-                    row.Cells[TypeColumn] = new DataGridViewTextBoxCell { Value = input.TypeText };
-                    row.Cells[TypeColumn].ReadOnly = true;
+                    row.Cells[TypeColumn].Value = input.TypeText;
                     row.Cells[ValueColumn].Value = string.Empty;
                     row.Cells[ValueColumn].ReadOnly = true;
                 }
                 else
                 {
-                    row.Cells[TypeColumn].Value = WorkflowSubflowInput.DisplayName(input.ValueType);
+                    row.Cells[TypeColumn].Value = WorkflowSubflowInput.DisplayName(input.ValueType) + Drop;
                     row.Cells[ValueColumn].Value = input.ValueText;
                 }
             }
@@ -125,7 +115,7 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
                 var row = _outputs.Rows[index];
                 row.Tag = output.Index;
                 row.Cells[NameColumn].Value = output.Name;
-                row.Cells[SourceColumn].Value = output.SourceText;
+                row.Cells[SourceColumn].Value = output.SourceText + Drop;
                 row.Cells[TypeColumn].Value = output.TypeText;
             }
         }
@@ -151,32 +141,30 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
         }
     }
 
-    private void OnInputTypeChanged(object? sender, DataGridViewCellEventArgs e)
+    private void OnInputCellClicked(object? sender, DataGridViewCellEventArgs e)
     {
-        if (_syncing || e.RowIndex < 0 || _inputs.Columns[e.ColumnIndex].Name != TypeColumn
-            || _inputs.Rows[e.RowIndex].Tag is not int index) return;
-        var text = Convert.ToString(_inputs.Rows[e.RowIndex].Cells[e.ColumnIndex].Value);
-        var valueType = ValueTypes.FirstOrDefault(type => WorkflowSubflowInput.DisplayName(type) == text);
-        _model.SetInputValueType(index, valueType);
-    }
-
-    private void OnInputButtonClicked(object? sender, DataGridViewCellEventArgs e)
-    {
-        if (e.RowIndex < 0 || _inputs.Rows[e.RowIndex].Tag is not int index) return;
+        if (e.RowIndex < 0 || e.ColumnIndex < 0 || _inputs.Rows[e.RowIndex].Tag is not int index) return;
         switch (_inputs.Columns[e.ColumnIndex].Name)
         {
             case SourceColumn:
-                var menu = new ContextMenuStrip();
-                menu.Items.Add("选择父画布中的来源…", null, (_, _) =>
+                ShowMenu(_inputs, e, menu =>
                 {
-                    var current = _model.Inputs[index].Source;
-                    using var dialog = new WorkflowBindingSelectorDialog(_model.GetInputCandidates(), current);
-                    if (dialog.ShowDialog(FindForm()) == DialogResult.OK && dialog.SelectedCandidate is { } candidate)
-                        _model.SetInputSource(index, candidate.ToBindingKey());
+                    Add(menu, "选择父画布中的来源…", () =>
+                    {
+                        var current = _model.Inputs[index].Source;
+                        using var dialog = new WorkflowBindingSelectorDialog(_model.GetInputCandidates(), current);
+                        if (dialog.ShowDialog(FindForm()) == DialogResult.OK && dialog.SelectedCandidate is { } candidate)
+                            _model.SetInputSource(index, candidate.ToBindingKey());
+                    });
+                    Add(menu, "使用手动值", () => _model.SetInputSource(index, null));
                 });
-                menu.Items.Add("使用手动值", null, (_, _) => _model.SetInputSource(index, null));
-                menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
-                menu.Show(_inputs, _inputs.PointToClient(Cursor.Position));
+                break;
+            case TypeColumn when !_model.Inputs[index].IsBound:
+                ShowMenu(_inputs, e, menu =>
+                {
+                    foreach (var type in ValueTypes)
+                        Add(menu, WorkflowSubflowInput.DisplayName(type), () => _model.SetInputValueType(index, type), type == _model.Inputs[index].ValueType);
+                });
                 break;
             case RemoveColumn:
                 _model.RemoveInput(index);
@@ -191,9 +179,9 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
         _model.RenameOutput(index, Convert.ToString(_outputs.Rows[e.RowIndex].Cells[e.ColumnIndex].Value) ?? string.Empty);
     }
 
-    private void OnOutputButtonClicked(object? sender, DataGridViewCellEventArgs e)
+    private void OnOutputCellClicked(object? sender, DataGridViewCellEventArgs e)
     {
-        if (e.RowIndex < 0 || _outputs.Rows[e.RowIndex].Tag is not int index) return;
+        if (e.RowIndex < 0 || e.ColumnIndex < 0 || _outputs.Rows[e.RowIndex].Tag is not int index) return;
         switch (_outputs.Columns[e.ColumnIndex].Name)
         {
             case SourceColumn:
@@ -209,51 +197,58 @@ internal sealed class WorkflowSubflowInterfaceControl : UserControl
         }
     }
 
-    private static Control Header(string title, string addText, string hint, Action add)
+    // 在被点的格子下面弹出主题菜单。
+    private void ShowMenu(DataGridView grid, DataGridViewCellEventArgs e, Action<ModernContextMenu> fill)
     {
-        var header = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            AutoSize = true,
-            WrapContents = true,
-            Margin = new Padding(0, 6, 0, 2)
-        };
-        header.Controls.Add(new Label
-        {
-            Text = title,
-            AutoSize = true,
-            Font = new Font(DefaultFont, FontStyle.Bold),
-            Margin = new Padding(0, 8, 8, 0)
-        });
-        var button = new ModernButton
+        var menu = new ModernContextMenu { Theme = WorkflowWinFormsTheme.Modern };
+        fill(menu);
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+        var cell = grid.GetCellDisplayRectangle(e.ColumnIndex, e.RowIndex, false);
+        menu.Show(grid, new Point(cell.Left, cell.Bottom));
+    }
+
+    private static void Add(ToolStrip menu, string text, Action action, bool selected = false) =>
+        menu.Items.Add(new ToolStripMenuItem(text, null, (_, _) => action()) { Checked = selected });
+
+    // 标题行：粗体标题 + 文字按钮“添加…”；说明另起一行，灰字、随宽度换行。
+    private Control Header(string title, string addText, string hint, Action add)
+    {
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 2, Margin = new Padding(0, 6, 0, 4) };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var label = new Label { Text = title, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) };
+        label.Font = new Font(Font, FontStyle.Bold);
+        var button = WorkflowSizing.Fit(new ModernButton
         {
             Text = addText,
             Theme = WorkflowWinFormsTheme.Modern,
-            Size = new Size(TextRenderer.MeasureText(addText, DefaultFont).Width + 32, 30),
-            Margin = new Padding(0, 2, 8, 2)
-        };
-        button.Click += (_, _) => add();
-        header.Controls.Add(button);
-        header.Controls.Add(new Label
-        {
-            Text = hint,
-            AutoSize = true,
-            MaximumSize = new Size(560, 0),
-            ForeColor = WorkflowWinFormsTheme.Modern.TextSecondary,
-            Margin = new Padding(0, 4, 0, 0)
+            ButtonType = ModernButtonType.Text,
+            Icon = ModernIconKind.Plus,
+            Anchor = AnchorStyles.Left
         });
-        return header;
+        button.Click += (_, _) => add();
+        var note = new Label { Text = hint, AutoSize = true, Dock = DockStyle.Fill, ForeColor = WorkflowWinFormsTheme.Modern.TextSecondary, Margin = new Padding(0, 2, 0, 0) };
+        panel.Controls.Add(label, 0, 0);
+        panel.Controls.Add(button, 1, 0);
+        panel.Controls.Add(note, 0, 1);
+        panel.SetColumnSpan(note, 2);
+        // 说明按面板宽度换行。
+        panel.Resize += (_, _) => note.MaximumSize = new Size(Math.Max(0, panel.ClientSize.Width), 0);
+        return panel;
     }
 
-    private static DataGridViewButtonColumn RemoveButtonColumn() => new()
+    private const string Drop = "  ▾";
+
+    private static DataGridViewTextBoxColumn TextColumn(string name, string header, bool readOnly = false) =>
+        new() { Name = name, HeaderText = header, ReadOnly = readOnly, SortMode = DataGridViewColumnSortMode.NotSortable };
+
+    private static DataGridViewTextBoxColumn RemoveColumnOf()
     {
-        Name = RemoveColumn,
-        HeaderText = string.Empty,
-        Text = "删除",
-        UseColumnTextForButtonValue = true,
-        FillWeight = 14,
-        FlatStyle = FlatStyle.Flat
-    };
+        var column = TextColumn(RemoveColumn, string.Empty, readOnly: true);
+        column.DefaultCellStyle.ForeColor = WorkflowWinFormsTheme.Modern.Error;
+        column.DefaultCellStyle.NullValue = "删除";
+        return column;
+    }
 
     private static ModernDataGridView CreateGrid() => new()
     {

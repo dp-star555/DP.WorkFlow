@@ -8,7 +8,14 @@ namespace DP.WorkFlow.UI.WinForms;
 /// </summary>
 public sealed partial class WorkflowDesignerControl : Control
 {
+    // _root 是宿主给的画布会话；_session 是当前操作的会话：点进某个展开区后就是那个展开区的子会话，绘制时临时切换到各层。
+    private WorkflowDesignerSession? _root;
     private WorkflowDesignerSession? _session;
+    private WorkflowDesignerSession? _hoverSession;
+    // 当前绘制 / 命中那一层在诊断里的画布路径：根画布为 $，展开区为 $/复合节点。
+    private string _diagnosticPath = "$";
+    // 绘制期间记下当前操作的会话（绘制会临时切换 _session）。
+    private WorkflowDesignerSession? _paintActive;
     private WorkflowNodeDragOperation? _nodeDrag;
     private WorkflowConnectionModel? _dragConnection;
     private WorkflowConnectionModel? _dragLabelConnection;
@@ -57,8 +64,8 @@ public sealed partial class WorkflowDesignerControl : Control
         // 提示板变化（运行中或运行结束后都会有）也在下一帧重画角标。
         WorkflowRefreshClock.Subscribe(this, () =>
         {
-            if (_session?.RuntimeSnapshot?.ExecutionState is E_WorkflowExecutionState.Running
-                || (_session is not null && _session.NoticeVersion != _shownNoticeVersion))
+            if (_root?.RuntimeSnapshot?.ExecutionState is E_WorkflowExecutionState.Running
+                || (_root is not null && _root.NoticeVersion != _shownNoticeVersion))
                 Invalidate();
         });
         ApplyThemeColors();
@@ -83,20 +90,28 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>获取或设置共享设计会话。</summary>
     public WorkflowDesignerSession? Session
     {
-        get => _session;
+        get => _root;
         set
         {
-            if (ReferenceEquals(_session, value))
+            if (ReferenceEquals(_root, value))
                 return;
-            if (_session is not null)
-                _session.Changed -= OnSessionChanged;
+            if (_root is not null)
+                _root.Changed -= OnSessionChanged;
             CancelInteraction();
             _overviewAnchorViewport = null;
-            _session = value;
-            if (_session is not null)
-                _session.Changed += OnSessionChanged;
+            var activeChanged = !ReferenceEquals(_session, value);
+            _root = _session = value;
+            _hoverSession = null;
+            if (_root is not null)
+            {
+                _root.EnableExpansion();
+                // 可能刚从子画布返回：展开区按文档重建。
+                _root.ResetExpansionCache();
+                _root.Changed += OnSessionChanged;
+            }
             GroupDiagnostics();
             Invalidate();
+            if (activeChanged) ActiveSessionChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -127,22 +142,29 @@ public sealed partial class WorkflowDesignerControl : Control
 
     private void GroupDiagnostics()
     {
-        var ids = new HashSet<string>(_session?.Document.Nodes.Select(node => node.Node.Id) ?? Enumerable.Empty<string>(), StringComparer.Ordinal);
+        // 按“画布路径 + 节点”分组：展开区里的节点也能在原地标出诊断。不属于根画布节点的问题仍汇总到左上角胶囊。
+        var ids = new HashSet<string>(_root?.Document.Nodes.Select(node => node.Node.Id) ?? Enumerable.Empty<string>(), StringComparer.Ordinal);
         _nodeDiagnostics = new Dictionary<string, List<WorkflowDiagnosticItem>>(StringComparer.Ordinal);
         _canvasDiagnostics = new List<WorkflowDiagnosticItem>();
         foreach (var item in _diagnostics)
         {
-            if (item.PlanPath == "$" && item.NodeId is { } id && ids.Contains(id))
+            if (item.NodeId is { } id)
             {
-                if (!_nodeDiagnostics.TryGetValue(id, out var list)) _nodeDiagnostics[id] = list = new List<WorkflowDiagnosticItem>();
+                var key = DiagnosticKey(item.PlanPath, id);
+                if (!_nodeDiagnostics.TryGetValue(key, out var list)) _nodeDiagnostics[key] = list = new List<WorkflowDiagnosticItem>();
                 list.Add(item);
             }
-            else _canvasDiagnostics.Add(item);
+            if (item.PlanPath != "$" || item.NodeId is null || !ids.Contains(item.NodeId)) _canvasDiagnostics.Add(item);
         }
     }
 
+    private static string DiagnosticKey(string path, string nodeId) => path + "\n" + nodeId;
+
+    private List<WorkflowDiagnosticItem>? NodeDiagnostics(string nodeId) =>
+        _nodeDiagnostics.TryGetValue(DiagnosticKey(_diagnosticPath, nodeId), out var list) ? list : null;
+
     private bool HasDiagnosticError(string nodeId) =>
-        _nodeDiagnostics.TryGetValue(nodeId, out var list) && list.Any(item => item.Severity == WorkflowValidationSeverity.Error);
+        NodeDiagnostics(nodeId)?.Any(item => item.Severity == WorkflowValidationSeverity.Error) == true;
 
     /// <summary>获取当前是否因节点超出可视区域而显示右上角概览窗口。</summary>
     public bool IsOverviewMapVisible => TryCreateOverviewMapLayout(out _);
@@ -152,6 +174,63 @@ public sealed partial class WorkflowDesignerControl : Control
 
     /// <summary>交互产生无法创建的连接时发生。</summary>
     public event EventHandler<string>? InteractionError;
+
+    /// <summary>
+    /// 当前操作的会话：点在展开区里时是那个展开区的子会话，否则是 <see cref="Session"/>。
+    /// 检查器、节点编辑窗口跟着它走，这样展开区里的节点也能直接看和改。
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public WorkflowDesignerSession? ActiveSession => _session;
+
+    /// <summary>当前操作会话所在流程的入口节点：展开区为子文档的入口；根画布为空（由宿主决定）。</summary>
+    public string? ActiveEntryNodeId => _session is { Owner: not null } child ? EntryOf(child.Document) : null;
+
+    /// <summary><see cref="ActiveSession"/> 变化时发生。</summary>
+    public event EventHandler? ActiveSessionChanged;
+
+    private static string? EntryOf(WorkflowDocument document) =>
+        !string.IsNullOrWhiteSpace(document.EntryNodeId) ? document.EntryNodeId
+        : document.Nodes.Where(node => node.Node.NodeType == "Start").Select(node => node.Node.Id).FirstOrDefault();
+
+    /// <summary>切换当前操作的会话；别的层的选择清空，同一时间只有一处选中。</summary>
+    private void Activate(WorkflowDesignerSession session)
+    {
+        if (ReferenceEquals(_session, session)) return;
+        foreach (var other in _root!.SelfAndExpandedSessions())
+            if (!ReferenceEquals(other, session) && (other.SelectedNodeIds.Count > 0 || other.SelectedConnection is not null))
+                other.SelectNodes(Array.Empty<string>());
+        _session = session;
+        Invalidate();
+        ActiveSessionChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>屏幕坐标所在的最内层会话：落在某个展开区的子流程范围里就是那个展开区，逐层往下找。</summary>
+    private WorkflowDesignerSession SessionAt(double x, double y)
+    {
+        var session = _root!;
+        while (true)
+        {
+            WorkflowDesignerSession? inner = null;
+            for (var i = session.Document.Nodes.Count - 1; i >= 0 && inner is null; i--)
+            {
+                var id = session.Document.Nodes[i].Node.Id;
+                if (session.GetExpandedContentRect(id) is { } content && ScreenRect(session, content).Contains(x, y))
+                    inner = session.GetExpandedSession(id);
+            }
+            if (inner is null) return session;
+            session = inner;
+        }
+    }
+
+    private static WorkflowDesignerRect ScreenRect(WorkflowDesignerSession session, WorkflowDesignerRect canvas) => new(
+        canvas.X * session.Zoom + session.PanX, canvas.Y * session.Zoom + session.PanY, canvas.Width * session.Zoom, canvas.Height * session.Zoom);
+
+    /// <summary>会话在诊断里的画布路径（相对 <see cref="Session"/>）。</summary>
+    private string DiagnosticPathOf(WorkflowDesignerSession session) =>
+        ReferenceEquals(session, _root) || session.Owner is null || session.OwnerNodeId is null
+            ? "$"
+            : DiagnosticPathOf(session.Owner) + "/" + Uri.EscapeDataString(session.OwnerNodeId);
 
     /// <inheritdoc />
     protected override void Dispose(bool disposing)
@@ -173,21 +252,93 @@ public sealed partial class WorkflowDesignerControl : Control
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
         DrawGrid(e.Graphics);
-        if (_session is null)
+        if (_root is null)
             return;
-        DrawConnections(e.Graphics);
-        DrawDataLinks(e.Graphics);
-        foreach (var node in _session.Document.Nodes)
-            DrawNode(e.Graphics, node);
-        _shownNoticeVersion = _session.NoticeVersion;
-        DrawNoticeBadges(e.Graphics);
-        DrawDiagnosticBadges(e.Graphics);
-        DrawPendingConnection(e.Graphics);
-        DrawPendingDataLink(e.Graphics);
-        DrawMarquee(e.Graphics);
-        DrawOverviewMap(e.Graphics);
-        DrawCanvasNotices(e.Graphics);
-        DrawCanvasDiagnostics(e.Graphics);
+        var active = _session;
+        _paintActive = active;
+        try
+        {
+            _session = _root;
+            _diagnosticPath = "$";
+            DrawCanvasContent(e.Graphics);
+            _shownNoticeVersion = _root.NoticeVersion;
+            // 拖线、框选等跟随鼠标的预览用屏幕坐标，画在最上层。
+            _session = active;
+            DrawPendingConnection(e.Graphics);
+            DrawPendingDataLink(e.Graphics);
+            DrawMarquee(e.Graphics);
+            _session = _root;
+            DrawOverviewMap(e.Graphics);
+            DrawCanvasNotices(e.Graphics);
+            DrawCanvasDiagnostics(e.Graphics);
+        }
+        finally
+        {
+            _session = active;
+            _diagnosticPath = "$";
+        }
+    }
+
+    /// <summary>画当前层（<see cref="_session"/>）的连线、节点和角标；展开的节点在画它时接着画它的子流程。</summary>
+    private void DrawCanvasContent(Graphics graphics)
+    {
+        DrawConnections(graphics);
+        DrawDataLinks(graphics);
+        foreach (var node in _session!.Document.Nodes)
+            DrawNode(graphics, node);
+        DrawExpandToggles(graphics);
+        DrawNoticeBadges(graphics);
+        DrawDiagnosticBadges(graphics);
+    }
+
+    /// <summary>
+    /// 画展开区里的子流程：切到子会话（缩放、平移已和本层同步）按同样的规则画，裁在展开区内；子流程里再展开的节点继续往下画。
+    /// </summary>
+    private void DrawExpandedContent(Graphics graphics, WorkflowCanvasNode node, RectangleF frame)
+    {
+        var parent = _session!;
+        if (parent.GetExpandedSession(node.Node.Id) is not { } child) return;
+        var path = _diagnosticPath;
+        var state = graphics.Save();
+        try
+        {
+            graphics.SetClip(RectangleF.Inflate(frame, -1, -1), CombineMode.Intersect);
+            _session = child;
+            _diagnosticPath = path + "/" + Uri.EscapeDataString(node.Node.Id);
+            DrawCanvasContent(graphics);
+        }
+        finally
+        {
+            _session = parent;
+            _diagnosticPath = path;
+            graphics.Restore(state);
+        }
+    }
+
+    /// <summary>
+    /// 复合节点左下角的展开 / 收起按钮：圆形，收起时画向下的箭头（点了展开），展开时画向上的箭头。
+    /// </summary>
+    private void DrawExpandToggles(Graphics graphics)
+    {
+        var session = _session!;
+        foreach (var node in session.Document.Nodes)
+        {
+            if (!WorkflowDesignerSession.CanExpand(node)) continue;
+            var bounds = ToRectangle(WorkflowDesignerGeometry.ExpandToggleBounds(
+                WorkflowDesignerGeometry.GetNodeScreenRect(session, node), node.Height * session.Zoom, session.Zoom));
+            var expanded = session.IsExpanded(node.Node.Id);
+            using (var fill = new SolidBrush(ToColor(expanded ? Colors.Selected : Colors.NodeBody)))
+                graphics.FillEllipse(fill, bounds);
+            using (var ring = new Pen(ToColor(expanded ? Colors.Canvas : Colors.NodeBorder), Math.Max(1f, (float)(1.5 * session.Zoom))))
+                graphics.DrawEllipse(ring, bounds);
+            var color = expanded ? Colors.Selected.ReadableOn() : Colors.Icon;
+            using var pen = new Pen(ToColor(color), Math.Max(1.2f, (float)(1.8 * session.Zoom))) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+            var cx = bounds.X + bounds.Width / 2;
+            var cy = bounds.Y + bounds.Height / 2;
+            var w = bounds.Width * 0.22f;
+            var h = bounds.Height * 0.12f * (expanded ? -1 : 1);
+            graphics.DrawLines(pen, new[] { new PointF(cx - w, cy - h), new PointF(cx, cy + h), new PointF(cx + w, cy - h) });
+        }
     }
 
     /// <inheritdoc />
@@ -211,13 +362,16 @@ public sealed partial class WorkflowDesignerControl : Control
     protected override void OnDragDrop(DragEventArgs drgevent)
     {
         base.OnDragDrop(drgevent);
-        if (ReadOnly || _session is null || drgevent.Data?.GetData(typeof(WorkflowToolboxItem)) is not WorkflowToolboxItem item)
+        if (ReadOnly || _root is null || drgevent.Data?.GetData(typeof(WorkflowToolboxItem)) is not WorkflowToolboxItem item)
             return;
         var client = PointToClient(new Point(drgevent.X, drgevent.Y));
-        var canvas = WorkflowDesignerGeometry.ScreenToCanvas(_session, client.X, client.Y);
-        var insertion = WorkflowDesignerInteraction.HitConnectionInsertion(_session, client.X, client.Y, 14);
+        // 拖到展开区里就加进那个子流程。
+        Activate(SessionAt(client.X, client.Y));
+        var session = _session!;
+        var canvas = session.ToStoredPoint(WorkflowDesignerGeometry.ScreenToCanvas(session, client.X, client.Y));
+        var insertion = WorkflowDesignerInteraction.HitConnectionInsertion(session, client.X, client.Y, 14);
         if (insertion is null
-            || _session.AddNodeOnConnection(
+            || session.AddNodeOnConnection(
                 item.NodeType,
                 canvas.X - 90,
                 canvas.Y - 30,
@@ -225,7 +379,7 @@ public sealed partial class WorkflowDesignerControl : Control
                 insertion.Value.InputSide,
                 insertion.Value.OutputSide) is null)
         {
-            _session.AddNode(item.NodeType, canvas.X - 90, canvas.Y - 30);
+            session.AddNode(item.NodeType, canvas.X - 90, canvas.Y - 30);
         }
     }
 
@@ -234,9 +388,25 @@ public sealed partial class WorkflowDesignerControl : Control
     {
         base.OnMouseDown(e);
         Focus();
-        if (_session is null)
+        if (_root is null)
             return;
         _pointer = e.Location;
+        if (e.Button == MouseButtons.Left && _canvasNoticeBounds is { } canvasNotice && canvasNotice.Contains(e.Location))
+        {
+            Activate(_root);
+            ShowNoticePopup(null, new Point((int)canvasNotice.Left, (int)canvasNotice.Bottom + 4));
+            return;
+        }
+        if (e.Button == MouseButtons.Left && TryNavigateOverview(e.Location))
+        {
+            _mode = InteractionMode.NavigateOverview;
+            Capture = true;
+            Cursor = Cursors.Hand;
+            return;
+        }
+        Activate(SessionAt(e.X, e.Y));
+        if (_session is null)
+            return;
         if (e.Button == MouseButtons.Right && !ReadOnly)
         {
             var contextConnection = HitConnectionLabel(e.X, e.Y) ?? WorkflowDesignerInteraction.HitConnection(_session, e.X, e.Y);
@@ -251,16 +421,17 @@ public sealed partial class WorkflowDesignerControl : Control
         {
             _mode = InteractionMode.Pan;
             _panStart = e.Location;
-            _panOrigin = new WorkflowPoint(_session.PanX, _session.PanY);
+            _panOrigin = new WorkflowPoint(_root.PanX, _root.PanY);
             Cursor = Cursors.Hand;
             return;
         }
         if (e.Button != MouseButtons.Left)
             return;
-        // 提示角标和画布级提示画在最上层，先于节点命中。
-        if (_canvasNoticeBounds is { } canvasNotice && canvasNotice.Contains(e.Location))
+        // 展开按钮和提示角标画在节点之上，先于节点命中；只读画布（运行页）也能展开查看。
+        if (WorkflowDesignerGeometry.HitExpandToggle(_session, e.X, e.Y) is { } toggle)
         {
-            ShowNoticePopup(null, new Point((int)canvasNotice.Left, (int)canvasNotice.Bottom + 4));
+            _session.SetExpanded(toggle.Node.Id, !_session.IsExpanded(toggle.Node.Id));
+            Invalidate();
             return;
         }
         if (WorkflowDesignerGeometry.HitNoticeBadge(_session, e.X, e.Y) is { } noticeNode)
@@ -269,13 +440,6 @@ public sealed partial class WorkflowDesignerControl : Control
             var badge = WorkflowDesignerGeometry.NoticeBadgeBounds(
                 WorkflowDesignerGeometry.GetNodeScreenRect(_session, noticeNode), _session.Zoom, _session.GetNodeNotices(noticeNode.Node.Id).Count);
             ShowNoticePopup(noticeNode, new Point((int)badge.X, (int)(badge.Y + badge.Height) + 4));
-            return;
-        }
-        if (TryNavigateOverview(e.Location))
-        {
-            _mode = InteractionMode.NavigateOverview;
-            Capture = true;
-            Cursor = Cursors.Hand;
             return;
         }
         if (ReadOnly)
@@ -369,12 +533,12 @@ public sealed partial class WorkflowDesignerControl : Control
     {
         base.OnMouseMove(e);
         _pointer = e.Location;
-        if (_session is null)
+        if (_session is null || _root is null)
             return;
         if (_mode == InteractionMode.Pan)
         {
-            _session.SetViewport(
-                _session.Zoom,
+            _root.SetViewport(
+                _root.Zoom,
                 _panOrigin.X + e.X - _panStart.X,
                 _panOrigin.Y + e.Y - _panStart.Y);
         }
@@ -389,8 +553,8 @@ public sealed partial class WorkflowDesignerControl : Control
         }
         else if (_mode == InteractionMode.MoveWaypoint && _dragConnection is not null && _dragWaypointIndex >= 0)
         {
-            _dragConnection.Waypoints[_dragWaypointIndex] = _session.SnapPoint(
-                WorkflowDesignerGeometry.ScreenToCanvas(_session, e.X, e.Y));
+            _dragConnection.Waypoints[_dragWaypointIndex] = _session.ToStoredPoint(_session.SnapPoint(
+                WorkflowDesignerGeometry.ScreenToCanvas(_session, e.X, e.Y)));
             Invalidate();
         }
         else if (_mode == InteractionMode.MoveConnectionLabel && _dragLabelConnection is not null)
@@ -439,8 +603,9 @@ public sealed partial class WorkflowDesignerControl : Control
         }
         else if (_mode == InteractionMode.None)
         {
-            SetHoverNode(WorkflowDesignerInteraction.HitHoverNode(_session, e.X, e.Y)?.Node.Id);
-            UpdateDiagnosticTip(e.Location);
+            var hover = SessionAt(e.X, e.Y);
+            SetHoverNode(hover, WorkflowDesignerInteraction.HitHoverNode(hover, e.X, e.Y)?.Node.Id);
+            UpdateDiagnosticTip(hover, e.Location);
         }
     }
 
@@ -448,15 +613,16 @@ public sealed partial class WorkflowDesignerControl : Control
     protected override void OnMouseLeave(EventArgs e)
     {
         base.OnMouseLeave(e);
-        SetHoverNode(null);
+        SetHoverNode(null, null);
         HideDiagnosticTip();
     }
 
     /// <summary>记录鼠标所在节点；悬停节点的端口放大显示，便于拖线。</summary>
-    private void SetHoverNode(string? nodeId)
+    private void SetHoverNode(WorkflowDesignerSession? session, string? nodeId)
     {
-        if (string.Equals(_hoverNodeId, nodeId, StringComparison.Ordinal)) return;
+        if (string.Equals(_hoverNodeId, nodeId, StringComparison.Ordinal) && ReferenceEquals(_hoverSession, session)) return;
         _hoverNodeId = nodeId;
+        _hoverSession = nodeId is null ? null : session;
         Invalidate();
     }
 
@@ -551,11 +717,11 @@ public sealed partial class WorkflowDesignerControl : Control
     protected override void OnMouseWheel(MouseEventArgs e)
     {
         base.OnMouseWheel(e);
-        if (_session is null)
+        if (_root is null)
             return;
-        var canvasPoint = WorkflowDesignerGeometry.ScreenToCanvas(_session, e.X, e.Y);
-        var zoom = Polyfill.Clamp(_session.Zoom * (e.Delta > 0 ? 1.1 : 1 / 1.1), 0.25, 2.5);
-        _session.SetViewport(zoom, e.X - canvasPoint.X * zoom, e.Y - canvasPoint.Y * zoom);
+        var canvasPoint = WorkflowDesignerGeometry.ScreenToCanvas(_root, e.X, e.Y);
+        var zoom = Polyfill.Clamp(_root.Zoom * (e.Delta > 0 ? 1.1 : 1 / 1.1), 0.25, 2.5);
+        _root.SetViewport(zoom, e.X - canvasPoint.X * zoom, e.Y - canvasPoint.Y * zoom);
     }
 
     // 只读时左键只选中：节点、连线，点空白取消选中。
@@ -574,7 +740,10 @@ public sealed partial class WorkflowDesignerControl : Control
     protected override void OnMouseDoubleClick(MouseEventArgs e)
     {
         base.OnMouseDoubleClick(e);
-        if (_session is null || ReadOnly)
+        if (_root is null || ReadOnly)
+            return;
+        Activate(SessionAt(e.X, e.Y));
+        if (_session is null || WorkflowDesignerGeometry.HitExpandToggle(_session, e.X, e.Y) is not null)
             return;
         var node = WorkflowDesignerInteraction.HitNode(_session, e.X, e.Y);
         if (node is not null)
@@ -594,7 +763,7 @@ public sealed partial class WorkflowDesignerControl : Control
             _session.SelectConnection(connection);
             _session.AddConnectionWaypoint(
                 connection,
-                WorkflowDesignerGeometry.ScreenToCanvas(_session, e.X, e.Y));
+                _session.ToStoredPoint(WorkflowDesignerGeometry.ScreenToCanvas(_session, e.X, e.Y)));
         }
     }
 
@@ -683,8 +852,21 @@ public sealed partial class WorkflowDesignerControl : Control
             return;
         var zoom = _session.Zoom;
         var rect = WorkflowDesignerGeometry.GetNodeScreenRect(_session, item);
-        var bounds = ToRectangle(rect);
         var selected = _session.SelectedNodeIds.Contains(item.Node.Id);
+        var expanded = _session.IsExpanded(item.Node.Id);
+        var frame = ToRectangle(rect);
+        if (expanded)
+        {
+            // 展开：整块区域淡底 + 虚线框，上面是原来的卡片（标题、端口行），子流程画在卡片下面。
+            var frameRadius = (float)WorkflowDesignerGeometry.NodeCornerRadius(zoom);
+            using var framePath = RoundedRectangle(frame, frameRadius);
+            using (var tint = new SolidBrush(ToColor(Colors.NodeHeader.WithAlpha(70))))
+                graphics.FillPath(tint, framePath);
+            using (var dash = new Pen(ToColor(selected ? Colors.Selected : Colors.NodeBorder), Math.Max(1f, (float)(1.5 * Math.Min(1.5, zoom)))) { DashStyle = DashStyle.Dash })
+                graphics.DrawPath(dash, framePath);
+            rect = rect with { Height = Math.Min(rect.Height, item.Height * zoom) };
+        }
+        var bounds = ToRectangle(rect);
         // 运行中、暂停以运行状态为准；其余时候配置有错误的节点按异常（红色）画。
         var state = _session.GetNodeVisualState(item.Node.Id);
         if (state is not (WorkflowNodeVisualState.Running or WorkflowNodeVisualState.Paused) && HasDiagnosticError(item.Node.Id))
@@ -716,7 +898,7 @@ public sealed partial class WorkflowDesignerControl : Control
         var durationText = WorkflowDesignerInteraction.GetRuntimeDurationText(_session, item);
         using var detailFont = CanvasFont(WorkflowDesignerGeometry.DetailFontPixels * zoom);
         var layout = WorkflowDesignerGeometry.CalculateNodeHeaderLayout(
-            rect, zoom, MeasureText(graphics, orderText, detailFont), MeasureText(graphics, durationText, detailFont));
+            rect, zoom, MeasureText(graphics, orderText, detailFont), MeasureText(graphics, durationText, detailFont), _session.RuntimeSnapshot is not null);
         using (var indicator = new SolidBrush(ToColor(style.Indicator)))
             graphics.FillEllipse(indicator, ToRectangle(layout.IndicatorBounds));
         DrawIcon(graphics, _session.GetNodeIcon(item.Node), ToRectangle(layout.IconBounds), Colors.Icon);
@@ -726,14 +908,17 @@ public sealed partial class WorkflowDesignerControl : Control
             graphics.DrawString(item.Node.Title, titleFont, titleBrush, ToRectangle(layout.TitleBounds), titleFormat);
         DrawRuntimeInfo(graphics, layout, style, orderText, durationText, detailFont);
 
-        var emphasized = _hoverNodeId == item.Node.Id || _mode is InteractionMode.Connect or InteractionMode.MovePort;
+        var emphasized = _hoverNodeId == item.Node.Id && ReferenceEquals(_hoverSession, _session)
+            || _mode is InteractionMode.Connect or InteractionMode.MovePort && ReferenceEquals(_paintActive, _session);
         DrawPorts(graphics, item, WorkflowPortDirection.Input, emphasized);
         DrawPorts(graphics, item, WorkflowPortDirection.Output, emphasized);
         DrawDataPorts(graphics, item, rect);
         DrawConnectionOverrideEndpoints(graphics, item);
         DrawConnectionInputTargets(graphics, item);
         if (selected)
-            DrawPortSideTargets(graphics, item, bounds);
+            DrawPortSideTargets(graphics, item, frame);
+        if (expanded)
+            DrawExpandedContent(graphics, item, frame);
     }
 
     /// <summary>标题行与正文之间、侧边端口行与外置数据行之间的分隔线。</summary>
@@ -962,7 +1147,7 @@ public sealed partial class WorkflowDesignerControl : Control
         if (_session is null || _nodeDiagnostics.Count == 0) return;
         foreach (var node in _session.Document.Nodes)
         {
-            if (!_nodeDiagnostics.ContainsKey(node.Node.Id)) continue;
+            if (NodeDiagnostics(node.Node.Id) is null) continue;
             var error = HasDiagnosticError(node.Node.Id);
             var bounds = ToRectangle(WorkflowDesignerGeometry.DiagnosticBadgeBounds(
                 WorkflowDesignerGeometry.GetNodeScreenRect(_session, node), _session.Zoom));
@@ -1006,20 +1191,20 @@ public sealed partial class WorkflowDesignerControl : Control
     }
 
     /// <summary>悬停在有诊断的节点（含角标）或画布级诊断胶囊上时，用提示框列出问题。</summary>
-    private void UpdateDiagnosticTip(Point location)
+    private void UpdateDiagnosticTip(WorkflowDesignerSession session, Point location)
     {
-        if (_session is null) { HideDiagnosticTip(); return; }
         IReadOnlyList<WorkflowDiagnosticItem>? items = null;
         if (_canvasDiagnosticBounds is { } chip && chip.Contains(location))
             items = _canvasDiagnostics;
         else
         {
-            for (var i = _session.Document.Nodes.Count - 1; i >= 0 && items is null; i--)
+            var path = DiagnosticPathOf(session);
+            for (var i = session.Document.Nodes.Count - 1; i >= 0 && items is null; i--)
             {
-                var node = _session.Document.Nodes[i];
-                if (!_nodeDiagnostics.TryGetValue(node.Node.Id, out var list)) continue;
-                var rect = WorkflowDesignerGeometry.GetNodeScreenRect(_session, node);
-                var badge = WorkflowDesignerGeometry.DiagnosticBadgeBounds(rect, _session.Zoom);
+                var node = session.Document.Nodes[i];
+                if (!_nodeDiagnostics.TryGetValue(DiagnosticKey(path, node.Node.Id), out var list)) continue;
+                var rect = WorkflowDesignerGeometry.GetNodeScreenRect(session, node);
+                var badge = WorkflowDesignerGeometry.DiagnosticBadgeBounds(rect, session.Zoom);
                 if (Contains(rect, location) || Contains(badge, location)) items = list;
             }
         }
@@ -1246,7 +1431,7 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="graphics">GDI+ 绘图表面。</param>
     private void DrawOverviewMap(Graphics graphics)
     {
-        if (!TryCreateOverviewMapLayout(out var layout) || _session is null)
+        if (!TryCreateOverviewMapLayout(out var layout) || _root is null)
             return;
 
         using var background = new SolidBrush(ToColor(Colors.Overlay.WithAlpha(235)));
@@ -1263,8 +1448,8 @@ public sealed partial class WorkflowDesignerControl : Control
         graphics.DrawRectangle(border, layout.MapBounds.X, layout.MapBounds.Y, layout.MapBounds.Width, layout.MapBounds.Height);
         graphics.DrawString("概览", titleFont, titleBrush, layout.MapBounds.X + 7, layout.MapBounds.Y + 4);
 
-        var nodes = _session.Document.Nodes.ToDictionary(item => item.Node.Id, StringComparer.Ordinal);
-        foreach (var connection in _session.Document.Connections)
+        var nodes = _root.Document.Nodes.ToDictionary(item => item.Node.Id, item => _root.GetNodeDisplayRect(item), StringComparer.Ordinal);
+        foreach (var connection in _root.Document.Connections)
         {
             if (!nodes.TryGetValue(connection.FromNodeId, out var source)
                 || !nodes.TryGetValue(connection.ToNodeId, out var target))
@@ -1273,19 +1458,20 @@ public sealed partial class WorkflowDesignerControl : Control
             {
                 new(source.X + source.Width / 2d, source.Y + source.Height / 2d)
             };
-            points.AddRange(connection.Waypoints);
+            points.AddRange(connection.Waypoints.Select(_root.ToDisplayPoint));
             points.Add(new WorkflowPoint(target.X + target.Width / 2d, target.Y + target.Height / 2d));
             if (points.Count > 1)
                 graphics.DrawLines(connectionPen, points.Select(point => OverviewPoint(layout, point.X, point.Y)).ToArray());
         }
 
-        foreach (var node in _session.Document.Nodes)
+        foreach (var node in _root.Document.Nodes)
         {
-            var topLeft = OverviewPoint(layout, node.X, node.Y);
-            var width = Math.Max(3f, (float)(node.Width * layout.Scale));
-            var height = Math.Max(2f, (float)(node.Height * layout.Scale));
+            var display = _root.GetNodeDisplayRect(node);
+            var topLeft = OverviewPoint(layout, display.X, display.Y);
+            var width = Math.Max(3f, (float)(display.Width * layout.Scale));
+            var height = Math.Max(2f, (float)(display.Height * layout.Scale));
             graphics.FillRectangle(
-                _session.SelectedNodeIds.Contains(node.Node.Id) ? selectedNodeBrush : nodeBrush,
+                _root.SelectedNodeIds.Contains(node.Node.Id) ? selectedNodeBrush : nodeBrush,
                 topLeft.X,
                 topLeft.Y,
                 width,
@@ -1313,7 +1499,7 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <param name="location">菜单显示位置。</param>
     private bool TryNavigateOverview(Point location)
     {
-        if (_session is null || !TryCreateOverviewMapLayout(out var layout) || !layout.MapBounds.Contains(location))
+        if (_root is null || !TryCreateOverviewMapLayout(out var layout) || !layout.MapBounds.Contains(location))
             return false;
         var x = Polyfill.Clamp(location.X, layout.ContentBounds.Left, layout.ContentBounds.Right);
         var y = Polyfill.Clamp(location.Y, layout.ContentBounds.Top, layout.ContentBounds.Bottom);
@@ -1330,10 +1516,10 @@ public sealed partial class WorkflowDesignerControl : Control
             canvasY,
             layout.WorldBounds.Y + viewport.Height / 2d,
             layout.WorldBounds.Y + layout.WorldBounds.Height - viewport.Height / 2d);
-        _session.SetViewport(
-            _session.Zoom,
-            ClientSize.Width / 2d - canvasX * _session.Zoom,
-            ClientSize.Height / 2d - canvasY * _session.Zoom);
+        _root.SetViewport(
+            _root.Zoom,
+            ClientSize.Width / 2d - canvasX * _root.Zoom,
+            ClientSize.Height / 2d - canvasY * _root.Zoom);
         return true;
     }
 
@@ -1341,12 +1527,12 @@ public sealed partial class WorkflowDesignerControl : Control
     private bool TryCreateOverviewMapLayout(out OverviewMapLayout layout)
     {
         layout = default;
-        if (_session is null || _session.Document.Nodes.Count == 0 || ClientSize.Width < 240 || ClientSize.Height < 180)
+        if (_root is null || _root.Document.Nodes.Count == 0 || ClientSize.Width < 240 || ClientSize.Height < 180)
             return false;
 
-        var overflowing = _session.Document.Nodes.Any(node =>
+        var overflowing = _root.Document.Nodes.Any(node =>
         {
-            var rect = WorkflowDesignerGeometry.GetNodeScreenRect(_session, node);
+            var rect = WorkflowDesignerGeometry.GetNodeScreenRect(_root, node);
             return rect.X < 0 || rect.Y < 0 || rect.X + rect.Width > ClientSize.Width || rect.Y + rect.Height > ClientSize.Height;
         });
         if (!overflowing)
@@ -1359,26 +1545,19 @@ public sealed partial class WorkflowDesignerControl : Control
         // 首次出现概览时记录视口锚点，后续平移不能把实时 Pan 重新并入世界边界。
         // 这样既能在概览中保留最初可视区域与远端节点的位置关系，也能保证拖动期间比例固定。
         if (!_overviewAnchorViewport.HasValue
-            || !_overviewAnchorZoom.Equals(_session.Zoom)
+            || !_overviewAnchorZoom.Equals(_root.Zoom)
             || _overviewAnchorClientSize != ClientSize)
         {
             _overviewAnchorViewport = viewport;
-            _overviewAnchorZoom = _session.Zoom;
+            _overviewAnchorZoom = _root.Zoom;
             _overviewAnchorClientSize = ClientSize;
         }
         var anchorViewport = _overviewAnchorViewport.Value;
-        var minX = Math.Min(anchorViewport.X, _session.Document.Nodes.Min(node => node.X));
-        var minY = Math.Min(anchorViewport.Y, _session.Document.Nodes.Min(node => node.Y));
-        var maxX = Math.Max(anchorViewport.X + anchorViewport.Width, _session.Document.Nodes.Max(node => node.X + node.Width));
-        var maxY = Math.Max(anchorViewport.Y + anchorViewport.Height, _session.Document.Nodes.Max(node => node.Y + node.Height));
-        var waypoints = _session.Document.Connections.SelectMany(connection => connection.Waypoints).ToArray();
-        if (waypoints.Length > 0)
-        {
-            minX = Math.Min(minX, waypoints.Min(point => point.X));
-            minY = Math.Min(minY, waypoints.Min(point => point.Y));
-            maxX = Math.Max(maxX, waypoints.Max(point => point.X));
-            maxY = Math.Max(maxY, waypoints.Max(point => point.Y));
-        }
+        var bounds = _root.GetDisplayBounds()!.Value;
+        var minX = Math.Min(anchorViewport.X, bounds.X);
+        var minY = Math.Min(anchorViewport.Y, bounds.Y);
+        var maxX = Math.Max(anchorViewport.X + anchorViewport.Width, bounds.X + bounds.Width);
+        var maxY = Math.Max(anchorViewport.Y + anchorViewport.Height, bounds.Y + bounds.Height);
         var padding = Math.Max(24d, Math.Max(maxX - minX, maxY - minY) * 0.035d);
         var horizontalPadding = padding + viewport.Width / 2d;
         var verticalPadding = padding + viewport.Height / 2d;
@@ -1408,12 +1587,12 @@ public sealed partial class WorkflowDesignerControl : Control
     /// <summary>执行 Current Viewport Canvas Rect 相关处理。</summary>
     private WorkflowDesignerRect CurrentViewportCanvasRect()
     {
-        var topLeft = WorkflowDesignerGeometry.ScreenToCanvas(_session!, 0, 0);
+        var topLeft = WorkflowDesignerGeometry.ScreenToCanvas(_root!, 0, 0);
         return new WorkflowDesignerRect(
             topLeft.X,
             topLeft.Y,
-            ClientSize.Width / _session!.Zoom,
-            ClientSize.Height / _session.Zoom);
+            ClientSize.Width / _root!.Zoom,
+            ClientSize.Height / _root.Zoom);
     }
 
     private static PointF OverviewPoint(OverviewMapLayout layout, double x, double y) => new(
@@ -1468,7 +1647,7 @@ public sealed partial class WorkflowDesignerControl : Control
                 _segmentOriginalWaypoints = connection.Waypoints.ToArray();
                 _segmentWorkingWaypoints = points.Skip(1)
                     .Take(points.Count - 2)
-                    .Select(point => WorkflowDesignerGeometry.ScreenToCanvas(_session, point.X, point.Y))
+                    .Select(point => _session.ToStoredPoint(WorkflowDesignerGeometry.ScreenToCanvas(_session, point.X, point.Y)))
                     .ToArray();
                 _segmentFirstWaypointIndex = index - 1;
                 _segmentSecondWaypointIndex = index;
@@ -1516,6 +1695,11 @@ public sealed partial class WorkflowDesignerControl : Control
         }
         if (IsDisposed)
             return;
+        // 展开区收起或节点被删后，当前操作的会话回到根画布。
+        if (e.Kind is WorkflowDesignerChangeKind.Document or WorkflowDesignerChangeKind.Viewport
+            && _root is not null && !ReferenceEquals(_session, _root) && _mode == InteractionMode.None && !InvokeRequired
+            && !_root.SelfAndExpandedSessions().Any(session => ReferenceEquals(session, _session)))
+            Activate(_root);
         if (InvokeRequired)
             BeginInvoke((Action)Invalidate);
         else
@@ -1687,7 +1871,8 @@ public sealed partial class WorkflowDesignerControl : Control
         using var border = new Pen(ToColor(Colors.Selected), 2);
         foreach (var waypoint in connection.Waypoints)
         {
-            var point = WorkflowDesignerGeometry.CanvasToScreen(_session, waypoint.X, waypoint.Y);
+            var display = _session.ToDisplayPoint(waypoint);
+            var point = WorkflowDesignerGeometry.CanvasToScreen(_session, display.X, display.Y);
             graphics.FillRectangle(fill, (float)point.X - 5, (float)point.Y - 5, 10, 10);
             graphics.DrawRectangle(border, (float)point.X - 5, (float)point.Y - 5, 10, 10);
         }

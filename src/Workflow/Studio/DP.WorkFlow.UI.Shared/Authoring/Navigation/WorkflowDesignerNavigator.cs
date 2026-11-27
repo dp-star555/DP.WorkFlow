@@ -58,8 +58,12 @@ public sealed class WorkflowDesignerNavigator
         if (string.IsNullOrWhiteSpace(startNodeId))
             return false;
         var title = string.IsNullOrWhiteSpace(item.Node.Title) ? item.Node.Id : item.Node.Title;
+        var session = new WorkflowDesignerSession(composite.SubDocument, _catalog, RootSession.PublicData)
+        {
+            ExpansionScope = parentSession.ExpansionScope + "/" + nodeId
+        };
         _frames.Add(new NavigationFrame(
-            new WorkflowDesignerSession(composite.SubDocument, _catalog, RootSession.PublicData),
+            session,
             startNodeId,
             title,
             item.Node.Id));

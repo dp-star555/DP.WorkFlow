@@ -152,8 +152,9 @@ public sealed partial class WorkflowNodeEditorDialog : Form
 
     /// <summary>
     /// 构建节点窗口主体（按设计稿“节点编辑页”）：顶部节点标题卡（图标、标题、类型 · 标识、上次运行状态）；
-    /// 左边分页卡（参数、输入输出、渲染器贡献的列表页如视觉 ROI），中间按页面顺序放子流程、脚本、图像等主体卡，
-    /// 右边是运行结果和本节点提示。没有主体页面时左边分页卡填满中间。
+    /// 左边分页卡（参数、输入输出、运行结果、渲染器贡献的列表页如视觉 ROI），下面是应用 / 确定 / 取消；
+    /// 右边按页面顺序放子流程、脚本、图像等主体卡，占满到窗口底部。没有主体页面时左边一栏填满。
+    /// 节点提示在画布节点的角标上看，这里不再重复。
     /// </summary>
     private Control CreateWorkspace()
     {
@@ -179,25 +180,26 @@ public sealed partial class WorkflowNodeEditorDialog : Form
         {
             Panel(visible.Single(page => page.Kind == WorkflowNodeEditorPageKind.Properties))
         };
-        // 复合节点的“输入输出”页紧跟参数页。
+        // 复合节点的“输入输出”页紧跟参数页，然后是运行结果（有运行会话时）。
         if (visible.FirstOrDefault(page => page.Kind == WorkflowNodeEditorPageKind.SubflowInterface) is { } subflowInterface)
             panels.Add(Panel(subflowInterface));
+        if (visible.FirstOrDefault(page => page.Kind == WorkflowNodeEditorPageKind.Results) is { } results)
+            panels.Add(Panel(results));
         panels.AddRange(sidePanels);
 
         var root = new Panel { Dock = DockStyle.Fill };
         var middle = new Panel { Dock = DockStyle.Fill };
-        var sideCard = new WorkflowCard { Dock = specialPages.Length == 0 ? DockStyle.Fill : DockStyle.Left, LogicalExtent = specialPages.Length == 0 ? 0 : 380 };
+        // 左边一栏：分页卡 + 底下的应用 / 确定 / 取消（按钮不再单独占窗口底部一整条，主体卡更高）。
+        var left = new Panel { Dock = specialPages.Length == 0 ? DockStyle.Fill : DockStyle.Left, Width = LogicalToDeviceUnits(380) };
+        var sideCard = new WorkflowCard { Dock = DockStyle.Fill };
         sideCard.Controls.Add(CreateSidePanels(panels));
-
-        // 右栏：运行结果（有运行会话时）和本节点提示。
-        var right = new Panel { Dock = DockStyle.Right, Width = LogicalToDeviceUnits(320) };
-        if (visible.FirstOrDefault(page => page.Kind == WorkflowNodeEditorPageKind.Results) is { } results)
-            right.Controls.Add(WorkflowPage.Section("运行结果", null, CreatePageControl(results)));
-        var notices = new WorkflowFactList();
-        var noticeCard = WorkflowPage.Section("本节点提示", null, notices, right.Controls.Count == 0 ? DockStyle.Fill : DockStyle.Bottom, 200);
-        ShowNotices(notices, noticeCard);
-        if (right.Controls.Count > 0) right.Controls.Add(WorkflowPage.Gap(DockStyle.Bottom));
-        right.Controls.Add(noticeCard);
+        rootLayout.Controls.Remove(commandPanel);
+        rootLayout.RowStyles[1].Height = 0;
+        commandPanel.Dock = DockStyle.Bottom;
+        commandPanel.AutoSize = true;
+        commandPanel.Padding = new Padding(0, LogicalToDeviceUnits(8), 0, 0);
+        left.Controls.Add(sideCard);
+        left.Controls.Add(commandPanel);
 
         if (specialPages.Length > 0)
         {
@@ -212,10 +214,8 @@ public sealed partial class WorkflowNodeEditorDialog : Form
             middle.Controls.Add(specialHost);
             middle.Controls.Add(WorkflowPage.Gap(DockStyle.Left));
         }
-        middle.Controls.Add(sideCard);
+        middle.Controls.Add(left);
         root.Controls.Add(middle);
-        root.Controls.Add(WorkflowPage.Gap(DockStyle.Right));
-        root.Controls.Add(right);
 
         var header = new WorkflowCard { Dock = DockStyle.Top, LogicalExtent = 64 };
         header.Controls.Add(new WorkflowNodeHeader { Dock = DockStyle.Fill, Session = Model.Session, NodeId = Model.Node.Id });
@@ -225,16 +225,6 @@ public sealed partial class WorkflowNodeEditorDialog : Form
 
         WorkflowWinFormsNodeEditorSidePanel Panel(WorkflowNodeEditorPageDescriptor page) =>
             new(page.PageId, page.Title, CreatePageControl(page));
-    }
-
-    /// <summary>本节点在运行会话里累计的提示（只读，确认在画布角标或节点提示页上做）。</summary>
-    private void ShowNotices(WorkflowFactList list, WorkflowCard card)
-    {
-        var notices = Model.Session.GetNodeNotices(Model.Node.Id);
-        WorkflowPage.HeaderOf(card).Subtitle = notices.Count == 0 ? null : notices.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        list.Show(notices.Count == 0
-            ? new[] { new WorkflowFact("本节点没有提示") }
-            : notices.Reverse().Select(notice => new WorkflowFact(notice.Category + "  " + notice.Message, "× " + notice.Count.ToString(System.Globalization.CultureInfo.InvariantCulture))));
     }
 
     /// <summary>显示在左侧分页中的页面；其余页面（子画布、脚本、图像等）放在右侧主体区。</summary>

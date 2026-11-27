@@ -572,7 +572,8 @@ public sealed class WorkflowDesignerControl : FrameworkElement
             rect,
             zoom,
             string.IsNullOrEmpty(orderText) ? 0 : MeasureTextWidth(orderText!, detailSize, FontWeights.Normal),
-            string.IsNullOrEmpty(durationText) ? 0 : MeasureTextWidth(durationText!, detailSize, FontWeights.Normal));
+            string.IsNullOrEmpty(durationText) ? 0 : MeasureTextWidth(durationText!, detailSize, FontWeights.Normal),
+            _session.RuntimeSnapshot is not null);
         var indicator = layout.IndicatorBounds;
         context.DrawEllipse(Brush(style.Indicator), null, new Point(indicator.X + indicator.Width / 2, indicator.Y + indicator.Height / 2),
             indicator.Width / 2, indicator.Height / 2);

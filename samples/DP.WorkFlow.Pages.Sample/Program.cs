@@ -15,6 +15,8 @@ internal static class Program
             Directory.Delete(root, recursive: true);
         Application.ThreadException += (_, e) => MessageBox.Show(e.Exception.ToString(), "示例程序异常", MessageBoxButtons.OK, MessageBoxIcon.Error);
         using var host = new SampleWorkflowHost(root);
+        // 画布上子流程原地展开的状态单独存一个文件，重开程序还是上次的样子。
+        DP.WorkFlow.UI.WorkflowCanvasExpansionMemory.FilePath = Path.Combine(root, "canvas-expanded.txt");
         SampleFlows.SeedIfEmpty(host);
         host.Load();
         Application.Run(new SampleForm(host));

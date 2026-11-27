@@ -135,11 +135,14 @@ public static class WorkflowDesignerGeometry
     /// <param name="zoom">当前缩放。</param>
     /// <param name="measuredOrderWidth">序号文字测量宽度；0 表示不显示序号。</param>
     /// <param name="measuredDurationWidth">耗时文字测量宽度；0 表示不显示耗时。</param>
+    /// <param name="runtimeShown">画布在显示运行状态（有运行快照）：所有节点一律两行，标题在上半行、序号和耗时在下半行，
+    /// 节点之间对齐，耗时文字变长变短时标题也不跳动；还没执行的节点下半行留空。</param>
     public static WorkflowNodeHeaderLayout CalculateNodeHeaderLayout(
         WorkflowDesignerRect nodeBounds,
         double zoom,
         double measuredOrderWidth,
-        double measuredDurationWidth = 0)
+        double measuredDurationWidth = 0,
+        bool runtimeShown = false)
     {
         zoom = Math.Max(0.05, zoom);
         var headerHeight = Math.Min(nodeBounds.Height, HeaderHeight * zoom);
@@ -157,9 +160,9 @@ public static class WorkflowDesignerGeometry
         // 量出的宽度留 2 px 余量，避免取整后被省略成“53…”。
         var durationWidth = measuredDurationWidth > 0 ? measuredDurationWidth + 2 * zoom : 0;
         var runtimeWidth = orderWidth + durationWidth + (orderWidth > 0 && durationWidth > 0 ? gap : 0);
-        // 运行信息（序号、耗时）始终完整显示。和标题并排会把标题挤到一半以下时，改为两行：
-        // 标题占上半行全宽，序号和耗时靠右放在下半行。
-        var stacked = runtimeWidth > available * 0.5;
+        // 运行信息（序号、耗时）始终完整显示。显示运行状态时一律两行（标题占上半行全宽，序号和耗时靠右放在下半行），
+        // 不按文字宽度临时切换，否则各节点高低不齐、耗时一变标题就上下跳。
+        var stacked = runtimeShown || runtimeWidth > available * 0.5;
         var half = headerHeight / 2;
         var titleBounds = stacked
             ? new WorkflowDesignerRect(titleLeft, nodeBounds.Y + 2 * zoom, available, half)
@@ -235,12 +238,46 @@ public static class WorkflowDesignerGeometry
     /// <param name="node">目标画布节点或节点模型。</param>
     public static WorkflowDesignerRect GetNodeScreenRect(
         WorkflowDesignerSession session,
-        WorkflowCanvasNode node) =>
-        new(
-            node.X * session.Zoom + session.PanX,
-            node.Y * session.Zoom + session.PanY,
-            node.Width * session.Zoom,
-            node.Height * session.Zoom);
+        WorkflowCanvasNode node)
+    {
+        var rect = session.GetNodeDisplayRect(node);
+        return new(
+            rect.X * session.Zoom + session.PanX,
+            rect.Y * session.Zoom + session.PanY,
+            rect.Width * session.Zoom,
+            rect.Height * session.Zoom);
+    }
+
+    /// <summary>
+    /// 复合节点左下角的展开 / 收起按钮（屏幕矩形）：圆心在卡片左下角外沿，展开后仍在卡片部分的左下角（展开区在它下面）。
+    /// </summary>
+    /// <param name="nodeRect">节点屏幕矩形（展开时为整个展开区）。</param>
+    /// <param name="cardHeight">卡片部分的屏幕高度（收起时就是节点高度）。</param>
+    /// <param name="zoom">当前缩放。</param>
+    public static WorkflowDesignerRect ExpandToggleBounds(WorkflowDesignerRect nodeRect, double cardHeight, double zoom)
+    {
+        var size = Math.Max(14, 18 * zoom);
+        return new WorkflowDesignerRect(nodeRect.X - size / 2 + 2 * zoom, nodeRect.Y + cardHeight - size / 2, size, size);
+    }
+
+    /// <summary>查找屏幕坐标下的展开 / 收起按钮；按钮画在节点之上，优先于节点本身命中。</summary>
+    /// <param name="session">设计器会话。</param>
+    /// <param name="x">屏幕 X。</param>
+    /// <param name="y">屏幕 Y。</param>
+    /// <returns>按钮所属节点；没有命中时为空。</returns>
+    public static WorkflowCanvasNode? HitExpandToggle(WorkflowDesignerSession session, double x, double y)
+    {
+        Guard.NotNull(session);
+        for (var i = session.Document.Nodes.Count - 1; i >= 0; i--)
+        {
+            var node = session.Document.Nodes[i];
+            if (!WorkflowDesignerSession.CanExpand(node)) continue;
+            var bounds = ExpandToggleBounds(GetNodeScreenRect(session, node), node.Height * session.Zoom, session.Zoom);
+            if (x >= bounds.X - 2 && x <= bounds.X + bounds.Width + 2 && y >= bounds.Y - 2 && y <= bounds.Y + bounds.Height + 2)
+                return node;
+        }
+        return null;
+    }
 
     /// <summary>
     /// 节点诊断角标（“!”）的屏幕矩形：圆心在节点左上角外沿，和右上角的提示角标左右分开。

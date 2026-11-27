@@ -37,7 +37,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
     private readonly ModernButton _alignButton = new() { Name = "alignButton", Text = "对齐 ▾", ButtonType = ModernButtonType.Text};
     private readonly ModernContextMenu _alignMenu = new();
     private readonly ModernButton _publicDataButton = new() { Name = "publicDataButton", Text = "公共数据", ButtonType = ModernButtonType.Text };
-    private readonly ModernButton _validateButton = new() { Name = "validateButton", Text = "校验"};
+    private readonly ModernButton _validateButton = new() { Name = "validateButton", Text = "校验", ButtonType = ModernButtonType.Text };
     private readonly ModernButton _runButton = new() { Name = "_runButton", Text = "调试运行", ButtonType = ModernButtonType.Primary, Icon = ModernIconKind.Play };
     private readonly ModernButton _pauseButton = new() { Name = "_pauseButton", Text = "暂停", Icon = ModernIconKind.Pause };
     private readonly ModernButton _resumeButton = new() { Name = "_resumeButton", Text = "继续", Icon = ModernIconKind.Resume };
@@ -66,6 +66,7 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         SuspendLayout();
         _toolbar.GripStyle = ToolStripGripStyle.Hidden;
         _toolbar.Dock = DockStyle.Fill;
+        WorkflowBorderlessToolStrip.Attach(_toolbar);
         _toolbar.Items.AddRange(new ToolStripItem[] { _undoButton, _redoButton, _editSeparator, _breadcrumbLabel, _stateLabel });
         _toolbar.ItemAdded += (_, e) => { if (e.Item is { } item) SpaceToolbarItem(item); };
         BreadcrumbText = null;
@@ -137,6 +138,11 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         _stopButton.Click += (_, _) => RunCommands?.Cancel();
         Toolbox.NodeTypeActivated += OnNodeTypeActivated;
         Designer.InteractionError += (_, message) => InteractionError?.Invoke(this, message);
+        // 点进展开区后，检查器跟着展开区里的选择走。
+        Designer.ActiveSessionChanged += (_, _) =>
+        {
+            if (_inspector is WorkflowNodeInspectorControl inspector) inspector.Session = Designer.ActiveSession ?? _session;
+        };
         Designer.SizeChanged += (_, _) => QueueAutoFit();
         Load += (_, _) => QueueAutoFit();
         UpdateCommands();
@@ -549,9 +555,9 @@ public sealed class WorkflowCanvasWorkspaceControl : UserControl
         Designer.Diagnostics = items;
         var count = items.Count;
         _validateButton.Text = count == 0 ? "校验" : $"校验 · {count}";
-        _validateButton.ButtonType = count == 0 ? ModernButtonType.Default
-            : items.Any(item => item.Severity == WorkflowValidationSeverity.Error) ? ModernButtonType.DangerOutline
-            : ModernButtonType.Warning;
+        // 和其他命令一样是文字按钮；只有有错误时加红框提醒（画布左上也有“流程错误”）。
+        _validateButton.ButtonType = items.Any(item => item.Severity == WorkflowValidationSeverity.Error)
+            ? ModernButtonType.DangerOutline : ModernButtonType.Text;
     }
 
     /// <summary>定位到画布路径下的节点；子画布里的节点选中本画布上包含它的最外层复合节点。</summary>

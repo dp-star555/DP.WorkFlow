@@ -428,8 +428,10 @@ public sealed class WorkflowFlowLibraryPage : WorkflowPage
         using var dialog = new WorkflowFlowHistoryDialog(_library, entry, _canEdit);
         WorkflowWinFormsTheme.Follow(dialog);
         dialog.ShowDialog(FindForm());
-        if (dialog.Restored is { } version)
-            Done($"{entry.Name} 的草稿已恢复成 v{version}，发布后生效", entry.Name);
+        if (dialog.Restored is not { } version) return;
+        Done($"{entry.Name} 的草稿已恢复成 v{version}：先在流程设计里看、试运行，确认后再发布；不要就放弃草稿", entry.Name);
+        // 恢复的是草稿：直接打开给人看，确认是想要的再发布。
+        OpenRequested?.Invoke(this, _library.DraftPathOf(entry.Name));
     }
 
     private string? Ask(string title, string prompt, string value) => WorkflowInputDialog.Ask(FindForm(), title, prompt, value, 100);

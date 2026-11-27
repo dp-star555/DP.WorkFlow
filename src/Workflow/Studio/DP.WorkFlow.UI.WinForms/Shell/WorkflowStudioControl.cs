@@ -37,6 +37,8 @@ public sealed partial class WorkflowStudioControl : UserControl
         canvasWorkspace.InteractionError += (_, message) => InteractionError?.Invoke(this, message);
         canvasWorkspace.RunFaulted += (_, message) => RunFaulted?.Invoke(this, message);
         Designer.NodeEditRequested += OnDesignerNodeEditRequested;
+        // 展开区里的节点：属性面板按子流程的入口生成绑定候选。
+        Designer.ActiveSessionChanged += (_, _) => propertyPanel.EntryNodeId = Designer.ActiveEntryNodeId ?? _startNodeId;
         Properties.EditError += (_, message) => InteractionError?.Invoke(this, message);
         Properties.PropertyActionRequested += OnPropertyActionRequested;
         UpdateNavigation();
@@ -238,7 +240,7 @@ public sealed partial class WorkflowStudioControl : UserControl
         {
             _startNodeId = value;
             Diagnostics.EntryNodeId = value;
-            propertyPanel.EntryNodeId = value;
+            propertyPanel.EntryNodeId = Designer.ActiveEntryNodeId ?? value;
         }
     }
 
@@ -353,11 +355,14 @@ public sealed partial class WorkflowStudioControl : UserControl
 
     private async void OnPropertyActionRequested(object? sender, WorkflowPropertyActionRequest request)
     {
-        if (Session == null || string.IsNullOrWhiteSpace(EntryNodeId)) return;
+        // 属性面板可能正显示展开区里的节点：用面板自己的会话和入口。
+        var session = Properties.Session ?? Session;
+        var entry = propertyPanel.EntryNodeId ?? EntryNodeId;
+        if (session == null || string.IsNullOrWhiteSpace(entry)) return;
         WorkflowNodeEditorModel? model = null;
         try
         {
-            model = new WorkflowNodeEditorModel(Session, EntryNodeId, request.NodeId, NodeEditorExtensions.GetPageProviders(),
+            model = new WorkflowNodeEditorModel(session, entry!, request.NodeId, NodeEditorExtensions.GetPageProviders(),
                 Properties.ChoiceProvider, Properties.AdditionalProperties, request.EditorKey, Properties.Services);
             using var dialog = new WorkflowNodeEditorDialog(model, NodeEditorExtensions.GetRenderers());
             dialog.ShowDialog(this);
@@ -374,11 +379,15 @@ public sealed partial class WorkflowStudioControl : UserControl
     public void OpenNodeEditor(IWorkflowNodeModel node)
     {
         Guard.NotNull(node);
-        if (Session is null || string.IsNullOrWhiteSpace(EntryNodeId)) return;
+        // 展开区里的节点用展开区的会话和入口打开。
+        var inExpanded = Designer.ActiveSession is { Owner: not null } active && active.Document.Nodes.Any(item => ReferenceEquals(item.Node, node));
+        var session = inExpanded ? Designer.ActiveSession : Session;
+        var entry = inExpanded ? Designer.ActiveEntryNodeId : EntryNodeId;
+        if (session is null || string.IsNullOrWhiteSpace(entry)) return;
         try
         {
             var model = new WorkflowNodeEditorModel(
-                Session, EntryNodeId, node.Id, NodeEditorExtensions.GetPageProviders(),
+                session, entry!, node.Id, NodeEditorExtensions.GetPageProviders(),
                 Properties.ChoiceProvider, Properties.AdditionalProperties, services: Properties.Services);
             using var dialog = new WorkflowNodeEditorDialog(model, NodeEditorExtensions.GetRenderers());
             _ = dialog.ShowDialog(this);

@@ -16,7 +16,7 @@ internal sealed class SampleDesignPage : UserControl
     private readonly WorkflowDraftPublisher _publisher;
     private readonly WorkflowStudioControl _studio = new() { Dock = DockStyle.Fill };
     private readonly WorkflowDocumentWorkspace _workspace;
-    private readonly ModernButton _publish = new() { Text = "发布…" };
+    private readonly ModernButton _publish = new() { Text = "发布…", ButtonType = ModernButtonType.Text };
     private readonly ToolStripMenuItem _open;
     private WorkflowStudioRuntimeBinding? _trial;
     private volatile string _trialLogName = SampleWorkflowHost.TrialRunLogNameOf(null);
@@ -58,7 +58,7 @@ internal sealed class SampleDesignPage : UserControl
     /// <summary>打开流程库里的一个流程（参数是正式文件或草稿路径）。</summary>
     public void OpenFile(string path)
     {
-        if (_library.NameOf(path) is { } name) OpenFlow(name);
+        if (_library.NameOf(path) is { } name) OpenFlow(name, reopen: !_workspace.IsDirty);
     }
 
     public void CreateNew()
@@ -69,6 +69,33 @@ internal sealed class SampleDesignPage : UserControl
         _workspace.New(name);
         _workspace.SaveAs(_library.DraftPathOf(name));
         EnsureTrialRun();
+    }
+
+    /// <summary>
+    /// 流程库改了文件（恢复版本、放弃草稿、改名、删除……）后调用：当前打开的流程按磁盘重新打开，设计页显示的就是流程库里的草稿。
+    /// 有没保存的修改时不覆盖，只提示。
+    /// </summary>
+    public void LibraryChanged()
+    {
+        if (_trial?.State is E_WorkflowExecutionState.Running or E_WorkflowExecutionState.Paused)
+        {
+            ShowMessage("流程库有变动；调试运行结束后从“打开”重新打开流程即可看到。");
+            return;
+        }
+        if (CurrentName() is not { } name || _library.List().All(entry => !string.Equals(entry.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            // 当前流程被改名或删除了：打开第一个，没有就新建。
+            if (_workspace.IsDirty) { ShowMessage("当前流程在流程库里已改名或删除，修改还没保存。"); return; }
+            if (_library.List().FirstOrDefault() is { } first) OpenFlow(first.Name, reopen: true);
+            else CreateNew();
+            return;
+        }
+        if (_workspace.IsDirty)
+        {
+            ShowMessage($"{name} 在流程库里有变动（例如恢复了版本），当前还有没保存的修改，没有重新打开。");
+            return;
+        }
+        OpenFlow(name, reopen: true);
     }
 
     /// <summary>重新判断调试运行能不能用（整线启停后）。</summary>
