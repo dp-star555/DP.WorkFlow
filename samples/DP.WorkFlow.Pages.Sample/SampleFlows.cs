@@ -53,7 +53,7 @@ internal static class SampleFlows
         Add(new LoopNodeModel { Id = "Loop", Title = "循环生产", Iterations = 0 }, 260, 160);
         Add(new SampleStationNodeModel { Id = "Shell", Title = "取壳体", DurationMs = 300 }, 500, 60);
         Add(new BlockNodeModel { Id = "Assemble", Title = "装配（子流程）", SubDocument = child }, 740, 60);
-        Add(new SampleStationNodeModel { Id = "Check", Title = "检查", DurationMs = 350 }, 980, 60);
+        Add(new SampleStationNodeModel { Id = "Check", Title = "检查", DurationMs = 350 }, 1076, 60);
         Add(new EndNodeModel { Id = "End", Title = "结束" }, 500, 280);
         Connect("Start", WorkflowPorts.Success, "Loop");
         Connect("Loop", WorkflowPorts.Loop, "Shell");

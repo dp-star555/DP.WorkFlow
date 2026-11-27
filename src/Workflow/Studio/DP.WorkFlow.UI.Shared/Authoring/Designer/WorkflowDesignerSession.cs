@@ -1032,7 +1032,9 @@ public sealed partial class WorkflowDesignerSession
         Guard.NotNull(change);
         var canvasNode = GetCanvasNodeOrThrow(nodeId);
         var before = CaptureConfigurationState(canvasNode);
+        var ports = CapturePortPoints(nodeId);
         ConfigurationState after;
+        IReadOnlyList<WaypointChange> waypoints;
         try
         {
             change(canvasNode.Node);
@@ -1051,6 +1053,7 @@ public sealed partial class WorkflowDesignerSession
             EnsureNodeDisplaySize(canvasNode);
             RefreshConnectionStates();
             after = CaptureConfigurationState(canvasNode);
+            waypoints = RealignWaypoints(ports);
         }
         catch
         {
@@ -1060,8 +1063,16 @@ public sealed partial class WorkflowDesignerSession
 
         ApplyConfigurationState(canvasNode, before);
         Execute(new DesignerOperation(
-            () => ApplyConfigurationState(canvasNode, after),
-            () => ApplyConfigurationState(canvasNode, before)));
+            () =>
+            {
+                ApplyConfigurationState(canvasNode, after);
+                foreach (var change in waypoints) SetWaypoints(change.Connection, change.After);
+            },
+            () =>
+            {
+                ApplyConfigurationState(canvasNode, before);
+                foreach (var change in waypoints) SetWaypoints(change.Connection, change.Before);
+            }));
     }
 
     /// <summary>
@@ -1324,19 +1335,80 @@ public sealed partial class WorkflowDesignerSession
         if (outputs.Count <= 1 || port is null) return false;
         if (node.IsOutputPortHidden(port) != visible) return false;
         var before = node.HiddenOutputPorts.ToArray();
+        var layout = new NodeLayoutState(node.X, node.Y, node.Width, node.Height);
+        var ports = CapturePortPoints(nodeId);
         node.SetOutputPortHidden(port, !visible);
         var after = node.HiddenOutputPorts.ToArray();
+        EnsureNodeDisplaySize(node);
+        var waypoints = RealignWaypoints(ports);
         node.HiddenOutputPorts.Clear();
         foreach (var key in before) node.HiddenOutputPorts.Add(key);
-        void Apply(string[] keys)
+        (node.X, node.Y, node.Width, node.Height) = (layout.X, layout.Y, layout.Width, layout.Height);
+        void Apply(string[] keys, bool forward)
         {
             node.HiddenOutputPorts.Clear();
             foreach (var key in keys) node.HiddenOutputPorts.Add(key);
             EnsureNodeDisplaySize(node);
+            foreach (var change in waypoints) SetWaypoints(change.Connection, forward ? change.After : change.Before);
         }
-        Execute(new DesignerOperation(() => Apply(after), () => Apply(before)));
+        Execute(new DesignerOperation(() => Apply(after, true), () => Apply(before, false)));
         return true;
     }
+
+    /// <summary>节点上有拐点的连线两端端口当前的位置（保存坐标），改端口前记下，改完后用来挪拐点。</summary>
+    private Dictionary<WorkflowConnectionModel, (WorkflowPoint? From, WorkflowPoint? To)> CapturePortPoints(string nodeId) =>
+        Document.Connections
+            .Where(connection => connection.Waypoints.Count > 0 && (connection.FromNodeId == nodeId || connection.ToNodeId == nodeId))
+            .ToDictionary(connection => connection, connection => (PortPoint(connection, true), PortPoint(connection, false)));
+
+    private WorkflowPoint? PortPoint(WorkflowConnectionModel connection, bool from)
+    {
+        var screen = from
+            ? WorkflowDesignerInteraction.FindPortPoint(this, connection.FromNodeId, connection.FromPort, WorkflowPortDirection.Output, connection.FromSide)
+            : WorkflowDesignerInteraction.FindPortPoint(this, connection.ToNodeId, connection.ToPort, WorkflowPortDirection.Input, connection.ToSide);
+        return screen is { } point ? ToStoredPoint(WorkflowDesignerGeometry.ScreenToCanvas(this, point.X, point.Y)) : null;
+    }
+
+    /// <summary>
+    /// 加 / 减端口、改尺寸后端口会挪位置（例如下边从一个端口变成两个）。原来紧挨端口、和端口在一条线上的拐点
+    /// （连同同一条线上的后续拐点）跟着挪到新的端口线上，不然最后一段会多出一个折。只算出新拐点，不改文档。
+    /// </summary>
+    private IReadOnlyList<WaypointChange> RealignWaypoints(Dictionary<WorkflowConnectionModel, (WorkflowPoint? From, WorkflowPoint? To)> before)
+    {
+        var changes = new List<WaypointChange>();
+        foreach (var pair in before)
+        {
+            var connection = pair.Key;
+            var points = connection.Waypoints.ToArray();
+            var changed = false;
+            if (pair.Value.From is { } oldFrom && PortPoint(connection, true) is { } newFrom)
+                changed |= ShiftRun(points, 0, 1, oldFrom, newFrom,
+                    connection.FromSide ?? WorkflowDesignerInteraction.FindPortSide(this, connection.FromNodeId, connection.FromPort, WorkflowPortDirection.Output));
+            if (pair.Value.To is { } oldTo && PortPoint(connection, false) is { } newTo)
+                changed |= ShiftRun(points, points.Length - 1, -1, oldTo, newTo,
+                    connection.ToSide ?? WorkflowDesignerInteraction.FindPortSide(this, connection.ToNodeId, connection.ToPort, WorkflowPortDirection.Input));
+            if (changed) changes.Add(new WaypointChange(connection, connection.Waypoints.ToArray(), points));
+        }
+        return changes;
+    }
+
+    private static bool ShiftRun(WorkflowPoint[] points, int index, int step, WorkflowPoint oldPort, WorkflowPoint newPort, WorkflowPortSide side)
+    {
+        if (index < 0 || index >= points.Length) return false;
+        var horizontal = side is WorkflowPortSide.Left or WorkflowPortSide.Right;
+        var oldLine = horizontal ? oldPort.Y : oldPort.X;
+        var newLine = horizontal ? newPort.Y : newPort.X;
+        var first = horizontal ? points[index].Y : points[index].X;
+        if (Math.Abs(newLine - oldLine) < 0.01 || Math.Abs(first - oldLine) > WorkflowDesignerGeometry.GridSize / 2 + 0.01) return false;
+        for (var i = index; i >= 0 && i < points.Length; i += step)
+        {
+            if (Math.Abs((horizontal ? points[i].Y : points[i].X) - first) > 0.01) break;
+            points[i] = horizontal ? new WorkflowPoint(points[i].X, newLine) : new WorkflowPoint(newLine, points[i].Y);
+        }
+        return true;
+    }
+
+    private sealed record WaypointChange(WorkflowConnectionModel Connection, WorkflowPoint[] Before, WorkflowPoint[] After);
 
     /// <summary>执行设计器操作、维护撤销栈并发出变更通知。</summary>
     /// <param name="operation">要执行并登记的设计器操作。</param>

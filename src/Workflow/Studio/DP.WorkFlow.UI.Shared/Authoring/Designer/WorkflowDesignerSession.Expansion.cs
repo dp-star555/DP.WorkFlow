@@ -229,7 +229,7 @@ public sealed partial class WorkflowDesignerSession
             var height = node.Height + WorkflowDesignerGeometry.QuantizeNodeHeight(bounds.Height + ExpandedPadding * 2);
             frames[node.Node.Id] = new ExpansionFrame(child, node.X, node.Y, node.Width, node.Height, width, height, bounds);
         }
-        return _expansionLayout = new ExpansionLayout(frames);
+        return _expansionLayout = new ExpansionLayout(frames, Document.Nodes.Select(node => new WorkflowDesignerRect(node.X, node.Y, node.Width, node.Height)).ToArray());
     }
 
     /// <summary>一个展开区：保存的卡片位置和大小、展开后的大小、子流程显示范围。</summary>
@@ -246,6 +246,12 @@ public sealed partial class WorkflowDesignerSession
         public double GrowX => Width - CardWidth;
         public double GrowY => Height - CardHeight;
 
+        /// <summary>右边节点的移动量；由布局填入。</summary>
+        public double ShiftX { get; set; }
+
+        /// <summary>下边节点的移动量；由布局填入。</summary>
+        public double ShiftY { get; set; }
+
         /// <summary>子流程左上角（不含让位偏移，偏移在 <see cref="ExpansionLayout"/> 里加）。</summary>
         public WorkflowPoint StoredContentOrigin => new(X + ExpandedPadding, Y + CardHeight + ExpandedPadding);
 
@@ -254,14 +260,30 @@ public sealed partial class WorkflowDesignerSession
     }
 
     /// <summary>
-    /// 让位规则：完全在展开节点右边、且不是整个在它上方的节点，右移展开多出来的宽度；
-    /// 完全在它下边、且不是整个在它左方的节点，下移多出来的高度。几个展开区的偏移相加，展开区自己也跟着别的展开区让位。
+    /// 让位规则（保存坐标里判断）：左边越过卡片中线、且不是整个在展开区上方的节点算“右边”，统一右移；
+    /// 上边越过卡片中线、且不是整个在展开区左方的节点算“下边”，统一下移。
+    /// 移动量是展开多出来的宽 / 高，再加上原来就和卡片重叠的那部分（卡片较宽时右边的节点可能本来就压着它），
+    /// 所以让位后一定不压着展开区，右边 / 下边节点之间的相对位置也不变。几个展开区的偏移相加。
     /// </summary>
     private sealed class ExpansionLayout
     {
-        public ExpansionLayout(Dictionary<string, ExpansionFrame> frames)
+        public ExpansionLayout(Dictionary<string, ExpansionFrame> frames, IReadOnlyList<WorkflowDesignerRect> nodes)
         {
             Frames = frames;
+            foreach (var frame in frames.Values)
+            {
+                double minLeft = double.MaxValue, minTop = double.MaxValue;
+                foreach (var node in nodes)
+                {
+                    // 只看和卡片同一行 / 同一列、真的可能压着它的节点。
+                    if (IsRight(frame, node.X, node.Y, node.Height) && node.Y < frame.Y + frame.CardHeight) minLeft = Math.Min(minLeft, node.X);
+                    if (IsBelow(frame, node.X, node.Y, node.Width) && node.X < frame.X + frame.CardWidth) minTop = Math.Min(minTop, node.Y);
+                }
+                var right = frame.X + frame.CardWidth;
+                var bottom = frame.Y + frame.CardHeight;
+                frame.ShiftX = frame.GrowX + (minLeft < right ? right - minLeft : 0);
+                frame.ShiftY = frame.GrowY + (minTop < bottom ? bottom - minTop : 0);
+            }
             foreach (var pair in frames)
             {
                 var frame = pair.Value;
@@ -273,18 +295,21 @@ public sealed partial class WorkflowDesignerSession
 
         public Dictionary<string, ExpansionFrame> Frames { get; }
 
+        private static bool IsRight(ExpansionFrame frame, double x, double y, double height) =>
+            x >= frame.X + frame.CardWidth / 2 && y + height > frame.Y + 0.5;
+
+        private static bool IsBelow(ExpansionFrame frame, double x, double y, double width) =>
+            y >= frame.Y + frame.CardHeight / 2 && x + width > frame.X + 0.5;
+
         public (double X, double Y) Offset(double x, double y, double width, double height, string? self)
         {
-            const double eps = 0.5;
             double dx = 0, dy = 0;
             foreach (var pair in Frames)
             {
                 if (pair.Key == self) continue;
                 var frame = pair.Value;
-                var right = frame.X + frame.CardWidth;
-                var bottom = frame.Y + frame.CardHeight;
-                if (x >= right - eps && y + height > frame.Y + eps) dx += frame.GrowX;
-                if (y >= bottom - eps && x + width > frame.X + eps) dy += frame.GrowY;
+                if (IsRight(frame, x, y, height)) dx += frame.ShiftX;
+                if (IsBelow(frame, x, y, width)) dy += frame.ShiftY;
             }
             return (dx, dy);
         }
